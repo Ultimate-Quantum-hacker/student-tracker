@@ -25,6 +25,10 @@
       const activeSection = document.getElementById(sectionId);
       if (activeSection) {
         activeSection.classList.add('active');
+        // Render bulk table when bulk-scores section is shown
+        if (sectionId === 'bulk-scores' && window.TrackerApp && window.TrackerApp.ui) {
+          window.TrackerApp.ui.renderBulkTable();
+        }
       }
     }
   };
