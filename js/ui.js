@@ -45,6 +45,7 @@
     statSafeCount: 'stat-safe-count',
     statBorderlineCount: 'stat-borderline-count',
     statAtRiskCount: 'stat-at-risk-count',
+    statAtRiskCountSecondary: 'stat-at-risk-count-2',
     interventionItems: 'intervention-items',
     classChart: 'class-chart',
     classChartPlaceholder: 'class-chart-placeholder',
@@ -136,6 +137,7 @@
       if (app.dom.statSafeCount) app.dom.statSafeCount.textContent = safe;
       if (app.dom.statBorderlineCount) app.dom.statBorderlineCount.textContent = borderline;
       if (app.dom.statAtRiskCount) app.dom.statAtRiskCount.textContent = atRisk;
+      if (app.dom.statAtRiskCountSecondary) app.dom.statAtRiskCountSecondary.textContent = atRisk;
     },
 
     renderStudentChips: function () {
