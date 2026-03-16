@@ -64,7 +64,7 @@
         app.dom.restoreInput.value = "";
       };
       reader.readAsText(file);
-    }
+    },
 
     exportCSV: function () {
       let csv = 'Rank,Student,' + app.state.mocks.map(m => `"${m.name}"`).join(',') + ',Overall Average\n';
