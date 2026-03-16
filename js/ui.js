@@ -57,6 +57,7 @@
     editSaveBtn: 'edit-save-btn',
     editCancelBtn: 'edit-cancel-btn',
     deleteModal: 'delete-modal',
+    deleteConfirmMsg: 'delete-confirm-msg',
     deleteConfirmBtn: 'delete-confirm-btn',
     deleteCancelBtn: 'delete-cancel-btn',
     bulkImportBtn: 'bulk-import-btn',

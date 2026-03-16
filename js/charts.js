@@ -36,7 +36,7 @@
       ctx.stroke();
 
       data.forEach((v, i) => {
-        const val = v.avg || 0;
+        const val = v.overall || 0;
         const bh = (val / 100) * (h - padding * 2);
         const x = padding + gap + i * (barW + gap);
         const y = h - padding - bh;
@@ -69,9 +69,10 @@
       const points = app.state.mocks.map((m, i) => {
         const t = app.analytics.mockTotal(s.scores[m.id]);
         if (t === null) return null;
+        const maxScore = app.state.subjects.length * 100;
         return {
           x: 40 + (i / (app.state.mocks.length - 1 || 1)) * (w - 80),
-          y: h - 40 - (t / (app.state.subjects.length * 100)) * (h - 80)
+          y: h - 40 - (t / maxScore) * (h - 80)
         };
       }).filter(p => p !== null);
 

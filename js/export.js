@@ -82,8 +82,28 @@
     },
 
     exportExcel: function () {
-      // Basic implementation using CSV with Excel-friendly header
-      this.exportCSV();
+      let csv = 'Rank,Student,' + app.state.mocks.map(m => `"${m.name}"`).join(',') + ',Overall Average\n';
+      
+      const ranked = app.state.students.map(s => ({ 
+        ...s, 
+        _avg: app.analytics.calcAverages(s) 
+      })).sort((a, b) => (b._avg.overall || 0) - (a._avg.overall || 0));
+
+      ranked.forEach((s, i) => {
+        const scores = app.state.mocks.map(m => {
+          const t = app.analytics.mockTotal(s.scores[m.id]);
+          return t !== null ? t : '';
+        }).join(',');
+        
+        csv += `${i + 1},"${s.name}",${scores},${s._avg.overall?.toFixed(1) || ''}\n`;
+      });
+
+      const blob = new Blob([csv], { type: 'application/vnd.ms-excel' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'Mock_Results.xlsx';
+      a.click();
     }
   };
 
