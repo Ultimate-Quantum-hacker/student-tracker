@@ -1,0 +1,67 @@
+/* Enhanced UI Styles - Report Card, Results, Heatmap */
+
+/* Results Table Highlighting */
+.rank-num{color:var(--primary);font-size:1.1rem}
+.avg-green{color:#10b981}
+.avg-yellow{color:#f59e0b}
+.avg-red{color:#ef4444}
+.improv-up{color:#10b981;font-weight:600;font-size:.82rem}
+.improv-down{color:#ef4444;font-weight:600;font-size:.82rem}
+.improv-neutral{color:var(--text-secondary);font-size:.82rem}
+.risk-pill{display:inline-block;font-size:.7rem;font-weight:700;padding:3px 10px;border-radius:12px;text-transform:uppercase;letter-spacing:.03em}
+.risk-at-risk{background:#fee2e2;color:#dc2626}
+.risk-borderline{background:#fffbeb;color:#d97706}
+.risk-safe{background:#ecfdf5;color:#059669}
+.notes-cell,.report-cell{cursor:pointer;color:var(--primary);font-size:.82rem;font-weight:500}
+.notes-cell:hover,.report-cell:hover{text-decoration:underline}
+
+/* School Branding Header */
+.school-brand{text-align:center;padding:.5rem 0;font-size:.75rem;color:var(--text-secondary);border-bottom:1px solid var(--border);margin-bottom:0}
+
+/* Report Card Styles */
+.report-card{background:#fff;color:#1a1a2e;padding:2.5rem;max-width:800px;margin:0 auto;font-family:'Inter',sans-serif;border:1px solid #e2e8f0;border-radius:8px}
+.rc-header{text-align:center;border-bottom:3px double #1a1a2e;padding-bottom:1.5rem;margin-bottom:1.5rem}
+.rc-school{font-size:1.6rem;font-weight:800;color:#1a1a2e;text-transform:uppercase;letter-spacing:.05em}
+.rc-location{font-size:.9rem;color:#64748b;margin-top:.25rem}
+.rc-title{font-size:1.1rem;font-weight:700;margin-top:.75rem;color:#3b82f6;text-transform:uppercase;letter-spacing:.08em}
+.rc-info{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;padding:1rem;background:#f8fafc;border-radius:8px;margin-bottom:1.5rem;font-size:.9rem}
+.rc-info span{color:#64748b}
+.rc-info strong{color:#1a1a2e}
+.rc-section{margin-bottom:1.5rem}
+.rc-section h4{font-size:1rem;font-weight:700;color:#1a1a2e;padding-bottom:.5rem;border-bottom:2px solid #e2e8f0;margin-bottom:1rem;text-transform:uppercase;letter-spacing:.04em}
+.rc-table{width:100%;border-collapse:collapse;font-size:.85rem}
+.rc-table th{background:#f1f5f9;color:#64748b;font-weight:600;padding:.6rem;text-align:center;border:1px solid #e2e8f0;font-size:.75rem;text-transform:uppercase}
+.rc-table td{padding:.6rem;text-align:center;border:1px solid #e2e8f0}
+.rc-table .rc-subject{text-align:left;font-weight:600;color:#1a1a2e}
+.rc-safe{color:#059669;font-weight:700}
+.rc-borderline{color:#d97706;font-weight:700}
+.rc-risk{color:#dc2626;font-weight:700}
+.rc-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem}
+.rc-summary-item{text-align:center;padding:1rem;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0}
+.rc-summary-item span{display:block;font-size:.7rem;text-transform:uppercase;font-weight:700;color:#64748b;margin-bottom:.5rem;letter-spacing:.04em}
+.rc-summary-item strong{font-size:1.3rem;display:block}
+.rc-analysis{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem}
+.rc-analysis div{padding:.75rem;background:#f8fafc;border-radius:6px;font-size:.9rem}
+.rc-analysis span{color:#64748b;font-size:.8rem}
+.rc-analysis strong{display:block;margin-top:.25rem;color:#1a1a2e}
+.rc-notes{padding:1rem;border:2px dashed #e2e8f0;border-radius:8px;min-height:60px;font-size:.9rem;color:#475569;line-height:1.6;white-space:pre-wrap}
+.rc-footer{display:flex;justify-content:space-between;margin-top:2.5rem;padding-top:1rem}
+.rc-sig{text-align:center;min-width:180px}
+.rc-sig-line{border-top:1px solid #1a1a2e;margin-bottom:.5rem}
+.rc-sig span{font-size:.8rem;color:#64748b}
+
+/* Enhanced Heatmap */
+.hm-sticky{position:sticky;left:0;background:var(--surface);z-index:2;font-weight:600}
+.hm-name{font-weight:600;text-align:left !important;white-space:nowrap;min-width:140px}
+.hm-cell{text-align:center;font-weight:700;font-size:.85rem;padding:.6rem !important;transition:transform .1s ease}
+.hm-cell:hover{transform:scale(1.05);box-shadow:0 0 0 2px var(--primary)}
+.hm-strong{background:rgba(16,185,129,.15);color:#059669}
+.hm-average{background:rgba(245,158,11,.15);color:#d97706}
+.hm-weak{background:rgba(239,68,68,.15);color:#dc2626}
+.hm-overall{font-weight:800;border-left:2px solid var(--border)}
+
+/* Report Modal */
+.modal-lg{max-width:850px;max-height:90vh;overflow-y:auto}
+
+/* Print Report Card */
+@media print{.report-card{border:none;box-shadow:none;padding:1.5rem}.rc-header{border-bottom:3px double #000}.modal-actions{display:none !important}.modal-overlay{position:absolute;background:#fff}.modal{box-shadow:none;width:100%;max-width:none;padding:0}}
