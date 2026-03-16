@@ -31,7 +31,10 @@
     },
 
     importBackup: function (file) {
-      if (!file) return;
+      if (!file) {
+        app.ui.showToast("No file selected");
+        return;
+      }
       const reader = new FileReader();
       reader.onload = (event) => {
         try {
@@ -47,14 +50,21 @@
             app.applyTheme(app.state.theme);
             app.ui.refreshUI();
             app.ui.showToast("Backup restored successfully");
+          } else {
+            app.ui.showToast("Import cancelled");
           }
         } catch (err) {
-          app.ui.showToast("Invalid backup file");
+          console.error("Import error:", err);
+          app.ui.showToast("Invalid backup file: " + err.message);
         }
         app.dom.restoreInput.value = "";
       };
+      reader.onerror = () => {
+        app.ui.showToast("Error reading file");
+        app.dom.restoreInput.value = "";
+      };
       reader.readAsText(file);
-    },
+    }
 
     exportCSV: function () {
       let csv = 'Rank,Student,' + app.state.mocks.map(m => `"${m.name}"`).join(',') + ',Overall Average\n';
