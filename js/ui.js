@@ -180,14 +180,17 @@
         }).join('');
         const risk = app.analytics.getRiskLevel(s);
         const improv = app.analytics.calcImprovement ? app.analytics.calcImprovement(s) : null;
+        const avgVal = s._avg.overall;
+        const avgCls = avgVal !== null ? (avgVal >= 70 ? 'avg-green' : (avgVal >= 50 ? 'avg-yellow' : 'avg-red')) : '';
+        const improvHtml = improv !== null ? (improv > 0 ? '<span class="improv-up">&#9650; +' + improv.toFixed(1) + '%</span>' : (improv < 0 ? '<span class="improv-down">&#9660; ' + improv.toFixed(1) + '%</span>' : '<span class="improv-neutral">0%</span>')) : '&#8212;';
         return `<tr>
-          <td>${i + 1}</td><td class="sticky-col">${app.utils.esc(s.name)}</td>
+          <td><strong class="rank-num">${i + 1}</strong></td><td class="sticky-col">${app.utils.esc(s.name)}</td>
           ${mockCells}
-          <td><strong>${s._avg.overall?.toFixed(1) ?? '—'}</strong></td>
-          <td>${improv !== null ? (improv > 0 ? '+' : '') + improv.toFixed(1) + '%' : '—'}</td>
+          <td><strong class="${avgCls}">${avgVal?.toFixed(1) ?? '&#8212;'}</strong></td>
+          <td>${improvHtml}</td>
           <td><span class="risk-pill ${risk.includes('Risk') ? 'risk-at-risk' : (risk === 'Borderline' ? 'risk-borderline' : 'risk-safe')}">${risk}</span></td>
-          <td onclick="window.TrackerApp.ui.openNotes('${s.id}')" style="cursor:pointer;">${s.notes ? 'View' : 'Add'}</td>
-          <td onclick="window.TrackerApp.ui.openReport('${s.id}')" style="cursor:pointer;">Report</td>
+          <td class="notes-cell" onclick="window.TrackerApp.ui.openNotes('${s.id}')">${s.notes ? '&#128221; View' : '+ Add'}</td>
+          <td class="report-cell" onclick="window.TrackerApp.ui.openReport('${s.id}')">&#128196; Report</td>
         </tr>`;
       }).join('');
     },
@@ -227,9 +230,24 @@
 
     openReport: function (uid) {
       const s = app.state.students.find(x => x.id === uid); if (!s) return;
-      const avg = app.analytics.calcAverages(s).overall ?? 0, risk = app.analytics.getRiskLevel(s);
+      const avgs = app.analytics.calcAverages(s);
+      const avg = avgs.overall ?? 0;
+      const risk = app.analytics.getRiskLevel(s);
+      const improv = app.analytics.calcImprovement ? app.analytics.calcImprovement(s) : null;
+      const ranked = app.state.students.map(st => ({ id: st.id, avg: app.analytics.calcAverages(st).overall || 0 })).sort((a, b) => b.avg - a.avg);
+      const rank = ranked.findIndex(r => r.id === s.id) + 1;
+      let strongest = null, weakest = null, maxS = -1, minS = Infinity;
+      app.state.subjects.forEach(sub => { if (avgs[sub.id] !== null && avgs[sub.id] !== undefined) { if (avgs[sub.id] > maxS) { maxS = avgs[sub.id]; strongest = sub.name; } if (avgs[sub.id] < minS) { minS = avgs[sub.id]; weakest = sub.name; } } });
+      const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+      const riskClass = risk.includes('Risk') ? 'rc-risk' : (risk === 'Borderline' ? 'rc-borderline' : 'rc-safe');
+      const avgClass = avg >= 70 ? 'rc-safe' : (avg >= 50 ? 'rc-borderline' : 'rc-risk');
+      let scoresHtml = '<table class="rc-table"><thead><tr><th>Subject</th>' + app.state.mocks.map(m => `<th>${app.utils.esc(m.name)}</th>`).join('') + '<th>Average</th></tr></thead><tbody>';
+      app.state.subjects.forEach(sub => { scoresHtml += '<tr><td class="rc-subject">' + app.utils.esc(sub.name) + '</td>'; app.state.mocks.forEach(m => { const val = s.scores[m.id]?.[sub.id]; const cls = val !== null && val !== undefined ? (val >= 70 ? 'rc-safe' : (val >= 50 ? 'rc-borderline' : 'rc-risk')) : ''; scoresHtml += `<td class="${cls}">${val ?? '\u2014'}</td>`; }); const subAvg = avgs[sub.id]; scoresHtml += `<td><strong>${subAvg !== null ? subAvg.toFixed(1) : '\u2014'}</strong></td></tr>`; });
+      scoresHtml += '</tbody></table>';
+      const trendText = improv !== null ? (improv > 0 ? 'Improving \u25B2' : (improv < 0 ? 'Declining \u25BC' : 'Stable')) : 'Insufficient data';
+      const trendClass = improv !== null ? (improv > 0 ? 'rc-safe' : (improv < 0 ? 'rc-risk' : '')) : '';
       if (app.dom.reportContainer) {
-        app.dom.reportContainer.innerHTML = `<div><h2>Report Card: ${app.utils.esc(s.name)}</h2><p>Average: ${avg.toFixed(1)}%</p><p>Status: ${risk}</p></div>`;
+        app.dom.reportContainer.innerHTML = `<div class="report-card"><div class="rc-header"><div class="rc-school">Vickmore International School</div><div class="rc-location">Krispol City, Asamoah Town</div><div class="rc-title">Academic Performance Report</div></div><div class="rc-info"><div><span>Student:</span> <strong>${app.utils.esc(s.name)}</strong></div><div><span>Class:</span> <strong>JHS 3</strong></div><div><span>Term:</span> <strong>Mock Examination</strong></div><div><span>Date:</span> <strong>${today}</strong></div></div><div class="rc-section"><h4>Subject Performance</h4>${scoresHtml}</div><div class="rc-summary"><div class="rc-summary-item"><span>Overall Average</span><strong class="${avgClass}">${avg.toFixed(1)}%</strong></div><div class="rc-summary-item"><span>Class Rank</span><strong>${rank} / ${app.state.students.length}</strong></div><div class="rc-summary-item"><span>Status</span><strong class="${riskClass}">${risk}</strong></div><div class="rc-summary-item"><span>Improvement</span><strong class="${trendClass}">${improv !== null ? (improv > 0 ? '+' : '') + improv.toFixed(1) + '%' : '\u2014'}</strong></div></div><div class="rc-section"><h4>Performance Analysis</h4><div class="rc-analysis"><div><span>Strongest Subject:</span> <strong>${strongest || '\u2014'}</strong></div><div><span>Weakest Subject:</span> <strong>${weakest || '\u2014'}</strong></div><div><span>Performance Trend:</span> <strong class="${trendClass}">${trendText}</strong></div></div></div><div class="rc-section"><h4>Teacher Comments</h4><div class="rc-notes">${s.notes ? app.utils.esc(s.notes) : 'No comments recorded.'}</div></div><div class="rc-footer"><div class="rc-sig"><div class="rc-sig-line"></div><span>Class Teacher</span></div><div class="rc-sig"><div class="rc-sig-line"></div><span>Head Teacher</span></div></div></div>`;
       }
       if (app.dom.reportModal) app.dom.reportModal.classList.add('active');
     },
