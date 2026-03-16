@@ -1,0 +1,475 @@
+/* ═══════════════════════════════════════════════
+   JHS 3 Mock Exam Tracker — STABLE BUILD
+   ═══════════════════════════════════════════════ */
+
+(function () {
+  'use strict';
+
+  // ── Constants & Initial State ──
+  const PASS_MARK = 50;
+  window.app = window.app || {};
+
+  let students = [];
+  let mocks = [];
+  let subjects = [];
+  let lastBackup = null;
+  let editingId = null;
+  let deletingId = null;
+  let notesId = null;
+  let searchTerm = '';
+  let theme = 'light';
+
+  // ── DOM Utilities ──
+  const id = (uid) => document.getElementById(uid);
+
+  const domIds = {
+    backupBtn: 'backup-btn',
+    restoreBtn: 'restore-btn',
+    restoreInput: 'restore-input',
+    themeToggle: 'themeToggle',
+    resetBtn: 'reset-btn',
+    resetModal: 'reset-modal',
+    resetConfirmBtn: 'reset-confirm-btn',
+    resetCancelBtn: 'reset-cancel-btn',
+    backupStatus: 'backupStatus',
+    form: 'add-student-form',
+    nameInput: 'student-name-input',
+    searchInput: 'search-input',
+    scoreStudentSelect: 'score-student-select',
+    scoreMockSelect: 'scoreMockSelect',
+    chartStudentSelect: 'chart-student-select',
+    bulkMockSelect: 'bulkMockSelect',
+    studentList: 'student-list',
+    resultsBody: 'results-body',
+    resultsHeadRow1: 'results-head-row-1',
+    resultsHeadRow2: 'results-head-row-2',
+    emptyMsg: 'empty-msg',
+    classSummaryBody: 'class-summary-body',
+    toast: 'toast',
+    mockList: 'mockList',
+    addMockForm: 'addMockForm',
+    mockNameInput: 'mockNameInput',
+    subjectList: 'subjectList',
+    addSubjectForm: 'addSubjectForm',
+    subjectNameInput: 'subjectNameInput',
+    statTotalStudents: 'stat-total-students',
+    statClassAvg: 'stat-class-avg',
+    statPassRate: 'stat-pass-rate',
+    statFailRate: 'stat-fail-rate',
+    statSafeCount: 'stat-safe-count',
+    statBorderlineCount: 'stat-borderline-count',
+    statAtRiskCount: 'stat-at-risk-count',
+    interventionItems: 'intervention-items',
+    classChart: 'class-chart',
+    classChartPlaceholder: 'class-chart-placeholder',
+    canvas: 'progress-chart',
+    chartPlaceholder: 'chart-placeholder',
+    heatmapHead: 'heatmapHead',
+    heatmapBody: 'heatmapBody',
+    editModal: 'edit-modal',
+    editInput: 'edit-name-input',
+    editSaveBtn: 'edit-save-btn',
+    editCancelBtn: 'edit-cancel-btn',
+    deleteModal: 'delete-modal',
+    deleteConfirmBtn: 'delete-confirm-btn',
+    deleteCancelBtn: 'delete-cancel-btn',
+    bulkImportBtn: 'bulk-import-btn',
+    bulkImportModal: 'bulk-import-modal',
+    bulkImportTextarea: 'bulk-import-textarea',
+    bulkImportConfirmBtn: 'bulk-import-confirm-btn',
+    bulkImportCancelBtn: 'bulk-import-cancel-btn',
+    notesModal: 'notes-modal',
+    notesModalTitle: 'notes-modal-title',
+    notesTextarea: 'notes-textarea',
+    notesSaveBtn: 'notes-save-btn',
+    notesCancelBtn: 'notes-cancel-btn',
+    bulkScoreBtn: 'bulk-score-btn',
+    bulkScoreModal: 'bulk-score-modal',
+    bulkScoreBody: 'bulkScoreBody',
+    bulkScoreSaveBtn: 'bulk-score-save-btn',
+    bulkScoreCancelBtn: 'bulk-score-cancel-btn',
+    reportModal: 'report-modal',
+    reportContainer: 'report-card-container',
+    reportPrintBtn: 'report-print-btn',
+    reportCloseBtn: 'report-close-btn',
+    exportCsvBtn: 'export-csv-btn',
+    exportExcelBtn: 'export-excel-btn',
+    printBtn: 'print-btn',
+    saveScoresBtn: 'save-scores-btn',
+    dynamicSubjectFields: 'dynamicSubjectFields',
+    bulkScoreHead: 'bulkScoreHead'
+  };
+
+  const dom = {};
+  Object.keys(domIds).forEach(k => dom[k] = id(domIds[k]));
+
+  console.log("DOM nodes mapped:", Object.keys(dom).filter(k=>!dom[k]).length, "missing");
+
+  // ── Polyfills ──
+  if (!CanvasRenderingContext2D.prototype.roundRect) {
+    CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
+      if (typeof r === 'number') r = [r, r, r, r];
+      const [tl, tr, br, bl] = r;
+      this.beginPath();
+      this.moveTo(x + tl, y);
+      this.lineTo(x + w - tr, y);
+      this.quadraticCurveTo(x + w, y, x + w, y + tr);
+      this.lineTo(x + w, y + h - br);
+      this.quadraticCurveTo(x + w, y + h, x + w - br, y + h);
+      this.lineTo(x + bl, y + h);
+      this.quadraticCurveTo(x, y + h, x, y + h - bl);
+      this.lineTo(x, y + tl);
+      this.quadraticCurveTo(x, y, x + tl, y);
+      this.closePath();
+      return this;
+    };
+  }
+
+  // ── Utility ──
+  function uuid() { return 'st_' + Math.random().toString(36).substr(2, 9); }
+  function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+  function showToast(m) { if (!dom.toast) return; dom.toast.textContent = m; dom.toast.classList.add('show'); setTimeout(()=>dom.toast.classList.remove('show'), 2000); }
+  function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+  // ── Core Calculations ──
+  function mockTotal(scores) {
+    let t = 0, c = 0;
+    subjects.forEach(s => { if (scores[s.id] !== null) { t += scores[s.id]; c++; } });
+    return c > 0 ? t : null;
+  }
+
+  function calcAverages(student) {
+    let sum = 0, count = 0;
+    const subAvgs = {};
+    subjects.forEach(subj => {
+      let sSum = 0, sCount = 0;
+      mocks.forEach(m => {
+        const val = student.scores[m.id]?.[subj.id];
+        if (val !== null) { sSum += val; sCount++; sum += val; count++; }
+      });
+      subAvgs[subj.id] = sCount ? (sSum / sCount) : null;
+    });
+    subAvgs.overall = count ? (sum / count) : null;
+    return subAvgs;
+  }
+
+  function getRiskLevel(student) {
+    const avg = calcAverages(student).overall;
+    if (avg === null) return 'N/A';
+    if (avg < 45) return '⚠ At Risk';
+    if (avg < 55) return 'Borderline';
+    return 'Safe';
+  }
+
+  // ── Persistence ──
+  function save() { localStorage.setItem('mockTracker_vFinal', JSON.stringify({ students, mocks, subjects, lastBackup, theme })); }
+  function load() {
+    const data = JSON.parse(localStorage.getItem('mockTracker_vFinal') || '{}');
+    students = data.students || [];
+    mocks = data.mocks || [{id: uuid(), name: 'Mock 1'}];
+    subjects = data.subjects || [{id: uuid(), name: 'English Language'}, {id: uuid(), name: 'Computing'}];
+    lastBackup = data.lastBackup || null;
+    applyTheme(data.theme || 'light');
+  }
+
+  function applyTheme(t) {
+    theme = t;
+    document.body.className = t === 'dark' ? 'dark-mode' : '';
+    if (dom.themeToggle) dom.themeToggle.innerHTML = t === 'dark' ? '☀' : '🌙';
+  }
+
+  // ── Student CRUD ──
+  function addStudent(name) {
+    const n = name.trim(); if (!n) return;
+    students.push({ id: uuid(), name: n, notes: '', scores: {} });
+    save(); renderAll(); showToast(`Added ${n}`);
+  }
+
+  function deleteStudent(uid) {
+    const s = students.find(x => x.id === uid); if (!s) return;
+    deletingId = uid;
+    if (dom.deleteConfirmMsg) dom.deleteConfirmMsg.textContent = `Delete "${s.name}"?`;
+    dom.deleteModal.classList.add('active');
+  }
+
+  function confirmDelete() {
+    students = students.filter(x => x.id !== deletingId);
+    dom.deleteModal.classList.remove('active');
+    save(); renderAll(); showToast("Deleted");
+  }
+
+  function startEdit(uid) {
+    const s = students.find(x => x.id === uid); if (!s) return;
+    editingId = uid;
+    dom.editInput.value = s.name;
+    dom.editModal.classList.add('active');
+  }
+
+  function saveEdit() {
+    const s = students.find(x => x.id === editingId);
+    if (s && dom.editInput.value.trim()) { s.name = dom.editInput.value.trim(); save(); renderAll(); }
+    dom.editModal.classList.remove('active');
+  }
+
+  // ── Modal Actions ──
+  function openNotes(uid) {
+    const s = students.find(x => x.id === uid); if (!s) return;
+    notesId = uid;
+    dom.notesModalTitle.textContent = s.name;
+    dom.notesTextarea.value = s.notes || '';
+    dom.notesModal.classList.add('active');
+  }
+
+  function saveNotes() {
+    console.log("Saving notes for", notesId);
+    const s = students.find(x => x.id === notesId);
+    if (s) { s.notes = dom.notesTextarea.value; save(); renderAll(); }
+    dom.notesModal.classList.remove('active');
+  }
+
+  function openBulkScore() { dom.bulkScoreModal.classList.add('active'); renderBulkTable(); }
+
+  function renderBulkTable() {
+    const mockId = dom.bulkMockSelect.value;
+    dom.bulkScoreHead.innerHTML = '<tr><th>Student</th>' + subjects.map(s => `<th>${esc(s.name)}</th>`).join('') + '</tr>';
+    dom.bulkScoreBody.innerHTML = students.map(s => {
+      let cells = subjects.map(sb => {
+        const val = s.scores[mockId]?.[sb.id] ?? '';
+        return `<td><input type="number" class="bulk-score-input" data-sid="${s.id}" data-sub="${sb.id}" value="${val}" min="0" max="100"></td>`;
+      }).join('');
+      return `<tr><td>${esc(s.name)}</td>${cells}</tr>`;
+    }).join('');
+  }
+
+  function saveBulkScores() {
+    const mockId = dom.bulkMockSelect.value;
+    const inputs = dom.bulkScoreBody.querySelectorAll('.bulk-score-input');
+    inputs.forEach(i => {
+      const s = students.find(x => x.id === i.dataset.sid);
+      if (s) {
+        if (!s.scores[mockId]) s.scores[mockId] = {};
+        s.scores[mockId][i.dataset.sub] = i.value !== '' ? clamp(parseInt(i.value), 0, 100) : null;
+      }
+    });
+    save(); renderAll(); dom.bulkScoreModal.classList.remove('active'); showToast("Class scores saved");
+  }
+
+  // ── Rendering ──
+  function renderAll() {
+    dom.emptyMsg.style.display = students.length ? 'none' : 'block';
+    renderDashboard();
+    renderStudentChips();
+    populateSelects();
+    renderResultsTable();
+    renderHeatmap();
+    renderManagement();
+    renderIntervention();
+    renderSummary();
+    drawCharts();
+  }
+
+  function renderDashboard() {
+    const total = students.length;
+    dom.statTotalStudents.textContent = total;
+    let sum = 0, count = 0, pass = 0, atRisk = 0, borderline = 0, safe = 0;
+    students.forEach(s => {
+      const avg = calcAverages(s).overall;
+      if (avg !== null) { sum += avg; count++; if (avg >= PASS_MARK) pass++; }
+      const risk = getRiskLevel(s);
+      if (risk.includes('Risk')) atRisk++; else if (risk === 'Borderline') borderline++; else safe++;
+    });
+    dom.statClassAvg.textContent = count ? (sum / count).toFixed(1) : '0.0';
+    dom.statPassRate.textContent = count ? Math.round((pass / count) * 100) + '%' : '0%';
+    dom.statFailRate.textContent = count ? Math.round(((count-pass) / count) * 100) + '%' : '0%';
+    dom.statSafeCount.textContent = safe;
+    dom.statBorderlineCount.textContent = borderline;
+    dom.statAtRiskCount.textContent = atRisk;
+  }
+
+  function renderStudentChips() {
+    dom.studentList.innerHTML = students.map(s => `
+      <div class="student-chip ${s.notes ? 'chip-has-notes' : ''}">
+        <span>${esc(s.name)}</span>
+        <button onclick="app.startEdit('${s.id}')">✎</button>
+        <button onclick="app.deleteStudent('${s.id}')">×</button>
+      </div>`).join('');
+  }
+
+  function populateSelects() {
+    const mOps = mocks.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
+    dom.scoreMockSelect.innerHTML = mOps;
+    dom.bulkMockSelect.innerHTML = mOps;
+    const sOps = '<option value="">— Select Student —</option>' + students.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+    dom.scoreStudentSelect.innerHTML = sOps;
+    dom.chartStudentSelect.innerHTML = sOps;
+  }
+
+  function renderResultsTable() {
+    const ranked = students.map(s => ({ ...s, _avg: calcAverages(s) }))
+      .filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()))
+      .sort((a,b) => (b._avg.overall||0) - (a._avg.overall||0));
+    
+    dom.resultsHeadRow2.innerHTML = mocks.map(m => subjects.map(s => `<th>${s.name.slice(0,3)}</th>`).join('') + '<th>Total</th>').join('');
+    // Need to adjust rowspan
+    dom.resultsHeadRow1.innerHTML = `
+      <th rowspan="2">Rank</th><th rowspan="2" class="sticky-col">Name</th>
+      ${mocks.map(m => `<th colspan="${subjects.length+1}">${esc(m.name)}</th>`).join('')}
+      <th rowspan="2">Avg</th><th rowspan="2">Risk</th><th rowspan="2">Note</th><th rowspan="2">Report</th>`;
+
+    dom.resultsBody.innerHTML = ranked.map((s, i) => {
+      let mockCells = mocks.map(m => {
+        const sc = s.scores[m.id] || {};
+        const total = mockTotal(sc);
+        let subCells = subjects.map(sb => `<td>${sc[sb.id] ?? '—'}</td>`).join('');
+        return `${subCells}<td><strong>${total ?? '—'}</strong></td>`;
+      }).join('');
+      const risk = getRiskLevel(s);
+      return `<tr>
+        <td>${i+1}</td><td class="sticky-col">${esc(s.name)}</td>
+        ${mockCells}
+        <td><strong>${s._avg.overall?.toFixed(1) ?? '—'}</strong></td>
+        <td><span class="risk-pill ${risk.includes('Risk') ? 'risk-at-risk' : (risk==='Borderline' ? 'risk-borderline' : 'risk-safe')}">${risk}</span></td>
+        <td onclick="app.openNotes('${s.id}')" style="cursor:pointer;">${s.notes ? 'View' : 'Add'}</td>
+        <td onclick="app.openReport('${s.id}')" style="cursor:pointer;">Report</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function renderHeatmap() {
+    dom.heatmapHead.innerHTML = '<th>Student</th>' + mocks.map(m => `<th>${esc(m.name)}</th>`).join('');
+    dom.heatmapBody.innerHTML = students.map(s => {
+      let cells = mocks.map(m => {
+        const t = mockTotal(s.scores[m.id] || {});
+        const cls = t >= 70 ? 'strong' : (t >= 50 ? 'average' : (t !== null ? 'weak' : ''));
+        return `<td class="heatmap-score ${cls}">${t ?? '—'}</td>`;
+      }).join('');
+      return `<tr><td>${esc(s.name)}</td>${cells}</tr>`;
+    }).join('');
+  }
+
+  function renderManagement() {
+    dom.mockList.innerHTML = mocks.map(m => `
+      <div class="mock-item">
+        <input type="text" value="${esc(m.name)}" onchange="app.renameMock('${m.id}', this.value)">
+        <button onclick="app.deleteMock('${m.id}')">×</button>
+      </div>`).join('');
+    dom.subjectList.innerHTML = subjects.map(s => `
+      <div class="mock-item">
+        <input type="text" value="${esc(s.name)}" onchange="app.renameSubject('${s.id}', this.value)">
+        <button onclick="app.deleteSubject('${s.id}')">×</button>
+      </div>`).join('');
+  }
+
+  function renderIntervention() {
+    const filter = students.filter(s => getRiskLevel(s) !== 'Safe');
+    if (!filter.length) { dom.interventionItems.innerHTML = '<p style="text-align:center;">All students are on track.</p>'; return; }
+    dom.interventionItems.innerHTML = filter.map(s => `
+      <div class="intervention-item ${getRiskLevel(s) === 'Borderline' ? 'borderline' : ''}">
+        <strong>${esc(s.name)}</strong> (Avg: ${calcAverages(s).overall?.toFixed(1)}%)
+      </div>`).join('');
+  }
+
+  function renderSummary() {
+    dom.classSummaryBody.innerHTML = mocks.map(m => {
+      let sum = 0, count = 0;
+      students.forEach(s => { const t = mockTotal(s.scores[m.id] || {}); if (t !== null) { sum += t; count++; } });
+      const avg = count ? (sum / (count * subjects.length)) : 0;
+      return `<tr><td>${esc(m.name)}</td><td>${avg.toFixed(1)}</td></tr>`;
+    }).join('');
+  }
+
+  // ── Charts ──
+  function drawCharts() {
+    drawClassChart();
+    if (dom.chartStudentSelect.value) drawProgressChart(dom.chartStudentSelect.value);
+  }
+
+  function drawClassChart() {
+    const canvas = dom.classChart, ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
+    ctx.clearRect(0,0,w,h);
+    const data = mocks.map(m => {
+      let sum = 0, count = 0;
+      students.forEach(s => { const t = mockTotal(s.scores[m.id]||{}); if(t!==null){ sum+=t; count++; } });
+      return count ? (sum / (count * subjects.length)) : 0;
+    });
+    if (!data.some(v => v > 0)) { dom.classChart.style.display = 'none'; dom.classChartPlaceholder.style.display = 'block'; return; }
+    dom.classChart.style.display = 'block'; dom.classChartPlaceholder.style.display = 'none';
+
+    const padding = 40, barW = 40, gap = (w - padding*2 - data.length*barW) / (data.length + 1);
+    ctx.strokeStyle = '#ddd'; ctx.beginPath(); ctx.moveTo(padding, h-padding); ctx.lineTo(w-padding, h-padding); ctx.stroke();
+    data.forEach((v, i) => {
+      const bh = (v/100) * (h - padding*2);
+      const x = padding + gap + i*(barW+gap), y = h - padding - bh;
+      ctx.fillStyle = '#4f6ef7'; ctx.roundRect(x, y, barW, bh, [4,4,0,0]); ctx.fill();
+      ctx.fillStyle = '#666'; ctx.font = '10px Inter'; ctx.fillText(mocks[i].name.slice(0,5), x, h-padding+15);
+    });
+  }
+
+  function drawProgressChart(uid) {
+    const s = students.find(x => x.id === uid); if(!s) return;
+    const canvas = dom.canvas, ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height; ctx.clearRect(0,0,w,h);
+    const points = mocks.map((m, i) => {
+      const t = mockTotal(s.scores[m.id]||{});
+      if (t === null) return null;
+      return { x: 40 + (i/(mocks.length-1||1))*(w-80), y: h - 40 - (t/(subjects.length*100))*(h-80) };
+    }).filter(p => p !== null);
+
+    if (points.length < 2) { dom.canvas.style.display = 'none'; dom.chartPlaceholder.style.display = 'block'; return; }
+    dom.canvas.style.display = 'block'; dom.chartPlaceholder.style.display = 'none';
+
+    ctx.strokeStyle = '#4f6ef7'; ctx.lineWidth = 3; ctx.beginPath();
+    points.forEach((p, i) => { if (i===0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); }); ctx.stroke();
+    points.forEach(p => { ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, 7); ctx.fill(); ctx.stroke(); });
+  }
+
+  // ── Event Handlers ──
+  id('add-student-form').onsubmit = (e) => { e.preventDefault(); addStudent(dom.nameInput.value); dom.nameInput.value = ''; };
+  dom.backupBtn.onclick = () => { lastBackup = new Date().toISOString(); save(); const d = { students, mocks, subjects, lastBackup, theme }; const b = new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' }); const u = URL.createObjectURL(b); const a = document.createElement('a'); a.href = u; a.download = 'backup.json'; a.click(); showToast("Backup saved"); };
+  dom.restoreBtn.onclick = () => dom.restoreInput.click();
+  dom.restoreInput.onchange = (e) => { const f = e.target.files[0]; if(!f) return; const r = new FileReader(); r.onload = (re)=>{ const data=JSON.parse(re.target.result); students=data.students||[]; mocks=data.mocks||[]; subjects=data.subjects||[]; theme=data.theme||'light'; save(); applyTheme(theme); renderAll(); showToast("Restored"); }; r.readAsText(f); };
+  dom.resetBtn.onclick = () => dom.resetModal.classList.add('active');
+  dom.resetConfirmBtn.onclick = () => { localStorage.clear(); location.reload(); };
+  dom.resetCancelBtn.onclick = () => dom.resetModal.classList.remove('active');
+  dom.themeToggle.onclick = () => toggleTheme();
+  dom.bulkImportBtn.onclick = () => dom.bulkImportModal.classList.add('active');
+  dom.bulkImportConfirmBtn.onclick = () => { const names = dom.bulkImportTextarea.value.split('\n'); names.forEach(n => { if(n.trim()) students.push({id:uuid(), name:n.trim(), notes:'', scores:{}}); }); dom.bulkImportModal.classList.remove('active'); save(); renderAll(); };
+  dom.bulkImportCancelBtn.onclick = () => dom.bulkImportModal.classList.remove('active');
+  dom.editSaveBtn.onclick = saveEdit;
+  dom.editCancelBtn.onclick = () => dom.editModal.classList.remove('active');
+  dom.deleteConfirmBtn.onclick = confirmDelete;
+  dom.deleteCancelBtn.onclick = () => dom.deleteModal.classList.remove('active');
+  dom.notesSaveBtn.onclick = saveNotes;
+  dom.notesCancelBtn.onclick = () => dom.notesModal.classList.remove('active');
+  dom.bulkScoreBtn.onclick = openBulkScore;
+  dom.bulkScoreCancelBtn.onclick = () => dom.bulkScoreModal.classList.remove('active');
+  dom.bulkScoreSaveBtn.onclick = saveBulkScores;
+  dom.addMockForm.onsubmit = (e) => { e.preventDefault(); const n = dom.mockNameInput.value.trim(); if(n){ mocks.push({id:uuid(), name:n}); save(); renderAll(); } dom.mockNameInput.value = ''; };
+  dom.addSubjectForm.onsubmit = (e) => { e.preventDefault(); const n = dom.subjectNameInput.value.trim(); if(n){ subjects.push({id:uuid(), name:n}); save(); renderAll(); } dom.subjectNameInput.value = ''; };
+  dom.saveScoresBtn.onclick = () => { const sid = dom.scoreStudentSelect.value, mid = dom.scoreMockSelect.value; const s = students.find(x => x.id === sid); if(s){ const fields = dom.dynamicSubjectFields.querySelectorAll('input'); if(!s.scores[mid]) s.scores[mid] = {}; fields.forEach(f => s.scores[mid][f.dataset.sid] = f.value !== '' ? parseInt(f.value) : null); save(); renderAll(); showToast("Saved"); } };
+  dom.scoreStudentSelect.onchange = dom.scoreMockSelect.onchange = () => { const sid = dom.scoreStudentSelect.value, mid = dom.scoreMockSelect.value; const s = students.find(x => x.id === sid); if(s){ dom.dynamicSubjectFields.innerHTML = subjects.map(sb => `<div class="form-group"><label>${esc(sb.name)}</label><input type="number" data-sid="${sb.id}" value="${s.scores[mid]?.[sb.id] ?? ''}"></div>`).join(''); } };
+  dom.chartStudentSelect.onchange = () => drawCharts();
+  dom.searchInput.oninput = (e) => { searchTerm = e.target.value; renderResultsTable(); };
+  dom.reportCloseBtn.onclick = () => dom.reportModal.classList.remove('active');
+
+  // ── Global App Exports ──
+  app.startEdit = startEdit;
+  app.deleteStudent = deleteStudent;
+  app.openNotes = openNotes;
+  app.renameMock = (id, n) => { const m = mocks.find(x=>x.id===id); if(m){ m.name = n.trim(); save(); renderAll(); } };
+  app.deleteMock = (id) => { if(mocks.length>1 && confirm("Delete mock?")){ mocks=mocks.filter(x=>x.id!==id); save(); renderAll(); } };
+  app.renameSubject = (id, n) => { const s = subjects.find(x=>x.id===id); if(s){ s.name = n.trim(); save(); renderAll(); } };
+  app.deleteSubject = (id) => { if(subjects.length>1 && confirm("Delete subject?")){ subjects=subjects.filter(x=>x.id!==id); save(); renderAll(); } };
+  app.openReport = (uid) => {
+    const s = students.find(x => x.id === uid); if(!s) return;
+    const avg = calcAverages(s).overall ?? 0, risk = getRiskLevel(s);
+    dom.reportContainer.innerHTML = `<div><h2>Report Card: ${esc(s.name)}</h2><p>Average: ${avg.toFixed(1)}%</p><p>Status: ${risk}</p></div>`;
+    dom.reportModal.classList.add('active');
+  };
+
+  // ── Initialize ──
+  document.addEventListener('keydown', (e) => { if(e.key === 'Escape') document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active')); });
+  load();
+  renderAll();
+})();

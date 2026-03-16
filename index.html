@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JHS 3 Mock Exam Tracker</title>
+  <meta name="description" content="Offline student performance tracker for JHS 3 mock examinations.">
+  <link rel="stylesheet" href="styles.css?v=4">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- ───── HEADER ───── -->
+  <header id="app-header">
+    <div class="header-inner">
+      <div class="header-top">
+        <div class="logo">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+          <h1>JHS 3 Mock Exam Tracker</h1>
+        </div>
+        <div class="header-controls">
+          <div id="backupStatus" class="backup-status">Last Backup: Never ⚠</div>
+          <button class="btn btn-sm btn-secondary" id="backup-btn" title="Download JSON Backup">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Backup
+          </button>
+          <button class="btn btn-sm btn-secondary" id="restore-btn" title="Upload JSON Backup">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Restore
+          </button>
+          <input type="file" id="restore-input" style="display:none;" accept=".json">
+          <button id="themeToggle" class="btn btn-icon" title="Toggle Theme">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+          </button>
+          <button class="btn btn-header-danger" id="reset-btn" title="Start New Class">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+            Start New Class
+          </button>
+        </div>
+      </div>
+      <p class="subtitle">Mock Examination Academic Analytics</p>
+    </div>
+  </header>
+
+  <main id="app-main">
+    <!-- ───── DATA SAFETY WARNING ───── -->
+    <div class="warning-bar">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <span>Data is stored locally. Always Backup before clearing browser data.</span>
+    </div>
+
+    <!-- ───── DASHBOARD STATS ───── -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <p class="stat-title">Total Students</p>
+        <p class="stat-value" id="stat-total-students">0</p>
+      </div>
+      <div class="stat-card">
+        <p class="stat-title">Class Average</p>
+        <p class="stat-value" id="stat-class-avg">0.0</p>
+      </div>
+      <div class="stat-card">
+        <p class="stat-title">Pass Rate</p>
+        <p class="stat-value" id="stat-pass-rate">0%</p>
+      </div>
+      <div class="stat-card">
+        <p class="stat-title">Fail Rate</p>
+        <p class="stat-value" id="stat-fail-rate">0%</p>
+      </div>
+    </div>
+
+    <!-- ───── ANALYTICS ROW ───── -->
+    <div class="analytics-row">
+      <!-- Performance Heatmap -->
+      <section class="card section-card">
+        <div class="card-header">
+          <h3>Class Performance Heatmap</h3>
+          <div class="heatmap-legend">
+            <span class="legend-item"><span class="box strong"></span> Strong (≥70)</span>
+            <span class="legend-item"><span class="box average"></span> Average (50-69)</span>
+            <span class="legend-item"><span class="box weak"></span> Weak (<50)</span>
+          </div>
+        </div>
+        <div class="heatmap-container">
+          <div class="table-container">
+            <table id="heatmapTable">
+              <thead><tr id="heatmapHead"></tr></thead>
+              <tbody id="heatmapBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Risk Summary -->
+      <section class="card" id="risk-summary">
+        <h2>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          Risk Analysis
+        </h2>
+        <div style="font-size: 0.85rem; display: flex; flex-direction: column; gap: 0.6rem;">
+          <div style="display: flex; justify-content: space-between;"><span>Safe Students:</span> <strong id="stat-safe-count" class="risk-safe">0</strong></div>
+          <div style="display: flex; justify-content: space-between;"><span>Borderline:</span> <strong id="stat-borderline-count" class="risk-borderline">0</strong></div>
+          <div style="display: flex; justify-content: space-between;"><span>At Risk:</span> <strong id="stat-at-risk-count" class="risk-at-risk">0</strong></div>
+        </div>
+      </section>
+
+      <!-- Mock & Subject Management -->
+      <div class="management-grid">
+        <section class="card management-card">
+          <div class="card-header"><h3>Mock Exams</h3></div>
+          <form id="addMockForm" class="mg-form">
+            <input type="text" id="mockNameInput" placeholder="Add Exam (e.g. Mock 1)" required>
+            <button type="submit" class="btn btn-primary btn-sm">+</button>
+          </form>
+          <div id="mockList" class="management-list"></div>
+        </section>
+
+        <section class="card management-card">
+          <div class="card-header"><h3>Subjects</h3></div>
+          <form id="addSubjectForm" class="mg-form">
+            <input type="text" id="subjectNameInput" placeholder="Add Subject" required>
+            <button type="submit" class="btn btn-primary btn-sm">+</button>
+          </form>
+          <div id="subjectList" class="management-list"></div>
+        </section>
+      </div>
+
+      <!-- Intervention List -->
+      <section class="card" id="intervention-list-section">
+        <h2>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+          Intervention Needed
+        </h2>
+        <div id="intervention-items">
+          <p style="text-align: center; color: var(--text-secondary);">Calculating...</p>
+        </div>
+      </section>
+    </div>
+
+    <!-- ───── STUDENT MANAGEMENT ───── -->
+    <section class="card card-wide" id="student-management">
+      <h2>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+        Student Roster
+      </h2>
+      <form id="add-student-form" class="student-form" autocomplete="off">
+        <input type="text" id="student-name-input" placeholder="Full Student Name" required maxlength="60">
+        <button type="submit" class="btn btn-primary">Add Student</button>
+        <button type="button" class="btn btn-secondary" id="bulk-import-btn">Bulk Add</button>
+      </form>
+      <div id="student-list" class="student-chips"></div>
+    </section>
+
+    <!-- ───── SCORE ENTRY ───── -->
+    <section class="card card-wide" id="score-entry">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h2 style="margin: 0;">Score Entry</h2>
+        <button class="btn btn-sm btn-secondary" id="bulk-score-btn">Class Entry Mode</button>
+      </div>
+      <div class="score-controls">
+        <div class="select-wrap">
+          <label>Select Student</label>
+          <select id="score-student-select"><option value="">— Choose Student —</option></select>
+        </div>
+        <div class="select-wrap">
+          <label>Select Mock Exam</label>
+          <select id="scoreMockSelect"></select>
+        </div>
+      </div>
+      <div id="dynamicSubjectFields" class="form-grid"></div>
+      <div class="modal-actions" style="margin-top: 1rem;">
+        <button class="btn btn-primary" id="save-scores-btn">Save Scores</button>
+      </div>
+    </section>
+
+    <!-- ───── RESULTS TABLE ───── -->
+    <section class="card card-wide" id="results-section">
+      <div class="results-header">
+        <h2>Results &amp; Rankings</h2>
+        <div class="results-toolbar">
+          <input type="text" id="search-input" placeholder="Find student..." class="search-input">
+          <div class="export-btns">
+            <button class="btn btn-sm btn-secondary" id="export-csv-btn">CSV</button>
+            <button class="btn btn-sm btn-secondary" id="export-excel-btn">Excel</button>
+            <button class="btn btn-sm btn-secondary" id="print-btn">Print</button>
+          </div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="results-table">
+          <thead>
+            <tr id="results-head-row-1">
+              <th rowspan="2">Rank</th>
+              <th rowspan="2" class="sticky-col">Name</th>
+              <th rowspan="2">Avg</th>
+              <th rowspan="2">Improv %</th>
+              <th rowspan="2">Risk</th>
+              <th rowspan="2">Notes</th>
+              <th rowspan="2">Report</th>
+            </tr>
+            <tr id="results-head-row-2"></tr>
+          </thead>
+          <tbody id="results-body"></tbody>
+        </table>
+      </div>
+      <p class="empty-msg" id="empty-msg">No records yet.</p>
+    </section>
+
+    <!-- ───── PERFORMANCE SUMMARY ───── -->
+    <section class="card card-wide">
+      <h2>Class Trends</h2>
+      <div class="class-summary-grid">
+        <div class="table-wrap">
+          <table class="summary-table">
+            <thead>
+              <tr id="summary-header">
+                <th>Mock Exam</th>
+                <th>Avg Score</th>
+              </tr>
+            </thead>
+            <tbody id="class-summary-body"></tbody>
+          </table>
+        </div>
+        <div class="chart-container">
+          <canvas id="class-chart" width="520" height="280"></canvas>
+          <p class="chart-placeholder" id="class-chart-placeholder">Add data to view chart.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───── STUDENT CHART ───── -->
+    <section class="card card-wide">
+      <h2>Student Progress</h2>
+      <div class="chart-controls">
+        <div class="select-wrap" style="max-width: 300px;">
+          <select id="chart-student-select"><option value="">— Select Student —</option></select>
+        </div>
+      </div>
+      <div class="chart-container">
+        <canvas id="progress-chart" width="560" height="300"></canvas>
+        <p class="chart-placeholder" id="chart-placeholder">Select student to see trend.</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- ───── MODALS ───── -->
+  
+  <div class="modal-overlay" id="edit-modal">
+    <div class="modal">
+      <h3>Edit Name</h3>
+      <input type="text" id="edit-name-input" maxlength="60">
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="edit-cancel-btn">Cancel</button>
+        <button class="btn btn-primary" id="edit-save-btn">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="delete-modal">
+    <div class="modal">
+      <h3>Delete Record</h3>
+      <p id="delete-confirm-msg">Delete this student? This cannot be undone.</p>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="delete-cancel-btn">Cancel</button>
+        <button class="btn btn-danger" id="delete-confirm-btn">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="bulk-import-modal">
+    <div class="modal modal-lg">
+      <h3>Bulk Add Students</h3>
+      <textarea id="bulk-import-textarea" rows="8" placeholder="Enter one name per line..."></textarea>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="bulk-import-cancel-btn">Cancel</button>
+        <button class="btn btn-primary" id="bulk-import-confirm-btn">Add All</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="notes-modal">
+    <div class="modal">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h3 id="notes-modal-title">Student Notes</h3>
+        <button class="btn btn-icon" onclick="document.getElementById('notes-modal').classList.remove('active')" style="border:none; background:none; cursor:pointer; font-size:1.2rem;">✕</button>
+      </div>
+      <textarea id="notes-textarea" rows="5" placeholder="Enter observations..."></textarea>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="notes-cancel-btn">Cancel</button>
+        <button class="btn btn-primary" id="notes-save-btn">Save Notes</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="reset-modal">
+    <div class="modal">
+      <h3>Clear All Data</h3>
+      <p>Start a new class? All current data will be erased.</p>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="reset-cancel-btn">Keep Data</button>
+        <button class="btn btn-danger" id="reset-confirm-btn">Erase Everything</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="bulk-score-modal">
+    <div class="modal modal-xl">
+      <div class="bulk-entry-header">
+        <h3>Class Entry Mode</h3>
+        <div style="display: flex; gap: 1rem; align-items: center;">
+          <select id="bulkMockSelect"></select>
+          <button class="btn btn-secondary" id="bulk-score-cancel-btn">Cancel</button>
+          <button class="btn btn-primary" id="bulk-score-save-btn">Save All</button>
+        </div>
+      </div>
+      <div style="max-height: 450px; overflow-y: auto;">
+        <table class="bulk-entry-table">
+          <thead id="bulkScoreHead"></thead>
+          <tbody id="bulkScoreBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="report-modal">
+    <div class="modal modal-xl">
+      <div class="modal-actions" style="margin-bottom: 1rem;">
+        <button class="btn btn-primary" id="report-print-btn">Print Report</button>
+        <button class="btn btn-secondary" id="report-close-btn">Close</button>
+      </div>
+      <div id="report-card-container"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <!-- Application Modules -->
+  <script src="js/state.js"></script>
+  <script src="js/analytics.js"></script>
+  <script src="js/students.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/heatmap.js"></script>
+  <script src="js/export.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
