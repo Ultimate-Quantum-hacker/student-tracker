@@ -182,15 +182,15 @@
         const improv = app.analytics.calcImprovement ? app.analytics.calcImprovement(s) : null;
         const avgVal = s._avg.overall;
         const avgCls = avgVal !== null ? (avgVal >= 70 ? 'avg-green' : (avgVal >= 50 ? 'avg-yellow' : 'avg-red')) : '';
-        const improvHtml = improv !== null ? (improv > 0 ? '<span class="improv-up">\u25B2 +' + improv.toFixed(1) + '%</span>' : (improv < 0 ? '<span class="improv-down">\u25BC ' + improv.toFixed(1) + '%</span>' : '<span class="improv-neutral">0%</span>')) : '\u2014';
+        const improvHtml = improv !== null ? (improv > 0 ? '<span class="improv-up">&#9650; +' + improv.toFixed(1) + '%</span>' : (improv < 0 ? '<span class="improv-down">&#9660; ' + improv.toFixed(1) + '%</span>' : '<span class="improv-neutral">0%</span>')) : '&#8212;';
         return `<tr>
-          <td>${i + 1}</td><td class="sticky-col">${app.utils.esc(s.name)}</td>
+          <td><strong class="rank-num">${i + 1}</strong></td><td class="sticky-col">${app.utils.esc(s.name)}</td>
           ${mockCells}
-          <td><strong>${s._avg.overall?.toFixed(1) ?? '—'}</strong></td>
-          <td>${improv !== null ? (improv > 0 ? '+' : '') + improv.toFixed(1) + '%' : '—'}</td>
+          <td><strong class="${avgCls}">${avgVal?.toFixed(1) ?? '&#8212;'}</strong></td>
+          <td>${improvHtml}</td>
           <td><span class="risk-pill ${risk.includes('Risk') ? 'risk-at-risk' : (risk === 'Borderline' ? 'risk-borderline' : 'risk-safe')}">${risk}</span></td>
-          <td onclick="window.TrackerApp.ui.openNotes('${s.id}')" style="cursor:pointer;">${s.notes ? 'View' : 'Add'}</td>
-          <td onclick="window.TrackerApp.ui.openReport('${s.id}')" style="cursor:pointer;">Report</td>
+          <td class="notes-cell" onclick="window.TrackerApp.ui.openNotes('${s.id}')">${s.notes ? '&#128221; View' : '+ Add'}</td>
+          <td class="report-cell" onclick="window.TrackerApp.ui.openReport('${s.id}')">&#128196; Report</td>
         </tr>`;
       }).join('');
     },
