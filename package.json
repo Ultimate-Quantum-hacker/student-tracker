@@ -1,0 +1,23 @@
+{
+  "name": "student-tracker",
+  "version": "1.0.0",
+  "description": "To make it easy for you to get started with GitLab, here's a list of recommended next steps.",
+  "main": "index.js",
+  "scripts": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://gitlab.com/ultimate-quantum-hacker-group/student-tracker.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://gitlab.com/ultimate-quantum-hacker-group/student-tracker/issues"
+  },
+  "homepage": "https://gitlab.com/ultimate-quantum-hacker-group/student-tracker#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@types/node": "^25.5.0"
+  }
+}
