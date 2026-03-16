@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JHS 3 Mock Exam Tracker</title>
+  <link rel="stylesheet" href="styles.css?v=5">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <header id="app-header">
+    <div class="header-inner">
+      <div class="logo">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        <h1>JHS 3 Tracker</h1>
+      </div>
+      <div class="header-controls">
+        <div id="backupStatus" class="backup-status">Last Backup: Never</div>
+        <button class="btn btn-icon" id="backup-btn" title="Download Backup"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></button>
+        <button class="btn btn-icon" id="restore-btn" title="Restore Backup"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+        <input type="file" id="restore-input" style="display:none;" accept=".json">
+        <button class="btn btn-icon" id="themeToggle" title="Toggle Theme"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></button>
+        <button class="btn btn-icon btn-danger" id="reset-btn" title="Start New Class"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+      </div>
+    </div>
+  </header>
+
+  <div id="app-main">
+    <aside class="sidebar">
+      <nav class="sidebar-nav">
+        <div class="sidebar-section">
+          <div class="sidebar-title">Dashboard</div>
+          <button class="sidebar-item active" data-section="dashboard"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>Dashboard</button>
+        </div>
+        <div class="sidebar-section">
+          <div class="sidebar-title">Management</div>
+          <button class="sidebar-item" data-section="students"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>Students</button>
+          <button class="sidebar-item" data-section="mocks"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Exams</button>
+          <button class="sidebar-item" data-section="subjects"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Subjects</button>
+        </div>
+        <div class="sidebar-section">
+          <div class="sidebar-title">Data Entry</div>
+          <button class="sidebar-item" data-section="scores"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20m10-10H2"/></svg>Enter Scores</button>
+          <button class="sidebar-item" data-section="bulk-scores"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="15" x2="15" y2="15"/></svg>Bulk Entry</button>
+        </div>
+        <div class="sidebar-section">
+          <div class="sidebar-title">Analytics</div>
+          <button class="sidebar-item" data-section="results"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="12 3 20 7.5 20 16.5 12 21 4 16.5 4 7.5 12 3"/><polyline points="12 12 20 7.5"/><polyline points="12 12 12 21"/><polyline points="12 12 4 7.5"/></svg>Results</button>
+          <button class="sidebar-item" data-section="trends"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 17"/><polyline points="17 6 23 6 23 12"/></svg>Trends</button>
+          <button class="sidebar-item" data-section="heatmap"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><rect x="7" y="7" width="3" height="3"/><rect x="14" y="7" width="3" height="3"/><rect x="7" y="14" width="3" height="3"/><rect x="14" y="14" width="3" height="3"/></svg>Heatmap</button>
+        </div>
+      </nav>
+    </aside>
+
+    <main class="main-content">
+      <section id="dashboard" class="content-section active">
+        <div class="section-header"><h2>Dashboard</h2></div>
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-title">Total Students</div><div class="stat-value" id="stat-total-students">0</div></div>
+          <div class="stat-card"><div class="stat-title">Class Average</div><div class="stat-value" id="stat-class-avg">0.0%</div></div>
+          <div class="stat-card"><div class="stat-title">Pass Rate</div><div class="stat-value" id="stat-pass-rate">0%</div></div>
+          <div class="stat-card"><div class="stat-title">At Risk</div><div class="stat-value" id="stat-at-risk-count">0</div></div>
+        </div>
+        <div class="card"><h3>Risk Analysis</h3><div class="risk-summary"><div class="risk-item safe"><span class="risk-label">Safe</span><span class="risk-count" id="stat-safe-count">0</span></div><div class="risk-item borderline"><span class="risk-label">Borderline</span><span class="risk-count" id="stat-borderline-count">0</span></div><div class="risk-item at-risk"><span class="risk-label">At Risk</span><span class="risk-count" id="stat-at-risk-count-2">0</span></div></div></div>
+        <div class="card"><h3>Intervention Needed</h3><div id="intervention-items"><p style="text-align: center; color: var(--text-secondary);">No students at risk</p></div></div>
+      </section>
+
+      <section id="students" class="content-section">
+        <div class="section-header"><h2>Student Roster</h2></div>
+        <div class="card"><form id="add-student-form" class="form-row"><input type="text" id="student-name-input" placeholder="Enter student name" required maxlength="60"><button type="submit" class="btn btn-primary">Add Student</button><button type="button" class="btn btn-secondary" id="bulk-import-btn">Bulk Add</button></form><div id="student-list" class="student-chips"></div></div>
+      </section>
+
+      <section id="mocks" class="content-section">
+        <div class="section-header"><h2>Mock Exams</h2></div>
+        <div class="card"><form id="addMockForm" class="form-row"><input type="text" id="mockNameInput" placeholder="Enter exam name" required><button type="submit" class="btn btn-primary">Add Exam</button></form><div id="mockList" class="management-list"></div></div>
+      </section>
+
+      <section id="subjects" class="content-section">
+        <div class="section-header"><h2>Subjects</h2></div>
+        <div class="card"><form id="addSubjectForm" class="form-row"><input type="text" id="subjectNameInput" placeholder="Enter subject name" required><button type="submit" class="btn btn-primary">Add Subject</button></form><div id="subjectList" class="management-list"></div></div>
+      </section>
+
+      <section id="scores" class="content-section">
+        <div class="section-header"><h2>Enter Scores</h2></div>
+        <div class="card"><div class="form-row"><div class="form-group"><label>Select Student</label><select id="score-student-select"><option value="">Choose Student</option></select></div><div class="form-group"><label>Select Exam</label><select id="scoreMockSelect"></select></div></div><div id="dynamicSubjectFields" class="form-grid"></div><button class="btn btn-primary" id="save-scores-btn">Save Scores</button></div>
+      </section>
+
+      <section id="bulk-scores" class="content-section">
+        <div class="section-header"><h2>Class Entry Mode</h2></div>
+        <div class="card"><div class="form-row"><div class="form-group"><label>Select Exam</label><select id="bulkMockSelect"></select></div><button class="btn btn-secondary" id="bulk-score-cancel-btn">Clear</button></div><div class="table-wrap"><table class="bulk-entry-table"><thead id="bulkScoreHead"></thead><tbody id="bulkScoreBody"></tbody></table></div><button class="btn btn-primary" id="bulk-score-save-btn">Save All Scores</button></div>
+      </section>
+
+      <section id="results" class="content-section">
+        <div class="section-header"><h2>Results & Rankings</h2><div class="section-controls"><input type="text" id="search-input" placeholder="Search student..." class="search-input"><button class="btn btn-secondary btn-sm" id="export-csv-btn">CSV</button><button class="btn btn-secondary btn-sm" id="export-excel-btn">Excel</button><button class="btn btn-secondary btn-sm" id="print-btn">Print</button></div></div>
+        <div class="card"><div class="table-wrap"><table id="results-table"><thead><tr id="results-head-row-1"><th>Rank</th><th>Name</th><th>Avg</th><th>Improv %</th><th>Risk</th><th>Notes</th><th>Report</th></tr><tr id="results-head-row-2"></tr></thead><tbody id="results-body"></tbody></table></div><p class="empty-msg" id="empty-msg">No records yet.</p></div>
+      </section>
+
+      <section id="trends" class="content-section">
+        <div class="section-header"><h2>Class Trends</h2></div>
+        <div class="card"><div class="chart-grid"><div><h4>Average Scores by Exam</h4><div class="table-wrap"><table class="summary-table"><thead><tr id="summary-header"><th>Exam</th><th>Avg Score</th></tr></thead><tbody id="class-summary-body"></tbody></table></div></div><div><h4>Class Performance Chart</h4><div class="chart-container"><canvas id="class-chart" width="400" height="250"></canvas><p class="chart-placeholder" id="class-chart-placeholder">Add data to view chart</p></div></div></div></div>
+      </section>
+
+      <section id="heatmap" class="content-section">
+        <div class="section-header"><h2>Performance Heatmap</h2></div>
+        <div class="card"><div class="heatmap-legend"><span class="legend-item"><span class="legend-box strong"></span> Strong (≥70)</span><span class="legend-item"><span class="legend-box average"></span> Average (50-69)</span><span class="legend-item"><span class="legend-box weak"></span> Weak (<50)</span></div><div class="table-wrap"><table id="heatmapTable"><thead><tr id="heatmapHead"></tr></thead><tbody id="heatmapBody"></tbody></table></div></div>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-overlay" id="edit-modal"><div class="modal"><h3>Edit Name</h3><input type="text" id="edit-name-input" maxlength="60"><div class="modal-actions"><button class="btn btn-secondary" id="edit-cancel-btn">Cancel</button><button class="btn btn-primary" id="edit-save-btn">Save</button></div></div></div>
+  <div class="modal-overlay" id="delete-modal"><div class="modal"><h3>Delete Record</h3><p id="delete-confirm-msg">Are you sure?</p><div class="modal-actions"><button class="btn btn-secondary" id="delete-cancel-btn">Cancel</button><button class="btn btn-danger" id="delete-confirm-btn">Delete</button></div></div></div>
+  <div class="modal-overlay" id="bulk-import-modal"><div class="modal"><h3>Bulk Add Students</h3><textarea id="bulk-import-textarea" rows="8" placeholder="Enter one name per line..."></textarea><div class="modal-actions"><button class="btn btn-secondary" id="bulk-import-cancel-btn">Cancel</button><button class="btn btn-primary" id="bulk-import-confirm-btn">Add All</button></div></div></div>
+  <div class="modal-overlay" id="notes-modal"><div class="modal"><h3 id="notes-modal-title">Student Notes</h3><textarea id="notes-textarea" rows="5" placeholder="Enter observations..."></textarea><div class="modal-actions"><button class="btn btn-secondary" id="notes-cancel-btn">Cancel</button><button class="btn btn-primary" id="notes-save-btn">Save Notes</button></div></div></div>
+  <div class="modal-overlay" id="reset-modal"><div class="modal"><h3>Clear All Data</h3><p>Start a new class? All current data will be erased.</p><div class="modal-actions"><button class="btn btn-secondary" id="reset-cancel-btn">Keep Data</button><button class="btn btn-danger" id="reset-confirm-btn">Erase Everything</button></div></div></div>
+  <div class="modal-overlay" id="report-modal"><div class="modal modal-lg"><div class="modal-actions"><button class="btn btn-primary" id="report-print-btn">Print</button><button class="btn btn-secondary" id="report-close-btn">Close</button></div><div id="report-card-container"></div></div></div>
+  <div id="toast" class="toast"></div>
+
+  <script src="js/state.js"></script>
+  <script src="js/analytics.js"></script>
+  <script src="js/students.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/heatmap.js"></script>
+  <script src="js/export.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/sidebar.js"></script>
+</body>
+</html>
