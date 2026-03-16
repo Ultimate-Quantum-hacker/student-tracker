@@ -1,0 +1,143 @@
+{
+  "students": [
+    {
+      "id": "st_abc123def",
+      "name": "John Doe",
+      "notes": "Strong performer, consistent improvement",
+      "scores": {
+        "mock_1": {
+          "subj_1": 85,
+          "subj_2": 78,
+          "subj_3": 92,
+          "subj_4": 88,
+          "subj_5": 81
+        },
+        "mock_2": {
+          "subj_1": 88,
+          "subj_2": 82,
+          "subj_3": 95,
+          "subj_4": 90,
+          "subj_5": 85
+        }
+      }
+    },
+    {
+      "id": "st_xyz789ghi",
+      "name": "Jane Smith",
+      "notes": "Needs support in Mathematics",
+      "scores": {
+        "mock_1": {
+          "subj_1": 92,
+          "subj_2": 65,
+          "subj_3": 88,
+          "subj_4": 91,
+          "subj_5": 87
+        },
+        "mock_2": {
+          "subj_1": 94,
+          "subj_2": 72,
+          "subj_3": 90,
+          "subj_4": 93,
+          "subj_5": 89
+        }
+      }
+    },
+    {
+      "id": "st_pqr456stu",
+      "name": "Michael Johnson",
+      "notes": "At risk, needs intervention",
+      "scores": {
+        "mock_1": {
+          "subj_1": 42,
+          "subj_2": 38,
+          "subj_3": 45,
+          "subj_4": 40,
+          "subj_5": 35
+        },
+        "mock_2": {
+          "subj_1": 48,
+          "subj_2": 44,
+          "subj_3": 50,
+          "subj_4": 46,
+          "subj_5": 42
+        }
+      }
+    },
+    {
+      "id": "st_vwx012yza",
+      "name": "Sarah Williams",
+      "notes": "Excellent all-rounder",
+      "scores": {
+        "mock_1": {
+          "subj_1": 96,
+          "subj_2": 94,
+          "subj_3": 98,
+          "subj_4": 95,
+          "subj_5": 97
+        },
+        "mock_2": {
+          "subj_1": 97,
+          "subj_2": 95,
+          "subj_3": 99,
+          "subj_4": 96,
+          "subj_5": 98
+        }
+      }
+    },
+    {
+      "id": "st_bcd345efg",
+      "name": "David Brown",
+      "notes": "Borderline, showing improvement",
+      "scores": {
+        "mock_1": {
+          "subj_1": 52,
+          "subj_2": 48,
+          "subj_3": 55,
+          "subj_4": 50,
+          "subj_5": 54
+        },
+        "mock_2": {
+          "subj_1": 58,
+          "subj_2": 55,
+          "subj_3": 62,
+          "subj_4": 60,
+          "subj_5": 59
+        }
+      }
+    }
+  ],
+  "mocks": [
+    {
+      "id": "mock_1",
+      "name": "Mock 1"
+    },
+    {
+      "id": "mock_2",
+      "name": "Mock 2"
+    }
+  ],
+  "subjects": [
+    {
+      "id": "subj_1",
+      "name": "English Language"
+    },
+    {
+      "id": "subj_2",
+      "name": "Mathematics"
+    },
+    {
+      "id": "subj_3",
+      "name": "Integrated Science"
+    },
+    {
+      "id": "subj_4",
+      "name": "Social Studies"
+    },
+    {
+      "id": "subj_5",
+      "name": "Computing"
+    }
+  ],
+  "lastBackup": "2026-03-16T02:00:00.000Z",
+  "theme": "light"
+}
