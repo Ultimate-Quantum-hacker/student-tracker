@@ -180,6 +180,9 @@
         }).join('');
         const risk = app.analytics.getRiskLevel(s);
         const improv = app.analytics.calcImprovement ? app.analytics.calcImprovement(s) : null;
+        const avgVal = s._avg.overall;
+        const avgCls = avgVal !== null ? (avgVal >= 70 ? 'avg-green' : (avgVal >= 50 ? 'avg-yellow' : 'avg-red')) : '';
+        const improvHtml = improv !== null ? (improv > 0 ? '<span class="improv-up">\u25B2 +' + improv.toFixed(1) + '%</span>' : (improv < 0 ? '<span class="improv-down">\u25BC ' + improv.toFixed(1) + '%</span>' : '<span class="improv-neutral">0%</span>')) : '\u2014';
         return `<tr>
           <td>${i + 1}</td><td class="sticky-col">${app.utils.esc(s.name)}</td>
           ${mockCells}
