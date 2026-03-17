@@ -198,7 +198,13 @@
         const currentMock = app.state.mocks[mockCount - 1];
         const previousMock = app.state.mocks[mockCount - 2];
         const currentTotal = currentMock ? app.analytics.mockTotal(s.scores[currentMock.id] || {}) : null;
-        const previousTotal = previousMock ? app.analytics.mockTotal(s.scores[previousMock.id] || {}) : null;
+        const previousMockTotal = previousMock ? app.analytics.mockTotal(s.scores[previousMock.id] || {}) : null;
+        const storagePrevious = JSON.parse(localStorage.getItem('previousScores') || '{}');
+        const previousStored = storagePrevious[s.id] ?? storagePrevious[s.name] ?? null;
+        const previousTotal = previousMockTotal !== null ? previousMockTotal : previousStored;
+        console.log('All previous scores:', storagePrevious);
+        console.log('Student:', s);
+        console.log('Matched previous:', previousTotal);
         const improvData = this.formatImprovement(currentTotal, previousTotal);
         let mockCells = app.state.mocks.map(m => {
           const sc = s.scores[m.id] || {};
@@ -220,7 +226,7 @@
           <td class="${improvData.className}">${improvData.text}</td>
           <td><span class="risk-pill status-pill ${statusClass}">${status}</span></td>
           <td class="notes-cell" onclick="window.TrackerApp.ui.openNotes('${s.id}')">${s.notes ? '&#128221; View' : '+ Add'}</td>
-          <td class="report-cell" onclick="window.TrackerApp.ui.openReport('${s.id}')">&#128196; Report</td>
+          <td class="report-cell" data-report-id="${s.id}">&#128196; Report</td>
         </tr>`;
       }).join('');
     },
@@ -295,7 +301,12 @@
       const currentMock = app.state.mocks[mockCount - 1];
       const previousMock = app.state.mocks[mockCount - 2];
       const currentScore = currentMock ? app.analytics.mockTotal(s.scores[currentMock.id] || {}) : null;
-      const previousScore = previousMock ? app.analytics.mockTotal(s.scores[previousMock.id] || {}) : null;
+      const previousMockScore = previousMock ? app.analytics.mockTotal(s.scores[previousMock.id] || {}) : null;
+      const storagePrevious = JSON.parse(localStorage.getItem('previousScores') || '{}');
+      const previousScore = previousMockScore !== null ? previousMockScore : (storagePrevious[s.id] ?? storagePrevious[s.name] ?? null);
+      console.log('All previous scores:', storagePrevious);
+      console.log('Student:', s);
+      console.log('Matched previous:', previousScore);
       const improvement = this.formatImprovement(currentScore, previousScore);
       const ranked = app.state.students.map(st => ({ id: st.id, avg: app.analytics.calcAverages(st).overall || 0 })).sort((a, b) => b.avg - a.avg);
       const rank = ranked.findIndex(r => r.id === s.id) + 1;
@@ -425,6 +436,13 @@
         if (app.dom.exportCsvBtn) app.dom.exportCsvBtn.onclick = () => app.export.exportCSV();
         if (app.dom.exportExcelBtn) app.dom.exportExcelBtn.onclick = () => app.export.exportExcel();
         if (app.dom.printBtn) app.dom.printBtn.onclick = () => window.print();
+        if (app.dom.resultsBody) app.dom.resultsBody.addEventListener('click', (e) => {
+          const reportCell = e.target.closest('.report-cell');
+          if (reportCell && reportCell.dataset.reportId) {
+            console.log('Report clicked for', reportCell.dataset.reportId);
+            this.openReport(reportCell.dataset.reportId);
+          }
+        });
 
         document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active')); });
         console.log("Events Bound Successfully.");

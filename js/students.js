@@ -69,17 +69,20 @@
       if (s) {
         if (!s.scores[mockId]) s.scores[mockId] = {};
 
-        const previousScoresStore = JSON.parse(localStorage.getItem('previousScores') || '{}');
-        const previousScore = s.scores[mockId] ? { ...s.scores[mockId] } : null;
+        const previousTotals = JSON.parse(localStorage.getItem('previousScores') || '{}');
+        const previousSnapshot = { ...s.scores[mockId] };
+        const previousTotal = app.analytics.mockTotal(previousSnapshot);
 
         // Debug fast
-        console.log('Current:', scoresData);
-        console.log('Previous:', previousScore);
+        console.log('All previous scores:', previousTotals);
+        console.log('Student:', s);
+        console.log('Matched previous:', previousTotals[studentId] ?? previousTotals[s.name] ?? null);
 
-        // Store previous for this student/mock before update
-        previousScoresStore[studentId] = previousScoresStore[studentId] || {};
-        previousScoresStore[studentId][mockId] = previousScore || {};
-        localStorage.setItem('previousScores', JSON.stringify(previousScoresStore));
+        // Store the previous total by student id (fallback by name for legacy compatibility)
+        const latestPreviousTotals = { ...previousTotals };
+        latestPreviousTotals[studentId] = previousTotal;
+        if (s.name) latestPreviousTotals[s.name] = previousTotal;
+        localStorage.setItem('previousScores', JSON.stringify(latestPreviousTotals));
 
         Object.assign(s.scores[mockId], scoresData);
         app.save();
