@@ -108,6 +108,17 @@
       setTimeout(() => app.dom.toast.classList.remove('show'), 2000);
     },
 
+    formatImprovement: function (current, previous) {
+      if (previous === null || previous === undefined || isNaN(previous) || current === null || current === undefined || isNaN(current)) {
+        return { text: '—', className: 'improv-neutral' };
+      }
+      const diff = Number(current) - Number(previous);
+      if (isNaN(diff)) return { text: '—', className: 'improv-neutral' };
+      if (diff > 0) return { text: '+' + diff.toFixed(1), className: 'improv-up' };
+      if (diff < 0) return { text: diff.toFixed(1), className: 'improv-down' };
+      return { text: '0', className: 'improv-neutral' };
+    },
+
     updateBackupStatus: function () {
       if (!app.dom.backupStatus) return;
       if (!app.state.lastBackup) {
@@ -180,9 +191,15 @@
             : app.utils.esc(m.name);
           return `<th colspan="${app.state.subjects.length + 1}">${label}</th>`;
         }).join('')}
-        <th rowspan="2">Avg</th><th rowspan="2">Improv %</th><th rowspan="2">Status</th><th rowspan="2">Notes</th><th rowspan="2">Report</th>`;
+        <th rowspan="2">Avg</th><th rowspan="2">Previous</th><th rowspan="2">Improvement</th><th rowspan="2">Status</th><th rowspan="2">Notes</th><th rowspan="2">Report</th>`;
 
       app.dom.resultsBody.innerHTML = ranked.map((s, i) => {
+        const mockCount = app.state.mocks.length;
+        const currentMock = app.state.mocks[mockCount - 1];
+        const previousMock = app.state.mocks[mockCount - 2];
+        const currentTotal = currentMock ? app.analytics.mockTotal(s.scores[currentMock.id] || {}) : null;
+        const previousTotal = previousMock ? app.analytics.mockTotal(s.scores[previousMock.id] || {}) : null;
+        const improvData = this.formatImprovement(currentTotal, previousTotal);
         let mockCells = app.state.mocks.map(m => {
           const sc = s.scores[m.id] || {};
           const total = app.analytics.mockTotal(sc);
@@ -190,16 +207,8 @@
           return `${subCells}<td><strong>${total ?? '—'}</strong></td>`;
         }).join('');
         const status = app.analytics.getRiskLevel(s);
-        const improv = app.analytics.calcImprovement ? app.analytics.calcImprovement(s) : null;
         const avgVal = s._avg.overall;
         const avgCls = avgVal !== null ? (avgVal >= 70 ? 'avg-green' : (avgVal >= 50 ? 'avg-yellow' : 'avg-red')) : '';
-        const improvHtml = improv !== null
-          ? (improv > 0
-            ? '<span class="improv-up">&#9650; +' + improv.toFixed(1) + '%</span>'
-            : (improv < 0
-              ? '<span class="improv-down">&#9660; ' + improv.toFixed(1) + '%</span>'
-              : '<span class="improv-neutral">0%</span>'))
-          : '&#8212;';
         const statusClass = status === 'Needs Support'
           ? 'risk-at-risk'
           : (status === 'Average' ? 'risk-borderline' : 'risk-safe');
@@ -207,7 +216,8 @@
           <td><strong class="rank-num rank-highlight">${i + 1}</strong></td><td class="sticky-col">${app.utils.esc(s.name)}</td>
           ${mockCells}
           <td><strong class="${avgCls} avg-emphasis">${avgVal?.toFixed(1) ?? '&#8212;'}</strong></td>
-          <td>${improvHtml}</td>
+          <td>${previousTotal !== null ? previousTotal.toFixed(1) : '&#8212;'}</td>
+          <td class="${improvData.className}">${improvData.text}</td>
           <td><span class="risk-pill status-pill ${statusClass}">${status}</span></td>
           <td class="notes-cell" onclick="window.TrackerApp.ui.openNotes('${s.id}')">${s.notes ? '&#128221; View' : '+ Add'}</td>
           <td class="report-cell" onclick="window.TrackerApp.ui.openReport('${s.id}')">&#128196; Report</td>
@@ -281,7 +291,12 @@
       const avgs = app.analytics.calcAverages(s);
       const avg = avgs.overall ?? 0;
       const risk = app.analytics.getRiskLevel(s);
-      const improv = app.analytics.calcImprovement ? app.analytics.calcImprovement(s) : null;
+      const mockCount = app.state.mocks.length;
+      const currentMock = app.state.mocks[mockCount - 1];
+      const previousMock = app.state.mocks[mockCount - 2];
+      const currentScore = currentMock ? app.analytics.mockTotal(s.scores[currentMock.id] || {}) : null;
+      const previousScore = previousMock ? app.analytics.mockTotal(s.scores[previousMock.id] || {}) : null;
+      const improvement = this.formatImprovement(currentScore, previousScore);
       const ranked = app.state.students.map(st => ({ id: st.id, avg: app.analytics.calcAverages(st).overall || 0 })).sort((a, b) => b.avg - a.avg);
       const rank = ranked.findIndex(r => r.id === s.id) + 1;
       let strongest = null, weakest = null, maxS = -1, minS = Infinity;
@@ -295,7 +310,7 @@
       const trendText = improv !== null ? (improv > 0 ? 'Improving \u25B2' : (improv < 0 ? 'Declining \u25BC' : 'Stable')) : 'Insufficient data';
       const trendClass = improv !== null ? (improv > 0 ? 'rc-safe' : (improv < 0 ? 'rc-risk' : '')) : '';
       if (app.dom.reportContainer) {
-        app.dom.reportContainer.innerHTML = `<div class="report-card"><div class="rc-header"><div class="rc-school">Vickmore International School</div><div class="rc-location">Krispol City, Asamoah Town</div><div class="rc-title">Academic Performance Report</div></div><div class="rc-info"><div><span>Student:</span> <strong>${app.utils.esc(s.name)}</strong></div><div><span>Class:</span> <strong>JHS 3</strong></div><div><span>Term:</span> <strong>Mock Examination</strong></div><div><span>Date:</span> <strong>${today}</strong></div></div><div class="rc-section"><h4>Subject Performance</h4>${scoresHtml}</div><div class="rc-summary"><div class="rc-summary-item"><span>Overall Average</span><strong class="${avgClass}">${avg.toFixed(1)}%</strong></div><div class="rc-summary-item"><span>Class Rank</span><strong>${rank} / ${app.state.students.length}</strong></div><div class="rc-summary-item"><span>Status</span><strong class="${riskClass}">${risk}</strong></div><div class="rc-summary-item"><span>Improvement</span><strong class="${trendClass}">${improv !== null ? (improv > 0 ? '+' : '') + improv.toFixed(1) + '%' : '\u2014'}</strong></div></div><div class="rc-section"><h4>Performance Analysis</h4><div class="rc-analysis"><div><span>Strongest Subject:</span> <strong>${strongest || '\u2014'}</strong></div><div><span>Weakest Subject:</span> <strong>${weakest || '\u2014'}</strong></div><div><span>Performance Trend:</span> <strong class="${trendClass}">${trendText}</strong></div></div></div><div class="rc-section"><h4>Teacher Comments</h4><div class="rc-notes">${s.notes ? app.utils.esc(s.notes) : 'No comments recorded.'}</div></div><div class="rc-footer"><div class="rc-sig"><div class="rc-sig-line"></div><span>Class Teacher</span></div><div class="rc-sig"><div class="rc-sig-line"></div><span>Head Teacher</span></div></div></div>`;
+        app.dom.reportContainer.innerHTML = `<div class="report-card"><div class="rc-header"><div class="rc-school">Vickmore International School</div><div class="rc-location">Krispol City, Asamoah Town</div><div class="rc-title">Academic Performance Report</div></div><div class="rc-info"><div><span>Student:</span> <strong>${app.utils.esc(s.name)}</strong></div><div><span>Class:</span> <strong>JHS 3</strong></div><div><span>Term:</span> <strong>Mock Examination</strong></div><div><span>Date:</span> <strong>${today}</strong></div></div><div class="rc-section"><h4>Subject Performance</h4>${scoresHtml}</div><div class="rc-summary"><div class="rc-summary-item"><span>Overall Average</span><strong class="${avgClass}">${avg.toFixed(1)}%</strong></div><div class="rc-summary-item"><span>Class Rank</span><strong>${rank} / ${app.state.students.length}</strong></div><div class="rc-summary-item"><span>Status</span><strong class="${riskClass}">${risk}</strong></div><div class="rc-summary-item"><span>Previous Score</span><strong>${previousScore !== null ? previousScore.toFixed(1) + '%' : '—'}</strong></div><div class="rc-summary-item"><span>Improvement</span><strong class="${improvement.className}">${improvement.text}</strong></div></div><div class="rc-section"><h4>Performance Analysis</h4><div class="rc-analysis"><div><span>Strongest Subject:</span> <strong>${strongest || '\u2014'}</strong></div><div><span>Weakest Subject:</span> <strong>${weakest || '\u2014'}</strong></div><div><span>Performance Trend:</span> <strong class="${trendClass}">${trendText}</strong></div></div></div><div class="rc-section"><h4>Teacher Comments</h4><div class="rc-notes">${s.notes ? app.utils.esc(s.notes) : 'No comments recorded.'}</div></div><div class="rc-footer"><div class="rc-sig"><div class="rc-sig-line"></div><span>Class Teacher</span></div><div class="rc-sig"><div class="rc-sig-line"></div><span>Head Teacher</span></div></div></div>`;
       }
       if (app.dom.reportModal) app.dom.reportModal.classList.add('active');
     },
