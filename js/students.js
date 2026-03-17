@@ -80,11 +80,16 @@
 
         // Store the previous total by student id (fallback by name for legacy compatibility)
         const latestPreviousTotals = { ...previousTotals };
-        latestPreviousTotals[studentId] = previousTotal;
-        if (s.name) latestPreviousTotals[s.name] = previousTotal;
+        if (previousTotal !== null && previousTotal !== undefined && !isNaN(previousTotal)) {
+          latestPreviousTotals[studentId] = previousTotal;
+          if (s.name) latestPreviousTotals[s.name] = previousTotal;
+        }
         localStorage.setItem('previousScores', JSON.stringify(latestPreviousTotals));
 
-        Object.assign(s.scores[mockId], scoresData);
+        Object.keys(scoresData).forEach(key => {
+          const val = Number(scoresData[key]);
+          s.scores[mockId][key] = Number.isFinite(val) ? app.utils.clamp(val, 0, 100) : null;
+        });
         app.save();
         app.ui.refreshUI();
         app.ui.showToast("Saved Scores");

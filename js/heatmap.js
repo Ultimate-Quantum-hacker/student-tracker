@@ -3,7 +3,7 @@
   'use strict';
   app.heatmap = {
     getHeatmapClass: function (score) {
-      if (score === null || score === undefined) return '';
+      if (score === null || score === undefined || isNaN(score)) return '';
       if (score >= 70) return 'hm-strong';
       if (score >= 50) return 'hm-average';
       return 'hm-weak';

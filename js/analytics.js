@@ -11,9 +11,13 @@
     mockTotal: function (scores) {
       let t = 0, c = 0;
       app.state.subjects.forEach(s => {
-        if (scores && scores[s.id] !== undefined && scores[s.id] !== null) {
-          t += scores[s.id];
-          c++;
+        const v = scores && scores[s.id];
+        if (v !== undefined && v !== null && !isNaN(v)) {
+          const num = Number(v);
+          if (!isNaN(num)) {
+            t += num;
+            c++;
+          }
         }
       });
       return c > 0 ? t : null;

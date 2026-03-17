@@ -36,8 +36,15 @@ window.TrackerApp = window.TrackerApp || {};
 
   app.load = function () {
     const raw = localStorage.getItem(app.state.storageKey);
-    const data = JSON.parse(raw || '{}');
-    
+    let data = {};
+    if (raw) {
+      try {
+        data = JSON.parse(raw);
+      } catch (err) {
+        console.error('Failed parsing saved state:', err);
+        data = {};
+      }
+    }
     app.state.students = Array.isArray(data.students) ? data.students : [];
     
     if (Array.isArray(data.mocks) && data.mocks.length > 0) {
