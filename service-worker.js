@@ -2,7 +2,7 @@
    Simple cache-first strategy for core assets.
 */
 
-const CACHE_NAME = 'se-tracker-cache-v1';
+const CACHE_NAME = 'app-cache-v2';
 
 const CORE_ASSETS = [
   '/',
