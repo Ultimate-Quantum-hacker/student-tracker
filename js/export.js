@@ -92,28 +92,56 @@
     },
 
     exportExcel: function () {
-      let csv = 'Rank,Student,' + app.state.mocks.map(m => `"${m.name}"`).join(',') + ',Overall Average\n';
-      
-      const ranked = app.state.students.map(s => ({ 
-        ...s, 
-        _avg: app.analytics.calcAverages(s) 
+      if (!window.XLSX) {
+        app.ui.showToast('Excel export unavailable. Please reload and try again.');
+        return;
+      }
+
+      const headers = [
+        'Rank',
+        'Student Name',
+        ...app.state.subjects.map(s => s.name || 'Subject'),
+        'Total Score',
+        'Previous Score',
+        'Improvement'
+      ];
+
+      const ranked = app.state.students.map((s) => ({
+        ...s,
+        _avg: app.analytics.calcAverages(s)
       })).sort((a, b) => (b._avg.overall || 0) - (a._avg.overall || 0));
 
-      ranked.forEach((s, i) => {
-        const scores = app.state.mocks.map(m => {
-          const t = app.analytics.mockTotal(s.scores[m.id]);
-          return t !== null ? t : '';
-        }).join(',');
-        
-        csv += `${i + 1},"${s.name}",${scores},${s._avg.overall?.toFixed(1) || ''}\n`;
+      const rows = ranked.map((s, i) => {
+        const currentMock = app.state.mocks[app.state.mocks.length - 1];
+        const previousMock = app.state.mocks[app.state.mocks.length - 2];
+        const currentScore = currentMock ? app.analytics.mockTotal(s.scores[currentMock.id] || {}) : null;
+        const previousMockScore = previousMock ? app.analytics.mockTotal(s.scores[previousMock.id] || {}) : null;
+        const prevStorage = JSON.parse(localStorage.getItem('previousScores') || '{}');
+        const prevStored = prevStorage[s.id] ?? prevStorage[s.name] ?? null;
+        const previousScore = previousMockScore !== null ? previousMockScore : (prevStored !== undefined ? prevStored : null);
+        const improvement = app.ui.formatImprovement(currentScore, previousScore);
+
+        const subjectScores = app.state.subjects.map(sub => {
+          const v = s.scores[currentMock?.id]?.[sub.id];
+          return (v === null || v === undefined || isNaN(v)) ? '—' : Number(v);
+        });
+
+        return [
+          i + 1,
+          s.name || '—',
+          ...subjectScores,
+          currentScore !== null && !isNaN(currentScore) ? Number(currentScore) : '—',
+          previousScore !== null && !isNaN(previousScore) ? Number(previousScore) : '—',
+          improvement.text === '—' ? '—' : improvement.text
+        ];
       });
 
-      const blob = new Blob([csv], { type: 'application/vnd.ms-excel' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'Mock_Results.xlsx';
-      a.click();
+      const wsData = [headers, ...rows];
+      const ws = XLSX.utils.aoa_to_sheet(wsData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Results');
+      XLSX.writeFile(wb, 'Mock_Results.xlsx');
+      app.ui.showToast('Excel export complete');
     }
   };
 
