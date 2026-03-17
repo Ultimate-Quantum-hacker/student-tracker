@@ -63,6 +63,10 @@
         startAngle = endAngle;
       });
 
+      var darkMode = document.body.classList.contains('dark-mode');
+      var chartText = darkMode ? '#f8fafc' : '#0f172a';
+      var chartSubText = darkMode ? '#cbd5e1' : '#475569';
+
       // Legend on the right
       var legendX = w * 0.65;
       var legendY = h * 0.3;
@@ -73,12 +77,12 @@
         var y = legendY + i * 22;
         ctx.fillStyle = color;
         ctx.fillRect(legendX, y - 10, 14, 14);
-        ctx.fillStyle = '#0f172a';
+        ctx.fillStyle = chartText;
         ctx.fillText(label + ' (' + values[i].toFixed(1) + '%)', legendX + 20, y + 1);
       });
 
       // Title
-      ctx.fillStyle = '#0f172a';
+      ctx.fillStyle = chartText;
       ctx.font = 'bold 14px Inter';
       ctx.textAlign = 'center';
       ctx.fillText('Class Performance Across Mock Exams', w / 2, 24);
@@ -158,6 +162,10 @@
         var gy = 30 + ((h - 80) / 4) * g;
         ctx.beginPath(); ctx.moveTo(50, gy); ctx.lineTo(w - 20, gy); ctx.stroke();
       }
+      var darkMode = document.body.classList.contains('dark-mode');
+      var chartText = darkMode ? '#f8fafc' : '#0f172a';
+      var chartSubText = darkMode ? '#cbd5e1' : '#64748b';
+
       // Line
       ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
       ctx.beginPath();
@@ -167,9 +175,9 @@
       points.forEach(function(p) {
         ctx.fillStyle = '#fff'; ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 3;
         ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-        ctx.fillStyle = '#0f172a'; ctx.font = 'bold 11px Inter'; ctx.textAlign = 'center';
+        ctx.fillStyle = chartText; ctx.font = 'bold 11px Inter'; ctx.textAlign = 'center';
         ctx.fillText(p.val, p.x, p.y - 12);
-        ctx.fillStyle = '#64748b'; ctx.font = '10px Inter';
+        ctx.fillStyle = chartSubText; ctx.font = '10px Inter';
         ctx.fillText(p.name, p.x, h - 15);
       });
     }
