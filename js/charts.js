@@ -7,7 +7,16 @@
       if (!app.dom.classChart) return;
       var canvas = app.dom.classChart;
       var ctx = canvas.getContext('2d');
-      var w = canvas.width, h = canvas.height;
+
+      // Improve sharpness on high-DPI screens
+      var dpr = window.devicePixelRatio || 1;
+      var rect = canvas.getBoundingClientRect();
+      if (rect.width && rect.height) {
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      var w = canvas.width / dpr, h = canvas.height / dpr;
       ctx.clearRect(0, 0, w, h);
       if (!hasData) {
         canvas.style.display = 'none';
@@ -16,64 +25,123 @@
       }
       canvas.style.display = 'block';
       if (app.dom.classChartPlaceholder) app.dom.classChartPlaceholder.style.display = 'none';
-      var pad = { top: 30, right: 20, bottom: 50, left: 50 };
-      var cw = w - pad.left - pad.right;
-      var ch = h - pad.top - pad.bottom;
-      // Grid lines
-      ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 1;
-      for (var g = 0; g <= 4; g++) {
-        var gy = pad.top + (ch / 4) * g;
-        ctx.beginPath(); ctx.moveTo(pad.left, gy); ctx.lineTo(w - pad.right, gy); ctx.stroke();
-        ctx.fillStyle = '#94a3b8'; ctx.font = '11px Inter'; ctx.textAlign = 'right';
-        ctx.fillText((100 - g * 25) + '', pad.left - 8, gy + 4);
-      }
-      // Y-axis label
-      ctx.save(); ctx.translate(12, h / 2); ctx.rotate(-Math.PI / 2);
-      ctx.fillStyle = '#64748b'; ctx.font = '11px Inter'; ctx.textAlign = 'center';
-      ctx.fillText('Average Score (%)', 0, 0); ctx.restore();
-      // Bars
-      var barW = Math.min(60, cw / data.length - 20);
-      var gap = (cw - data.length * barW) / (data.length + 1);
-      data.forEach(function(v, i) {
-        var val = v.overall || 0;
-        var bh = (val / 100) * ch;
-        var x = pad.left + gap + i * (barW + gap);
-        var y = pad.top + ch - bh;
-        var color = app.charts.colors[i % app.charts.colors.length];
-        // Bar shadow
-        ctx.fillStyle = 'rgba(0,0,0,0.05)';
-        ctx.fillRect(x + 2, y + 2, barW, bh);
-        // Bar
-        ctx.fillStyle = color;
-        if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, barW, bh, [4, 4, 0, 0]); ctx.fill(); }
-        else { ctx.fillRect(x, y, barW, bh); }
-        // Value on top
-        ctx.fillStyle = '#0f172a'; ctx.font = 'bold 12px Inter'; ctx.textAlign = 'center';
-        ctx.fillText(val.toFixed(1), x + barW / 2, y - 8);
-        // Label below
-        ctx.fillStyle = '#64748b'; ctx.font = '11px Inter';
-        ctx.fillText(v.name, x + barW / 2, pad.top + ch + 20);
+
+      // Prepare pie data (overall averages per exam)
+      var values = data.map(function (v) { return Math.max(0, v.overall || 0); });
+      var labels = data.map(function (v, i) {
+        return (v.name && v.name.toLowerCase().startsWith('mock '))
+          ? 'M' + (i + 1)
+          : v.name || ('Exam ' + (i + 1));
       });
+      var total = values.reduce(function (sum, v) { return sum + v; }, 0) || 1;
+
+      var radius = Math.min(w, h) * 0.32;
+      var cx = w * 0.32;
+      var cy = h * 0.55;
+
+      // Draw pie slices
+      var startAngle = -Math.PI / 2;
+      var slices = [];
+      values.forEach(function (val, i) {
+        var sliceAngle = (val / total) * Math.PI * 2;
+        var endAngle = startAngle + sliceAngle;
+        var color = app.charts.colors[i % app.charts.colors.length];
+
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.arc(cx, cy, radius, startAngle, endAngle);
+        ctx.closePath();
+        ctx.fillStyle = color;
+        ctx.fill();
+
+        slices.push({
+          start: startAngle,
+          end: endAngle,
+          label: labels[i],
+          value: val
+        });
+        startAngle = endAngle;
+      });
+
+      // Legend on the right
+      var legendX = w * 0.65;
+      var legendY = h * 0.3;
+      ctx.font = '12px Inter';
+      ctx.textAlign = 'left';
+      labels.forEach(function (label, i) {
+        var color = app.charts.colors[i % app.charts.colors.length];
+        var y = legendY + i * 22;
+        ctx.fillStyle = color;
+        ctx.fillRect(legendX, y - 10, 14, 14);
+        ctx.fillStyle = '#0f172a';
+        ctx.fillText(label + ' (' + values[i].toFixed(1) + '%)', legendX + 20, y + 1);
+      });
+
       // Title
-      ctx.fillStyle = '#0f172a'; ctx.font = 'bold 13px Inter'; ctx.textAlign = 'center';
-      ctx.fillText('Class Average by Exam', w / 2, 18);
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 14px Inter';
+      ctx.textAlign = 'center';
+      ctx.fillText('Class Performance Across Mock Exams', w / 2, 24);
+
+      // Tooltip via title on hover
+      app.charts._classPieMeta = { cx: cx, cy: cy, radius: radius, slices: slices };
+      if (!canvas._hasClassTooltipListener) {
+        canvas.addEventListener('mousemove', function (evt) {
+          var meta = app.charts._classPieMeta;
+          if (!meta || !meta.slices) return;
+          var r2 = canvas.getBoundingClientRect();
+          var mx = evt.clientX - r2.left;
+          var my = evt.clientY - r2.top;
+          var dx = mx - meta.cx;
+          var dy = my - meta.cy;
+          var dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist > meta.radius) {
+            canvas.style.cursor = 'default';
+            canvas.title = '';
+            return;
+          }
+          var angle = Math.atan2(dy, dx);
+          if (angle < -Math.PI / 2) angle += 2 * Math.PI;
+          var hovered = meta.slices.find(function (s) {
+            return angle >= s.start && angle <= s.end;
+          });
+          if (hovered) {
+            canvas.style.cursor = 'pointer';
+            canvas.title = hovered.label + ': ' + hovered.value.toFixed(1) + '%';
+          } else {
+            canvas.style.cursor = 'default';
+            canvas.title = '';
+          }
+        });
+        canvas._hasClassTooltipListener = true;
+      }
     },
     renderStudentChart: function (studentId) {
       var s = app.state.students.find(function(x) { return x.id === studentId; });
       if (!s || !app.dom.canvas) return;
       var canvas = app.dom.canvas;
       var ctx = canvas.getContext('2d');
-      var w = canvas.width, h = canvas.height;
+
+      // Improve sharpness on high-DPI screens
+      var dpr = window.devicePixelRatio || 1;
+      var rect = canvas.getBoundingClientRect();
+      if (rect.width && rect.height) {
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      var w = canvas.width / dpr, h = canvas.height / dpr;
       ctx.clearRect(0, 0, w, h);
       var maxScore = app.state.subjects.length * 100;
       var points = [];
       app.state.mocks.forEach(function(m, i) {
         var t = app.analytics.mockTotal(s.scores[m.id]);
         if (t !== null) {
+          var label = (m.name && m.name.toLowerCase().startsWith('mock ')) ? ('M' + (i + 1)) : m.name;
           points.push({
             x: 50 + (i / (app.state.mocks.length - 1 || 1)) * (w - 100),
             y: h - 50 - (t / maxScore) * (h - 100),
-            val: t, name: m.name
+            val: t, name: label
           });
         }
       });

@@ -127,8 +127,10 @@
       app.state.students.forEach(s => {
         const avg = app.analytics.calcAverages(s).overall;
         if (avg !== null) { sum += avg; count++; if (avg >= 50) pass++; }
-        const risk = app.analytics.getRiskLevel(s);
-        if (risk.includes('Risk')) atRisk++; else if (risk === 'Borderline') borderline++; else safe++;
+        const status = app.analytics.getRiskLevel(s);
+        if (status === 'Needs Support') atRisk++;
+        else if (status === 'Average') borderline++;
+        else safe++;
       });
       
       if (app.dom.statClassAvg) app.dom.statClassAvg.textContent = count ? (sum / count).toFixed(1) : '0.0';
@@ -167,11 +169,18 @@
         .filter(s => s.name.toLowerCase().includes(app.state.searchTerm.toLowerCase()))
         .sort((a, b) => (b._avg.overall || 0) - (a._avg.overall || 0));
       
-      app.dom.resultsHeadRow2.innerHTML = app.state.mocks.map(m => app.state.subjects.map(s => `<th>${s.name.slice(0, 3)}</th>`).join('') + '<th>Total</th>').join('');
+      app.dom.resultsHeadRow2.innerHTML = app.state.mocks.map((m, idx) =>
+        app.state.subjects.map(s => `<th>${s.name.slice(0, 3)}</th>`).join('') + '<th>Total</th>'
+      ).join('');
       app.dom.resultsHeadRow1.innerHTML = `
         <th rowspan="2">Rank</th><th rowspan="2" class="sticky-col">Name</th>
-        ${app.state.mocks.map(m => `<th colspan="${app.state.subjects.length + 1}">${app.utils.esc(m.name)}</th>`).join('')}
-        <th rowspan="2">Avg</th><th rowspan="2">Improv %</th><th rowspan="2">Risk</th><th rowspan="2">Notes</th><th rowspan="2">Report</th>`;
+        ${app.state.mocks.map((m, idx) => {
+          const label = m.name && m.name.toLowerCase().startsWith('mock ')
+            ? 'M' + (idx + 1)
+            : app.utils.esc(m.name);
+          return `<th colspan="${app.state.subjects.length + 1}">${label}</th>`;
+        }).join('')}
+        <th rowspan="2">Avg</th><th rowspan="2">Improv %</th><th rowspan="2">Status</th><th rowspan="2">Notes</th><th rowspan="2">Report</th>`;
 
       app.dom.resultsBody.innerHTML = ranked.map((s, i) => {
         let mockCells = app.state.mocks.map(m => {
@@ -180,17 +189,26 @@
           let subCells = app.state.subjects.map(sb => `<td>${sc[sb.id] ?? '—'}</td>`).join('');
           return `${subCells}<td><strong>${total ?? '—'}</strong></td>`;
         }).join('');
-        const risk = app.analytics.getRiskLevel(s);
+        const status = app.analytics.getRiskLevel(s);
         const improv = app.analytics.calcImprovement ? app.analytics.calcImprovement(s) : null;
         const avgVal = s._avg.overall;
         const avgCls = avgVal !== null ? (avgVal >= 70 ? 'avg-green' : (avgVal >= 50 ? 'avg-yellow' : 'avg-red')) : '';
-        const improvHtml = improv !== null ? (improv > 0 ? '<span class="improv-up">&#9650; +' + improv.toFixed(1) + '%</span>' : (improv < 0 ? '<span class="improv-down">&#9660; ' + improv.toFixed(1) + '%</span>' : '<span class="improv-neutral">0%</span>')) : '&#8212;';
+        const improvHtml = improv !== null
+          ? (improv > 0
+            ? '<span class="improv-up">&#9650; +' + improv.toFixed(1) + '%</span>'
+            : (improv < 0
+              ? '<span class="improv-down">&#9660; ' + improv.toFixed(1) + '%</span>'
+              : '<span class="improv-neutral">0%</span>'))
+          : '&#8212;';
+        const statusClass = status === 'Needs Support'
+          ? 'risk-at-risk'
+          : (status === 'Average' ? 'risk-borderline' : 'risk-safe');
         return `<tr>
-          <td><strong class="rank-num">${i + 1}</strong></td><td class="sticky-col">${app.utils.esc(s.name)}</td>
+          <td><strong class="rank-num rank-highlight">${i + 1}</strong></td><td class="sticky-col">${app.utils.esc(s.name)}</td>
           ${mockCells}
-          <td><strong class="${avgCls}">${avgVal?.toFixed(1) ?? '&#8212;'}</strong></td>
+          <td><strong class="${avgCls} avg-emphasis">${avgVal?.toFixed(1) ?? '&#8212;'}</strong></td>
           <td>${improvHtml}</td>
-          <td><span class="risk-pill ${risk.includes('Risk') ? 'risk-at-risk' : (risk === 'Borderline' ? 'risk-borderline' : 'risk-safe')}">${risk}</span></td>
+          <td><span class="risk-pill status-pill ${statusClass}">${status}</span></td>
           <td class="notes-cell" onclick="window.TrackerApp.ui.openNotes('${s.id}')">${s.notes ? '&#128221; View' : '+ Add'}</td>
           <td class="report-cell" onclick="window.TrackerApp.ui.openReport('${s.id}')">&#128196; Report</td>
         </tr>`;
@@ -199,12 +217,40 @@
 
     renderInterventionList: function () {
       if (!app.dom.interventionItems) return;
-      const filter = app.state.students.filter(s => app.analytics.getRiskLevel(s) !== 'Safe');
-      if (!filter.length) { app.dom.interventionItems.innerHTML = '<p style="text-align:center; color:var(--text-secondary);">All students are on track.</p>'; return; }
-      app.dom.interventionItems.innerHTML = filter.map(s => `
-        <div class="intervention-item ${app.analytics.getRiskLevel(s) === 'Borderline' ? 'borderline' : ''}">
-          <strong>${app.utils.esc(s.name)}</strong> (Avg: ${app.analytics.calcAverages(s).overall?.toFixed(1)}%)
-        </div>`).join('');
+      // Only show students with overall average ≤ 50 for intervention
+      const flagged = app.state.students
+        .map(s => {
+          const avgs = app.analytics.calcAverages(s);
+          return { student: s, avg: avgs.overall };
+        })
+        .filter(x => x.avg !== null && x.avg <= 50)
+        .sort((a, b) => (a.avg || 0) - (b.avg || 0));
+
+      if (!flagged.length) {
+        app.dom.interventionItems.innerHTML = '<p style="text-align:center; color:var(--text-secondary);">All students are on track.</p>';
+        return;
+      }
+
+      app.dom.interventionItems.innerHTML = flagged.map(x => {
+        const s = x.student;
+        const avg = x.avg;
+        const status = app.analytics.getRiskLevel(s);
+        const statusClass = status === 'Needs Support'
+          ? 'risk-at-risk'
+          : (status === 'Average' ? 'risk-borderline' : 'risk-safe');
+        const weakest = app.analytics.getWeakestSubject(s);
+        return `
+        <div class="intervention-card">
+          <div class="intervention-header">
+            <span class="intervention-name">${app.utils.esc(s.name)}</span>
+            <span class="risk-pill status-pill ${statusClass}">${status}</span>
+          </div>
+          <div class="intervention-meta">
+            <span class="intervention-avg">Avg: ${avg.toFixed(1)}%</span>
+            <span class="intervention-weakest">Weakest: ${app.utils.esc(weakest)}</span>
+          </div>
+        </div>`;
+      }).join('');
     },
 
     renderClassSummary: function () {
@@ -241,7 +287,7 @@
       let strongest = null, weakest = null, maxS = -1, minS = Infinity;
       app.state.subjects.forEach(sub => { if (avgs[sub.id] !== null && avgs[sub.id] !== undefined) { if (avgs[sub.id] > maxS) { maxS = avgs[sub.id]; strongest = sub.name; } if (avgs[sub.id] < minS) { minS = avgs[sub.id]; weakest = sub.name; } } });
       const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-      const riskClass = risk.includes('Risk') ? 'rc-risk' : (risk === 'Borderline' ? 'rc-borderline' : 'rc-safe');
+      const riskClass = risk === 'Needs Support' ? 'rc-risk' : (risk === 'Average' ? 'rc-borderline' : 'rc-safe');
       const avgClass = avg >= 70 ? 'rc-safe' : (avg >= 50 ? 'rc-borderline' : 'rc-risk');
       let scoresHtml = '<table class="rc-table"><thead><tr><th>Subject</th>' + app.state.mocks.map(m => `<th>${app.utils.esc(m.name)}</th>`).join('') + '<th>Average</th></tr></thead><tbody>';
       app.state.subjects.forEach(sub => { scoresHtml += '<tr><td class="rc-subject">' + app.utils.esc(sub.name) + '</td>'; app.state.mocks.forEach(m => { const val = s.scores[m.id]?.[sub.id]; const cls = val !== null && val !== undefined ? (val >= 70 ? 'rc-safe' : (val >= 50 ? 'rc-borderline' : 'rc-risk')) : ''; scoresHtml += `<td class="${cls}">${val ?? '\u2014'}</td>`; }); const subAvg = avgs[sub.id]; scoresHtml += `<td><strong>${subAvg !== null ? subAvg.toFixed(1) : '\u2014'}</strong></td></tr>`; });

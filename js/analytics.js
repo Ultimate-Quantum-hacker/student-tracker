@@ -43,9 +43,9 @@
       const avgs = this.calcAverages(student);
       const avg = avgs.overall;
       if (avg === null) return 'N/A';
-      if (avg < 45) return '⚠ At Risk';
-      if (avg < 55) return 'Borderline';
-      return 'Safe';
+      if (avg >= 70) return 'Strong';
+      if (avg >= 50) return 'Average';
+      return 'Needs Support';
     },
 
     calcImprovement: function (student) {

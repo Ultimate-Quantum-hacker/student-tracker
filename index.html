@@ -2,14 +2,337 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>JHS 3 Mock Exam Tracker</title>
-  <link rel="stylesheet" href="styles.css?v=5">
-  <link rel="stylesheet" href="css/enhanced.css?v=1">
+
+  <!-- PWA -->
+  <meta name="theme-color" content="#0f172a">
+  <link rel="manifest" href="/manifest.json">
+
+  <!-- Base styles -->
+  <link rel="stylesheet" href="styles.css?v=12">
+  <link rel="stylesheet" href="css/enhanced.css?v=11">
+
+  <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Mobile / app-like tweaks -->
+  <style>
+    :root {
+      --pwa-safe-bottom: env(safe-area-inset-bottom, 0px);
+      --pwa-safe-top: env(safe-area-inset-top, 0px);
+    }
+
+    body {
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    #app-main {
+      padding-top: var(--pwa-safe-top);
+      padding-bottom: calc(var(--pwa-safe-bottom) + 8px);
+    }
+
+    button,
+    .btn {
+      min-height: 40px;
+      padding: 0.5rem 0.9rem;
+      font-size: 0.95rem;
+      border-radius: 999px;
+    }
+
+    .btn-icon {
+      min-width: 40px;
+      min-height: 40px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .search-input,
+    input,
+    select,
+    textarea {
+      font-size: 0.95rem;
+    }
+
+    @media (max-width: 768px) {
+      body {
+        font-size: 15px;
+      }
+
+      header#app-header {
+        padding: 0.4rem 0.65rem;
+      }
+
+      .header-inner {
+        gap: 0.5rem;
+      }
+
+      .logo h1 {
+        font-size: 1rem;
+        line-height: 1.2;
+      }
+
+      .sidebar {
+        width: 100%;
+        min-width: 0;
+        overflow-x: auto;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.5);
+      }
+
+      .sidebar-nav {
+        display: flex;
+        flex-direction: row;
+        gap: 0.75rem;
+        padding: 0.35rem 0.5rem;
+      }
+
+      .sidebar-section {
+        min-width: max-content;
+      }
+
+      .sidebar-item {
+        font-size: 0.85rem;
+        padding: 0.4rem 0.75rem;
+        border-radius: 999px;
+      }
+
+      #app-main {
+        flex-direction: column;
+      }
+
+      .main-content {
+        padding: 0.6rem 0.75rem;
+      }
+
+      .section-header h2 {
+        font-size: 1.05rem;
+      }
+
+      .stats-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.5rem;
+      }
+
+      .stat-card {
+        padding: 0.55rem 0.6rem;
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      table {
+        font-size: 0.78rem;
+      }
+
+      .chart-grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+      }
+
+      .section-controls {
+        flex-wrap: wrap;
+        gap: 0.4rem;
+      }
+
+      .section-controls .search-input {
+        flex: 1 1 100%;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .stats-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+      button,
+      .btn {
+        font-size: 0.9rem;
+      }
+      .sidebar-item {
+        font-size: 0.8rem;
+      }
+    }
+
+    /* Splash / loading screen */
+    #app-splash {
+      position: fixed;
+      inset: 0;
+      background: #0f172a;
+      color: #f9fafb;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      text-align: center;
+      padding: 1.5rem;
+    }
+
+    #app-splash h1 {
+      font-size: 1.5rem;
+      margin-bottom: 0.4rem;
+    }
+
+    #app-splash p {
+      font-size: 0.95rem;
+      opacity: 0.85;
+      margin-bottom: 1.25rem;
+    }
+
+    #app-splash-spinner {
+      width: 32px;
+      height: 32px;
+      border-radius: 999px;
+      border: 3px solid rgba(148, 163, 184, 0.6);
+      border-top-color: #38bdf8;
+      animation: pwa-spin 0.7s linear infinite;
+    }
+
+    @keyframes pwa-spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    /* First-time tutorial overlay */
+    #pwa-tutorial {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.86);
+      color: #e5e7eb;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 9998;
+      padding: 1.25rem;
+    }
+
+    #pwa-tutorial.active {
+      display: flex;
+    }
+
+    .pwa-tutorial-card {
+      background: #020617;
+      border-radius: 1rem;
+      max-width: 420px;
+      width: 100%;
+      padding: 1.1rem 1.1rem 0.9rem;
+      box-shadow: 0 18px 45px rgba(15, 23, 42, 0.7);
+    }
+
+    .pwa-tutorial-card h2 {
+      font-size: 1.05rem;
+      margin-bottom: 0.2rem;
+      color: #f9fafb;
+    }
+
+    .pwa-tutorial-card p {
+      font-size: 0.9rem;
+      margin: 0.2rem 0;
+      line-height: 1.45;
+    }
+
+    .pwa-tutorial-list {
+      margin: 0.45rem 0 0.7rem;
+      padding-left: 1.1rem;
+      font-size: 0.88rem;
+    }
+
+    .pwa-tutorial-list li {
+      margin-bottom: 0.2rem;
+    }
+
+    .pwa-tutorial-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+      margin-top: 0.4rem;
+    }
+
+    .pwa-tutorial-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: 0.78rem;
+      padding: 0.15rem 0.55rem;
+      border-radius: 999px;
+      background: rgba(30, 64, 175, 0.65);
+      color: #e5e7eb;
+    }
+
+    .pwa-tutorial-badge span {
+      font-size: 0.85rem;
+    }
+
+    #pwa-tutorial-close {
+      min-height: 36px;
+      padding-inline: 0.9rem;
+      font-size: 0.9rem;
+    }
+
+    /* Install button */
+    #install-btn {
+      display: none;
+      background: #0f172a;
+      color: #e5e7eb;
+      border: none;
+      padding-inline: 0.75rem;
+      font-size: 0.85rem;
+      gap: 0.3rem;
+    }
+
+    #install-btn svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    @media (max-width: 768px) {
+      #install-btn {
+        display: none;
+        padding-inline: 0.7rem;
+        font-size: 0.8rem;
+      }
+    }
+  </style>
 </head>
 <body>
+  <!-- Splash / loading -->
+  <div id="app-splash">
+    <h1>Student Exam Tracker</h1>
+    <p>Loading your class data…</p>
+    <div id="app-splash-spinner"></div>
+  </div>
+
+  <!-- Tutorial overlay -->
+  <div id="pwa-tutorial">
+    <div class="pwa-tutorial-card">
+      <div class="pwa-tutorial-badge">
+        <span>New</span>
+        <span>Installed app tips</span>
+      </div>
+      <h2>Quick tour of Student Exam Tracker</h2>
+      <p>Here’s where to find the most important tools:</p>
+      <ul class="pwa-tutorial-list">
+        <li><strong>Dashboard</strong> – see totals, class average, and who needs support.</li>
+        <li><strong>Students / Exams / Subjects</strong> – manage names of pupils, mocks, and subjects.</li>
+        <li><strong>Enter Scores</strong> – record scores for one student at a time.</li>
+        <li><strong>Class Entry Mode</strong> – enter a whole class for one mock in a single grid.</li>
+        <li><strong>Results & Rankings</strong> – view rank, averages, status, notes, and print reports.</li>
+        <li><strong>Trends & Heatmap</strong> – see class performance over time and by subject.</li>
+      </ul>
+      <p>You can always backup or restore data using the icons at the top-right of the screen.</p>
+      <div class="pwa-tutorial-footer">
+        <button class="btn btn-secondary" id="pwa-tutorial-close">Got it</button>
+      </div>
+    </div>
+  </div>
+
   <header id="app-header">
     <div class="header-inner">
       <div class="logo">
@@ -23,6 +346,16 @@
         <input type="file" id="restore-input" style="display:none;" accept=".json">
         <button class="btn btn-icon" id="themeToggle" title="Toggle Theme"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></button>
         <button class="btn btn-icon btn-danger" id="reset-btn" title="Start New Class"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+
+        <!-- Custom install button (shown by JS when eligible) -->
+        <button class="btn btn-icon" id="install-btn" title="Install app">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 3v12" />
+            <path d="M8 11l4 4 4-4" />
+            <path d="M5 21h14" />
+          </svg>
+          <span>Install</span>
+        </button>
       </div>
     </div>
   </header>
@@ -94,7 +427,7 @@
 
       <section id="results" class="content-section">
         <div class="section-header"><h2>Results & Rankings</h2><div class="section-controls"><input type="text" id="search-input" placeholder="Search student..." class="search-input"><button class="btn btn-secondary btn-sm" id="export-csv-btn">CSV</button><button class="btn btn-secondary btn-sm" id="export-excel-btn">Excel</button><button class="btn btn-secondary btn-sm" id="print-btn">Print</button></div></div>
-        <div class="card"><div class="table-wrap"><table id="results-table"><thead><tr id="results-head-row-1"><th>Rank</th><th>Name</th><th>Avg</th><th>Improv %</th><th>Risk</th><th>Notes</th><th>Report</th></tr><tr id="results-head-row-2"></tr></thead><tbody id="results-body"></tbody></table></div><p class="empty-msg" id="empty-msg">No records yet.</p></div>
+        <div class="card"><div class="table-wrap"><table id="results-table"><thead><tr id="results-head-row-1"><th>Rank</th><th>Name</th><th>Avg</th><th>Improv %</th><th>Status</th><th>Notes</th><th>Report</th></tr><tr id="results-head-row-2"></tr></thead><tbody id="results-body"></tbody></table></div><p class="empty-msg" id="empty-msg">No records yet.</p></div>
       </section>
 
       <section id="trends" class="content-section">
@@ -117,6 +450,11 @@
   <div class="modal-overlay" id="report-modal"><div class="modal modal-lg"><div class="modal-actions"><button class="btn btn-primary" id="report-print-btn">Print</button><button class="btn btn-secondary" id="report-close-btn">Close</button></div><div id="report-card-container"></div></div></div>
   <div id="toast" class="toast"></div>
 
+  <footer style="text-align:center;padding:0.75rem 1.5rem;font-size:0.75rem;color:#64748b;">
+    &copy; 2026 Sage Innovations. All rights reserved.
+  </footer>
+
+  <!-- Existing scripts -->
   <script src="js/state.js"></script>
   <script src="js/analytics.js"></script>
   <script src="js/students.js"></script>
@@ -126,5 +464,106 @@
   <script src="js/ui.js"></script>
   <script src="js/app.js"></script>
   <script src="js/sidebar.js"></script>
+
+  <!-- PWA bootstrap: service worker, install button, splash, tutorial -->
+  <script>
+    (function () {
+      // Splash hide after app boot + small delay
+      window.addEventListener('load', function () {
+        const splash = document.getElementById('app-splash');
+        if (!splash) return;
+        setTimeout(function () {
+          splash.style.opacity = '0';
+          splash.style.transition = 'opacity 220ms ease-out';
+          setTimeout(function () {
+            if (splash && splash.parentNode) {
+              splash.parentNode.removeChild(splash);
+            }
+          }, 260);
+        }, 250);
+      });
+
+      // Service worker registration
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('/service-worker.js').catch(function (err) {
+            console.error('Service worker registration failed', err);
+          });
+        });
+      }
+
+      // Install prompt handling
+      let deferredPrompt = null;
+      const installBtn = document.getElementById('install-btn');
+
+      if (installBtn) {
+        installBtn.style.display = 'none';
+
+        window.addEventListener('beforeinstallprompt', function (e) {
+          e.preventDefault();
+          deferredPrompt = e;
+          installBtn.style.display = 'inline-flex';
+        });
+
+        installBtn.addEventListener('click', async function () {
+          if (!deferredPrompt) return;
+          installBtn.disabled = true;
+          deferredPrompt.prompt();
+          try {
+            await deferredPrompt.userChoice;
+          } catch (_) {}
+          deferredPrompt = null;
+          installBtn.style.display = 'none';
+          installBtn.disabled = false;
+        });
+      }
+
+      // Tutorial helpers
+      var TUTORIAL_KEY = 'setracker_pwa_tutorial_seen_v1';
+
+      function isStandalone() {
+        return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+               window.navigator.standalone === true;
+      }
+
+      function showTutorialIfNeeded() {
+        var seen = localStorage.getItem(TUTORIAL_KEY);
+        if (seen === '1') return;
+        if (!isStandalone()) return;
+        var overlay = document.getElementById('pwa-tutorial');
+        if (!overlay) return;
+        overlay.classList.add('active');
+      }
+
+      function wireTutorialClose() {
+        var overlay = document.getElementById('pwa-tutorial');
+        var closeBtn = document.getElementById('pwa-tutorial-close');
+        if (!overlay || !closeBtn) return;
+        closeBtn.addEventListener('click', function () {
+          overlay.classList.remove('active');
+          localStorage.setItem(TUTORIAL_KEY, '1');
+        });
+        overlay.addEventListener('click', function (e) {
+          if (e.target === overlay) {
+            overlay.classList.remove('active');
+            localStorage.setItem(TUTORIAL_KEY, '1');
+          }
+        });
+      }
+
+      wireTutorialClose();
+
+      // Show tutorial after install
+      window.addEventListener('appinstalled', function () {
+        localStorage.removeItem(TUTORIAL_KEY);
+        setTimeout(showTutorialIfNeeded, 500);
+      });
+
+      // Also show on first run in standalone mode
+      window.addEventListener('load', function () {
+        setTimeout(showTutorialIfNeeded, 800);
+      });
+    })();
+  </script>
 </body>
 </html>

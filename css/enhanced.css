@@ -2,13 +2,16 @@
 
 /* Results Table Highlighting */
 .rank-num{color:var(--primary);font-size:1.1rem}
+.rank-highlight{background:var(--primary-light);padding:2px 8px;border-radius:999px}
 .avg-green{color:#10b981}
 .avg-yellow{color:#f59e0b}
 .avg-red{color:#ef4444}
+.avg-emphasis{padding:2px 6px;border-radius:6px;background:rgba(15,23,42,.02)}
 .improv-up{color:#10b981;font-weight:600;font-size:.82rem}
 .improv-down{color:#ef4444;font-weight:600;font-size:.82rem}
 .improv-neutral{color:var(--text-secondary);font-size:.82rem}
 .risk-pill{display:inline-block;font-size:.7rem;font-weight:700;padding:3px 10px;border-radius:12px;text-transform:uppercase;letter-spacing:.03em}
+.status-pill{border-radius:999px;padding:4px 12px;box-shadow:0 1px 2px rgba(15,23,42,.08)}
 .risk-at-risk{background:#fee2e2;color:#dc2626}
 .risk-borderline{background:#fffbeb;color:#d97706}
 .risk-safe{background:#ecfdf5;color:#059669}
@@ -50,6 +53,57 @@
 .rc-sig-line{border-top:1px solid #1a1a2e;margin-bottom:.5rem}
 .rc-sig span{font-size:.8rem;color:#64748b}
 
+/* Intervention List */
+#intervention-items{display:flex;flex-direction:column;gap:.6rem;margin-top:.5rem}
+.intervention-card{padding:.75rem 1rem;border-radius:10px;border:1px solid var(--border);background:var(--surface);box-shadow:var(--shadow);display:flex;flex-direction:column;gap:.25rem}
+.intervention-header{display:flex;align-items:center;justify-content:space-between;gap:.5rem}
+.intervention-name{font-weight:600;color:var(--text)}
+.intervention-meta{display:flex;flex-wrap:wrap;gap:.75rem;font-size:.8rem;color:var(--text-secondary)}
+.intervention-avg{font-weight:600}
+.intervention-weakest{font-style:italic}
+
+/* Results: scrolling cells stay behind fixed columns */
+#results-table th,
+#results-table td{
+  position:relative;
+  z-index:0;
+}
+
+/* Second header row (ENG/COM etc.) must stay behind sticky block */
+#results-table thead tr#results-head-row-2 th{
+  z-index:0;
+}
+
+/* Rank column: sticky + blue divider as shadow (paints in front of Name) */
+#results-table thead tr#results-head-row-1 th:nth-child(1),
+#results-table tbody td:nth-child(1){
+  position:sticky;
+  left:0;
+  width:54px;
+  min-width:54px;
+  max-width:54px;
+  background:var(--surface);
+  z-index:20;
+  padding-right:0.35rem;
+  /* Blue line on right edge, drawn on top of next column */
+  box-shadow:2px 0 0 0 var(--primary);
+}
+
+/* Name column: sticky, sits behind Rank's shadow so line is visible */
+#results-table thead tr#results-head-row-1 th:nth-child(2),
+#results-table tbody td:nth-child(2){
+  position:sticky;
+  left:54px;
+  background:var(--surface);
+  z-index:19;
+  padding-left:0.35rem;
+}
+
+
+/* Class Trends Summary Table */
+.summary-table td:first-child{font-weight:600;color:var(--text)}
+.summary-table td:nth-child(2){font-weight:700;color:var(--primary)}
+
 /* Enhanced Heatmap */
 .hm-sticky{position:sticky;left:0;background:var(--surface);z-index:2;font-weight:600}
 .hm-name{font-weight:600;text-align:left !important;white-space:nowrap;min-width:140px}
@@ -65,3 +119,18 @@
 
 /* Print Report Card */
 @media print{.report-card{border:none;box-shadow:none;padding:1.5rem}.rc-header{border-bottom:3px double #000}.modal-actions{display:none !important}.modal-overlay{position:absolute;background:#fff}.modal{box-shadow:none;width:100%;max-width:none;padding:0}}
+
+/* Override header logo styling to stand out more */
+.logo h1{
+  font-size:2rem;
+  font-weight:800;
+  color:var(--primary);
+  letter-spacing:0.08em;
+  text-transform:uppercase;
+  font-family:"Algerian","Inter",system-ui,-apple-system,sans-serif;
+}
+
+/* Center the school name block in the header */
+.logo{
+  justify-content:center;
+}
