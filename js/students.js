@@ -68,6 +68,19 @@
       const s = app.state.students.find(x => x.id === studentId);
       if (s) {
         if (!s.scores[mockId]) s.scores[mockId] = {};
+
+        const previousScoresStore = JSON.parse(localStorage.getItem('previousScores') || '{}');
+        const previousScore = s.scores[mockId] ? { ...s.scores[mockId] } : null;
+
+        // Debug fast
+        console.log('Current:', scoresData);
+        console.log('Previous:', previousScore);
+
+        // Store previous for this student/mock before update
+        previousScoresStore[studentId] = previousScoresStore[studentId] || {};
+        previousScoresStore[studentId][mockId] = previousScore || {};
+        localStorage.setItem('previousScores', JSON.stringify(previousScoresStore));
+
         Object.assign(s.scores[mockId], scoresData);
         app.save();
         app.ui.refreshUI();
