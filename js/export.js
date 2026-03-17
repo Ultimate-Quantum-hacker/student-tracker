@@ -92,10 +92,13 @@
     },
 
     exportExcel: function () {
-      if (!window.XLSX) {
-        app.ui.showToast('Excel export unavailable. Please reload and try again.');
-        return;
-      }
+      try {
+        console.log('Export Excel clicked, XLSX available:', !!window.XLSX);
+        if (!window.XLSX || !window.XLSX.utils || !window.XLSX.writeFile) {
+          console.error('Excel export library missing or incompatible', window.XLSX);
+          app.ui.showToast('Excel export unavailable. Please reload and try again.');
+          return;
+        }
 
       const headers = [
         'Rank',
@@ -355,6 +358,10 @@
       XLSX.utils.book_append_sheet(wb, ws, 'Student Report');
       XLSX.writeFile(wb, 'Student_Exam_Report.xlsx', { bookType: 'xlsx', cellStyles: true });
       app.ui.showToast('Excel report generated');
+    } catch (err) {
+      console.error('Excel export error:', err);
+      app.ui.showToast('Excel export failed. See console for details.');
+    }
     }
   };
 
