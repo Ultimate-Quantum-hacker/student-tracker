@@ -19,10 +19,12 @@ const CORE_ASSETS = [
   '/js/ui.js',
   '/js/app.js',
   '/js/sidebar.js',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
-  '/icons/maskable-192.png',
-  '/icons/maskable-512.png'
+  '/icons/launchericon-48x48.png',
+  '/icons/launchericon-72x72.png',
+  '/icons/launchericon-96x96.png',
+  '/icons/launchericon-144x144.png',
+  '/icons/launchericon-192x192.png',
+  '/icons/launchericon-512x512.png'
 ];
 
 self.addEventListener('install', event => {
