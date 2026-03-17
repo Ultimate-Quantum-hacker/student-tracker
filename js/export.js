@@ -353,7 +353,7 @@
 
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Student Report');
-      XLSX.writeFile(wb, 'Student_Exam_Report.xlsx');
+      XLSX.writeFile(wb, 'Student_Exam_Report.xlsx', { bookType: 'xlsx', cellStyles: true });
       app.ui.showToast('Excel report generated');
     }
   };
