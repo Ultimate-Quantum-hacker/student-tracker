@@ -3,6 +3,8 @@
    Sidebar navigation and mobile menu functionality.
    ═══════════════════════════════════════════════ */
 
+import app from './state.js';
+
 const sidebar = {
   init: function () {
     console.log("Initializing sidebar...");
@@ -106,6 +108,8 @@ const sidebar = {
     }
   }
 };
+
+app.sidebar = sidebar;
 
 // Export sidebar module
 export default sidebar;

@@ -3,6 +3,8 @@
    Heatmap visualization for performance data.
    ═══════════════════════════════════════════════ */
 
+import app from './state.js';
+
 const heatmap = {
   getHeatmapClass: function (score) {
     if (score === null || score === undefined || isNaN(score)) return '';
@@ -10,7 +12,7 @@ const heatmap = {
     if (score >= 50) return 'hm-average';
     return 'hm-weak';
   },
-  renderHeatmap: function (app) {
+  renderHeatmap: function () {
     if (!app.dom.heatmapHead || !app.dom.heatmapBody) return;
     var headerHtml = '<th class="hm-sticky">Student</th>';
     app.state.subjects.forEach(function(s) {
@@ -39,6 +41,8 @@ const heatmap = {
     app.dom.heatmapBody.innerHTML = bodyHtml;
   }
 };
+
+app.heatmap = heatmap;
 
 // Export heatmap module
 export default heatmap;

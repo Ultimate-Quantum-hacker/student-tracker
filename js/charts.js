@@ -3,9 +3,11 @@
    Chart rendering and visualization.
    ═══════════════════════════════════════════════ */
 
+import app from './state.js';
+
 const charts = {
   colors: ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#84cc16'],
-  renderClassChart: function (data, hasData, app) {
+  renderClassChart: function (data, hasData) {
     if (!app.dom.classChart) return;
     var canvas = app.dom.classChart;
     var ctx = canvas.getContext('2d');
@@ -122,7 +124,7 @@ const charts = {
       canvas._hasClassTooltipListener = true;
     }
   },
-  renderStudentChart: function (studentId, app) {
+  renderStudentChart: function (studentId) {
     var s = app.state.students.find(function(x) { return x.id === studentId; });
     if (!s || !app.dom.canvas) return;
     var canvas = app.dom.canvas;
@@ -140,12 +142,13 @@ const charts = {
     ctx.clearRect(0, 0, w, h);
     var maxScore = app.state.subjects.length * 100;
     var points = [];
-    app.state.mocks.forEach(function(m, i) {
+    app.state.exams.forEach(function(m, i) {
       var t = app.analytics.mockTotal(s.scores[m.id]);
       if (t !== null) {
-        var label = (m.name && m.name.toLowerCase().startsWith('mock ')) ? ('M' + (i + 1)) : m.name;
+        var examName = m.title || m.name;
+        var label = (examName && examName.toLowerCase().startsWith('mock ')) ? ('M' + (i + 1)) : examName;
         points.push({
-          x: 50 + (i / (app.state.mocks.length - 1 || 1)) * (w - 100),
+          x: 50 + (i / (app.state.exams.length - 1 || 1)) * (w - 100),
           y: h - 50 - (t / maxScore) * (h - 100),
           val: t, name: label
         });
@@ -185,6 +188,5 @@ const charts = {
   }
 };
 
-// Export charts module and assign to global app
 app.charts = charts;
 export default charts;

@@ -4,6 +4,7 @@
    ═══════════════════════════════════════════════ */
 
 import { addStudent as addStudentToDB, updateStudent as updateStudentInDB, deleteStudent as deleteStudentFromDB, saveScore, saveBulkScores } from '../services/db.js';
+import app from './state.js';
 
 const students = {
   addStudent: async function (name, app, ui) {
@@ -143,6 +144,8 @@ const students = {
     }
   }
 };
+
+app.students = students;
 
 // Export students module
 export default students;

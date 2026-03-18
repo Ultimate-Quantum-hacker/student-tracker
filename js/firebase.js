@@ -18,10 +18,10 @@ const firebaseConfig = {
 };
 
 // Check if Firebase is properly configured
-const isFirebaseConfigured = firebaseConfig.apiKey && 
-                           firebaseConfig.apiKey !== "your-api-key-here" && 
-                           firebaseConfig.projectId && 
-                           firebaseConfig.projectId !== "your-project-id";
+let isFirebaseConfigured = firebaseConfig.apiKey && 
+                          firebaseConfig.apiKey !== "your-api-key-here" && 
+                          firebaseConfig.projectId && 
+                          firebaseConfig.projectId !== "your-project-id";
 
 let app, db;
 

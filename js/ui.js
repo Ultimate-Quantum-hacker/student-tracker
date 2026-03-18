@@ -88,7 +88,7 @@ const domIds = {
   bulkScoreHead: 'bulkScoreHead'
 };
 
-  app.ui = {
+const ui = {
     
     initDOM: function () {
       console.log("Initializing DOM references...");
@@ -313,9 +313,9 @@ const domIds = {
       const avgs = app.analytics.calcAverages(s);
       const avg = avgs.overall ?? 0;
       const risk = app.analytics.getRiskLevel(s);
-      const mockCount = app.state.mocks.length;
-      const currentMock = app.state.mocks[mockCount - 1];
-      const previousMock = app.state.mocks[mockCount - 2];
+      const mockCount = app.state.exams.length;
+      const currentMock = app.state.exams[mockCount - 1];
+      const previousMock = app.state.exams[mockCount - 2];
       const currentScore = currentMock ? app.analytics.mockTotal(s.scores[currentMock.id] || {}) : null;
       const previousMockScore = previousMock ? app.analytics.mockTotal(s.scores[previousMock.id] || {}) : null;
       const storagePrevious = JSON.parse(localStorage.getItem('previousScores') || '{}');
@@ -331,8 +331,8 @@ const domIds = {
       const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
       const riskClass = risk === 'Needs Support' ? 'rc-risk' : (risk === 'Average' ? 'rc-borderline' : 'rc-safe');
       const avgClass = avg >= 70 ? 'rc-safe' : (avg >= 50 ? 'rc-borderline' : 'rc-risk');
-      let scoresHtml = '<table class="rc-table"><thead><tr><th>Subject</th>' + app.state.mocks.map(m => `<th>${app.utils.esc(m.name)}</th>`).join('') + '<th>Average</th></tr></thead><tbody>';
-      app.state.subjects.forEach(sub => { scoresHtml += '<tr><td class="rc-subject">' + app.utils.esc(sub.name) + '</td>'; app.state.mocks.forEach(m => { const val = s.scores[m.id]?.[sub.id]; const cls = val !== null && val !== undefined ? (val >= 70 ? 'rc-safe' : (val >= 50 ? 'rc-borderline' : 'rc-risk')) : ''; scoresHtml += `<td class="${cls}">${val ?? '\u2014'}</td>`; }); const subAvg = avgs[sub.id]; scoresHtml += `<td><strong>${subAvg !== null ? subAvg.toFixed(1) : '\u2014'}</strong></td></tr>`; });
+      let scoresHtml = '<table class="rc-table"><thead><tr><th>Subject</th>' + app.state.exams.map(m => `<th>${app.utils.esc(m.title || m.name)}</th>`).join('') + '<th>Average</th></tr></thead><tbody>';
+      app.state.subjects.forEach(sub => { scoresHtml += '<tr><td class="rc-subject">' + app.utils.esc(sub.name) + '</td>'; app.state.exams.forEach(m => { const val = s.scores[m.id]?.[sub.id]; const cls = val !== null && val !== undefined ? (val >= 70 ? 'rc-safe' : (val >= 50 ? 'rc-borderline' : 'rc-risk')) : ''; scoresHtml += `<td class="${cls}">${val ?? '\u2014'}</td>`; }); const subAvg = avgs[sub.id]; scoresHtml += `<td><strong>${subAvg !== null ? subAvg.toFixed(1) : '\u2014'}</strong></td></tr>`; });
       scoresHtml += '</tbody></table>';
       const trendText = improvement.className === 'improv-up' ? 'Improving ▲' : (improvement.className === 'improv-down' ? 'Declining ▼' : (improvement.text !== '—' ? 'Stable' : 'Insufficient data'));
       const trendClass = improvement.className === 'improv-up' ? 'rc-safe' : (improvement.className === 'improv-down' ? 'rc-risk' : '');
@@ -443,7 +443,7 @@ const domIds = {
           app.sidebar.init();
         }
         
-        if (app.dom.form) app.dom.form.onsubmit = (e) => { e.preventDefault(); this.students.addStudent(app.dom.nameInput.value, app, this); app.dom.nameInput.value = ''; };
+        if (app.dom.form) app.dom.form.onsubmit = (e) => { e.preventDefault(); app.students.addStudent(app.dom.nameInput.value, app, this); app.dom.nameInput.value = ''; };
         if (app.dom.backupBtn) app.dom.backupBtn.onclick = () => app.export.exportBackup(app);
         if (app.dom.restoreBtn) app.dom.restoreBtn.onclick = () => app.dom.restoreInput.click();
         if (app.dom.restoreInput) app.dom.restoreInput.onchange = (e) => app.export.importBackup(e.target.files[0], app);

@@ -3,6 +3,8 @@
    Handles CSV, Excel, and JSON Backup/Restore.
    ═══════════════════════════════════════════════ */
 
+import app from './state.js';
+
 const exportModule = {
     
     exportBackup: function (app) {
@@ -12,7 +14,7 @@ const exportModule = {
       
       const data = {
         students: app.state.students,
-        mocks: app.state.mocks,
+        exams: app.state.exams,
         subjects: app.state.subjects,
         lastBackup: app.state.lastBackup,
         theme: app.state.theme
@@ -112,8 +114,8 @@ const exportModule = {
       })).sort((a, b) => (b._avg.overall || 0) - (a._avg.overall || 0));
 
       const rows = ranked.map((s, i) => {
-        const currentMock = app.state.mocks[app.state.mocks.length - 1];
-        const previousMock = app.state.mocks[app.state.mocks.length - 2];
+        const currentMock = app.state.exams[app.state.exams.length - 1];
+        const previousMock = app.state.exams[app.state.exams.length - 2];
         const currentScore = currentMock ? app.analytics.mockTotal(s.scores[currentMock.id] || {}) : null;
         const previousMockScore = previousMock ? app.analytics.mockTotal(s.scores[previousMock.id] || {}) : null;
         const prevStorage = JSON.parse(localStorage.getItem('previousScores') || '{}');
@@ -362,6 +364,6 @@ const exportModule = {
     }
 };
 
-// Export export module and assign to global app
+// Register on shared app instance
 app.export = exportModule;
 export default exportModule;

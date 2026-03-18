@@ -3,12 +3,13 @@
    Handles all calculation and ranking logic.
    ═══════════════════════════════════════════════ */
 
+import app from './state.js';
+
 const analytics = {
-    
-  mockTotal: function (scores, subjects) {
-    let t = 0, c = 0;
-    if (!subjects) return null;
-    subjects.forEach(s => {
+  mockTotal: function (scores) {
+    let t = 0;
+    let c = 0;
+    app.state.subjects.forEach(s => {
       const v = scores && scores[s.id];
       if (v !== undefined && v !== null && !isNaN(v)) {
         const num = Number(v);
@@ -21,70 +22,71 @@ const analytics = {
     return c > 0 ? t : null;
   },
 
-  calcAverages: function (student, subjects, exams) {
-    let sum = 0, count = 0;
+  calcAverages: function (student) {
+    let sum = 0;
+    let count = 0;
     const subAvgs = {};
-    if (!subjects || !exams) return { overall: null };
-    
-    subjects.forEach(subj => {
-      let sSum = 0, sCount = 0;
-      exams.forEach(m => {
-        const val = student.scores[m.id]?.[subj.id];
-        if (val !== null && val !== undefined) {
-          sSum += val;
+
+    app.state.subjects.forEach(subj => {
+      let sSum = 0;
+      let sCount = 0;
+      app.state.exams.forEach(m => {
+        const val = student.scores?.[m.id]?.[subj.id];
+        if (val !== null && val !== undefined && !isNaN(val)) {
+          sSum += Number(val);
           sCount++;
-          sum += val;
+          sum += Number(val);
           count++;
         }
       });
       subAvgs[subj.id] = sCount ? (sSum / sCount) : null;
     });
+
     subAvgs.overall = count ? (sum / count) : null;
     return subAvgs;
   },
 
-  calcClassAverages: function (students, subjects, exams) {
-    if (!students || !subjects || !exams) return [];
-    
-    return exams.map(m => {
-      let sum = 0, count = 0;
-      students.forEach(s => {
-        const total = this.mockTotal(s.scores[m.id], subjects);
+  calcClassAverages: function () {
+    return app.state.exams.map(exam => {
+      let sum = 0;
+      let count = 0;
+      app.state.students.forEach(student => {
+        const total = this.mockTotal(student.scores?.[exam.id]);
         if (total !== null) {
           sum += total;
           count++;
-      return app.state.mocks.map(m => {
-        const result = { name: m.name, id: m.id };
-        let mockTotalSum = 0, mockTotalCount = 0;
-        app.state.subjects.forEach(s => {
-          let subjSum = 0, subjCount = 0;
-          app.state.students.forEach(st => {
-            const sc = st.scores[m.id]?.[s.id];
-            if (sc !== null && sc !== undefined) {
-              subjSum += sc;
-              subjCount++;
-              mockTotalSum += sc;
-              mockTotalCount++;
-            }
-          });
-          result[s.id + 'Avg'] = subjCount ? (subjSum / subjCount) : null;
-        });
-        result.overall = mockTotalCount ? (mockTotalSum / mockTotalCount) : null;
-        return result;
-      });
-    },
-
-    getWeakestSubject: function (student) {
-      const avgs = this.calcAverages(student);
-      let weakest = null, min = Infinity;
-      app.state.subjects.forEach(s => {
-        if (avgs[s.id] !== null) {
-          if (avgs[s.id] < min) { min = avgs[s.id]; weakest = s.name; }
         }
       });
-      return weakest || '—';
-    }
-  };
+      return {
+        id: exam.id,
+        name: exam.title || exam.name,
+        overall: count ? (sum / count) : null
+      };
+    });
+  },
 
-// Export analytics object
+  getRiskLevel: function (student) {
+    const avgs = this.calcAverages(student);
+    const avg = avgs.overall ?? 0;
+    if (avg >= 70) return 'Safe';
+    if (avg >= 50) return 'Average';
+    return 'Needs Support';
+  },
+
+  getWeakestSubject: function (student) {
+    const avgs = this.calcAverages(student);
+    let weakest = null;
+    let min = Infinity;
+    app.state.subjects.forEach(s => {
+      if (avgs[s.id] !== null && avgs[s.id] < min) {
+        min = avgs[s.id];
+        weakest = s.name;
+      }
+    });
+    return weakest || '—';
+  }
+};
+
+app.analytics = analytics;
+
 export default analytics;
