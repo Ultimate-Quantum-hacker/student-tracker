@@ -3,8 +3,6 @@
    Sidebar navigation and mobile menu functionality.
    ═══════════════════════════════════════════════ */
 
-import app from './state.js';
-
 const sidebar = {
   init: function () {
     console.log("Initializing sidebar...");
@@ -102,13 +100,12 @@ const sidebar = {
     if (activeSection) {
       activeSection.classList.add('active');
       // Render bulk table when bulk-scores section is shown
-      if (sectionId === 'bulk-scores' && app.ui) {
-        app.ui.renderBulkTable();
+      if (sectionId === 'bulk-scores' && window.TrackerApp && window.TrackerApp.ui) {
+        window.TrackerApp.ui.renderBulkTable();
       }
     }
   }
 };
 
-// Export sidebar module and assign to global app
-app.sidebar = sidebar;
+// Export sidebar module
 export default sidebar;

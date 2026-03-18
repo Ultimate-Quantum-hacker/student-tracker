@@ -3,11 +3,9 @@
    Chart rendering and visualization.
    ═══════════════════════════════════════════════ */
 
-import app from './state.js';
-
 const charts = {
   colors: ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#84cc16'],
-  renderClassChart: function (data, hasData) {
+  renderClassChart: function (data, hasData, app) {
     if (!app.dom.classChart) return;
     var canvas = app.dom.classChart;
     var ctx = canvas.getContext('2d');
@@ -124,7 +122,7 @@ const charts = {
       canvas._hasClassTooltipListener = true;
     }
   },
-  renderStudentChart: function (studentId) {
+  renderStudentChart: function (studentId, app) {
     var s = app.state.students.find(function(x) { return x.id === studentId; });
     if (!s || !app.dom.canvas) return;
     var canvas = app.dom.canvas;

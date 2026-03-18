@@ -3,14 +3,12 @@
    Handles all calculation and ranking logic.
    ═══════════════════════════════════════════════ */
 
-// Import app state from state module
-import app from './state.js';
-
 const analytics = {
     
-  mockTotal: function (scores) {
+  mockTotal: function (scores, subjects) {
     let t = 0, c = 0;
-    app.state.subjects.forEach(s => {
+    if (!subjects) return null;
+    subjects.forEach(s => {
       const v = scores && scores[s.id];
       if (v !== undefined && v !== null && !isNaN(v)) {
         const num = Number(v);
@@ -23,49 +21,38 @@ const analytics = {
     return c > 0 ? t : null;
   },
 
-  calcAverages: function (student) {
+  calcAverages: function (student, subjects, exams) {
     let sum = 0, count = 0;
     const subAvgs = {};
-    app.state.subjects.forEach(subj => {
+    if (!subjects || !exams) return { overall: null };
+    
+    subjects.forEach(subj => {
       let sSum = 0, sCount = 0;
-        app.state.mocks.forEach(m => {
-          const val = student.scores[m.id]?.[subj.id];
-          if (val !== null && val !== undefined) {
-            sSum += val;
-            sCount++;
-            sum += val;
-            count++;
-          }
-        });
-        subAvgs[subj.id] = sCount ? (sSum / sCount) : null;
+      exams.forEach(m => {
+        const val = student.scores[m.id]?.[subj.id];
+        if (val !== null && val !== undefined) {
+          sSum += val;
+          sCount++;
+          sum += val;
+          count++;
+        }
       });
-      subAvgs.overall = count ? (sum / count) : null;
-      return subAvgs;
-    },
+      subAvgs[subj.id] = sCount ? (sSum / sCount) : null;
+    });
+    subAvgs.overall = count ? (sum / count) : null;
+    return subAvgs;
+  },
 
-    getRiskLevel: function (student) {
-      const avgs = this.calcAverages(student);
-      const avg = avgs.overall;
-      if (avg === null) return 'N/A';
-      if (avg >= 70) return 'Strong';
-      if (avg >= 50) return 'Average';
-      return 'Needs Support';
-    },
-
-    calcImprovement: function (student) {
-      if (!app.state.mocks || app.state.mocks.length < 2) return null;
-      let scores = [];
-      app.state.mocks.forEach(m => {
-        const total = this.mockTotal(student.scores[m.id]);
-        if (total !== null) scores.push(total);
-      });
-      if (scores.length < 2) return null;
-      const first = scores[0], last = scores[scores.length - 1];
-      if (first === 0) return last > 0 ? 100 : 0;
-      return ((last - first) / first) * 100;
-    },
-
-    calcClassAverages: function () {
+  calcClassAverages: function (students, subjects, exams) {
+    if (!students || !subjects || !exams) return [];
+    
+    return exams.map(m => {
+      let sum = 0, count = 0;
+      students.forEach(s => {
+        const total = this.mockTotal(s.scores[m.id], subjects);
+        if (total !== null) {
+          sum += total;
+          count++;
       return app.state.mocks.map(m => {
         const result = { name: m.name, id: m.id };
         let mockTotalSum = 0, mockTotalCount = 0;

@@ -3,11 +3,9 @@
    Handles CSV, Excel, and JSON Backup/Restore.
    ═══════════════════════════════════════════════ */
 
-import app from './state.js';
-
 const exportModule = {
     
-    exportBackup: function () {
+    exportBackup: function (app) {
       app.state.lastBackup = new Date().toISOString();
       app.save();
       app.ui.updateBackupStatus();
@@ -29,7 +27,7 @@ const exportModule = {
       app.ui.showToast('Backup downloaded');
     },
 
-    importBackup: function (file) {
+    importBackup: function (file, app) {
       if (!file) {
         app.ui.showToast("No file selected");
         return;
@@ -40,7 +38,7 @@ const exportModule = {
           const data = JSON.parse(event.target.result);
           if (confirm("Import backup? This will REPLACE current data.")) {
             app.state.students = data.students || [];
-            app.state.mocks = data.mocks || [];
+            app.state.exams = data.exams || [];
             app.state.subjects = data.subjects || [];
             app.state.lastBackup = data.lastBackup || null;
             app.state.theme = data.theme || "light";
@@ -65,17 +63,17 @@ const exportModule = {
       reader.readAsText(file);
     },
 
-    exportCSV: function () {
-      let csv = 'Rank,Student,' + app.state.mocks.map(m => `"${m.name}"`).join(',') + ',Overall Average\n';
+    exportCSV: function (app) {
+      let csv = 'Rank,Student,' + app.state.exams.map(m => `"${m.title || m.name}"`).join(',') + ',Overall Average\n';
       
       const ranked = app.state.students.map(s => ({ 
         ...s, 
-        _avg: app.analytics.calcAverages(s) 
+        _avg: app.analytics.calcAverages(s, app.state.subjects, app.state.exams) 
       })).sort((a, b) => (b._avg.overall || 0) - (a._avg.overall || 0));
 
       ranked.forEach((s, i) => {
-        const scores = app.state.mocks.map(m => {
-          const t = app.analytics.mockTotal(s.scores[m.id]);
+        const scores = app.state.exams.map(m => {
+          const t = app.analytics.mockTotal(s.scores[m.id], app.state.subjects);
           return t !== null ? t : '';
         }).join(',');
         
@@ -90,7 +88,7 @@ const exportModule = {
       a.click();
     },
 
-    exportExcel: function () {
+    exportExcel: function (app) {
       try {
         console.log('Export Excel clicked, XLSX available:', !!window.XLSX);
         if (!window.XLSX || !window.XLSX.utils || !window.XLSX.writeFile) {

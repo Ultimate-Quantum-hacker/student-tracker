@@ -3,143 +3,146 @@
    Handles all student data mutations with Firestore.
    ═══════════════════════════════════════════════ */
 
-import app from './state.js';
+import { addStudent as addStudentToDB, updateStudent as updateStudentInDB, deleteStudent as deleteStudentFromDB, saveScore, saveBulkScores } from '../services/db.js';
 
 const students = {
-  addStudent: async function (name) {
+  addStudent: async function (name, app, ui) {
     const n = name.trim();
     if (!n) return;
     
     try {
-      const newStudent = await app.addStudent({ name: n, class: '', notes: '' });
-      app.ui.refreshUI();
-      app.ui.showToast(`Added ${n}`);
+      const newStudent = await addStudentToDB({ name: n, class: '', notes: '' });
+      ui.refreshUI();
+      ui.showToast(`Added ${n}`);
     } catch (error) {
       console.error('Failed to add student:', error);
-      app.ui.showToast('Failed to add student');
-      }
-    },
-
-    deleteStudent: function (uid) {
-      const s = app.state.students.find(x => x.id === uid);
-      if (!s) return;
-      app.state.deletingId = uid;
-      if (app.dom.deleteConfirmMsg) app.dom.deleteConfirmMsg.textContent = `Delete "${s.name}"?`;
-      app.dom.deleteModal.classList.add('active');
-    },
-
-    confirmDelete: async function () {
-      try {
-        await app.deleteStudent(app.state.deletingId);
-        app.dom.deleteModal.classList.remove('active');
-        app.ui.refreshUI();
-        app.ui.showToast("Deleted");
-      } catch (error) {
-        console.error('Failed to delete student:', error);
-        app.ui.showToast('Failed to delete student');
-      }
-    },
-
-    startEdit: function (uid) {
-      const s = app.state.students.find(x => x.id === uid);
-      if (!s) return;
-      app.state.editingId = uid;
-      app.dom.editInput.value = s.name;
-      app.dom.editModal.classList.add('active');
-    },
-
-    saveEdit: async function () {
-      const s = app.state.students.find(x => x.id === app.state.editingId);
-      if (s && app.dom.editInput.value.trim()) {
-        try {
-          await app.updateStudent(app.state.editingId, { name: app.dom.editInput.value.trim() });
-          app.ui.refreshUI();
-        } catch (error) {
-          console.error('Failed to update student:', error);
-          app.ui.showToast('Failed to update student');
-        }
-      }
-      app.dom.editModal.classList.remove('active');
-    },
-
-    bulkImport: async function (text) {
-      const names = text.split('\n');
-      let count = 0;
-      
-      try {
-        for (const n of names) {
-          if (n.trim()) {
-            await app.addStudent({ name: n.trim(), class: '', notes: '' });
-            count++;
-          }
-        }
-        app.ui.refreshUI();
-        app.ui.showToast(`Added ${count} students`);
-        return count;
-      } catch (error) {
-        console.error('Failed to bulk import students:', error);
-        app.ui.showToast('Failed to import some students');
-        return count;
-      }
-    },
-
-    saveScores: async function (studentId, examId, scoresData) {
-      try {
-        const s = app.state.students.find(x => x.id === studentId);
-        if (!s) return;
-
-        // Save each score individually
-        for (const [subject, score] of Object.entries(scoresData)) {
-          const scoreValue = Number.isFinite(Number(score)) ? app.utils.clamp(Number(score), 0, 100) : null;
-          if (scoreValue !== null) {
-            await app.saveScore({
-              studentId: studentId,
-              examId: examId,
-              subject: subject,
-              score: scoreValue
-            });
-          }
-        }
-        
-        app.ui.refreshUI();
-        app.ui.showToast("Saved Scores");
-      } catch (error) {
-        console.error('Failed to save scores:', error);
-        app.ui.showToast('Failed to save scores');
-      }
-    },
-
-    saveBulkScores: async function (examId, inputs) {
-      try {
-        const scorePromises = [];
-        
-        inputs.forEach(i => {
-          const studentId = i.dataset.sid;
-          const subject = i.dataset.sub;
-          const scoreValue = i.value !== '' ? app.utils.clamp(parseInt(i.value), 0, 100) : null;
-          
-          if (studentId && subject && scoreValue !== null) {
-            scorePromises.push(
-              app.saveScore({
-                studentId: studentId,
-                examId: examId,
-                subject: subject,
-                score: scoreValue
-              })
-            );
-          }
-        });
-        
-        await Promise.all(scorePromises);
-        app.ui.refreshUI();
-        app.ui.showToast("Class scores saved");
-      } catch (error) {
-        console.error('Failed to save bulk scores:', error);
-        app.ui.showToast('Failed to save some scores');
-      }
+      ui.showToast('Failed to add student');
     }
-  };
+  },
 
-// Export students module and assign to global app
-app.students = students;
+  deleteStudent: function (uid, app, ui) {
+    const s = app.state.students.find(x => x.id === uid);
+    if (!s) return;
+    app.state.deletingId = uid;
+    if (app.dom.deleteConfirmMsg) app.dom.deleteConfirmMsg.textContent = `Delete "${s.name}"?`;
+    app.dom.deleteModal.classList.add('active');
+  },
+
+  confirmDelete: async function (app, ui) {
+    const uid = app.state.deletingId;
+    if (!uid) return;
+    
+    try {
+      await deleteStudentFromDB(uid);
+      app.state.deletingId = null;
+      app.dom.deleteModal.classList.remove('active');
+      ui.refreshUI();
+      ui.showToast('Student deleted');
+    } catch (error) {
+      console.error('Failed to delete student:', error);
+      ui.showToast('Failed to delete student');
+    }
+  },
+
+  startEdit: function (uid, app, ui) {
+    const s = app.state.students.find(x => x.id === uid);
+    if (!s) return;
+    app.state.editingId = uid;
+    if (app.dom.editInput) app.dom.editInput.value = s.name;
+    app.dom.editModal.classList.add('active');
+    if (app.dom.editInput) app.dom.editInput.focus();
+  },
+
+  saveEdit: async function (app, ui) {
+    const uid = app.state.editingId;
+    if (!uid) return;
+    
+    const newName = app.dom.editInput.value.trim();
+    if (!newName) return;
+    
+    try {
+      await updateStudentInDB(uid, { name: newName });
+      app.state.editingId = null;
+      app.dom.editModal.classList.remove('active');
+      ui.refreshUI();
+      ui.showToast('Student updated');
+    } catch (error) {
+      console.error('Failed to update student:', error);
+      ui.showToast('Failed to update student');
+    }
+  },
+
+  bulkImport: function (csv, app, ui) {
+    const lines = csv.trim().split('\n');
+    const newStudents = [];
+    
+    lines.forEach(line => {
+      const parts = line.split(',').map(p => p.trim());
+      if (parts[0]) {
+        newStudents.push({
+          name: parts[0],
+          class: parts[1] || '',
+          notes: parts[2] || ''
+        });
+      }
+    });
+    
+    if (newStudents.length === 0) {
+      ui.showToast('No valid students found');
+      return;
+    }
+    
+    this.importStudents(newStudents, app, ui);
+  },
+
+  importStudents: async function (studentsData, app, ui) {
+    try {
+      for (const studentData of studentsData) {
+        await addStudentToDB(studentData);
+      }
+      ui.refreshUI();
+      ui.showToast(`${studentsData.length} students imported`);
+    } catch (error) {
+      console.error('Failed to import students:', error);
+      ui.showToast('Failed to import students');
+    }
+  },
+
+  saveScores: async function (studentId, examId, scores, app, ui) {
+    try {
+      for (const [subject, score] of Object.entries(scores)) {
+        await saveScore(studentId, examId, subject, score);
+      }
+      ui.refreshUI();
+      ui.showToast('Scores saved');
+    } catch (error) {
+      console.error('Failed to save scores:', error);
+      ui.showToast('Failed to save scores');
+    }
+  },
+
+  saveBulkScores: async function (examId, inputs, app, ui) {
+    try {
+      const scorePromises = [];
+      inputs.forEach(input => {
+        const studentId = input.dataset.sid;
+        const subject = input.dataset.sub;
+        const score = input.value !== '' ? parseInt(input.value) : null;
+        
+        if (studentId && subject) {
+          scorePromises.push(saveScore(studentId, examId, subject, score));
+        }
+      });
+      
+      await Promise.all(scorePromises);
+      ui.refreshUI();
+      ui.showToast("Class scores saved");
+    } catch (error) {
+      console.error('Failed to save bulk scores:', error);
+      ui.showToast('Failed to save some scores');
+    }
+  }
+};
+
+// Export students module
 export default students;

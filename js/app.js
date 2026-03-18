@@ -3,41 +3,82 @@
    Main application bootstrap and initialization.
    ═══════════════════════════════════════════════ */
 
-import app from './state.js';
-import './analytics.js';
-import './students.js';
-import './charts.js';
-import './heatmap.js';
-import './export.js';
-import './ui.js';
-import './sidebar.js';
+// Import all modules
+import './firebase.js';
+import { initializeDefaultData } from '../services/db.js';
+import state from './state.js';
+import analytics from './analytics.js';
+import students from './students.js';
+import charts from './charts.js';
+import heatmap from './heatmap.js';
+import exportModule from './export.js';
+import ui from './ui.js';
+import sidebar from './sidebar.js';
 
-app.Init = async function () {
-  if (app._initialized) return;
-  app._initialized = true;
-  console.log("TrackerApp Initializing...");
+// Create main app object
+const app = {
+  _initialized: false,
   
-  try {
-    // Show loading state
-    showLoadingState();
+  // Attach modules
+  state: state.state,
+  analytics: analytics,
+  students: students,
+  charts: charts,
+  heatmap: heatmap,
+  export: exportModule,
+  ui: ui,
+  sidebar: sidebar,
+  
+  // Copy utility functions
+  utils: state.utils,
+  
+  // Copy CRUD functions
+  addStudent: state.addStudent,
+  updateStudent: state.updateStudent,
+  deleteStudent: state.deleteStudent,
+  addExam: state.addExam,
+  updateExam: state.updateExam,
+  deleteExam: state.deleteExam,
+  addSubject: state.addSubject,
+  updateSubject: state.updateSubject,
+  deleteSubject: state.deleteSubject,
+  
+  // Copy other functions
+  load: state.load,
+  applyTheme: state.applyTheme,
+  loadTheme: state.loadTheme,
+  
+  // Initialize app
+  Init: async function () {
+    if (this._initialized) return;
+    this._initialized = true;
+    console.log("TrackerApp Initializing...");
     
-    // UI Setup first (but don't render data yet)
-    app.ui.initDOM();
-    app.applyTheme();
-    app.ui.bindEvents();
-    
-    // Load data from Firestore
-    await app.load();
-    
-    // Hide loading state and render UI with data
-    hideLoadingState();
-    app.ui.refreshUI();
-    
-    console.log("TrackerApp Ready.");
-  } catch (error) {
-    console.error("TrackerApp initialization failed:", error);
-    hideLoadingState();
-    showErrorState(error.message);
+    try {
+      // Show loading state
+      showLoadingState();
+      
+      // Initialize default data
+      await initializeDefaultData();
+      
+      // Load data from Firestore
+      await this.load();
+      
+      // UI Setup
+      this.ui.initDOM();
+      this.applyTheme();
+      this.ui.bindEvents();
+      
+      // Hide loading state and render UI with data
+      hideLoadingState();
+      this.ui.refreshUI();
+      
+      console.log("TrackerApp Ready.");
+    } catch (error) {
+      console.error("TrackerApp initialization failed:", error);
+      hideLoadingState();
+      showErrorState(error.message);
+    }
   }
 };
 
@@ -69,6 +110,9 @@ function showErrorState(errorMessage) {
     setTimeout(() => toast.classList.remove('show'), 5000);
   }
 }
+
+// Assign to global for backward compatibility
+window.TrackerApp = app;
 
 // Initialize app when DOM is ready
 document.addEventListener('DOMContentLoaded', async () => {

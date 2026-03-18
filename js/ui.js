@@ -136,9 +136,9 @@ const domIds = {
       
       let sum = 0, count = 0, pass = 0, atRisk = 0, borderline = 0, safe = 0;
       app.state.students.forEach(s => {
-        const avg = app.analytics.calcAverages(s).overall;
+        const avg = app.analytics.calcAverages(s, app.state.subjects, app.state.exams).overall;
         if (avg !== null) { sum += avg; count++; if (avg >= 50) pass++; }
-        const status = app.analytics.getRiskLevel(s);
+        const status = app.analytics.getRiskLevel(s, app.state.subjects, app.state.exams);
         if (status === 'Needs Support') atRisk++;
         else if (status === 'Average') borderline++;
         else safe++;
@@ -188,7 +188,7 @@ const domIds = {
     renderResultsTable: function () {
       if (!app.dom.resultsHeadRow1 || !app.dom.resultsHeadRow2 || !app.dom.resultsBody) return;
 
-      const ranked = app.state.students.map(s => ({ ...s, _avg: app.analytics.calcAverages(s) }))
+      const ranked = app.state.students.map(s => ({ ...s, _avg: app.analytics.calcAverages(s, app.state.subjects, app.state.exams) }))
         .filter(s => s.name.toLowerCase().includes(app.state.searchTerm.toLowerCase()))
         .sort((a, b) => (b._avg.overall || 0) - (a._avg.overall || 0));
       
@@ -382,15 +382,15 @@ const domIds = {
         if (app.dom.emptyMsg) app.dom.emptyMsg.style.display = app.state.students.length ? 'none' : 'block';
         this.updateDashboardStats();
         this.renderStudentChips();
-        this.populateSelects();
         this.renderResultsTable();
-        if (app.heatmap) app.heatmap.renderHeatmap();
-        this.renderInterventionList();
-        this.renderClassSummary();
+        this.renderBulkTable();
         this.updateBackupStatus();
-        this.renderManagement();
-        if (app.charts) app.charts.renderStudentChart(app.dom.chartStudentSelect?.value);
-        console.log("UI Refresh Complete.");
+        
+        // Render charts and heatmap
+        const classAverages = app.analytics.calcClassAverages(app.state.students, app.state.subjects, app.state.exams);
+        const hasData = classAverages.some(a => a.overall !== null);
+        app.charts.renderClassChart(classAverages, hasData, app);
+        app.heatmap.renderHeatmap(app);
       } catch (e) {
         console.error("RefreshUI Error:", e);
       }
@@ -443,26 +443,26 @@ const domIds = {
           app.sidebar.init();
         }
         
-        if (app.dom.form) app.dom.form.onsubmit = (e) => { e.preventDefault(); app.students.addStudent(app.dom.nameInput.value); app.dom.nameInput.value = ''; };
-        if (app.dom.backupBtn) app.dom.backupBtn.onclick = () => app.export.exportBackup();
+        if (app.dom.form) app.dom.form.onsubmit = (e) => { e.preventDefault(); this.students.addStudent(app.dom.nameInput.value, app, this); app.dom.nameInput.value = ''; };
+        if (app.dom.backupBtn) app.dom.backupBtn.onclick = () => app.export.exportBackup(app);
         if (app.dom.restoreBtn) app.dom.restoreBtn.onclick = () => app.dom.restoreInput.click();
-        if (app.dom.restoreInput) app.dom.restoreInput.onchange = (e) => app.export.importBackup(e.target.files[0]);
+        if (app.dom.restoreInput) app.dom.restoreInput.onchange = (e) => app.export.importBackup(e.target.files[0], app);
         if (app.dom.themeToggle) app.dom.themeToggle.onclick = () => { app.state.theme = app.state.theme === 'light' ? 'dark' : 'light'; app.applyTheme(); };
         if (app.dom.resetBtn) app.dom.resetBtn.onclick = () => app.dom.resetModal.classList.add('active');
         if (app.dom.resetConfirmBtn) app.dom.resetConfirmBtn.onclick = () => { localStorage.clear(); location.reload(); };
         if (app.dom.resetCancelBtn) app.dom.resetCancelBtn.onclick = () => app.dom.resetModal.classList.remove('active');
         if (app.dom.bulkImportBtn) app.dom.bulkImportBtn.onclick = () => app.dom.bulkImportModal.classList.add('active');
-        if (app.dom.bulkImportConfirmBtn) app.dom.bulkImportConfirmBtn.onclick = () => { app.students.bulkImport(app.dom.bulkImportTextarea.value); app.dom.bulkImportModal.classList.remove('active'); };
+        if (app.dom.bulkImportConfirmBtn) app.dom.bulkImportConfirmBtn.onclick = () => { app.students.bulkImport(app.dom.bulkImportTextarea.value, app, this); app.dom.bulkImportModal.classList.remove('active'); };
         if (app.dom.bulkImportCancelBtn) app.dom.bulkImportCancelBtn.onclick = () => app.dom.bulkImportModal.classList.remove('active');
-        if (app.dom.editSaveBtn) app.dom.editSaveBtn.onclick = () => app.students.saveEdit();
+        if (app.dom.editSaveBtn) app.dom.editSaveBtn.onclick = () => app.students.saveEdit(app, this);
         if (app.dom.editCancelBtn) app.dom.editCancelBtn.onclick = () => app.dom.editModal.classList.remove('active');
-        if (app.dom.deleteConfirmBtn) app.dom.deleteConfirmBtn.onclick = () => app.students.confirmDelete();
+        if (app.dom.deleteConfirmBtn) app.dom.deleteConfirmBtn.onclick = () => app.students.confirmDelete(app, this);
         if (app.dom.deleteCancelBtn) app.dom.deleteCancelBtn.onclick = () => app.dom.deleteModal.classList.remove('active');
         if (app.dom.notesSaveBtn) app.dom.notesSaveBtn.onclick = () => this.saveNotes();
         if (app.dom.notesCancelBtn) app.dom.notesCancelBtn.onclick = () => app.dom.notesModal.classList.remove('active');
         if (app.dom.bulkScoreBtn) app.dom.bulkScoreBtn.onclick = () => { app.dom.bulkScoreModal.classList.add('active'); this.renderBulkTable(); };
         if (app.dom.bulkScoreCancelBtn) app.dom.bulkScoreCancelBtn.onclick = () => app.dom.bulkScoreModal.classList.remove('active');
-        if (app.dom.bulkScoreSaveBtn) app.dom.bulkScoreSaveBtn.onclick = () => app.students.saveBulkScores(app.dom.bulkMockSelect.value, app.dom.bulkScoreBody.querySelectorAll('.bulk-score-input'));
+        if (app.dom.bulkScoreSaveBtn) app.dom.bulkScoreSaveBtn.onclick = () => app.students.saveBulkScores(app.dom.bulkMockSelect.value, app.dom.bulkScoreBody.querySelectorAll('.bulk-score-input'), app, this);
         if (app.dom.addMockForm) app.dom.addMockForm.onsubmit = async (e) => { 
           e.preventDefault(); 
           if (app.dom.mockNameInput.value.trim()) { 
@@ -498,16 +498,16 @@ const domIds = {
               scores[subjectName] = f.value !== '' ? parseInt(f.value) : null;
             }
           });
-          app.students.saveScores(sid, mid, scores);
+          app.students.saveScores(sid, mid, scores, app, this);
         };
         if (app.dom.scoreStudentSelect) app.dom.scoreStudentSelect.onchange = () => this.loadScoreFields();
         if (app.dom.scoreMockSelect) app.dom.scoreMockSelect.onchange = () => this.loadScoreFields();
-        if (app.dom.chartStudentSelect) app.dom.chartStudentSelect.onchange = () => app.charts.renderStudentChart(app.dom.chartStudentSelect.value);
+        if (app.dom.chartStudentSelect) app.dom.chartStudentSelect.onchange = () => app.charts.renderStudentChart(app.dom.chartStudentSelect.value, app);
         if (app.dom.searchInput) app.dom.searchInput.oninput = (e) => { app.state.searchTerm = e.target.value; this.renderResultsTable(); };
         if (app.dom.reportCloseBtn) app.dom.reportCloseBtn.onclick = () => app.dom.reportModal.classList.remove('active');
         if (app.dom.reportPrintBtn) app.dom.reportPrintBtn.onclick = () => window.print();
-        if (app.dom.exportCsvBtn) app.dom.exportCsvBtn.onclick = () => app.export.exportCSV();
-        if (app.dom.exportExcelBtn) app.dom.exportExcelBtn.onclick = () => app.export.exportExcel();
+        if (app.dom.exportCsvBtn) app.dom.exportCsvBtn.onclick = () => app.export.exportCSV(app);
+        if (app.dom.exportExcelBtn) app.dom.exportExcelBtn.onclick = () => app.export.exportExcel(app);
         if (app.dom.printBtn) app.dom.printBtn.onclick = () => window.print();
         if (app.dom.resultsBody) app.dom.resultsBody.addEventListener('click', (e) => {
           const reportCell = e.target.closest('.report-cell');
