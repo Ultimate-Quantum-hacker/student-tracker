@@ -10,18 +10,40 @@ import { getFirestore, collection, doc, addDoc, getDoc, getDocs, updateDoc, dele
 // Firebase configuration
 const firebaseConfig = {
   apiKey: "your-api-key-here",
-  authDomain: "your-project-id.firebaseapp.com",
+  authDomain: "your-project-id.firebaseapp.com", 
   projectId: "your-project-id",
   storageBucket: "your-project-id.appspot.com",
   messagingSenderId: "your-sender-id",
   appId: "your-app-id"
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
+// Check if Firebase is properly configured
+const isFirebaseConfigured = firebaseConfig.apiKey && 
+                           firebaseConfig.apiKey !== "your-api-key-here" && 
+                           firebaseConfig.projectId && 
+                           firebaseConfig.projectId !== "your-project-id";
 
-// Initialize Firestore
-export const db = getFirestore(app);
+let app, db;
+
+if (isFirebaseConfigured) {
+  try {
+    // Initialize Firebase
+    app = initializeApp(firebaseConfig);
+    // Initialize Firestore
+    db = getFirestore(app);
+    console.log("Firebase initialized successfully with real configuration");
+  } catch (error) {
+    console.error("Firebase initialization failed:", error);
+    isFirebaseConfigured = false;
+  }
+}
+
+if (!isFirebaseConfigured) {
+  console.warn("Firebase not configured - using fallback mode");
+  // Create mock Firebase objects for fallback
+  app = { name: "mock-app" };
+  db = null;
+}
 
 // Export Firebase modules for reuse
 export {
@@ -38,7 +60,11 @@ export {
   onSnapshot
 };
 
-// Export app instance for potential future use
+// Export app instance and db for potential future use
 export { app };
+export { db };
 
-console.log("Firebase initialized successfully");
+// Export configuration status
+export { isFirebaseConfigured };
+
+console.log("Firebase module loaded -", isFirebaseConfigured ? "configured" : "fallback mode");

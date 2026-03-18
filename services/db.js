@@ -3,7 +3,7 @@
    Database abstraction layer for Firestore operations.
    ═══════════════════════════════════════════════ */
 
-import { db, collection, doc, addDoc, getDoc, getDocs, updateDoc, deleteDoc, query, where, orderBy } from '../js/firebase.js';
+import { db, collection, doc, addDoc, getDoc, getDocs, updateDoc, deleteDoc, query, where, orderBy, isFirebaseConfigured } from '../js/firebase.js';
 
 // In-memory cache for offline fallback
 let cache = {
@@ -16,6 +16,13 @@ let cache = {
 // Error handling wrapper
 const handleFirestoreError = (error, operation) => {
   console.error(`Firestore ${operation} error:`, error);
+  
+  // If Firebase is not configured, use cache-only mode
+  if (!isFirebaseConfigured || !db) {
+    console.log(`${operation} - using cache-only mode (Firebase not configured)`);
+    return; // Don't throw error, just continue with cache
+  }
+  
   // Return fallback data from cache if available
   throw new Error(`Failed to ${operation}. Using offline cache.`);
 };
@@ -23,6 +30,11 @@ const handleFirestoreError = (error, operation) => {
 // STUDENTS OPERATIONS
 export const getStudents = async () => {
   try {
+    if (!isFirebaseConfigured || !db) {
+      console.log('getStudents - using cache-only mode');
+      return cache.students;
+    }
+    
     const q = query(collection(db, 'students'), orderBy('createdAt', 'desc'));
     const querySnapshot = await getDocs(q);
     const students = [];
@@ -95,6 +107,11 @@ export const deleteStudent = async (studentId) => {
 // EXAMS OPERATIONS
 export const getExams = async () => {
   try {
+    if (!isFirebaseConfigured || !db) {
+      console.log('getExams - using cache-only mode');
+      return cache.exams;
+    }
+    
     const q = query(collection(db, 'exams'), orderBy('date', 'desc'));
     const querySnapshot = await getDocs(q);
     const exams = [];
@@ -170,6 +187,11 @@ export const deleteExam = async (examId) => {
 // SUBJECTS OPERATIONS
 export const getSubjects = async () => {
   try {
+    if (!isFirebaseConfigured || !db) {
+      console.log('getSubjects - using cache-only mode');
+      return cache.subjects;
+    }
+    
     const q = query(collection(db, 'subjects'), orderBy('name'));
     const querySnapshot = await getDocs(q);
     const subjects = [];
@@ -241,6 +263,17 @@ export const deleteSubject = async (subjectId) => {
 // SCORES OPERATIONS
 export const getScores = async (studentId = null, examId = null) => {
   try {
+    if (!isFirebaseConfigured || !db) {
+      console.log('getScores - using cache-only mode');
+      if (!studentId && !examId) {
+        return cache.scores;
+      }
+      return cache.scores.filter(s => 
+        (!studentId || s.studentId === studentId) && 
+        (!examId || s.examId === examId)
+      );
+    }
+    
     let q = collection(db, 'scores');
     
     if (studentId && examId) {
@@ -347,7 +380,34 @@ export const deleteScore = async (scoreId) => {
 // UTILITY FUNCTIONS
 export const initializeDefaultData = async () => {
   try {
-    // Check if subjects exist, if not create defaults
+    // If Firebase is not configured, initialize cache with default data
+    if (!isFirebaseConfigured || !db) {
+      console.log('Initializing default data in cache (Firebase not configured)');
+      
+      // Add default subjects if cache is empty
+      if (cache.subjects.length === 0) {
+        const defaultSubjects = [
+          { id: 'sub_1', name: 'English Language' },
+          { id: 'sub_2', name: 'Mathematics' },
+          { id: 'sub_3', name: 'Integrated Science' },
+          { id: 'sub_4', name: 'Social Studies' },
+          { id: 'sub_5', name: 'Computing' }
+        ];
+        cache.subjects = defaultSubjects;
+        console.log('Added default subjects to cache');
+      }
+      
+      // Add default exam if cache is empty
+      if (cache.exams.length === 0) {
+        const defaultExam = { id: 'exam_1', title: 'Mock 1', date: new Date().toISOString() };
+        cache.exams.push(defaultExam);
+        console.log('Added default exam to cache');
+      }
+      
+      return true;
+    }
+    
+    // Firebase is configured - check if subjects exist, if not create defaults
     const subjects = await getSubjects();
     if (subjects.length === 0) {
       const defaultSubjects = [
@@ -358,8 +418,8 @@ export const initializeDefaultData = async () => {
         { name: 'Computing' }
       ];
       
-      for (const subject of defaultSubjects) {
-        await addSubject(subject);
+      for (const subjectData of defaultSubjects) {
+        await addSubject(subjectData);
       }
     }
     
