@@ -450,6 +450,23 @@ const ui = {
         tabs.forEach(tab => {
           tab.addEventListener('click', () => {
             console.log('Tab clicked:', tab);
+
+            const target = tab.dataset.section;
+            if (!target) return;
+
+            document.querySelectorAll('.section, .content-section').forEach(section => {
+              section.style.display = 'none';
+              section.classList.remove('active');
+            });
+
+            const activeSection = document.getElementById(target);
+            if (activeSection) {
+              activeSection.style.display = 'block';
+              activeSection.classList.add('active');
+            }
+
+            tabs.forEach(tabItem => tabItem.classList.remove('active'));
+            tab.classList.add('active');
           });
         });
 
