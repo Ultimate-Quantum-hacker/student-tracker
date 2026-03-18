@@ -3,7 +3,6 @@
    Handles all student data mutations with Firestore.
    ═══════════════════════════════════════════════ */
 
-import { addStudent as addStudentToDB, updateStudent as updateStudentInDB, deleteStudent as deleteStudentFromDB, saveScore } from '../services/db.js';
 import app from './state.js';
 
 const students = {
@@ -12,7 +11,7 @@ const students = {
     if (!n) return;
     
     try {
-      const newStudent = await addStudentToDB({ name: n, class: '', notes: '' });
+      await app.addStudent({ name: n, class: '', notes: '' });
       ui.refreshUI();
       ui.showToast(`Added ${n}`);
     } catch (error) {
@@ -34,7 +33,7 @@ const students = {
     if (!uid) return;
     
     try {
-      await deleteStudentFromDB(uid);
+      await app.deleteStudent(uid);
       app.state.deletingId = null;
       app.dom.deleteModal.classList.remove('active');
       ui.refreshUI();
@@ -62,7 +61,7 @@ const students = {
     if (!newName) return;
     
     try {
-      await updateStudentInDB(uid, { name: newName });
+      await app.updateStudent(uid, { name: newName });
       app.state.editingId = null;
       app.dom.editModal.classList.remove('active');
       ui.refreshUI();
@@ -99,7 +98,7 @@ const students = {
   importStudents: async function (studentsData, app, ui) {
     try {
       for (const studentData of studentsData) {
-        await addStudentToDB(studentData);
+        await app.addStudent(studentData);
       }
       ui.refreshUI();
       ui.showToast(`${studentsData.length} students imported`);
@@ -112,7 +111,7 @@ const students = {
   saveScores: async function (studentId, examId, scores, app, ui) {
     try {
       for (const [subject, score] of Object.entries(scores)) {
-        await saveScore(studentId, examId, subject, score);
+        await app.saveScore({ studentId, examId, subject, score });
       }
       ui.refreshUI();
       ui.showToast('Scores saved');
@@ -131,7 +130,7 @@ const students = {
         const score = input.value !== '' ? parseInt(input.value) : null;
         
         if (studentId && subject) {
-          scorePromises.push(saveScore(studentId, examId, subject, score));
+          scorePromises.push(app.saveScore({ studentId, examId, subject, score }));
         }
       });
       
