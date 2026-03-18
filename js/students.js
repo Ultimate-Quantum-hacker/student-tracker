@@ -3,7 +3,7 @@
    Handles all student data mutations with Firestore.
    ═══════════════════════════════════════════════ */
 
-import { addStudent as addStudentToDB, updateStudent as updateStudentInDB, deleteStudent as deleteStudentFromDB, saveScore, saveBulkScores } from '../services/db.js';
+import { addStudent as addStudentToDB, updateStudent as updateStudentInDB, deleteStudent as deleteStudentFromDB, saveScore } from '../services/db.js';
 import app from './state.js';
 
 const students = {
