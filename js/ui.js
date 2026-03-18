@@ -89,6 +89,14 @@ const domIds = {
 };
 
 const ui = {
+
+    init: function () {
+      console.log('UI init running');
+      this.initDOM();
+      if (app.applyTheme) {
+        app.applyTheme();
+      }
+    },
     
     initDOM: function () {
       console.log("Initializing DOM references...");
@@ -436,8 +444,22 @@ const ui = {
     deleteSubject: function (id) { if (app.state.subjects.length > 1 && confirm("Delete subject?")) { app.state.subjects = app.state.subjects.filter(x => x.id !== id); app.save(); this.refreshUI(); } },
 
     bindEvents: function () {
-      console.log("Binding Events...");
+      console.log('Binding events...');
       try {
+        const tabs = document.querySelectorAll('.tab, .sidebar-item');
+        tabs.forEach(tab => {
+          tab.addEventListener('click', () => {
+            console.log('Tab clicked:', tab);
+          });
+        });
+
+        const buttons = document.querySelectorAll('button');
+        buttons.forEach(btn => {
+          btn.addEventListener('click', () => {
+            console.log('Button clicked:', btn);
+          });
+        });
+
         // Initialize sidebar
         if (app.sidebar && app.sidebar.init) {
           app.sidebar.init();

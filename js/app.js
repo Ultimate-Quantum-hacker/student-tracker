@@ -11,33 +11,25 @@ import './students.js';
 import './charts.js';
 import './heatmap.js';
 import './export.js';
-import './ui.js';
+import ui from './ui.js';
 import './sidebar.js';
 
 app._initialized = app._initialized || false;
 
-app.Init = async function () {
+app.init = async function () {
   if (app._initialized) return;
   app._initialized = true;
-  console.log("TrackerApp Initializing...");
+  console.log("Initializing state...");
 
   try {
     showLoadingState();
     await initializeDefaultData();
     await app.load();
-
-    app.ui.initDOM();
-    app.applyTheme();
-    app.ui.bindEvents();
-
     hideLoadingState();
-    app.ui.refreshUI();
-
-    console.log("TrackerApp Ready.");
   } catch (error) {
-    console.error("TrackerApp initialization failed:", error);
+    console.error("State initialization failed:", error);
     hideLoadingState();
-    showErrorState(error.message);
+    throw error;
   }
 };
 
@@ -75,13 +67,29 @@ window.TrackerApp = app;
 
 // Initialize app when DOM is ready
 document.addEventListener('DOMContentLoaded', async () => {
-  console.log('TrackerApp Initializing...');
-  
+  console.log('App starting...');
+
   try {
-    await app.Init();
-    console.log('TrackerApp Ready.');
+    if (app.init) {
+      await app.init();
+    }
+    console.log('State initialized');
+
+    if (ui.init) {
+      ui.init();
+    }
+    console.log('UI initialized');
+
+    if (ui.bindEvents) {
+      ui.bindEvents();
+    }
+    console.log('Events bound successfully');
+
+    if (ui.refreshUI) {
+      ui.refreshUI();
+    }
   } catch (error) {
-    console.error('TrackerApp initialization failed:', error);
+    console.error('Initialization failed:', error);
     showErrorState(error.message);
   }
 });
