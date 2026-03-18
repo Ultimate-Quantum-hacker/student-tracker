@@ -345,3 +345,6 @@ window.TrackerApp = window.TrackerApp || {};
   app.loadTheme();
 
 })(window.TrackerApp);
+
+// Export for module usage
+export default window.TrackerApp;

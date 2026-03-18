@@ -3,10 +3,9 @@
    Handles CSV, Excel, and JSON Backup/Restore.
    ═══════════════════════════════════════════════ */
 
-(function (app) {
-  'use strict';
+import app from './state.js';
 
-  app.export = {
+const exportModule = {
     
     exportBackup: function () {
       app.state.lastBackup = new Date().toISOString();
@@ -363,6 +362,8 @@
       app.ui.showToast('Excel export failed. See console for details.');
     }
     }
-  };
+};
 
-})(window.TrackerApp);
+// Export export module and assign to global app
+app.export = exportModule;
+export default exportModule;

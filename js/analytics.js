@@ -3,31 +3,31 @@
    Handles all calculation and ranking logic.
    ═══════════════════════════════════════════════ */
 
-(function (app) {
-  'use strict';
+// Import app state from state module
+import app from './state.js';
 
-  app.analytics = {
+const analytics = {
     
-    mockTotal: function (scores) {
-      let t = 0, c = 0;
-      app.state.subjects.forEach(s => {
-        const v = scores && scores[s.id];
-        if (v !== undefined && v !== null && !isNaN(v)) {
-          const num = Number(v);
-          if (!isNaN(num)) {
-            t += num;
-            c++;
-          }
+  mockTotal: function (scores) {
+    let t = 0, c = 0;
+    app.state.subjects.forEach(s => {
+      const v = scores && scores[s.id];
+      if (v !== undefined && v !== null && !isNaN(v)) {
+        const num = Number(v);
+        if (!isNaN(num)) {
+          t += num;
+          c++;
         }
-      });
-      return c > 0 ? t : null;
-    },
+      }
+    });
+    return c > 0 ? t : null;
+  },
 
-    calcAverages: function (student) {
-      let sum = 0, count = 0;
-      const subAvgs = {};
-      app.state.subjects.forEach(subj => {
-        let sSum = 0, sCount = 0;
+  calcAverages: function (student) {
+    let sum = 0, count = 0;
+    const subAvgs = {};
+    app.state.subjects.forEach(subj => {
+      let sSum = 0, sCount = 0;
         app.state.mocks.forEach(m => {
           const val = student.scores[m.id]?.[subj.id];
           if (val !== null && val !== undefined) {
@@ -99,4 +99,5 @@
     }
   };
 
-})(window.TrackerApp);
+// Export analytics object
+export default analytics;

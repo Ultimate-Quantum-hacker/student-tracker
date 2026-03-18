@@ -1,91 +1,84 @@
 /* ═══════════════════════════════════════════════
    JHS 3 Mock Exam Tracker — app.js
-   Main bootstrap file with async initialization.
+   Main application bootstrap and initialization.
    ═══════════════════════════════════════════════ */
 
-(function (app) {
-  'use strict';
+import app from './state.js';
+import './analytics.js';
+import './students.js';
+import './charts.js';
+import './heatmap.js';
+import './export.js';
+import './ui.js';
+import './sidebar.js';
 
-  app.Init = async function () {
-    if (app._initialized) return;
-    app._initialized = true;
-    console.log("TrackerApp Initializing...");
+app.Init = async function () {
+  if (app._initialized) return;
+  app._initialized = true;
+  console.log("TrackerApp Initializing...");
+  
+  try {
+    // Show loading state
+    showLoadingState();
     
-    try {
-      // Show loading state
-      showLoadingState();
-      
-      // UI Setup first (but don't render data yet)
-      app.ui.initDOM();
-      app.applyTheme();
-      app.ui.bindEvents();
-      
-      // Load data from Firestore
-      await app.load();
-      
-      // Hide loading state and render UI with data
-      hideLoadingState();
-      app.ui.refreshUI();
-      
-      console.log("TrackerApp Ready.");
-    } catch (error) {
-      console.error("TrackerApp initialization failed:", error);
-      hideLoadingState();
-      showErrorState(error.message);
-    }
-  };
-
-  function showLoadingState() {
-    // Show splash screen with loading message
-    const splash = document.getElementById('app-splash');
-    if (splash) {
-      splash.style.display = 'flex';
-      splash.style.opacity = '1';
-      const splashText = splash.querySelector('p');
-      if (splashText) {
-        splashText.textContent = 'Loading data from Firestore...';
-      }
-    }
+    // UI Setup first (but don't render data yet)
+    app.ui.initDOM();
+    app.applyTheme();
+    app.ui.bindEvents();
     
-    // Disable UI interactions
-    document.body.style.pointerEvents = 'none';
+    // Load data from Firestore
+    await app.load();
+    
+    // Hide loading state and render UI with data
+    hideLoadingState();
+    app.ui.refreshUI();
+    
+    console.log("TrackerApp Ready.");
+  } catch (error) {
+    console.error("TrackerApp initialization failed:", error);
+    hideLoadingState();
+    showErrorState(error.message);
   }
+};
 
-  function hideLoadingState() {
-    // Hide splash screen
-    const splash = document.getElementById('app-splash');
-    if (splash) {
-      splash.style.opacity = '0';
-      splash.style.transition = 'opacity 220ms ease-out';
-      setTimeout(function () {
-        if (splash && splash.parentNode) {
-          splash.parentNode.removeChild(splash);
-        }
-      }, 260);
-    }
+// Loading state functions
+function showLoadingState() {
+  const splash = document.getElementById('app-splash');
+  if (splash) splash.style.display = 'flex';
+}
+
+function hideLoadingState() {
+  const splash = document.getElementById('app-splash');
+  if (splash) {
+    splash.style.opacity = '0';
+    setTimeout(() => {
+      splash.style.display = 'none';
+    }, 300);
     
     // Enable UI interactions
     document.body.style.pointerEvents = '';
   }
+}
 
-  function showErrorState(errorMessage) {
-    // Show error toast
-    const toast = document.getElementById('toast');
-    if (toast) {
-      toast.textContent = `Failed to load data: ${errorMessage}. Please check your internet connection and refresh.`;
-      toast.classList.add('show', 'error');
-      setTimeout(() => {
-        toast.classList.remove('show', 'error');
-      }, 8000);
-    }
-    
-    // Try to render UI with empty state
-    if (app.ui && app.ui.refreshUI) {
-      app.ui.refreshUI();
-    }
+function showErrorState(errorMessage) {
+  // Show error toast
+  const toast = document.getElementById('toast');
+  if (toast) {
+    toast.textContent = `Failed to load data: ${errorMessage}. Please check your internet connection and refresh.`;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 5000);
   }
+}
 
-  // Run on DOM load
-  document.addEventListener('DOMContentLoaded', app.Init);
-
-})(window.TrackerApp);
+// Initialize app when DOM is ready
+document.addEventListener('DOMContentLoaded', async () => {
+  console.log('TrackerApp Initializing...');
+  
+  try {
+    await app.Init();
+    console.log('TrackerApp Ready.');
+  } catch (error) {
+    console.error('TrackerApp initialization failed:', error);
+    showErrorState(error.message);
+  }
+});

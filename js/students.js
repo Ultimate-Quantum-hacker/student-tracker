@@ -3,21 +3,20 @@
    Handles all student data mutations with Firestore.
    ═══════════════════════════════════════════════ */
 
-(function (app) {
-  'use strict';
+import app from './state.js';
 
-  app.students = {
-    addStudent: async function (name) {
-      const n = name.trim();
-      if (!n) return;
-      
-      try {
-        const newStudent = await app.addStudent({ name: n, class: '', notes: '' });
-        app.ui.refreshUI();
-        app.ui.showToast(`Added ${n}`);
-      } catch (error) {
-        console.error('Failed to add student:', error);
-        app.ui.showToast('Failed to add student');
+const students = {
+  addStudent: async function (name) {
+    const n = name.trim();
+    if (!n) return;
+    
+    try {
+      const newStudent = await app.addStudent({ name: n, class: '', notes: '' });
+      app.ui.refreshUI();
+      app.ui.showToast(`Added ${n}`);
+    } catch (error) {
+      console.error('Failed to add student:', error);
+      app.ui.showToast('Failed to add student');
       }
     },
 
@@ -141,4 +140,6 @@
     }
   };
 
-})(window.TrackerApp);
+// Export students module and assign to global app
+app.students = students;
+export default students;
