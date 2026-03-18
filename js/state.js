@@ -64,22 +64,22 @@ window.TrackerApp = window.TrackerApp || {};
         getScores()
       ]);
       
-      app.state.students = students;
-      app.state.exams = exams;
-      app.state.subjects = subjects;
-      app.state.scores = scores;
+      // Update state with fetched data
+      app.state.students = students || [];
+      app.state.exams = exams || [];
+      app.state.subjects = subjects || [];
+      app.state.scores = scores || [];
       
-      // Initialize default data if needed
-      await initializeDefaultData();
+      console.log('Data loaded from Firestore:', {
+        students: app.state.students.length,
+        exams: app.state.exams.length,
+        subjects: app.state.subjects.length,
+        scores: app.state.scores.length
+      });
       
-      // If no exams, create default one
-      if (app.state.exams.length === 0) {
-        const defaultExam = await addExam({ title: 'Mock 1', date: new Date().toISOString() });
-        app.state.exams.push(defaultExam);
-      }
-      
-      // If no subjects, create defaults
+      // Initialize default data only if completely empty
       if (app.state.subjects.length === 0) {
+        console.log('No subjects found, creating defaults...');
         const defaultSubjects = [
           { name: 'English Language' },
           { name: 'Mathematics' },
@@ -94,7 +94,13 @@ window.TrackerApp = window.TrackerApp || {};
         }
       }
       
-      console.log('Data loaded successfully:', {
+      if (app.state.exams.length === 0) {
+        console.log('No exams found, creating default...');
+        const defaultExam = await addExam({ title: 'Mock 1', date: new Date().toISOString() });
+        app.state.exams.push(defaultExam);
+      }
+      
+      console.log('Final state after initialization:', {
         students: app.state.students.length,
         exams: app.state.exams.length,
         subjects: app.state.subjects.length,

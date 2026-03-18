@@ -12,30 +12,78 @@
     console.log("TrackerApp Initializing...");
     
     try {
-      // Initial Load - Now async
-      await app.load();
+      // Show loading state
+      showLoadingState();
       
-      // UI Setup
+      // UI Setup first (but don't render data yet)
       app.ui.initDOM();
       app.applyTheme();
       app.ui.bindEvents();
       
-      // Initial Render
+      // Load data from Firestore
+      await app.load();
+      
+      // Hide loading state and render UI with data
+      hideLoadingState();
       app.ui.refreshUI();
       
       console.log("TrackerApp Ready.");
     } catch (error) {
       console.error("TrackerApp initialization failed:", error);
-      // Show error to user
-      if (app.dom && app.dom.toast) {
-        app.dom.toast.textContent = 'Failed to initialize app. Please check your internet connection.';
-        app.dom.toast.classList.add('show');
-        setTimeout(() => {
-          app.dom.toast.classList.remove('show');
-        }, 5000);
-      }
+      hideLoadingState();
+      showErrorState(error.message);
     }
   };
+
+  function showLoadingState() {
+    // Show splash screen with loading message
+    const splash = document.getElementById('app-splash');
+    if (splash) {
+      splash.style.display = 'flex';
+      splash.style.opacity = '1';
+      const splashText = splash.querySelector('p');
+      if (splashText) {
+        splashText.textContent = 'Loading data from Firestore...';
+      }
+    }
+    
+    // Disable UI interactions
+    document.body.style.pointerEvents = 'none';
+  }
+
+  function hideLoadingState() {
+    // Hide splash screen
+    const splash = document.getElementById('app-splash');
+    if (splash) {
+      splash.style.opacity = '0';
+      splash.style.transition = 'opacity 220ms ease-out';
+      setTimeout(function () {
+        if (splash && splash.parentNode) {
+          splash.parentNode.removeChild(splash);
+        }
+      }, 260);
+    }
+    
+    // Enable UI interactions
+    document.body.style.pointerEvents = '';
+  }
+
+  function showErrorState(errorMessage) {
+    // Show error toast
+    const toast = document.getElementById('toast');
+    if (toast) {
+      toast.textContent = `Failed to load data: ${errorMessage}. Please check your internet connection and refresh.`;
+      toast.classList.add('show', 'error');
+      setTimeout(() => {
+        toast.classList.remove('show', 'error');
+      }, 8000);
+    }
+    
+    // Try to render UI with empty state
+    if (app.ui && app.ui.refreshUI) {
+      app.ui.refreshUI();
+    }
+  }
 
   // Run on DOM load
   document.addEventListener('DOMContentLoaded', app.Init);

@@ -401,6 +401,11 @@
     bindEvents: function () {
       console.log("Binding Events...");
       try {
+        // Initialize sidebar
+        if (app.sidebar && app.sidebar.init) {
+          app.sidebar.init();
+        }
+        
         if (app.dom.form) app.dom.form.onsubmit = (e) => { e.preventDefault(); app.students.addStudent(app.dom.nameInput.value); app.dom.nameInput.value = ''; };
         if (app.dom.backupBtn) app.dom.backupBtn.onclick = () => app.export.exportBackup();
         if (app.dom.restoreBtn) app.dom.restoreBtn.onclick = () => app.dom.restoreInput.click();

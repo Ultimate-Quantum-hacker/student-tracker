@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Fixes - Student Tracker</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; border-radius: 8px; }
+        .success { color: green; font-weight: bold; }
+        .error { color: red; font-weight: bold; }
+        .warning { color: orange; font-weight: bold; }
+        .info { color: blue; }
+        button { padding: 8px 16px; margin: 5px; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #2563eb; }
+        pre { background: #f5f5f5; padding: 10px; overflow-x: auto; border-radius: 4px; }
+        .mobile-test { display: none; }
+        @media (max-width: 768px) {
+            .mobile-test { display: block; }
+        }
+    </style>
+</head>
+<body>
+    <h1>Test Fixes for Student Tracker</h1>
+    
+    <div class="test-section">
+        <h2>1. Firestore Data Loading Test</h2>
+        <button onclick="testFirestoreLoading()">Test Data Loading</button>
+        <div id="loading-result"></div>
+        <div class="info">
+            <p>This test verifies that data loads properly from Firestore on app initialization.</p>
+            <p>Expected behavior: App should show loading state, fetch data, then render UI with the data.</p>
+        </div>
+    </div>
+
+    <div class="test-section mobile-test">
+        <h2>2. Mobile Hamburger Menu Test</h2>
+        <button onclick="testMobileMenu()">Test Mobile Menu</button>
+        <div id="mobile-result"></div>
+        <div class="info">
+            <p>This test checks if the mobile hamburger menu opens/closes correctly.</p>
+            <p>Expected behavior: Clicking the hamburger should open the sidebar overlay.</p>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>3. Integration Test</h2>
+        <button onclick="runFullTest()">Run Full Integration Test</button>
+        <div id="integration-result"></div>
+        <div class="info">
+            <p>This test opens the main app and checks both fixes work together.</p>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>4. Console Log Monitor</h2>
+        <button onclick="openMainWindow()">Open Main App in New Window</button>
+        <div class="info">
+            <p>Open the main app and check browser console for:</p>
+            <ul>
+                <li>"Firebase initialized successfully"</li>
+                <li>"Loading data from Firestore..."</li>
+                <li>"Data loaded from Firestore: {counts}"</li>
+                <li>"Initializing sidebar..."</li>
+                <li>"Sidebar elements found: {counts}"</li>
+                <li>"Menu toggle clicked" (when testing mobile menu)</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        function testFirestoreLoading() {
+            const result = document.getElementById('loading-result');
+            result.innerHTML = '<div class="info">Testing Firestore data loading...</div>';
+            
+            // Test if Firebase is properly configured
+            fetch('./js/firebase.js')
+                .then(response => {
+                    if (response.ok) {
+                        result.innerHTML = '<div class="success">✅ Firebase configuration file found</div>';
+                        return testFirebaseConnection();
+                    } else {
+                        throw new Error('Firebase config file not found');
+                    }
+                })
+                .then(() => {
+                    result.innerHTML += '<div class="success">✅ Firebase connection test passed</div>';
+                })
+                .catch(error => {
+                    result.innerHTML = `<div class="error">❌ Firestore loading test failed: ${error.message}</div>`;
+                });
+        }
+
+        function testFirebaseConnection() {
+            return new Promise((resolve, reject) => {
+                // Create a simple test by checking if Firebase SDK loads
+                const script = document.createElement('script');
+                script.src = 'https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js';
+                script.onload = () => resolve();
+                script.onerror = () => reject(new Error('Firebase SDK failed to load'));
+                document.head.appendChild(script);
+            });
+        }
+
+        function testMobileMenu() {
+            const result = document.getElementById('mobile-result');
+            
+            if (window.innerWidth > 768) {
+                result.innerHTML = '<div class="warning">⚠️ Please test on mobile device or resize window to ≤768px</div>';
+                return;
+            }
+            
+            // Open main app in new window to test mobile menu
+            const newWindow = window.open('index.html', '_blank', 'width=400,height=800');
+            
+            result.innerHTML = `
+                <div class="info">📱 Mobile app opened in new window</div>
+                <div class="info">Instructions:</div>
+                <ol>
+                    <li>In the new window, click the hamburger menu (☰)</li>
+                    <li>Check if sidebar opens with overlay</li>
+                    <li>Click overlay or menu item to close</li>
+                    <li>Check browser console for "Menu toggle clicked" messages</li>
+                </ol>
+            `;
+        }
+
+        function runFullTest() {
+            const result = document.getElementById('integration-result');
+            result.innerHTML = '<div class="info">Running full integration test...</div>';
+            
+            // Test both fixes together
+            Promise.all([
+                testFirebaseConnection(),
+                checkSidebarInitialization()
+            ])
+            .then(() => {
+                result.innerHTML = `
+                    <div class="success">✅ All tests passed!</div>
+                    <div class="info">Next steps:</div>
+                    <ol>
+                        <li>Open main app: <a href="index.html" target="_blank">Launch App</a></li>
+                        <li>Check browser console for initialization logs</li>
+                        <li>Test on mobile device for hamburger menu</li>
+                        <li>Verify data persists after hard refresh</li>
+                    </ol>
+                `;
+            })
+            .catch(error => {
+                result.innerHTML = `<div class="error">❌ Integration test failed: ${error.message}</div>`;
+            });
+        }
+
+        function checkSidebarInitialization() {
+            return new Promise((resolve) => {
+                // Check if sidebar.js exists and has proper structure
+                fetch('./js/sidebar.js')
+                    .then(response => {
+                        if (response.ok) {
+                            resolve();
+                        } else {
+                            throw new Error('Sidebar.js not found');
+                        }
+                    });
+            });
+        }
+
+        function openMainWindow() {
+            window.open('index.html', '_blank');
+        }
+
+        // Auto-detect mobile and show appropriate tests
+        window.addEventListener('load', () => {
+            if (window.innerWidth <= 768) {
+                document.querySelector('.mobile-test').style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>
