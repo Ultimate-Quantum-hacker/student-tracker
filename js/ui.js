@@ -164,13 +164,25 @@
     },
 
     populateSelects: function () {
-      const mOps = app.state.mocks.map(m => `<option value="${m.id}">${app.utils.esc(m.name)}</option>`).join('');
+      const mOps = app.state.exams.map(m => `<option value="${m.id}">${app.utils.esc(m.title || m.name)}</option>`).join('');
       if (app.dom.scoreMockSelect) app.dom.scoreMockSelect.innerHTML = mOps;
       if (app.dom.bulkMockSelect) app.dom.bulkMockSelect.innerHTML = mOps;
       
       const sOps = '<option value="">— Select Student —</option>' + app.state.students.map(s => `<option value="${s.id}">${app.utils.esc(s.name)}</option>`).join('');
       if (app.dom.scoreStudentSelect) app.dom.scoreStudentSelect.innerHTML = sOps;
       if (app.dom.chartStudentSelect) app.dom.chartStudentSelect.innerHTML = sOps;
+    },
+
+    getStudentExamTotal: function(studentId, examId) {
+      const studentScores = app.state.scores.filter(s => s.studentId === studentId && s.examId === examId);
+      let total = 0, count = 0;
+      studentScores.forEach(score => {
+        if (score.score !== null && !isNaN(score.score)) {
+          total += score.score;
+          count++;
+        }
+      });
+      return count > 0 ? total : null;
     },
 
     renderResultsTable: function () {
@@ -180,38 +192,41 @@
         .filter(s => s.name.toLowerCase().includes(app.state.searchTerm.toLowerCase()))
         .sort((a, b) => (b._avg.overall || 0) - (a._avg.overall || 0));
       
-      const subHeaders = app.state.mocks.map(() => {
+      const subHeaders = app.state.exams.map(() => {
         return app.state.subjects.map(sub => `<th>${app.utils.esc(sub.name.slice(0, 3))}</th>`).join('') + '<th>Total</th>';
       }).join('');
       app.dom.resultsHeadRow2.innerHTML = subHeaders;
       app.dom.resultsHeadRow1.innerHTML = `
         <th rowspan="2">Rank</th><th rowspan="2" class="sticky-col">Name</th>
-        ${app.state.mocks.map((m, idx) => {
-          const label = m.name && m.name.toLowerCase().startsWith('mock ')
+        ${app.state.exams.map((m, idx) => {
+          const label = m.title && m.title.toLowerCase().startsWith('mock ')
             ? 'M' + (idx + 1)
-            : app.utils.esc(m.name);
+            : app.utils.esc(m.title || m.name);
           return `<th colspan="${app.state.subjects.length + 1}">${label}</th>`;
         }).join('')}
         <th rowspan="2">Avg</th><th rowspan="2">Previous</th><th rowspan="2">Improvement</th><th rowspan="2">Status</th><th rowspan="2">Notes</th><th rowspan="2">Report</th>`;
 
       app.dom.resultsBody.innerHTML = ranked.map((s, i) => {
-        const mockCount = app.state.mocks.length;
-        const currentMock = app.state.mocks[mockCount - 1];
-        const previousMock = app.state.mocks[mockCount - 2];
-        const currentTotal = currentMock ? app.analytics.mockTotal(s.scores[currentMock.id] || {}) : null;
-        const previousMockTotal = previousMock ? app.analytics.mockTotal(s.scores[previousMock.id] || {}) : null;
+        const examCount = app.state.exams.length;
+        const currentExam = app.state.exams[examCount - 1];
+        const previousExam = app.state.exams[examCount - 2];
+        const currentTotal = currentExam ? this.getStudentExamTotal(s.id, currentExam.id) : null;
+        const previousExamTotal = previousExam ? this.getStudentExamTotal(s.id, previousExam.id) : null;
         const storagePrevious = JSON.parse(localStorage.getItem('previousScores') || '{}');
         const previousStored = storagePrevious[s.id] ?? storagePrevious[s.name] ?? null;
-        const previousTotal = previousMockTotal !== null ? previousMockTotal : previousStored;
+        const previousTotal = previousExamTotal !== null ? previousExamTotal : previousStored;
         console.log('All previous scores:', storagePrevious);
         console.log('Student:', s);
         console.log('Matched previous:', previousTotal);
         const improvData = this.formatImprovement(currentTotal, previousTotal);
-        let mockCells = app.state.mocks.map(m => {
-          const sc = s.scores[m.id] || {};
-          const total = app.analytics.mockTotal(sc);
-          let subCells = app.state.subjects.map(sb => `<td>${sc[sb.id] ?? '—'}</td>`).join('');
-          return `${subCells}<td><strong>${total ?? '—'}</strong></td>`;
+        let examCells = app.state.exams.map(m => {
+          const studentScores = app.state.scores.filter(s => s.studentId === s.id && s.examId === m.id);
+          let subCells = app.state.subjects.map(sub => {
+            const score = studentScores.find(sc => sc.subject === sub.name);
+            return `<td>${score ? score.score : '—'}</td>`;
+          }).join('');
+          const total = this.getStudentExamTotal(s.id, m.id);
+          return subCells + `<td class="avg">${total ?? '—'}</td>`;
         }).join('');
         const status = app.analytics.getRiskLevel(s);
         const avgVal = s._avg.overall;
@@ -221,7 +236,7 @@
           : (status === 'Average' ? 'risk-borderline' : 'risk-safe');
         return `<tr>
           <td><strong class="rank-num rank-highlight">${i + 1}</strong></td><td class="sticky-col">${app.utils.esc(s.name)}</td>
-          ${mockCells}
+          ${examCells}
           <td><strong class="${avgCls} avg-emphasis">${avgVal?.toFixed(1) ?? '&#8212;'}</strong></td>
           <td>${previousTotal !== null ? previousTotal.toFixed(1) : '&#8212;'}</td>
           <td class="${improvData.className}">${improvData.text}</td>
@@ -331,9 +346,12 @@
       const sid = app.dom.scoreStudentSelect.value, mid = app.dom.scoreMockSelect.value;
       const s = app.state.students.find(x => x.id === sid);
       if (s) {
-        app.dom.dynamicSubjectFields.innerHTML = app.state.subjects.map(sb => `
-          <div class="form-group"><label>${app.utils.esc(sb.name)}</label><input type="number" data-sid="${sb.id}" value="${s.scores[mid]?.[sb.id] ?? ''}"></div>
-        `).join('');
+        const studentScores = app.state.scores.filter(score => score.studentId === sid && score.examId === mid);
+        app.dom.dynamicSubjectFields.innerHTML = app.state.subjects.map(sb => {
+          const score = studentScores.find(sc => sc.subject === sb.name);
+          const value = score ? score.score : '';
+          return `<div class="form-group"><label>${app.utils.esc(sb.name)}</label><input type="number" data-subject="${sb.name}" value="${value}"></div>`;
+        }).join('');
       } else {
         app.dom.dynamicSubjectFields.innerHTML = '';
       }
@@ -345,11 +363,12 @@
       const headHtml = '<th>Student</th>' + app.state.subjects.map(s => `<th>${app.utils.esc(s.name)}</th>`).join('');
       app.dom.bulkScoreHead.innerHTML = `<tr>${headHtml}</tr>`;
       
-      const mockId = app.dom.bulkMockSelect.value;
+      const examId = app.dom.bulkMockSelect.value;
       const bodyHtml = app.state.students.map(s => {
         const row = app.state.subjects.map(sub => {
-          const val = s.scores[mockId]?.[sub.id] ?? '';
-          return `<td><input type="number" class="bulk-score-input" data-sid="${s.id}" data-sub="${sub.id}" value="${val}" min="0" max="100"></td>`;
+          const studentScore = app.state.scores.find(score => score.studentId === s.id && score.examId === examId && score.subject === sub.name);
+          const val = studentScore ? studentScore.score : '';
+          return `<td><input type="number" class="bulk-score-input" data-sid="${s.id}" data-sub="${sub.name}" value="${val}" min="0" max="100"></td>`;
         }).join('');
         return `<tr><td class="sticky-col">${app.utils.esc(s.name)}</td>${row}</tr>`;
       }).join('');
@@ -381,10 +400,10 @@
 
     renderManagement: function () {
       if (!app.dom.mockList || !app.dom.subjectList) return;
-      app.dom.mockList.innerHTML = app.state.mocks.map(m => `
+      app.dom.mockList.innerHTML = app.state.exams.map(m => `
         <div class="mock-item">
-          <input type="text" value="${app.utils.esc(m.name)}" onchange="window.TrackerApp.ui.renameMock('${m.id}', this.value)">
-          <button onclick="window.TrackerApp.ui.deleteMock('${m.id}')">×</button>
+          <input type="text" value="${app.utils.esc(m.title || m.name)}" onchange="window.TrackerApp.ui.renameExam('${m.id}', this.value)">
+          <button onclick="window.TrackerApp.ui.deleteExam('${m.id}')">×</button>
         </div>`).join('');
       app.dom.subjectList.innerHTML = app.state.subjects.map(s => `
         <div class="mock-item">
@@ -393,8 +412,26 @@
         </div>`).join('');
     },
 
-    renameMock: function (id, n) { const m = app.state.mocks.find(x => x.id === id); if (m) { m.name = n.trim(); app.save(); this.refreshUI(); } },
-    deleteMock: function (id) { if (app.state.mocks.length > 1 && confirm("Delete mock?")) { app.state.mocks = app.state.mocks.filter(x => x.id !== id); app.save(); this.refreshUI(); } },
+    renameExam: async function (id, name) { 
+      try {
+        await app.updateExam(id, { title: name.trim() });
+        this.refreshUI(); 
+      } catch (error) {
+        console.error('Failed to rename exam:', error);
+        app.ui.showToast('Failed to rename exam');
+      }
+    },
+    deleteExam: async function (id) { 
+      if (app.state.exams.length > 1 && confirm("Delete exam?")) { 
+        try {
+          await app.deleteExam(id);
+          this.refreshUI(); 
+        } catch (error) {
+          console.error('Failed to delete exam:', error);
+          app.ui.showToast('Failed to delete exam');
+        }
+      } 
+    },
     renameSubject: function (id, n) { const s = app.state.subjects.find(x => x.id === id); if (s) { s.name = n.trim(); app.save(); this.refreshUI(); } },
     deleteSubject: function (id) { if (app.state.subjects.length > 1 && confirm("Delete subject?")) { app.state.subjects = app.state.subjects.filter(x => x.id !== id); app.save(); this.refreshUI(); } },
 
@@ -410,7 +447,7 @@
         if (app.dom.backupBtn) app.dom.backupBtn.onclick = () => app.export.exportBackup();
         if (app.dom.restoreBtn) app.dom.restoreBtn.onclick = () => app.dom.restoreInput.click();
         if (app.dom.restoreInput) app.dom.restoreInput.onchange = (e) => app.export.importBackup(e.target.files[0]);
-        if (app.dom.themeToggle) app.dom.themeToggle.onclick = () => { app.state.theme = app.state.theme === 'light' ? 'dark' : 'light'; app.applyTheme(); app.save(); };
+        if (app.dom.themeToggle) app.dom.themeToggle.onclick = () => { app.state.theme = app.state.theme === 'light' ? 'dark' : 'light'; app.applyTheme(); };
         if (app.dom.resetBtn) app.dom.resetBtn.onclick = () => app.dom.resetModal.classList.add('active');
         if (app.dom.resetConfirmBtn) app.dom.resetConfirmBtn.onclick = () => { localStorage.clear(); location.reload(); };
         if (app.dom.resetCancelBtn) app.dom.resetCancelBtn.onclick = () => app.dom.resetModal.classList.remove('active');
@@ -426,11 +463,41 @@
         if (app.dom.bulkScoreBtn) app.dom.bulkScoreBtn.onclick = () => { app.dom.bulkScoreModal.classList.add('active'); this.renderBulkTable(); };
         if (app.dom.bulkScoreCancelBtn) app.dom.bulkScoreCancelBtn.onclick = () => app.dom.bulkScoreModal.classList.remove('active');
         if (app.dom.bulkScoreSaveBtn) app.dom.bulkScoreSaveBtn.onclick = () => app.students.saveBulkScores(app.dom.bulkMockSelect.value, app.dom.bulkScoreBody.querySelectorAll('.bulk-score-input'));
-        if (app.dom.addMockForm) app.dom.addMockForm.onsubmit = (e) => { e.preventDefault(); if (app.dom.mockNameInput.value.trim()) { app.state.mocks.push({ id: app.utils.uuid(), name: app.dom.mockNameInput.value.trim() }); app.save(); this.renderAll(); } app.dom.mockNameInput.value = ''; };
-        if (app.dom.addSubjectForm) app.dom.addSubjectForm.onsubmit = (e) => { e.preventDefault(); if (app.dom.subjectNameInput.value.trim()) { app.state.subjects.push({ id: app.utils.uuid(), name: app.dom.subjectNameInput.value.trim() }); app.save(); this.renderAll(); } app.dom.subjectNameInput.value = ''; };
+        if (app.dom.addMockForm) app.dom.addMockForm.onsubmit = async (e) => { 
+          e.preventDefault(); 
+          if (app.dom.mockNameInput.value.trim()) { 
+            try {
+              await app.addExam({ title: app.dom.mockNameInput.value.trim(), date: new Date().toISOString() });
+              this.refreshUI(); 
+            } catch (error) {
+              console.error('Failed to add exam:', error);
+              app.ui.showToast('Failed to add exam');
+            }
+          } 
+          app.dom.mockNameInput.value = ''; 
+        };
+        if (app.dom.addSubjectForm) app.dom.addSubjectForm.onsubmit = async (e) => { 
+          e.preventDefault(); 
+          if (app.dom.subjectNameInput.value.trim()) { 
+            try {
+              await app.addSubject({ name: app.dom.subjectNameInput.value.trim() });
+              this.refreshUI(); 
+            } catch (error) {
+              console.error('Failed to add subject:', error);
+              app.ui.showToast('Failed to add subject');
+            }
+          } 
+          app.dom.subjectNameInput.value = ''; 
+        };
         if (app.dom.saveScoresBtn) app.dom.saveScoresBtn.onclick = () => {
           const sid = app.dom.scoreStudentSelect.value, mid = app.dom.scoreMockSelect.value;
-          const scores = {}; app.dom.dynamicSubjectFields.querySelectorAll('input').forEach(f => scores[f.dataset.sid] = f.value !== '' ? parseInt(f.value) : null);
+          const scores = {};
+          app.dom.dynamicSubjectFields.querySelectorAll('input').forEach(f => {
+            const subjectName = f.dataset.subject;
+            if (subjectName) {
+              scores[subjectName] = f.value !== '' ? parseInt(f.value) : null;
+            }
+          });
           app.students.saveScores(sid, mid, scores);
         };
         if (app.dom.scoreStudentSelect) app.dom.scoreStudentSelect.onchange = () => this.loadScoreFields();
