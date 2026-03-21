@@ -388,8 +388,6 @@ const ui = {
       console.log("Refreshing UI...");
       try {
         if (app.dom.emptyMsg) app.dom.emptyMsg.style.display = app.state.students.length ? 'none' : 'block';
-        this.renderManagement();
-        this.populateSelects();
         this.updateDashboardStats();
         this.renderStudentChips();
         this.renderResultsTable();
@@ -442,26 +440,8 @@ const ui = {
         }
       } 
     },
-    renameSubject: async function (id, n) {
-      try {
-        await app.updateSubject(id, { name: n.trim() });
-        this.refreshUI();
-      } catch (error) {
-        console.error('Failed to rename subject:', error);
-        app.ui.showToast('Failed to rename subject');
-      }
-    },
-    deleteSubject: async function (id) {
-      if (app.state.subjects.length > 1 && confirm("Delete subject?")) {
-        try {
-          await app.deleteSubject(id);
-          this.refreshUI();
-        } catch (error) {
-          console.error('Failed to delete subject:', error);
-          app.ui.showToast('Failed to delete subject');
-        }
-      }
-    },
+    renameSubject: function (id, n) { const s = app.state.subjects.find(x => x.id === id); if (s) { s.name = n.trim(); app.save(); this.refreshUI(); } },
+    deleteSubject: function (id) { if (app.state.subjects.length > 1 && confirm("Delete subject?")) { app.state.subjects = app.state.subjects.filter(x => x.id !== id); app.save(); this.refreshUI(); } },
 
     bindEvents: function () {
       console.log('Binding events...');

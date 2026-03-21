@@ -230,19 +230,10 @@ window.TrackerApp = window.TrackerApp || {};
 
   app.deleteSubject = async function (subjectId) {
     try {
-      const subjectToDelete = app.state.subjects.find(s => s.id === subjectId);
       await deleteSubject(subjectId);
       app.state.subjects = app.state.subjects.filter(s => s.id !== subjectId);
       // Also remove related scores
-      app.state.scores = app.state.scores.filter(score => {
-        if (score.subjectId) {
-          return score.subjectId !== subjectId;
-        }
-        if (subjectToDelete && score.subject) {
-          return score.subject !== subjectToDelete.name;
-        }
-        return true;
-      });
+      app.state.scores = app.state.scores.filter(score => score.subjectId === subjectId);
       await app.save(); // For compatibility
       return true;
     } catch (error) {
