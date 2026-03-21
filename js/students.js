@@ -3,7 +3,6 @@
    Handles all student data mutations with Firestore.
    ═══════════════════════════════════════════════ */
 
-import { addStudent as addStudentToDB, updateStudent as updateStudentInDB, deleteStudent as deleteStudentFromDB, saveScore } from '../services/db.js';
 import app from './state.js';
 
 const students = {
@@ -12,7 +11,7 @@ const students = {
     if (!n) return;
     
     try {
-      const newStudent = await addStudentToDB({ name: n, class: '', notes: '' });
+      await app.addStudent({ name: n, class: '', notes: '', scores: {} });
       ui.refreshUI();
       ui.showToast(`Added ${n}`);
     } catch (error) {
@@ -34,7 +33,7 @@ const students = {
     if (!uid) return;
     
     try {
-      await deleteStudentFromDB(uid);
+      await app.deleteStudent(uid);
       app.state.deletingId = null;
       app.dom.deleteModal.classList.remove('active');
       ui.refreshUI();
@@ -62,7 +61,7 @@ const students = {
     if (!newName) return;
     
     try {
-      await updateStudentInDB(uid, { name: newName });
+      await app.updateStudent(uid, { name: newName });
       app.state.editingId = null;
       app.dom.editModal.classList.remove('active');
       ui.refreshUI();
@@ -99,7 +98,7 @@ const students = {
   importStudents: async function (studentsData, app, ui) {
     try {
       for (const studentData of studentsData) {
-        await addStudentToDB(studentData);
+        await app.addStudent({ ...studentData, scores: {} });
       }
       ui.refreshUI();
       ui.showToast(`${studentsData.length} students imported`);
@@ -111,9 +110,28 @@ const students = {
 
   saveScores: async function (studentId, examId, scores, app, ui) {
     try {
-      for (const [subject, score] of Object.entries(scores)) {
-        await saveScore(studentId, examId, subject, score);
+      const exam = app.state.exams.find(e => e.id === examId);
+      const examLabel = exam?.title || exam?.name || '';
+      const student = app.state.students.find(s => s.id === studentId);
+
+      if (!student || !examLabel) {
+        ui.showToast('Select student and exam first');
+        return;
       }
+
+      if (!student.scores || typeof student.scores !== 'object') {
+        student.scores = {};
+      }
+
+      for (const [subject, score] of Object.entries(scores)) {
+        if (!student.scores[subject] || typeof student.scores[subject] !== 'object') {
+          student.scores[subject] = {};
+        }
+        student.scores[subject][examLabel] = app.analytics.normalizeScore(score);
+      }
+
+      await app.updateStudent(student.id, { scores: student.scores });
+      await app.save();
       ui.refreshUI();
       ui.showToast('Scores saved');
     } catch (error) {
@@ -124,18 +142,36 @@ const students = {
 
   saveBulkScores: async function (examId, inputs, app, ui) {
     try {
-      const scorePromises = [];
+      const exam = app.state.exams.find(e => e.id === examId);
+      const examLabel = exam?.title || exam?.name || '';
+
+      if (!examLabel) {
+        ui.showToast('Select an exam first');
+        return;
+      }
+
+      const changedStudents = new Map();
       inputs.forEach(input => {
         const studentId = input.dataset.sid;
         const subject = input.dataset.sub;
-        const score = input.value !== '' ? parseInt(input.value) : null;
+        const score = app.analytics.normalizeScore(input.value);
         
         if (studentId && subject) {
-          scorePromises.push(saveScore(studentId, examId, subject, score));
+          const student = app.state.students.find(s => s.id === studentId);
+          if (!student) return;
+          if (!student.scores || typeof student.scores !== 'object') {
+            student.scores = {};
+          }
+          if (!student.scores[subject] || typeof student.scores[subject] !== 'object') {
+            student.scores[subject] = {};
+          }
+          student.scores[subject][examLabel] = score;
+          changedStudents.set(student.id, student);
         }
       });
-      
-      await Promise.all(scorePromises);
+
+      await Promise.all(Array.from(changedStudents.values()).map(student => app.updateStudent(student.id, { scores: student.scores })));
+      await app.save();
       ui.refreshUI();
       ui.showToast("Class scores saved");
     } catch (error) {

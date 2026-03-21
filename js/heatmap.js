@@ -26,8 +26,8 @@ const heatmap = {
       app.state.subjects.forEach(function(sub) {
         var sum = 0, count = 0;
         app.state.exams.forEach(function(m) {
-          var val = s.scores[m.id] && s.scores[m.id][sub.id];
-          if (val !== null && val !== undefined) { sum += val; count++; }
+          var val = app.analytics.getScore(s, sub, m);
+          if (val !== '' && val !== null && val !== undefined && !isNaN(val)) { sum += Number(val); count++; }
         });
         var avg = count > 0 ? Math.round(sum / count) : null;
         var cls = heatmap.getHeatmapClass(avg);

@@ -6,40 +6,121 @@
 import app from './state.js';
 
 const analytics = {
-  mockTotal: function (scores) {
-    let t = 0;
-    let c = 0;
-    app.state.subjects.forEach(s => {
-      const v = scores && scores[s.id];
-      if (v !== undefined && v !== null && !isNaN(v)) {
-        const num = Number(v);
-        if (!isNaN(num)) {
-          t += num;
-          c++;
-        }
+  normalizeScore: function (value) {
+    const num = Number(value);
+    if (isNaN(num)) return 0;
+    return Math.max(0, Math.min(100, num));
+  },
+
+  getExamLabel: function (exam) {
+    if (typeof exam === 'string') return exam;
+    return exam?.title || exam?.name || '';
+  },
+
+  getSubjectLabel: function (subject) {
+    if (typeof subject === 'string') return subject;
+    return subject?.name || '';
+  },
+
+  getLatestExam: function () {
+    const exams = app.state.exams || [];
+    if (!exams.length) return '';
+    return this.getExamLabel(exams[exams.length - 1]);
+  },
+
+  getPreviousExam: function () {
+    const exams = app.state.exams || [];
+    if (exams.length < 2) return '';
+    return this.getExamLabel(exams[exams.length - 2]);
+  },
+
+  getScore: function (student, subject, exam) {
+    const subjectLabel = this.getSubjectLabel(subject);
+    const examLabel = this.getExamLabel(exam);
+    return student?.scores?.[subjectLabel]?.[examLabel] ?? '';
+  },
+
+  getTotal: function (student, exam) {
+    const examLabel = this.getExamLabel(exam);
+    if (!examLabel) return 0;
+
+    return (app.state.subjects || []).reduce((sum, subject) => {
+      const score = this.getScore(student, subject, examLabel);
+      return sum + (score === '' ? 0 : Number(score) || 0);
+    }, 0);
+  },
+
+  mockTotal: function (scores, exam) {
+    if (!scores) return null;
+
+    const examLabel = this.getExamLabel(exam) || this.getLatestExam();
+    let total = 0;
+    let count = 0;
+
+    (app.state.subjects || []).forEach(subject => {
+      const subjectLabel = this.getSubjectLabel(subject);
+      const value = scores?.[subjectLabel]?.[examLabel];
+      if (value !== '' && value !== undefined && value !== null && !isNaN(value)) {
+        total += Number(value);
+        count++;
       }
     });
-    return c > 0 ? t : null;
+
+    return count ? total : null;
+  },
+
+  getAverage: function (student, exam) {
+    const examLabel = this.getExamLabel(exam);
+    if (!examLabel) return 0;
+
+    let total = 0;
+    let count = 0;
+
+    (app.state.subjects || []).forEach(subject => {
+      const score = this.getScore(student, subject, examLabel);
+      if (score !== '' && score !== undefined && score !== null && !isNaN(score)) {
+        total += Number(score);
+        count++;
+      }
+    });
+
+    return count ? total / count : 0;
+  },
+
+  getImprovement: function (student, fromExam, toExam) {
+    const from = this.getTotal(student, fromExam);
+    const to = this.getTotal(student, toExam);
+
+    if (from === 0) return 0;
+    return ((to - from) / from) * 100;
   },
 
   calcAverages: function (student) {
+    const subAvgs = {};
     let sum = 0;
     let count = 0;
-    const subAvgs = {};
 
-    app.state.subjects.forEach(subj => {
-      let sSum = 0;
-      let sCount = 0;
-      app.state.exams.forEach(m => {
-        const val = student.scores?.[m.id]?.[subj.id];
-        if (val !== null && val !== undefined && !isNaN(val)) {
-          sSum += Number(val);
-          sCount++;
-          sum += Number(val);
+    (app.state.subjects || []).forEach(subject => {
+      const subjectLabel = this.getSubjectLabel(subject);
+      let subSum = 0;
+      let subCount = 0;
+
+      (app.state.exams || []).forEach(exam => {
+        const examLabel = this.getExamLabel(exam);
+        const val = this.getScore(student, subjectLabel, examLabel);
+        if (val !== '' && val !== undefined && val !== null && !isNaN(val)) {
+          const num = Number(val);
+          subSum += num;
+          subCount++;
+          sum += num;
           count++;
         }
       });
-      subAvgs[subj.id] = sCount ? (sSum / sCount) : null;
+
+      subAvgs[subjectLabel] = subCount ? (subSum / subCount) : null;
+      if (subject?.id) {
+        subAvgs[subject.id] = subAvgs[subjectLabel];
+      }
     });
 
     subAvgs.overall = count ? (sum / count) : null;
@@ -47,30 +128,51 @@ const analytics = {
   },
 
   calcClassAverages: function () {
-    return app.state.exams.map(exam => {
+    return (app.state.exams || []).map(exam => {
+      const examLabel = this.getExamLabel(exam);
       let sum = 0;
       let count = 0;
-      app.state.students.forEach(student => {
-        const total = this.mockTotal(student.scores?.[exam.id]);
-        if (total !== null) {
+
+      (app.state.students || []).forEach(student => {
+        const total = this.getTotal(student, examLabel);
+        if (total > 0) {
           sum += total;
           count++;
         }
       });
+
       return {
         id: exam.id,
-        name: exam.title || exam.name,
+        name: examLabel,
         overall: count ? (sum / count) : null
       };
     });
   },
 
-  getRiskLevel: function (student) {
-    const avgs = this.calcAverages(student);
-    const avg = avgs.overall ?? 0;
-    if (avg >= 70) return 'Safe';
-    if (avg >= 50) return 'Average';
-    return 'Needs Support';
+  getRiskLevel: function (avgOrStudent) {
+    const avg = typeof avgOrStudent === 'number'
+      ? avgOrStudent
+      : this.getAverage(avgOrStudent, this.getLatestExam());
+
+    if (avg >= 70) return 'safe';
+    if (avg >= 50) return 'borderline';
+    return 'at-risk';
+  },
+
+  groupStudentsByRisk: function () {
+    const latestExam = this.getLatestExam();
+    const groups = { safe: [], borderline: [], 'at-risk': [] };
+
+    (app.state.students || []).forEach(student => {
+      const avg = this.getAverage(student, latestExam);
+      const risk = this.getRiskLevel(avg);
+      groups[risk].push({
+        name: student.name,
+        avg: avg.toFixed(1)
+      });
+    });
+
+    return groups;
   },
 
   getWeakestSubject: function (student) {
@@ -78,9 +180,10 @@ const analytics = {
     let weakest = null;
     let min = Infinity;
     app.state.subjects.forEach(s => {
-      if (avgs[s.id] !== null && avgs[s.id] < min) {
-        min = avgs[s.id];
-        weakest = s.name;
+      const subjectLabel = this.getSubjectLabel(s);
+      if (avgs[subjectLabel] !== null && avgs[subjectLabel] !== undefined && avgs[subjectLabel] < min) {
+        min = avgs[subjectLabel];
+        weakest = subjectLabel;
       }
     });
     return weakest || '—';

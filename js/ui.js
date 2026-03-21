@@ -4,7 +4,6 @@
    ═══════════════════════════════════════════════ */
 
 import app from './state.js';
-import analytics from './analytics.js';
 
 // DOM Node References
 app.dom = {};
@@ -127,6 +126,25 @@ const ui = {
       return { text: '0', className: 'improv-neutral' };
     },
 
+    formatRiskLabel: function (riskType) {
+      if (riskType === 'at-risk') return 'At Risk';
+      if (riskType === 'borderline') return 'Borderline';
+      return 'Safe';
+    },
+
+    clearAllData: async function () {
+      app.state.students.forEach(student => {
+        student.scores = {};
+      });
+      await app.save();
+      this.refreshUI();
+      this.showToast('All scores cleared');
+    },
+
+    openRiskPage: function (type) {
+      window.open(`risk.html?type=${type}`, '_blank');
+    },
+
     updateBackupStatus: function () {
       if (!app.dom.backupStatus) return;
       if (!app.state.lastBackup) {
@@ -146,9 +164,9 @@ const ui = {
       app.state.students.forEach(s => {
         const avg = app.analytics.calcAverages(s, app.state.subjects, app.state.exams).overall;
         if (avg !== null) { sum += avg; count++; if (avg >= 50) pass++; }
-        const status = app.analytics.getRiskLevel(s, app.state.subjects, app.state.exams);
-        if (status === 'Needs Support') atRisk++;
-        else if (status === 'Average') borderline++;
+        const status = app.analytics.getRiskLevel(s);
+        if (status === 'at-risk') atRisk++;
+        else if (status === 'borderline') borderline++;
         else safe++;
       });
       
@@ -182,15 +200,10 @@ const ui = {
     },
 
     getStudentExamTotal: function(studentId, examId) {
-      const studentScores = app.state.scores.filter(s => s.studentId === studentId && s.examId === examId);
-      let total = 0, count = 0;
-      studentScores.forEach(score => {
-        if (score.score !== null && !isNaN(score.score)) {
-          total += score.score;
-          count++;
-        }
-      });
-      return count > 0 ? total : null;
+      const student = app.state.students.find(s => s.id === studentId);
+      const exam = app.state.exams.find(e => e.id === examId);
+      if (!student || !exam) return null;
+      return app.analytics.getTotal(student, exam);
     },
 
     renderResultsTable: function () {
@@ -219,19 +232,12 @@ const ui = {
         const currentExam = app.state.exams[examCount - 1];
         const previousExam = app.state.exams[examCount - 2];
         const currentTotal = currentExam ? this.getStudentExamTotal(s.id, currentExam.id) : null;
-        const previousExamTotal = previousExam ? this.getStudentExamTotal(s.id, previousExam.id) : null;
-        const storagePrevious = JSON.parse(localStorage.getItem('previousScores') || '{}');
-        const previousStored = storagePrevious[s.id] ?? storagePrevious[s.name] ?? null;
-        const previousTotal = previousExamTotal !== null ? previousExamTotal : previousStored;
-        console.log('All previous scores:', storagePrevious);
-        console.log('Student:', s);
-        console.log('Matched previous:', previousTotal);
+        const previousTotal = previousExam ? this.getStudentExamTotal(s.id, previousExam.id) : null;
         const improvData = this.formatImprovement(currentTotal, previousTotal);
         let examCells = app.state.exams.map(m => {
-          const studentScores = app.state.scores.filter(s => s.studentId === s.id && s.examId === m.id);
           let subCells = app.state.subjects.map(sub => {
-            const score = studentScores.find(sc => sc.subject === sub.name);
-            return `<td>${score ? score.score : '—'}</td>`;
+            const score = app.analytics.getScore(s, sub, m);
+            return `<td>${score === '' ? '—' : score}</td>`;
           }).join('');
           const total = this.getStudentExamTotal(s.id, m.id);
           return subCells + `<td class="avg">${total ?? '—'}</td>`;
@@ -239,16 +245,14 @@ const ui = {
         const status = app.analytics.getRiskLevel(s);
         const avgVal = s._avg.overall;
         const avgCls = avgVal !== null ? (avgVal >= 70 ? 'avg-green' : (avgVal >= 50 ? 'avg-yellow' : 'avg-red')) : '';
-        const statusClass = status === 'Needs Support'
-          ? 'risk-at-risk'
-          : (status === 'Average' ? 'risk-borderline' : 'risk-safe');
+        const statusClass = `risk-${status}`;
         return `<tr>
           <td><strong class="rank-num rank-highlight">${i + 1}</strong></td><td class="sticky-col">${app.utils.esc(s.name)}</td>
           ${examCells}
           <td><strong class="${avgCls} avg-emphasis">${avgVal?.toFixed(1) ?? '&#8212;'}</strong></td>
           <td>${previousTotal !== null ? previousTotal.toFixed(1) : '&#8212;'}</td>
           <td class="${improvData.className}">${improvData.text}</td>
-          <td><span class="risk-pill status-pill ${statusClass}">${status}</span></td>
+          <td><span class="risk-pill status-pill ${statusClass}">${this.formatRiskLabel(status)}</span></td>
           <td class="notes-cell" onclick="window.TrackerApp.ui.openNotes('${s.id}')">${s.notes ? '&#128221; View' : '+ Add'}</td>
           <td class="report-cell" data-report-id="${s.id}">&#128196; Report</td>
         </tr>`;
@@ -275,15 +279,13 @@ const ui = {
         const s = x.student;
         const avg = x.avg;
         const status = app.analytics.getRiskLevel(s);
-        const statusClass = status === 'Needs Support'
-          ? 'risk-at-risk'
-          : (status === 'Average' ? 'risk-borderline' : 'risk-safe');
+        const statusClass = `risk-${status}`;
         const weakest = app.analytics.getWeakestSubject(s);
         return `
         <div class="intervention-card">
           <div class="intervention-header">
             <span class="intervention-name">${app.utils.esc(s.name)}</span>
-            <span class="risk-pill status-pill ${statusClass}">${status}</span>
+            <span class="risk-pill status-pill ${statusClass}">${this.formatRiskLabel(status)}</span>
           </div>
           <div class="intervention-meta">
             <span class="intervention-avg">Avg: ${avg.toFixed(1)}%</span>
@@ -324,28 +326,23 @@ const ui = {
       const mockCount = app.state.exams.length;
       const currentMock = app.state.exams[mockCount - 1];
       const previousMock = app.state.exams[mockCount - 2];
-      const currentScore = currentMock ? app.analytics.mockTotal(s.scores[currentMock.id] || {}) : null;
-      const previousMockScore = previousMock ? app.analytics.mockTotal(s.scores[previousMock.id] || {}) : null;
-      const storagePrevious = JSON.parse(localStorage.getItem('previousScores') || '{}');
-      const previousScore = previousMockScore !== null ? previousMockScore : (storagePrevious[s.id] ?? storagePrevious[s.name] ?? null);
-      console.log('All previous scores:', storagePrevious);
-      console.log('Student:', s);
-      console.log('Matched previous:', previousScore);
+      const currentScore = currentMock ? app.analytics.getTotal(s, currentMock) : null;
+      const previousScore = previousMock ? app.analytics.getTotal(s, previousMock) : null;
       const improvement = this.formatImprovement(currentScore, previousScore);
       const ranked = app.state.students.map(st => ({ id: st.id, avg: app.analytics.calcAverages(st).overall || 0 })).sort((a, b) => b.avg - a.avg);
       const rank = ranked.findIndex(r => r.id === s.id) + 1;
       let strongest = null, weakest = null, maxS = -1, minS = Infinity;
       app.state.subjects.forEach(sub => { if (avgs[sub.id] !== null && avgs[sub.id] !== undefined) { if (avgs[sub.id] > maxS) { maxS = avgs[sub.id]; strongest = sub.name; } if (avgs[sub.id] < minS) { minS = avgs[sub.id]; weakest = sub.name; } } });
       const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-      const riskClass = risk === 'Needs Support' ? 'rc-risk' : (risk === 'Average' ? 'rc-borderline' : 'rc-safe');
+      const riskClass = risk === 'at-risk' ? 'rc-risk' : (risk === 'borderline' ? 'rc-borderline' : 'rc-safe');
       const avgClass = avg >= 70 ? 'rc-safe' : (avg >= 50 ? 'rc-borderline' : 'rc-risk');
       let scoresHtml = '<table class="rc-table"><thead><tr><th>Subject</th>' + app.state.exams.map(m => `<th>${app.utils.esc(m.title || m.name)}</th>`).join('') + '<th>Average</th></tr></thead><tbody>';
-      app.state.subjects.forEach(sub => { scoresHtml += '<tr><td class="rc-subject">' + app.utils.esc(sub.name) + '</td>'; app.state.exams.forEach(m => { const val = s.scores[m.id]?.[sub.id]; const cls = val !== null && val !== undefined ? (val >= 70 ? 'rc-safe' : (val >= 50 ? 'rc-borderline' : 'rc-risk')) : ''; scoresHtml += `<td class="${cls}">${val ?? '\u2014'}</td>`; }); const subAvg = avgs[sub.id]; scoresHtml += `<td><strong>${subAvg !== null ? subAvg.toFixed(1) : '\u2014'}</strong></td></tr>`; });
+      app.state.subjects.forEach(sub => { scoresHtml += '<tr><td class="rc-subject">' + app.utils.esc(sub.name) + '</td>'; app.state.exams.forEach(m => { const val = app.analytics.getScore(s, sub, m); const cls = val !== '' && val !== null && val !== undefined ? (val >= 70 ? 'rc-safe' : (val >= 50 ? 'rc-borderline' : 'rc-risk')) : ''; scoresHtml += `<td class="${cls}">${val === '' ? '\u2014' : val}</td>`; }); const subAvg = avgs[sub.name]; scoresHtml += `<td><strong>${subAvg !== null && subAvg !== undefined ? subAvg.toFixed(1) : '\u2014'}</strong></td></tr>`; });
       scoresHtml += '</tbody></table>';
       const trendText = improvement.className === 'improv-up' ? 'Improving ▲' : (improvement.className === 'improv-down' ? 'Declining ▼' : (improvement.text !== '—' ? 'Stable' : 'Insufficient data'));
       const trendClass = improvement.className === 'improv-up' ? 'rc-safe' : (improvement.className === 'improv-down' ? 'rc-risk' : '');
       if (app.dom.reportContainer) {
-        app.dom.reportContainer.innerHTML = `<div class="report-card"><div class="rc-header"><div class="rc-school">Vickmore International School</div><div class="rc-location">Krispol City, Asamoah Town</div><div class="rc-title">Academic Performance Report</div></div><div class="rc-info"><div><span>Student:</span> <strong>${app.utils.esc(s.name)}</strong></div><div><span>Class:</span> <strong>JHS 3</strong></div><div><span>Term:</span> <strong>Mock Examination</strong></div><div><span>Date:</span> <strong>${today}</strong></div></div><div class="rc-section"><h4>Subject Performance</h4>${scoresHtml}</div><div class="rc-summary"><div class="rc-summary-item"><span>Overall Average</span><strong class="${avgClass}">${avg.toFixed(1)}%</strong></div><div class="rc-summary-item"><span>Class Rank</span><strong>${rank} / ${app.state.students.length}</strong></div><div class="rc-summary-item"><span>Status</span><strong class="${riskClass}">${risk}</strong></div><div class="rc-summary-item"><span>Previous Score</span><strong>${previousScore !== null ? previousScore.toFixed(1) + '%' : '—'}</strong></div><div class="rc-summary-item"><span>Improvement</span><strong class="${improvement.className}">${improvement.text}</strong></div></div><div class="rc-section"><h4>Performance Analysis</h4><div class="rc-analysis"><div><span>Strongest Subject:</span> <strong>${strongest || '\u2014'}</strong></div><div><span>Weakest Subject:</span> <strong>${weakest || '\u2014'}</strong></div><div><span>Performance Trend:</span> <strong class="${trendClass}">${trendText}</strong></div></div></div><div class="rc-section"><h4>Teacher Comments</h4><div class="rc-notes">${s.notes ? app.utils.esc(s.notes) : 'No comments recorded.'}</div></div><div class="rc-footer"><div class="rc-sig"><div class="rc-sig-line"></div><span>Class Teacher</span></div><div class="rc-sig"><div class="rc-sig-line"></div><span>Head Teacher</span></div></div></div>`;
+        app.dom.reportContainer.innerHTML = `<div class="report-card"><div class="rc-header"><div class="rc-school">Vickmore International School</div><div class="rc-location">Krispol City, Asamoah Town</div><div class="rc-title">Academic Performance Report</div></div><div class="rc-info"><div><span>Student:</span> <strong>${app.utils.esc(s.name)}</strong></div><div><span>Class:</span> <strong>JHS 3</strong></div><div><span>Term:</span> <strong>Mock Examination</strong></div><div><span>Date:</span> <strong>${today}</strong></div></div><div class="rc-section"><h4>Subject Performance</h4>${scoresHtml}</div><div class="rc-summary"><div class="rc-summary-item"><span>Overall Average</span><strong class="${avgClass}">${avg.toFixed(1)}%</strong></div><div class="rc-summary-item"><span>Class Rank</span><strong>${rank} / ${app.state.students.length}</strong></div><div class="rc-summary-item"><span>Status</span><strong class="${riskClass}">${this.formatRiskLabel(risk)}</strong></div><div class="rc-summary-item"><span>Previous Score</span><strong>${previousScore !== null ? previousScore.toFixed(1) + '%' : '—'}</strong></div><div class="rc-summary-item"><span>Improvement</span><strong class="${improvement.className}">${improvement.text}</strong></div></div><div class="rc-section"><h4>Performance Analysis</h4><div class="rc-analysis"><div><span>Strongest Subject:</span> <strong>${strongest || '\u2014'}</strong></div><div><span>Weakest Subject:</span> <strong>${weakest || '\u2014'}</strong></div><div><span>Performance Trend:</span> <strong class="${trendClass}">${trendText}</strong></div></div></div><div class="rc-section"><h4>Teacher Comments</h4><div class="rc-notes">${s.notes ? app.utils.esc(s.notes) : 'No comments recorded.'}</div></div><div class="rc-footer"><div class="rc-sig"><div class="rc-sig-line"></div><span>Class Teacher</span></div><div class="rc-sig"><div class="rc-sig-line"></div><span>Head Teacher</span></div></div></div>`;
       }
       if (app.dom.reportModal) app.dom.reportModal.classList.add('active');
     },
@@ -353,11 +350,10 @@ const ui = {
     loadScoreFields: function () {
       const sid = app.dom.scoreStudentSelect.value, mid = app.dom.scoreMockSelect.value;
       const s = app.state.students.find(x => x.id === sid);
+      const exam = app.state.exams.find(x => x.id === mid);
       if (s) {
-        const studentScores = app.state.scores.filter(score => score.studentId === sid && score.examId === mid);
         app.dom.dynamicSubjectFields.innerHTML = app.state.subjects.map(sb => {
-          const score = studentScores.find(sc => sc.subject === sb.name);
-          const value = score ? score.score : '';
+          const value = exam ? app.analytics.getScore(s, sb, exam) : '';
           return `<div class="form-group"><label>${app.utils.esc(sb.name)}</label><input type="number" data-subject="${sb.name}" value="${value}"></div>`;
         }).join('');
       } else {
@@ -372,10 +368,10 @@ const ui = {
       app.dom.bulkScoreHead.innerHTML = `<tr>${headHtml}</tr>`;
       
       const examId = app.dom.bulkMockSelect.value;
+      const exam = app.state.exams.find(e => e.id === examId);
       const bodyHtml = app.state.students.map(s => {
         const row = app.state.subjects.map(sub => {
-          const studentScore = app.state.scores.find(score => score.studentId === s.id && score.examId === examId && score.subject === sub.name);
-          const val = studentScore ? studentScore.score : '';
+          const val = exam ? app.analytics.getScore(s, sub, exam) : '';
           return `<td><input type="number" class="bulk-score-input" data-sid="${s.id}" data-sub="${sub.name}" value="${val}" min="0" max="100"></td>`;
         }).join('');
         return `<tr><td class="sticky-col">${app.utils.esc(s.name)}</td>${row}</tr>`;
@@ -440,8 +436,26 @@ const ui = {
         }
       } 
     },
-    renameSubject: function (id, n) { const s = app.state.subjects.find(x => x.id === id); if (s) { s.name = n.trim(); app.save(); this.refreshUI(); } },
-    deleteSubject: function (id) { if (app.state.subjects.length > 1 && confirm("Delete subject?")) { app.state.subjects = app.state.subjects.filter(x => x.id !== id); app.save(); this.refreshUI(); } },
+    renameSubject: async function (id, n) {
+      try {
+        await app.updateSubject(id, { name: n.trim() });
+        this.refreshUI();
+      } catch (error) {
+        console.error('Failed to rename subject:', error);
+        app.ui.showToast('Failed to rename subject');
+      }
+    },
+    deleteSubject: async function (id) {
+      if (app.state.subjects.length > 1 && confirm("Delete subject?")) {
+        try {
+          await app.deleteSubject(id);
+          this.refreshUI();
+        } catch (error) {
+          console.error('Failed to delete subject:', error);
+          app.ui.showToast('Failed to delete subject');
+        }
+      }
+    },
 
     bindEvents: function () {
       console.log('Binding events...');
@@ -488,7 +502,10 @@ const ui = {
         if (app.dom.restoreInput) app.dom.restoreInput.onchange = (e) => app.export.importBackup(e.target.files[0], app);
         if (app.dom.themeToggle) app.dom.themeToggle.onclick = () => { app.state.theme = app.state.theme === 'light' ? 'dark' : 'light'; app.applyTheme(); };
         if (app.dom.resetBtn) app.dom.resetBtn.onclick = () => app.dom.resetModal.classList.add('active');
-        if (app.dom.resetConfirmBtn) app.dom.resetConfirmBtn.onclick = () => { localStorage.clear(); location.reload(); };
+        if (app.dom.resetConfirmBtn) app.dom.resetConfirmBtn.onclick = async () => {
+          await this.clearAllData();
+          app.dom.resetModal.classList.remove('active');
+        };
         if (app.dom.resetCancelBtn) app.dom.resetCancelBtn.onclick = () => app.dom.resetModal.classList.remove('active');
         if (app.dom.bulkImportBtn) app.dom.bulkImportBtn.onclick = () => app.dom.bulkImportModal.classList.add('active');
         if (app.dom.bulkImportConfirmBtn) app.dom.bulkImportConfirmBtn.onclick = () => { app.students.bulkImport(app.dom.bulkImportTextarea.value, app, this); app.dom.bulkImportModal.classList.remove('active'); };
@@ -500,7 +517,9 @@ const ui = {
         if (app.dom.notesSaveBtn) app.dom.notesSaveBtn.onclick = () => this.saveNotes();
         if (app.dom.notesCancelBtn) app.dom.notesCancelBtn.onclick = () => app.dom.notesModal.classList.remove('active');
         if (app.dom.bulkScoreBtn) app.dom.bulkScoreBtn.onclick = () => { app.dom.bulkScoreModal.classList.add('active'); this.renderBulkTable(); };
-        if (app.dom.bulkScoreCancelBtn) app.dom.bulkScoreCancelBtn.onclick = () => app.dom.bulkScoreModal.classList.remove('active');
+        if (app.dom.bulkScoreCancelBtn) app.dom.bulkScoreCancelBtn.onclick = async () => {
+          await this.clearAllData();
+        };
         if (app.dom.bulkScoreSaveBtn) app.dom.bulkScoreSaveBtn.onclick = () => app.students.saveBulkScores(app.dom.bulkMockSelect.value, app.dom.bulkScoreBody.querySelectorAll('.bulk-score-input'), app, this);
         if (app.dom.addMockForm) app.dom.addMockForm.onsubmit = async (e) => { 
           e.preventDefault(); 
@@ -534,13 +553,14 @@ const ui = {
           app.dom.dynamicSubjectFields.querySelectorAll('input').forEach(f => {
             const subjectName = f.dataset.subject;
             if (subjectName) {
-              scores[subjectName] = f.value !== '' ? parseInt(f.value) : null;
+              scores[subjectName] = app.normalizeScore(f.value);
             }
           });
           app.students.saveScores(sid, mid, scores, app, this);
         };
         if (app.dom.scoreStudentSelect) app.dom.scoreStudentSelect.onchange = () => this.loadScoreFields();
-        if (app.dom.scoreMockSelect) app.dom.scoreMockSelect.onchange = () => this.loadScoreFields();
+        if (app.dom.scoreMockSelect) app.dom.scoreMockSelect.onchange = () => { this.loadScoreFields(); this.refreshUI(); };
+        if (app.dom.bulkMockSelect) app.dom.bulkMockSelect.onchange = () => { this.renderBulkTable(); this.refreshUI(); };
         if (app.dom.chartStudentSelect) app.dom.chartStudentSelect.onchange = () => app.charts.renderStudentChart(app.dom.chartStudentSelect.value, app);
         if (app.dom.searchInput) app.dom.searchInput.oninput = (e) => { app.state.searchTerm = e.target.value; this.renderResultsTable(); };
         if (app.dom.reportCloseBtn) app.dom.reportCloseBtn.onclick = () => app.dom.reportModal.classList.remove('active');
@@ -555,6 +575,28 @@ const ui = {
             this.openReport(reportCell.dataset.reportId);
           }
         });
+
+        const riskMap = ['safe', 'borderline', 'at-risk'];
+        document.querySelectorAll('.risk-summary .risk-item').forEach((item, index) => {
+          item.style.cursor = 'pointer';
+          item.onclick = () => this.openRiskPage(riskMap[index] || 'safe');
+        });
+
+        if (app.dom.dynamicSubjectFields) {
+          app.dom.dynamicSubjectFields.addEventListener('input', (e) => {
+            if (e.target && e.target.matches('input[type="number"]')) {
+              e.target.value = app.normalizeScore(e.target.value);
+            }
+          });
+        }
+
+        if (app.dom.bulkScoreBody) {
+          app.dom.bulkScoreBody.addEventListener('input', (e) => {
+            if (e.target && e.target.matches('input[type="number"]')) {
+              e.target.value = app.normalizeScore(e.target.value);
+            }
+          });
+        }
 
         document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active')); });
         console.log("Events Bound Successfully.");

@@ -42,70 +42,177 @@ window.TrackerApp = window.TrackerApp || {};
     error: null
   };
 
+  const STORAGE_KEY = 'studentAppData';
+
+  const createDefaultRawData = () => ({
+    students: [],
+    subjects: ['English Language', 'Mathematics', 'Integrated Science', 'Social Studies', 'Computing'],
+    exams: ['Mock 1']
+  });
+
+  const normalizeLabel = (value) => String(value || '').trim();
+  const createId = (prefix, name, index) => {
+    const base = normalizeLabel(name)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    return `${prefix}_${base || index + 1}`;
+  };
+
+  app.normalizeScore = function (value) {
+    return app.analytics?.normalizeScore
+      ? app.analytics.normalizeScore(value)
+      : Math.max(0, Math.min(100, isNaN(Number(value)) ? 0 : Number(value)));
+  };
+
+  app.saveToStorage = function (data) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  };
+
+  app.loadFromStorage = function () {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    return saved ? JSON.parse(saved) : null;
+  };
+
+  app.getRawData = function () {
+    const subjectLabels = (app.state.subjects || []).map(s => normalizeLabel(s.name)).filter(Boolean);
+    const examLabels = (app.state.exams || []).map(e => normalizeLabel(e.title || e.name)).filter(Boolean);
+
+    return {
+      students: (app.state.students || []).map(student => ({
+        id: student.id,
+        name: student.name,
+        notes: student.notes || '',
+        class: student.class || '',
+        scores: { ...(student.scores || {}) }
+      })),
+      subjects: subjectLabels,
+      exams: examLabels
+    };
+  };
+
+  app.applyRawData = function (rawData) {
+    const data = rawData || createDefaultRawData();
+    const subjectLabels = (data.subjects || []).map(normalizeLabel).filter(Boolean);
+    const examLabels = (data.exams || []).map(normalizeLabel).filter(Boolean);
+
+    app.state.subjects = subjectLabels.map((name, idx) => ({ id: createId('sub', name, idx), name }));
+    app.state.exams = examLabels.map((title, idx) => ({ id: createId('exam', title, idx), title, name: title }));
+
+    app.state.students = (data.students || []).map((student, idx) => ({
+      id: student.id || createId('st', student.name || `student-${idx + 1}`, idx),
+      name: normalizeLabel(student.name) || `Student ${idx + 1}`,
+      notes: student.notes || '',
+      class: student.class || '',
+      scores: student.scores && typeof student.scores === 'object' ? student.scores : {}
+    }));
+
+    app.state.scores = [];
+    app.state.students.forEach(student => {
+      app.state.subjects.forEach(subject => {
+        app.state.exams.forEach(exam => {
+          const score = student.scores?.[subject.name]?.[exam.title];
+          if (score !== '' && score !== undefined && score !== null && !isNaN(score)) {
+            app.state.scores.push({
+              id: `${student.id}_${exam.id}_${subject.id}`,
+              studentId: student.id,
+              examId: exam.id,
+              subject: subject.name,
+              score: Number(score)
+            });
+          }
+        });
+      });
+    });
+  };
+
+  app.migrateToRawData = function (legacyData) {
+    if (!legacyData || typeof legacyData !== 'object') {
+      return createDefaultRawData();
+    }
+
+    const subjects = (legacyData.subjects || []).map(s => normalizeLabel(s?.name || s)).filter(Boolean);
+    const exams = (legacyData.exams || []).map(e => normalizeLabel(e?.title || e?.name || e)).filter(Boolean);
+    const subjectIdToName = new Map((legacyData.subjects || []).map(s => [s?.id, normalizeLabel(s?.name)]));
+    const examIdToTitle = new Map((legacyData.exams || []).map(e => [e?.id, normalizeLabel(e?.title || e?.name)]));
+
+    const students = (legacyData.students || []).map((student, idx) => {
+      const rawStudent = {
+        id: student.id || createId('st', student.name || `student-${idx + 1}`, idx),
+        name: normalizeLabel(student.name),
+        notes: student.notes || '',
+        class: student.class || '',
+        scores: {}
+      };
+
+      const sourceScores = student.scores || {};
+      const maybeRaw = Object.keys(sourceScores).every(subjectKey => {
+        const val = sourceScores[subjectKey];
+        return val && typeof val === 'object' && !Array.isArray(val);
+      });
+
+      if (maybeRaw) {
+        Object.entries(sourceScores).forEach(([subject, examMap]) => {
+          const subjectLabel = normalizeLabel(subjectIdToName.get(subject) || subject);
+          if (!subjectLabel) return;
+          rawStudent.scores[subjectLabel] = rawStudent.scores[subjectLabel] || {};
+          Object.entries(examMap || {}).forEach(([exam, value]) => {
+            const examLabel = normalizeLabel(examIdToTitle.get(exam) || exam);
+            if (!examLabel) return;
+            rawStudent.scores[subjectLabel][examLabel] = app.normalizeScore(value);
+          });
+        });
+      }
+
+      return rawStudent;
+    });
+
+    (legacyData.scores || []).forEach(score => {
+      const student = students.find(s => s.id === score.studentId);
+      if (!student) return;
+      const subjectLabel = normalizeLabel(score.subjectId ? subjectIdToName.get(score.subjectId) : score.subject);
+      const examLabel = normalizeLabel(examIdToTitle.get(score.examId));
+      if (!subjectLabel || !examLabel) return;
+      if (!student.scores[subjectLabel]) {
+        student.scores[subjectLabel] = {};
+      }
+      student.scores[subjectLabel][examLabel] = app.normalizeScore(score.score);
+    });
+
+    return {
+      students,
+      subjects: subjects.length ? subjects : createDefaultRawData().subjects,
+      exams: exams.length ? exams : createDefaultRawData().exams
+    };
+  };
+
   // Persistence Methods - Now async with Firestore
   app.save = async function () {
-    // Firestore handles persistence automatically
-    // This function is kept for compatibility but no longer does anything
-    console.log('Data is automatically persisted to Firestore');
+    app.saveToStorage(app.getRawData());
   };
 
   app.load = async function () {
     try {
       app.state.isLoading = true;
       app.state.error = null;
-      
-      console.log('Loading data from Firestore...');
-      
-      // Load all data in parallel
+
+      const localData = app.loadFromStorage();
+      if (localData) {
+        const migrated = app.migrateToRawData(localData);
+        app.applyRawData(migrated);
+        return;
+      }
+
       const [students, exams, subjects, scores] = await Promise.all([
         getStudents(),
         getExams(),
         getSubjects(),
         getScores()
       ]);
-      
-      // Update state with fetched data
-      app.state.students = students || [];
-      app.state.exams = exams || [];
-      app.state.subjects = subjects || [];
-      app.state.scores = scores || [];
-      
-      console.log('Data loaded from Firestore:', {
-        students: app.state.students.length,
-        exams: app.state.exams.length,
-        subjects: app.state.subjects.length,
-        scores: app.state.scores.length
-      });
-      
-      // Initialize default data only if completely empty
-      if (app.state.subjects.length === 0) {
-        console.log('No subjects found, creating defaults...');
-        const defaultSubjects = [
-          { name: 'English Language' },
-          { name: 'Mathematics' },
-          { name: 'Integrated Science' },
-          { name: 'Social Studies' },
-          { name: 'Computing' }
-        ];
-        
-        for (const subjectData of defaultSubjects) {
-          const newSubject = await addSubject(subjectData);
-          app.state.subjects.push(newSubject);
-        }
-      }
-      
-      if (app.state.exams.length === 0) {
-        console.log('No exams found, creating default...');
-        const defaultExam = await addExam({ title: 'Mock 1', date: new Date().toISOString() });
-        app.state.exams.push(defaultExam);
-      }
-      
-      console.log('Final state after initialization:', {
-        students: app.state.students.length,
-        exams: app.state.exams.length,
-        subjects: app.state.subjects.length,
-        scores: app.state.scores.length
-      });
+
+      const migrated = app.migrateToRawData({ students, exams, subjects, scores });
+      app.applyRawData(migrated);
+      await app.save();
       
     } catch (error) {
       console.error('Failed to load data from Firestore:', error);
@@ -119,9 +226,15 @@ window.TrackerApp = window.TrackerApp || {};
   // CRUD operations for students
   app.addStudent = async function (studentData) {
     try {
-      const newStudent = await addStudent(studentData);
+      const newStudent = {
+        id: app.utils.uuid(),
+        name: normalizeLabel(studentData.name),
+        class: studentData.class || '',
+        notes: studentData.notes || '',
+        scores: studentData.scores && typeof studentData.scores === 'object' ? studentData.scores : {}
+      };
       app.state.students.push(newStudent);
-      await app.save(); // For compatibility
+      await app.save();
       return newStudent;
     } catch (error) {
       console.error('Failed to add student:', error);
@@ -131,13 +244,12 @@ window.TrackerApp = window.TrackerApp || {};
 
   app.updateStudent = async function (studentId, studentData) {
     try {
-      const updatedStudent = await updateStudent(studentId, studentData);
       const index = app.state.students.findIndex(s => s.id === studentId);
       if (index !== -1) {
-        app.state.students[index] = updatedStudent;
+        app.state.students[index] = { ...app.state.students[index], ...studentData };
       }
-      await app.save(); // For compatibility
-      return updatedStudent;
+      await app.save();
+      return app.state.students[index];
     } catch (error) {
       console.error('Failed to update student:', error);
       throw error;
@@ -146,11 +258,9 @@ window.TrackerApp = window.TrackerApp || {};
 
   app.deleteStudent = async function (studentId) {
     try {
-      await deleteStudent(studentId);
       app.state.students = app.state.students.filter(s => s.id !== studentId);
-      // Also remove related scores
       app.state.scores = app.state.scores.filter(score => score.studentId !== studentId);
-      await app.save(); // For compatibility
+      await app.save();
       return true;
     } catch (error) {
       console.error('Failed to delete student:', error);
@@ -161,9 +271,16 @@ window.TrackerApp = window.TrackerApp || {};
   // CRUD operations for exams
   app.addExam = async function (examData) {
     try {
-      const newExam = await addExam(examData);
+      const title = normalizeLabel(examData.title || examData.name);
+      if (!title) throw new Error('Exam title is required');
+      const newExam = {
+        id: app.utils.uuid(),
+        title,
+        name: title,
+        date: examData.date || new Date().toISOString()
+      };
       app.state.exams.push(newExam);
-      await app.save(); // For compatibility
+      await app.save();
       return newExam;
     } catch (error) {
       console.error('Failed to add exam:', error);
@@ -173,13 +290,27 @@ window.TrackerApp = window.TrackerApp || {};
 
   app.updateExam = async function (examId, examData) {
     try {
-      const updatedExam = await updateExam(examId, examData);
       const index = app.state.exams.findIndex(e => e.id === examId);
       if (index !== -1) {
-        app.state.exams[index] = updatedExam;
+        const current = app.state.exams[index];
+        const prevTitle = current.title || current.name;
+        const nextTitle = normalizeLabel(examData.title || examData.name || prevTitle);
+        app.state.exams[index] = { ...current, ...examData, title: nextTitle, name: nextTitle };
+
+        if (prevTitle !== nextTitle) {
+          app.state.students.forEach(student => {
+            Object.keys(student.scores || {}).forEach(subject => {
+              const examScores = student.scores[subject] || {};
+              if (Object.prototype.hasOwnProperty.call(examScores, prevTitle)) {
+                examScores[nextTitle] = examScores[prevTitle];
+                delete examScores[prevTitle];
+              }
+            });
+          });
+        }
       }
-      await app.save(); // For compatibility
-      return updatedExam;
+      await app.save();
+      return app.state.exams[index];
     } catch (error) {
       console.error('Failed to update exam:', error);
       throw error;
@@ -188,11 +319,22 @@ window.TrackerApp = window.TrackerApp || {};
 
   app.deleteExam = async function (examId) {
     try {
-      await deleteExam(examId);
+      const exam = app.state.exams.find(e => e.id === examId);
+      const examTitle = exam?.title || exam?.name;
       app.state.exams = app.state.exams.filter(e => e.id !== examId);
-      // Also remove related scores
       app.state.scores = app.state.scores.filter(score => score.examId !== examId);
-      await app.save(); // For compatibility
+
+      if (examTitle) {
+        app.state.students.forEach(student => {
+          Object.keys(student.scores || {}).forEach(subject => {
+            if (student.scores[subject]) {
+              delete student.scores[subject][examTitle];
+            }
+          });
+        });
+      }
+
+      await app.save();
       return true;
     } catch (error) {
       console.error('Failed to delete exam:', error);
@@ -203,9 +345,11 @@ window.TrackerApp = window.TrackerApp || {};
   // CRUD operations for subjects
   app.addSubject = async function (subjectData) {
     try {
-      const newSubject = await addSubject(subjectData);
+      const name = normalizeLabel(subjectData.name);
+      if (!name) throw new Error('Subject name is required');
+      const newSubject = { id: app.utils.uuid(), name };
       app.state.subjects.push(newSubject);
-      await app.save(); // For compatibility
+      await app.save();
       return newSubject;
     } catch (error) {
       console.error('Failed to add subject:', error);
@@ -215,13 +359,24 @@ window.TrackerApp = window.TrackerApp || {};
 
   app.updateSubject = async function (subjectId, subjectData) {
     try {
-      const updatedSubject = await updateSubject(subjectId, subjectData);
       const index = app.state.subjects.findIndex(s => s.id === subjectId);
       if (index !== -1) {
-        app.state.subjects[index] = updatedSubject;
+        const current = app.state.subjects[index];
+        const prevName = current.name;
+        const nextName = normalizeLabel(subjectData.name || prevName);
+        app.state.subjects[index] = { ...current, ...subjectData, name: nextName };
+
+        if (prevName !== nextName) {
+          app.state.students.forEach(student => {
+            if (student.scores?.[prevName]) {
+              student.scores[nextName] = student.scores[prevName];
+              delete student.scores[prevName];
+            }
+          });
+        }
       }
-      await app.save(); // For compatibility
-      return updatedSubject;
+      await app.save();
+      return app.state.subjects[index];
     } catch (error) {
       console.error('Failed to update subject:', error);
       throw error;
@@ -230,11 +385,20 @@ window.TrackerApp = window.TrackerApp || {};
 
   app.deleteSubject = async function (subjectId) {
     try {
-      await deleteSubject(subjectId);
+      const subject = app.state.subjects.find(s => s.id === subjectId);
+      const subjectName = subject?.name;
       app.state.subjects = app.state.subjects.filter(s => s.id !== subjectId);
-      // Also remove related scores
-      app.state.scores = app.state.scores.filter(score => score.subjectId === subjectId);
-      await app.save(); // For compatibility
+      app.state.scores = app.state.scores.filter(score => score.subject !== subjectName);
+
+      if (subjectName) {
+        app.state.students.forEach(student => {
+          if (student.scores?.[subjectName]) {
+            delete student.scores[subjectName];
+          }
+        });
+      }
+
+      await app.save();
       return true;
     } catch (error) {
       console.error('Failed to delete subject:', error);
@@ -245,23 +409,20 @@ window.TrackerApp = window.TrackerApp || {};
   // Score operations
   app.saveScore = async function (scoreData) {
     try {
-      const savedScore = await saveScore(scoreData);
-      
-      // Update local state
-      const existingIndex = app.state.scores.findIndex(s => 
-        s.studentId === scoreData.studentId && 
-        s.examId === scoreData.examId && 
-        s.subject === scoreData.subject
-      );
-      
-      if (existingIndex !== -1) {
-        app.state.scores[existingIndex] = savedScore;
-      } else {
-        app.state.scores.push(savedScore);
+      const student = app.state.students.find(s => s.id === scoreData.studentId);
+      const exam = app.state.exams.find(e => e.id === scoreData.examId);
+      if (!student || !exam || !scoreData.subject) {
+        throw new Error('Invalid score payload');
       }
-      
-      await app.save(); // For compatibility
-      return savedScore;
+
+      const examLabel = exam.title || exam.name;
+      if (!student.scores[scoreData.subject]) {
+        student.scores[scoreData.subject] = {};
+      }
+      student.scores[scoreData.subject][examLabel] = app.normalizeScore(scoreData.score);
+
+      await app.save();
+      return scoreData;
     } catch (error) {
       console.error('Failed to save score:', error);
       throw error;
@@ -282,7 +443,7 @@ window.TrackerApp = window.TrackerApp || {};
   // Theme management (still uses localStorage for UI preferences)
   app.applyTheme = function (t) {
     app.state.theme = t || app.state.theme;
-    document.body.className = app.state.theme === 'dark' ? 'dark-mode' : '';
+    document.body.className = app.state.theme === 'dark' ? 'dark-mode' : 'light-mode';
     if (app.dom && app.dom.themeToggle) {
       app.dom.themeToggle.innerHTML = app.state.theme === 'dark' ? '☀' : '🌙';
     }
@@ -316,15 +477,10 @@ window.TrackerApp = window.TrackerApp || {};
   app.importData = async function (importData) {
     try {
       app.state.isLoading = true;
-      
-      // This would require batch operations in a real implementation
-      // For now, we'll update the local state and rely on individual operations
-      app.state.students = importData.students || [];
-      app.state.exams = importData.exams || [];
-      app.state.subjects = importData.subjects || [];
-      app.state.scores = importData.scores || [];
-      
-      await app.save(); // For compatibility
+
+      const migrated = app.migrateToRawData(importData);
+      app.applyRawData(migrated);
+      await app.save();
       return true;
     } catch (error) {
       console.error('Failed to import data:', error);

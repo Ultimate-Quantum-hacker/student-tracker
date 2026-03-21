@@ -143,7 +143,7 @@ const charts = {
     var maxScore = app.state.subjects.length * 100;
     var points = [];
     app.state.exams.forEach(function(m, i) {
-      var t = app.analytics.mockTotal(s.scores[m.id]);
+      var t = app.analytics.getTotal(s, m);
       if (t !== null) {
         var examName = m.title || m.name;
         var label = (examName && examName.toLowerCase().startsWith('mock ')) ? ('M' + (i + 1)) : examName;

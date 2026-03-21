@@ -26,3 +26,11 @@
 }
 
 @media print{body{background:white}#app-header,.sidebar,.btn,.modal-overlay,.section-controls{display:none !important}#app-main{grid-template-columns:1fr}.main-content{padding:0}}
+
+}
+
+.light-mode .reset-icon,
+body:not(.dark-mode) .reset-icon {
+  color: #000;
+  background-color: #f5f5f5;
+}

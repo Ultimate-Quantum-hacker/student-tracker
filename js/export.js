@@ -75,7 +75,7 @@ const exportModule = {
 
       ranked.forEach((s, i) => {
         const scores = app.state.exams.map(m => {
-          const t = app.analytics.mockTotal(s.scores[m.id], app.state.subjects);
+          const t = app.analytics.getTotal(s, m);
           return t !== null ? t : '';
         }).join(',');
         
@@ -116,15 +116,12 @@ const exportModule = {
       const rows = ranked.map((s, i) => {
         const currentMock = app.state.exams[app.state.exams.length - 1];
         const previousMock = app.state.exams[app.state.exams.length - 2];
-        const currentScore = currentMock ? app.analytics.mockTotal(s.scores[currentMock.id] || {}) : null;
-        const previousMockScore = previousMock ? app.analytics.mockTotal(s.scores[previousMock.id] || {}) : null;
-        const prevStorage = JSON.parse(localStorage.getItem('previousScores') || '{}');
-        const prevStored = prevStorage[s.id] ?? prevStorage[s.name] ?? null;
-        const previousScore = previousMockScore !== null ? previousMockScore : (prevStored !== undefined ? prevStored : null);
+        const currentScore = currentMock ? app.analytics.getTotal(s, currentMock) : null;
+        const previousScore = previousMock ? app.analytics.getTotal(s, previousMock) : null;
         const improvement = app.ui.formatImprovement(currentScore, previousScore);
 
         const subjectScores = app.state.subjects.map(sub => {
-          const v = s.scores[currentMock?.id]?.[sub.id];
+          const v = currentMock ? app.analytics.getScore(s, sub, currentMock) : '';
           return (v === null || v === undefined || isNaN(v)) ? '—' : Number(v);
         });
 
