@@ -22,6 +22,16 @@ const analytics = {
     return subject?.name || '';
   },
 
+  getPerformanceCategories: function () {
+    return [
+      { key: 'strong', label: 'Strong', min: 80, max: 100 },
+      { key: 'good', label: 'Good', min: 70, max: 79 },
+      { key: 'average', label: 'Average', min: 60, max: 69 },
+      { key: 'borderline', label: 'Borderline', min: 41, max: 59 },
+      { key: 'at-risk', label: 'At Risk', min: 0, max: 40 }
+    ];
+  },
+
   getLatestExam: function () {
     const exams = app.state.exams || [];
     if (!exams.length) return '';
@@ -124,10 +134,12 @@ const analytics = {
       return { status: 'incomplete', average, complete: false, scoredCount, expectedCount: subjects.length };
     }
 
-    if (average >= 80) return { status: 'strong', average, complete: true, scoredCount, expectedCount: subjects.length };
-    if (average >= 70) return { status: 'good', average, complete: true, scoredCount, expectedCount: subjects.length };
-    if (average >= 60) return { status: 'average', average, complete: true, scoredCount, expectedCount: subjects.length };
-    if (average >= 41) return { status: 'borderline', average, complete: true, scoredCount, expectedCount: subjects.length };
+    const categories = this.getPerformanceCategories();
+    for (const category of categories) {
+      if (average >= category.min && average <= category.max) {
+        return { status: category.key, average, complete: true, scoredCount, expectedCount: subjects.length };
+      }
+    }
     return { status: 'at-risk', average, complete: true, scoredCount, expectedCount: subjects.length };
   },
 
@@ -216,15 +228,10 @@ const analytics = {
   groupStudentsByStatus: function () {
     const latestExam = (app.state.exams || [])[app.state.exams.length - 1] || null;
     const latestExamLabel = this.getExamLabel(latestExam);
-    const groups = {
-      strong: [],
-      good: [],
-      average: [],
-      borderline: [],
-      'at-risk': [],
-      'no-data': [],
-      incomplete: []
-    };
+    const groups = this.getPerformanceCategories().reduce((acc, category) => {
+      acc[category.key] = [];
+      return acc;
+    }, { 'no-data': [], incomplete: [] });
 
     (app.state.students || []).forEach(student => {
       const details = this.getStudentStatusDetails(student, latestExam);

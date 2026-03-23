@@ -41,10 +41,13 @@ const domIds = {
   statClassAvg: 'stat-class-avg',
   statPassRate: 'stat-pass-rate',
   statFailRate: 'stat-fail-rate',
-  statSafeCount: 'stat-safe-count',
+  statStrongCount: 'stat-strong-count',
+  statGoodCount: 'stat-good-count',
+  statAverageCount: 'stat-average-count',
   statBorderlineCount: 'stat-borderline-count',
   statAtRiskCount: 'stat-at-risk-count',
-  statAtRiskCountSecondary: 'stat-at-risk-count-2',
+  statAtRiskCountSummary: 'stat-at-risk-count-summary',
+  dashboardPerformanceSummary: 'dashboard-performance-summary',
   interventionItems: 'intervention-items',
   classChart: 'class-chart',
   classChartPlaceholder: 'class-chart-placeholder',
@@ -166,9 +169,10 @@ const ui = {
       const total = app.state.students.length;
       if (app.dom.statTotalStudents) app.dom.statTotalStudents.textContent = total;
 
-      const statusGroups = app.analytics.groupStudentsByStatus().groups;
-      const measured = ['strong', 'good', 'average', 'borderline', 'at-risk']
-        .flatMap(key => statusGroups[key] || [])
+      const { groups: statusGroups } = app.analytics.groupStudentsByStatus();
+      const categories = app.analytics.getPerformanceCategories();
+      const measured = categories
+        .flatMap(category => statusGroups[category.key] || [])
         .map(item => item.average)
         .filter(avg => avg !== null && avg !== undefined && !isNaN(avg));
 
@@ -176,16 +180,25 @@ const ui = {
       const count = measured.length;
       const pass = measured.filter(avg => avg >= 50).length;
       const atRisk = (statusGroups['at-risk'] || []).length;
-      const borderline = (statusGroups.borderline || []).length;
-      const safe = (statusGroups.strong || []).length + (statusGroups.good || []).length + (statusGroups.average || []).length;
+      const countTargets = {
+        strong: 'statStrongCount',
+        good: 'statGoodCount',
+        average: 'statAverageCount',
+        borderline: 'statBorderlineCount',
+        'at-risk': 'statAtRiskCountSummary'
+      };
 
       if (app.dom.statClassAvg) app.dom.statClassAvg.textContent = count ? (sum / count).toFixed(1) : '0.0';
       if (app.dom.statPassRate) app.dom.statPassRate.textContent = count ? Math.round((pass / count) * 100) + '%' : '0%';
       if (app.dom.statFailRate) app.dom.statFailRate.textContent = count ? Math.round(((count - pass) / count) * 100) + '%' : '0%';
-      if (app.dom.statSafeCount) app.dom.statSafeCount.textContent = safe;
-      if (app.dom.statBorderlineCount) app.dom.statBorderlineCount.textContent = borderline;
       if (app.dom.statAtRiskCount) app.dom.statAtRiskCount.textContent = atRisk;
-      if (app.dom.statAtRiskCountSecondary) app.dom.statAtRiskCountSecondary.textContent = atRisk;
+
+      categories.forEach(category => {
+        const domKey = countTargets[category.key];
+        if (domKey && app.dom[domKey]) {
+          app.dom[domKey].textContent = (statusGroups[category.key] || []).length;
+        }
+      });
     },
 
     renderStudentChips: function () {
@@ -326,16 +339,38 @@ const ui = {
       }).join('');
     },
 
+    openPerformanceCategory: function (categoryKey) {
+      const categories = app.analytics.getPerformanceCategories();
+      const fallbackCategory = categories[0]?.key || 'strong';
+      const selectedCategory = categories.some(category => category.key === categoryKey)
+        ? categoryKey
+        : fallbackCategory;
+
+      app.state.selectedPerformanceCategory = selectedCategory;
+      if (app.dom.performanceCategorySelect) {
+        app.dom.performanceCategorySelect.value = selectedCategory;
+      }
+
+      if (app.sidebar && typeof app.sidebar.showSection === 'function') {
+        app.sidebar.showSection('performance-analysis');
+      } else {
+        document.querySelectorAll('.content-section').forEach(section => section.classList.remove('active'));
+        const performanceSection = document.getElementById('performance-analysis');
+        if (performanceSection) performanceSection.classList.add('active');
+      }
+
+      document.querySelectorAll('.sidebar-item').forEach(item => {
+        item.classList.toggle('active', item.dataset.section === 'performance-analysis');
+      });
+
+      this.renderPerformanceAnalysisPanel();
+    },
+
     renderPerformanceAnalysisPanel: function () {
       if (!app.dom.performanceCategorySelect || !app.dom.performanceCategoryCounts || !app.dom.performanceFilteredList || !app.dom.performanceInterventionNeededList) return;
 
-      const categories = [
-        { key: 'strong', label: 'Strong' },
-        { key: 'good', label: 'Good' },
-        { key: 'average', label: 'Average' },
-        { key: 'borderline', label: 'Borderline' },
-        { key: 'at-risk', label: 'At Risk' }
-      ];
+      const categories = app.analytics.getPerformanceCategories();
+      const fallbackCategory = categories[0]?.key || 'strong';
 
       if (!app.dom.performanceCategorySelect.options.length) {
         app.dom.performanceCategorySelect.innerHTML = categories
@@ -344,7 +379,7 @@ const ui = {
       }
 
       if (!categories.some(option => option.key === app.state.selectedPerformanceCategory)) {
-        app.state.selectedPerformanceCategory = 'strong';
+        app.state.selectedPerformanceCategory = fallbackCategory;
       }
       app.dom.performanceCategorySelect.value = app.state.selectedPerformanceCategory;
 
@@ -800,9 +835,18 @@ const ui = {
 
         if (app.dom.performanceCategorySelect) {
           app.dom.performanceCategorySelect.onchange = (e) => {
-            app.state.selectedPerformanceCategory = e.target.value || 'strong';
+            const fallbackCategory = app.analytics.getPerformanceCategories()[0]?.key || 'strong';
+            app.state.selectedPerformanceCategory = e.target.value || fallbackCategory;
             this.renderPerformanceAnalysisPanel();
           };
+        }
+
+        if (app.dom.dashboardPerformanceSummary) {
+          app.dom.dashboardPerformanceSummary.addEventListener('click', (e) => {
+            const trigger = e.target.closest('[data-performance-category]');
+            if (!trigger) return;
+            this.openPerformanceCategory(trigger.dataset.performanceCategory);
+          });
         }
 
         if (app.dom.dynamicSubjectFields) {

@@ -503,12 +503,14 @@ table td{
 
 .risk-summary{
   display:grid;
-  grid-template-columns:repeat(3,minmax(0,1fr));
+  grid-template-columns:repeat(5,minmax(0,1fr));
   gap:.65rem;
   margin-top:.6rem;
 }
 
 .risk-item{
+  appearance:none;
+  width:100%;
   border:1px solid var(--border);
   border-radius:var(--radius-sm);
   background:var(--surface-secondary);
@@ -516,6 +518,58 @@ table td{
   display:flex;
   align-items:center;
   justify-content:space-between;
+  cursor:pointer;
+  text-align:left;
+  min-height:auto;
+  transition:transform .12s ease,box-shadow .12s ease,border-color .12s ease;
+}
+
+.risk-item:hover{
+  transform:translateY(-1px);
+  box-shadow:0 1px 4px rgba(15,23,42,.12);
+}
+
+.risk-item:focus-visible{
+  outline:none;
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--primary-light) 65%,transparent);
+}
+
+.risk-item.risk-strong{border-color:rgba(21,128,61,.2);background:rgba(22,163,74,.1)}
+.risk-item.risk-good{border-color:rgba(29,78,216,.2);background:rgba(59,130,246,.12)}
+.risk-item.risk-average{border-color:rgba(161,98,7,.2);background:rgba(245,158,11,.14)}
+.risk-item.risk-borderline{border-color:rgba(146,64,14,.2);background:rgba(251,191,36,.2)}
+.risk-item.risk-at-risk{border-color:rgba(220,38,38,.24);background:rgba(239,68,68,.14)}
+
+.risk-item.risk-strong .risk-label,
+.risk-item.risk-strong .risk-count{color:#166534}
+.risk-item.risk-good .risk-label,
+.risk-item.risk-good .risk-count{color:#1d4ed8}
+.risk-item.risk-average .risk-label,
+.risk-item.risk-average .risk-count{color:#92400e}
+.risk-item.risk-borderline .risk-label,
+.risk-item.risk-borderline .risk-count{color:#92400e}
+.risk-item.risk-at-risk .risk-label,
+.risk-item.risk-at-risk .risk-count{color:#b91c1c}
+
+body.dark-mode .risk-item.risk-strong{background:rgba(34,197,94,.18);border-color:rgba(34,197,94,.36)}
+body.dark-mode .risk-item.risk-good{background:rgba(96,165,250,.2);border-color:rgba(96,165,250,.36)}
+body.dark-mode .risk-item.risk-average{background:rgba(245,158,11,.2);border-color:rgba(245,158,11,.36)}
+body.dark-mode .risk-item.risk-borderline{background:rgba(251,191,36,.2);border-color:rgba(251,191,36,.36)}
+body.dark-mode .risk-item.risk-at-risk{background:rgba(239,68,68,.22);border-color:rgba(248,113,113,.42)}
+
+body.dark-mode .risk-item.risk-strong .risk-label,
+body.dark-mode .risk-item.risk-strong .risk-count,
+body.dark-mode .risk-item.risk-good .risk-label,
+body.dark-mode .risk-item.risk-good .risk-count,
+body.dark-mode .risk-item.risk-average .risk-label,
+body.dark-mode .risk-item.risk-average .risk-count,
+body.dark-mode .risk-item.risk-borderline .risk-label,
+body.dark-mode .risk-item.risk-borderline .risk-count,
+body.dark-mode .risk-item.risk-at-risk .risk-label,
+body.dark-mode .risk-item.risk-at-risk .risk-count{color:#f8fafc}
+
+@media (max-width:1024px){
+  .risk-summary{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
 
 .risk-label{

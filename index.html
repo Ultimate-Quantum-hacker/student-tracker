@@ -13,7 +13,7 @@
 
   <!-- Base styles -->
   <link rel="stylesheet" href="styles.css?v=12">
-  <link rel="stylesheet" href="css/enhanced.css?v=15">
+  <link rel="stylesheet" href="css/enhanced.css?v=16">
 
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -401,7 +401,7 @@
           <div class="stat-card"><div class="stat-title">Pass Rate</div><div class="stat-value" id="stat-pass-rate">0%</div></div>
           <div class="stat-card"><div class="stat-title">At Risk</div><div class="stat-value" id="stat-at-risk-count">0</div></div>
         </div>
-        <div class="card"><h3>Performance Analysis</h3><div class="risk-summary"><div class="risk-item safe"><span class="risk-label">Safe</span><span class="risk-count" id="stat-safe-count">0</span></div><div class="risk-item borderline"><span class="risk-label">Borderline</span><span class="risk-count" id="stat-borderline-count">0</span></div><div class="risk-item at-risk"><span class="risk-label">At Risk</span><span class="risk-count" id="stat-at-risk-count-2">0</span></div></div></div>
+        <div class="card"><h3>Performance Analysis</h3><div class="risk-summary" id="dashboard-performance-summary"><button type="button" class="risk-item risk-strong" data-performance-category="strong"><span class="risk-label">Strong</span><span class="risk-count" id="stat-strong-count">0</span></button><button type="button" class="risk-item risk-good" data-performance-category="good"><span class="risk-label">Good</span><span class="risk-count" id="stat-good-count">0</span></button><button type="button" class="risk-item risk-average" data-performance-category="average"><span class="risk-label">Average</span><span class="risk-count" id="stat-average-count">0</span></button><button type="button" class="risk-item risk-borderline" data-performance-category="borderline"><span class="risk-label">Borderline</span><span class="risk-count" id="stat-borderline-count">0</span></button><button type="button" class="risk-item risk-at-risk" data-performance-category="at-risk"><span class="risk-label">At Risk</span><span class="risk-count" id="stat-at-risk-count-summary">0</span></button></div></div>
         <div class="card"><h3>Intervention Needed</h3><div id="intervention-items"><p style="text-align: center; color: var(--text-secondary);">No students at risk</p></div></div>
       </section>
 
