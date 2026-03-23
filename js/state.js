@@ -23,7 +23,7 @@ window.TrackerApp = window.TrackerApp || {};
     isLoading: false,
     error: null,
     selectedBulkExamId: '',
-    selectedRiskCategory: 'strong'
+    selectedPerformanceCategory: 'strong'
   };
 
   const STORAGE_KEY = 'studentAppData';

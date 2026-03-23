@@ -85,10 +85,10 @@ const domIds = {
   saveScoresBtn: 'save-scores-btn',
   dynamicSubjectFields: 'dynamicSubjectFields',
   bulkScoreHead: 'bulkScoreHead',
-  riskCategorySelect: 'risk-category-select',
-  riskCategoryCounts: 'risk-category-counts',
-  riskFilteredList: 'risk-filtered-list',
-  interventionNeededList: 'intervention-needed-list'
+  performanceCategorySelect: 'performance-category-select',
+  performanceCategoryCounts: 'performance-category-counts',
+  performanceFilteredList: 'performance-filtered-list',
+  performanceInterventionNeededList: 'performance-intervention-needed-list'
 };
 
 const ui = {
@@ -142,14 +142,10 @@ const ui = {
       return 'No Data';
     },
 
-    formatRiskLabel: function (riskType) {
-      return this.formatStatusLabel(riskType);
-    },
-
     clearAllData: async function () {
       app.applyRawData({ students: [], subjects: [], exams: [] });
       app.state.selectedBulkExamId = '';
-      app.state.selectedRiskCategory = 'strong';
+      app.state.selectedPerformanceCategory = 'strong';
       await app.save();
       this.refreshUI();
       this.showToast('All data cleared');
@@ -331,7 +327,7 @@ const ui = {
     },
 
     renderPerformanceAnalysisPanel: function () {
-      if (!app.dom.riskCategorySelect || !app.dom.riskCategoryCounts || !app.dom.riskFilteredList || !app.dom.interventionNeededList) return;
+      if (!app.dom.performanceCategorySelect || !app.dom.performanceCategoryCounts || !app.dom.performanceFilteredList || !app.dom.performanceInterventionNeededList) return;
 
       const categories = [
         { key: 'strong', label: 'Strong' },
@@ -341,53 +337,53 @@ const ui = {
         { key: 'at-risk', label: 'At Risk' }
       ];
 
-      if (!app.dom.riskCategorySelect.options.length) {
-        app.dom.riskCategorySelect.innerHTML = categories
+      if (!app.dom.performanceCategorySelect.options.length) {
+        app.dom.performanceCategorySelect.innerHTML = categories
           .map(option => `<option value="${option.key}">${option.label}</option>`)
           .join('');
       }
 
-      if (!categories.some(option => option.key === app.state.selectedRiskCategory)) {
-        app.state.selectedRiskCategory = 'strong';
+      if (!categories.some(option => option.key === app.state.selectedPerformanceCategory)) {
+        app.state.selectedPerformanceCategory = 'strong';
       }
-      app.dom.riskCategorySelect.value = app.state.selectedRiskCategory;
+      app.dom.performanceCategorySelect.value = app.state.selectedPerformanceCategory;
 
       const { groups, latestExam } = app.analytics.groupStudentsByStatus();
-      app.dom.riskCategoryCounts.innerHTML = categories.map(option => {
+      app.dom.performanceCategoryCounts.innerHTML = categories.map(option => {
         const count = (groups[option.key] || []).length;
-        return `<div class="risk-count-chip risk-${option.key}"><span>${option.label}</span><strong>${count}</strong></div>`;
+        return `<div class="performance-count-chip risk-${option.key}"><span>${option.label}</span><strong>${count}</strong></div>`;
       }).join('');
 
-      const selectedList = groups[app.state.selectedRiskCategory] || [];
-      const selectedLabel = categories.find(option => option.key === app.state.selectedRiskCategory)?.label || 'Category';
+      const selectedList = groups[app.state.selectedPerformanceCategory] || [];
+      const selectedLabel = categories.find(option => option.key === app.state.selectedPerformanceCategory)?.label || 'Category';
       const selectedRows = selectedList.map(item => `
-        <div class="risk-analysis-item">
+        <div class="performance-analysis-item">
           <div>
-            <div class="risk-analysis-name">${app.utils.esc(item.name)}</div>
-            <div class="risk-analysis-meta">${latestExam ? `Latest exam: ${app.utils.esc(latestExam)}` : 'No exam data yet'}</div>
+            <div class="performance-analysis-name">${app.utils.esc(item.name)}</div>
+            <div class="performance-analysis-meta">${latestExam ? `Latest exam: ${app.utils.esc(latestExam)}` : 'No exam data yet'}</div>
           </div>
-          <div class="risk-analysis-side">
-            <span class="risk-pill status-pill risk-${app.state.selectedRiskCategory}">${selectedLabel}</span>
-            <span class="risk-analysis-avg">${item.average !== null && item.average !== undefined ? item.average.toFixed(1) + '%' : 'N/A'}</span>
+          <div class="performance-analysis-side">
+            <span class="risk-pill status-pill risk-${app.state.selectedPerformanceCategory}">${selectedLabel}</span>
+            <span class="performance-analysis-avg">${item.average !== null && item.average !== undefined ? item.average.toFixed(1) + '%' : 'N/A'}</span>
           </div>
         </div>
       `).join('');
 
-      app.dom.riskFilteredList.innerHTML = selectedRows || `<p class="risk-analysis-empty">No students in ${selectedLabel} category.</p>`;
+      app.dom.performanceFilteredList.innerHTML = selectedRows || `<p class="performance-analysis-empty">No students in ${selectedLabel} category.</p>`;
 
       const interventionRows = (groups['at-risk'] || []).map(item => `
-        <div class="risk-analysis-item intervention">
+        <div class="performance-analysis-item intervention">
           <div>
-            <div class="risk-analysis-name">${app.utils.esc(item.name)}</div>
-            <div class="risk-analysis-meta">Immediate support recommended</div>
+            <div class="performance-analysis-name">${app.utils.esc(item.name)}</div>
+            <div class="performance-analysis-meta">Immediate support recommended</div>
           </div>
-          <div class="risk-analysis-side">
+          <div class="performance-analysis-side">
             <span class="risk-pill status-pill risk-at-risk">Intervention Needed</span>
-            <span class="risk-analysis-avg">${item.average !== null && item.average !== undefined ? item.average.toFixed(1) + '%' : 'N/A'}</span>
+            <span class="performance-analysis-avg">${item.average !== null && item.average !== undefined ? item.average.toFixed(1) + '%' : 'N/A'}</span>
           </div>
         </div>
       `).join('');
-      app.dom.interventionNeededList.innerHTML = interventionRows || '<p class="risk-analysis-empty">No students currently in At Risk category.</p>';
+      app.dom.performanceInterventionNeededList.innerHTML = interventionRows || '<p class="performance-analysis-empty">No students currently in At Risk category.</p>';
     },
 
     renderClassSummary: function () {
@@ -802,9 +798,9 @@ const ui = {
           }
         });
 
-        if (app.dom.riskCategorySelect) {
-          app.dom.riskCategorySelect.onchange = (e) => {
-            app.state.selectedRiskCategory = e.target.value || 'strong';
+        if (app.dom.performanceCategorySelect) {
+          app.dom.performanceCategorySelect.onchange = (e) => {
+            app.state.selectedPerformanceCategory = e.target.value || 'strong';
             this.renderPerformanceAnalysisPanel();
           };
         }

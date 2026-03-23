@@ -38,18 +38,18 @@
 body.dark-mode{--intervention-bg:rgba(220,38,38,.18);--intervention-border:rgba(248,113,113,.4);--intervention-meta:#fecaca}
 
 /* Performance Analysis tab */
-.risk-category-counts{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:.5rem;margin:1rem 0}
-.risk-count-chip{display:flex;align-items:center;justify-content:space-between;padding:.55rem .7rem;border-radius:10px;border:1px solid var(--border);background:var(--surface-secondary);font-size:.78rem}
-.risk-count-chip strong{font-size:.95rem}
-.risk-analysis-list{display:flex;flex-direction:column;gap:.6rem;margin-top:.4rem}
-.risk-analysis-item{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.75rem 1rem;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
-.risk-analysis-item.intervention{border-color:var(--intervention-border);background:var(--intervention-bg)}
-.risk-analysis-item.intervention .risk-analysis-meta{color:var(--intervention-meta)}
-.risk-analysis-name{font-weight:600;color:var(--text)}
-.risk-analysis-meta{font-size:.78rem;color:var(--text-secondary)}
-.risk-analysis-side{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;justify-content:flex-end}
-.risk-analysis-avg{font-weight:700;font-size:.82rem}
-.risk-analysis-empty{font-size:.85rem;color:var(--text-secondary);padding:.4rem 0}
+.performance-category-counts{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:.5rem;margin:1rem 0}
+.performance-count-chip{display:flex;align-items:center;justify-content:space-between;padding:.55rem .7rem;border-radius:10px;border:1px solid var(--border);background:var(--surface-secondary);font-size:.78rem}
+.performance-count-chip strong{font-size:.95rem}
+.performance-analysis-list{display:flex;flex-direction:column;gap:.6rem;margin-top:.4rem}
+.performance-analysis-item{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.75rem 1rem;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
+.performance-analysis-item.intervention{border-color:var(--intervention-border);background:var(--intervention-bg)}
+.performance-analysis-item.intervention .performance-analysis-meta{color:var(--intervention-meta)}
+.performance-analysis-name{font-weight:600;color:var(--text)}
+.performance-analysis-meta{font-size:.78rem;color:var(--text-secondary)}
+.performance-analysis-side{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;justify-content:flex-end}
+.performance-analysis-avg{font-weight:700;font-size:.82rem}
+.performance-analysis-empty{font-size:.85rem;color:var(--text-secondary);padding:.4rem 0}
 
 /* School Branding Header */
 .school-brand{text-align:center;padding:.5rem 0;font-size:.75rem;color:var(--text-secondary);border-bottom:1px solid var(--border);margin-bottom:0}
@@ -189,7 +189,7 @@ body.dark-mode{--intervention-bg:rgba(220,38,38,.18);--intervention-border:rgba(
 }
 
 @media (max-width:900px){
-  .risk-category-counts{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .performance-category-counts{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 
 @media (max-width:768px){
@@ -197,6 +197,6 @@ body.dark-mode{--intervention-bg:rgba(220,38,38,.18);--intervention-border:rgba(
   .sidebar .sidebar-nav{gap:.8rem}
   .sidebar .sidebar-title{padding:.2rem .55rem}
   .sidebar .sidebar-item{font-size:.86rem;padding:.55rem .6rem;border-radius:12px}
-  .risk-analysis-item{flex-direction:column;align-items:flex-start}
-  .risk-analysis-side{justify-content:flex-start}
+  .performance-analysis-item{flex-direction:column;align-items:flex-start}
+  .performance-analysis-side{justify-content:flex-start}
 }
