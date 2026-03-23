@@ -133,12 +133,10 @@ const ui = {
     },
 
     clearAllData: async function () {
-      app.state.students.forEach(student => {
-        student.scores = {};
-      });
+      app.applyRawData({ students: [], subjects: [], exams: [] });
       await app.save();
       this.refreshUI();
-      this.showToast('All scores cleared');
+      this.showToast('All data cleared');
     },
 
     openRiskPage: function (type) {
@@ -384,7 +382,12 @@ const ui = {
       console.log("Refreshing UI...");
       try {
         if (app.dom.emptyMsg) app.dom.emptyMsg.style.display = app.state.students.length ? 'none' : 'block';
+        this.renderManagement();
+        this.populateSelects();
+        this.loadScoreFields();
         this.updateDashboardStats();
+        this.renderInterventionList();
+        this.renderClassSummary();
         this.renderStudentChips();
         this.renderResultsTable();
         this.renderBulkTable();
@@ -517,9 +520,7 @@ const ui = {
         if (app.dom.notesSaveBtn) app.dom.notesSaveBtn.onclick = () => this.saveNotes();
         if (app.dom.notesCancelBtn) app.dom.notesCancelBtn.onclick = () => app.dom.notesModal.classList.remove('active');
         if (app.dom.bulkScoreBtn) app.dom.bulkScoreBtn.onclick = () => { app.dom.bulkScoreModal.classList.add('active'); this.renderBulkTable(); };
-        if (app.dom.bulkScoreCancelBtn) app.dom.bulkScoreCancelBtn.onclick = async () => {
-          await this.clearAllData();
-        };
+        if (app.dom.bulkScoreCancelBtn) app.dom.bulkScoreCancelBtn.onclick = () => app.dom.bulkScoreModal.classList.remove('active');
         if (app.dom.bulkScoreSaveBtn) app.dom.bulkScoreSaveBtn.onclick = () => app.students.saveBulkScores(app.dom.bulkMockSelect.value, app.dom.bulkScoreBody.querySelectorAll('.bulk-score-input'), app, this);
         if (app.dom.addMockForm) app.dom.addMockForm.onsubmit = async (e) => { 
           e.preventDefault(); 
@@ -527,6 +528,7 @@ const ui = {
             try {
               await app.addExam({ title: app.dom.mockNameInput.value.trim(), date: new Date().toISOString() });
               this.refreshUI(); 
+              app.ui.showToast('Exam added');
             } catch (error) {
               console.error('Failed to add exam:', error);
               app.ui.showToast('Failed to add exam');
