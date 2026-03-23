@@ -426,7 +426,7 @@ const ui = {
       }
     },
     deleteExam: async function (id) { 
-      if (app.state.exams.length > 1 && confirm("Delete exam?")) { 
+      if (confirm("Delete exam?")) { 
         try {
           await app.deleteExam(id);
           this.refreshUI(); 
@@ -446,7 +446,7 @@ const ui = {
       }
     },
     deleteSubject: async function (id) {
-      if (app.state.subjects.length > 1 && confirm("Delete subject?")) {
+      if (confirm("Delete subject?")) {
         try {
           await app.deleteSubject(id);
           this.refreshUI();

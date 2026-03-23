@@ -380,55 +380,11 @@ export const deleteScore = async (scoreId) => {
 // UTILITY FUNCTIONS
 export const initializeDefaultData = async () => {
   try {
-    // If Firebase is not configured, initialize cache with default data
+    // Keep cache/data as-is. Subject/exam setup is user-managed in the app UI.
     if (!isFirebaseConfigured || !db) {
-      console.log('Initializing default data in cache (Firebase not configured)');
-      
-      // Add default subjects if cache is empty
-      if (cache.subjects.length === 0) {
-        const defaultSubjects = [
-          { id: 'sub_1', name: 'English Language' },
-          { id: 'sub_2', name: 'Mathematics' },
-          { id: 'sub_3', name: 'Integrated Science' },
-          { id: 'sub_4', name: 'Social Studies' },
-          { id: 'sub_5', name: 'Computing' }
-        ];
-        cache.subjects = defaultSubjects;
-        console.log('Added default subjects to cache');
-      }
-      
-      // Add default exam if cache is empty
-      if (cache.exams.length === 0) {
-        const defaultExam = { id: 'exam_1', title: 'Mock 1', date: new Date().toISOString() };
-        cache.exams.push(defaultExam);
-        console.log('Added default exam to cache');
-      }
-      
       return true;
     }
-    
-    // Firebase is configured - check if subjects exist, if not create defaults
-    const subjects = await getSubjects();
-    if (subjects.length === 0) {
-      const defaultSubjects = [
-        { name: 'English Language' },
-        { name: 'Mathematics' },
-        { name: 'Integrated Science' },
-        { name: 'Social Studies' },
-        { name: 'Computing' }
-      ];
-      
-      for (const subjectData of defaultSubjects) {
-        await addSubject(subjectData);
-      }
-    }
-    
-    // Check if exams exist, if not create default
-    const exams = await getExams();
-    if (exams.length === 0) {
-      await addExam({ title: 'Mock 1', date: new Date().toISOString() });
-    }
-    
+
     return true;
   } catch (error) {
     console.error('Failed to initialize default data:', error);

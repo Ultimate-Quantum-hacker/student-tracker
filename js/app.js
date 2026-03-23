@@ -4,7 +4,6 @@
    ═══════════════════════════════════════════════ */
 
 import './firebase.js';
-import { initializeDefaultData } from '../services/db.js';
 import app from './state.js';
 import './analytics.js';
 import './students.js';
@@ -23,7 +22,6 @@ app.init = async function () {
 
   try {
     showLoadingState();
-    await initializeDefaultData();
     await app.load();
     hideLoadingState();
   } catch (error) {

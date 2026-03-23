@@ -17,8 +17,7 @@ import {
   updateSubject,
   deleteSubject,
   getScores,
-  saveScore,
-  initializeDefaultData
+  saveScore
 } from '../services/db.js';
 
 window.TrackerApp = window.TrackerApp || {};
@@ -43,11 +42,13 @@ window.TrackerApp = window.TrackerApp || {};
   };
 
   const STORAGE_KEY = 'studentAppData';
+  const LEGACY_DEFAULT_SUBJECTS = ['English Language', 'Mathematics', 'Integrated Science', 'Social Studies', 'Computing'];
+  const LEGACY_DEFAULT_EXAMS = ['Mock 1'];
 
   const createDefaultRawData = () => ({
     students: [],
-    subjects: ['English Language', 'Mathematics', 'Integrated Science', 'Social Studies', 'Computing'],
-    exams: ['Mock 1']
+    subjects: [],
+    exams: []
   });
 
   const normalizeLabel = (value) => String(value || '').trim();
@@ -57,6 +58,23 @@ window.TrackerApp = window.TrackerApp || {};
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '');
     return `${prefix}_${base || index + 1}`;
+  };
+
+  const hasAnyRawScores = (students = []) => students.some(student => {
+    const scoreMap = student?.scores || {};
+    return Object.values(scoreMap).some(examMap => {
+      if (!examMap || typeof examMap !== 'object') return false;
+      return Object.values(examMap).some(value => value !== '' && value !== null && value !== undefined && !isNaN(Number(value)));
+    });
+  });
+
+  const isLegacySeedTemplate = (subjects = [], exams = []) => {
+    if (subjects.length !== LEGACY_DEFAULT_SUBJECTS.length || exams.length !== LEGACY_DEFAULT_EXAMS.length) {
+      return false;
+    }
+    const sameSubjects = subjects.every((subject, index) => subject === LEGACY_DEFAULT_SUBJECTS[index]);
+    const sameExams = exams.every((exam, index) => exam === LEGACY_DEFAULT_EXAMS[index]);
+    return sameSubjects && sameExams;
   };
 
   app.normalizeScore = function (value) {
@@ -179,10 +197,21 @@ window.TrackerApp = window.TrackerApp || {};
       student.scores[subjectLabel][examLabel] = app.normalizeScore(score.score);
     });
 
+    const normalizedSubjects = subjects.length ? subjects : createDefaultRawData().subjects;
+    const normalizedExams = exams.length ? exams : createDefaultRawData().exams;
+
+    if (!hasAnyRawScores(students) && isLegacySeedTemplate(normalizedSubjects, normalizedExams)) {
+      return {
+        students,
+        subjects: [],
+        exams: []
+      };
+    }
+
     return {
       students,
-      subjects: subjects.length ? subjects : createDefaultRawData().subjects,
-      exams: exams.length ? exams : createDefaultRawData().exams
+      subjects: normalizedSubjects,
+      exams: normalizedExams
     };
   };
 
