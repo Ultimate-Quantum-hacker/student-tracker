@@ -22,13 +22,29 @@
 .notes-cell,.report-cell{cursor:pointer;color:var(--primary);font-size:.82rem;font-weight:500}
 .notes-cell:hover,.report-cell:hover{text-decoration:underline}
 
-/* Risk Analysis tab */
+/* Sidebar redesign */
+.sidebar{padding:1rem .7rem 1.15rem;border-right:1px solid var(--border)}
+.sidebar-nav{gap:1rem}
+.sidebar-section{display:flex;flex-direction:column;gap:.3rem}
+.sidebar-title{font-size:.7rem;font-weight:700;color:var(--text-secondary);letter-spacing:.08em;text-transform:uppercase;padding:.2rem .65rem}
+.sidebar-item{display:flex;align-items:center;gap:.65rem;width:100%;padding:.65rem .7rem;border-radius:12px;border:1px solid transparent;background:transparent;color:var(--text-secondary);font-size:.9rem;font-weight:600;text-align:left;transition:background .16s ease,color .16s ease,border-color .16s ease,transform .16s ease}
+.sidebar-item svg{flex-shrink:0;opacity:.9}
+.sidebar-item:hover{background:var(--surface-secondary);color:var(--text);border-color:var(--border);transform:translateX(2px)}
+.sidebar-item.active{background:var(--primary-light);color:var(--primary);border-color:var(--primary-light);box-shadow:inset 3px 0 0 var(--primary)}
+.sidebar-item.active svg{opacity:1}
+
+/* Theme variables */
+:root{--intervention-bg:#fff5f5;--intervention-border:#fecaca;--intervention-meta:#7f1d1d}
+body.dark-mode{--intervention-bg:rgba(220,38,38,.18);--intervention-border:rgba(248,113,113,.4);--intervention-meta:#fecaca}
+
+/* Performance Analysis tab */
 .risk-category-counts{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:.5rem;margin:1rem 0}
 .risk-count-chip{display:flex;align-items:center;justify-content:space-between;padding:.55rem .7rem;border-radius:10px;border:1px solid var(--border);background:var(--surface-secondary);font-size:.78rem}
 .risk-count-chip strong{font-size:.95rem}
 .risk-analysis-list{display:flex;flex-direction:column;gap:.6rem;margin-top:.4rem}
 .risk-analysis-item{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.75rem 1rem;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
-.risk-analysis-item.intervention{border-color:#fecaca;background:#fff5f5}
+.risk-analysis-item.intervention{border-color:var(--intervention-border);background:var(--intervention-bg)}
+.risk-analysis-item.intervention .risk-analysis-meta{color:var(--intervention-meta)}
 .risk-analysis-name{font-weight:600;color:var(--text)}
 .risk-analysis-meta{font-size:.78rem;color:var(--text-secondary)}
 .risk-analysis-side{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;justify-content:flex-end}
@@ -127,27 +143,60 @@
 .hm-cell{text-align:center;font-weight:700;font-size:.85rem;padding:.6rem !important;transition:transform .1s ease}
 .hm-cell:hover{transform:scale(1.05);box-shadow:0 0 0 2px var(--primary)}
 .hm-strong{background:rgba(16,185,129,.15);color:#059669}
-.hm-average{background:rgba(245,158,11,.15);color:#d97706}
-.hm-weak{background:rgba(239,68,68,.15);color:#dc2626}
+.hm-good{background:rgba(59,130,246,.16);color:#1d4ed8}
+.hm-average{background:rgba(245,158,11,.15);color:#b45309}
+.hm-borderline{background:rgba(251,191,36,.2);color:#92400e}
+.hm-at-risk{background:rgba(239,68,68,.16);color:#dc2626}
 .hm-overall{font-weight:800;border-left:2px solid var(--border)}
+
+.heatmap-legend{display:flex;flex-wrap:wrap;gap:.7rem;margin-bottom:.85rem}
+.legend-item{display:inline-flex;align-items:center;gap:.45rem;font-size:.82rem;color:var(--text-secondary);font-weight:600}
+.legend-box{width:14px;height:14px;border-radius:4px;border:1px solid var(--border)}
+.legend-box.strong{background:rgba(16,185,129,.15)}
+.legend-box.good{background:rgba(59,130,246,.16)}
+.legend-box.average{background:rgba(245,158,11,.15)}
+.legend-box.borderline{background:rgba(251,191,36,.2)}
+.legend-box.at-risk{background:rgba(239,68,68,.16)}
 
 /* Report Modal */
 .modal-lg{max-width:850px;max-height:90vh;overflow-y:auto}
 
 /* Print Report Card */
-@media print{.report-card{border:none;box-shadow:none;padding:1.5rem}.rc-header{border-bottom:3px double #000}.modal-actions{display:none !important}.modal-overlay{position:absolute;background:#fff}.modal{box-shadow:none;width:100%;max-width:none;padding:0}}
+@media print{
+  body.printing-report *{visibility:hidden !important}
+  body.printing-report #report-modal,
+  body.printing-report #report-modal *{visibility:visible !important}
+  body.printing-report #report-modal{display:flex !important;position:absolute !important;inset:0 !important;background:#fff !important;z-index:9999 !important}
+  body.printing-report #report-modal .modal{box-shadow:none !important;width:100% !important;max-width:none !important;padding:0 !important}
+  body.printing-report #report-modal .modal-actions{display:none !important}
+  body.printing-report .report-card{border:none !important;box-shadow:none !important;padding:1.5rem !important;max-width:none !important;margin:0 !important}
+  body.printing-report .rc-header{border-bottom:3px double #000 !important}
+}
 
 /* Override header logo styling to stand out more */
 .logo h1{
-  font-size:2rem;
-  font-weight:800;
+  font-size:1.15rem;
+  font-weight:700;
   color:var(--primary);
-  letter-spacing:0.08em;
-  text-transform:uppercase;
-  font-family:"Algerian","Inter",system-ui,-apple-system,sans-serif;
+  letter-spacing:0.02em;
+  text-transform:none;
+  font-family:"Inter",system-ui,-apple-system,sans-serif;
 }
 
 /* Center the school name block in the header */
 .logo{
-  justify-content:center;
+  justify-content:flex-start;
+}
+
+@media (max-width:900px){
+  .risk-category-counts{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+@media (max-width:768px){
+  .sidebar{padding:.85rem .55rem 1rem}
+  .sidebar .sidebar-nav{gap:.8rem}
+  .sidebar .sidebar-title{padding:.2rem .55rem}
+  .sidebar .sidebar-item{font-size:.86rem;padding:.55rem .6rem;border-radius:12px}
+  .risk-analysis-item{flex-direction:column;align-items:flex-start}
+  .risk-analysis-side{justify-content:flex-start}
 }

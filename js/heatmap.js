@@ -8,9 +8,19 @@ import app from './state.js';
 const heatmap = {
   getHeatmapClass: function (score) {
     if (score === null || score === undefined || isNaN(score)) return '';
-    if (score >= 70) return 'hm-strong';
-    if (score >= 50) return 'hm-average';
-    return 'hm-weak';
+    if (score >= 80) return 'hm-strong';
+    if (score >= 70) return 'hm-good';
+    if (score >= 60) return 'hm-average';
+    if (score >= 41) return 'hm-borderline';
+    return 'hm-at-risk';
+  },
+  getHeatmapLabel: function (score) {
+    if (score === null || score === undefined || isNaN(score)) return 'No Data';
+    if (score >= 80) return 'Strong';
+    if (score >= 70) return 'Good';
+    if (score >= 60) return 'Average';
+    if (score >= 41) return 'Borderline';
+    return 'At Risk';
   },
   renderHeatmap: function () {
     if (!app.dom.heatmapHead || !app.dom.heatmapBody) return;
@@ -31,12 +41,14 @@ const heatmap = {
         });
         var avg = count > 0 ? Math.round(sum / count) : null;
         var cls = heatmap.getHeatmapClass(avg);
-        bodyHtml += '<td class="hm-cell ' + cls + '" title="' + app.utils.esc(sub.name) + ': ' + (avg !== null ? avg : 'N/A') + '">' + (avg !== null ? avg : '\u2014') + '</td>';
+        var category = heatmap.getHeatmapLabel(avg);
+        bodyHtml += '<td class="hm-cell ' + cls + '" title="' + app.utils.esc(sub.name) + ': ' + (avg !== null ? avg : 'N/A') + ' (' + app.utils.esc(category) + ')">' + (avg !== null ? avg : '\u2014') + '</td>';
       });
       var avgs = app.analytics.calcAverages(s, app.state.subjects, app.state.exams);
       var overall = avgs.overall;
       var oCls = heatmap.getHeatmapClass(overall);
-      bodyHtml += '<td class="hm-cell hm-overall ' + oCls + '">' + (overall !== null ? overall.toFixed(0) : '\u2014') + '</td></tr>';
+      var overallCategory = heatmap.getHeatmapLabel(overall);
+      bodyHtml += '<td class="hm-cell hm-overall ' + oCls + '" title="Overall: ' + (overall !== null ? overall.toFixed(1) : 'N/A') + ' (' + app.utils.esc(overallCategory) + ')">' + (overall !== null ? overall.toFixed(0) : '\u2014') + '</td></tr>';
     });
     app.dom.heatmapBody.innerHTML = bodyHtml;
   }

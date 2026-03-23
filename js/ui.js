@@ -330,7 +330,7 @@ const ui = {
       }).join('');
     },
 
-    renderRiskAnalysisPanel: function () {
+    renderPerformanceAnalysisPanel: function () {
       if (!app.dom.riskCategorySelect || !app.dom.riskCategoryCounts || !app.dom.riskFilteredList || !app.dom.interventionNeededList) return;
 
       const categories = [
@@ -534,6 +534,36 @@ const ui = {
       app.dom.reportModal.classList.add('active');
     },
 
+    printReportOnly: function () {
+      if (!app.dom.reportContainer || !app.dom.reportModal) return;
+      const hasReportContent = app.dom.reportContainer.innerHTML.trim().length > 0;
+      if (!hasReportContent) {
+        this.showToast('Open a student report first');
+        return;
+      }
+
+      const wasOpen = app.dom.reportModal.classList.contains('active');
+      if (!wasOpen) {
+        app.dom.reportModal.classList.add('active');
+      }
+
+      let cleaned = false;
+      const cleanup = () => {
+        if (cleaned) return;
+        cleaned = true;
+        document.body.classList.remove('printing-report');
+        window.removeEventListener('afterprint', cleanup);
+        if (!wasOpen && app.dom.reportModal) {
+          app.dom.reportModal.classList.remove('active');
+        }
+      };
+
+      document.body.classList.add('printing-report');
+      window.addEventListener('afterprint', cleanup);
+      window.print();
+      setTimeout(cleanup, 1200);
+    },
+
     loadScoreFields: function () {
       const sid = app.dom.scoreStudentSelect.value, mid = app.dom.scoreMockSelect.value;
       const s = app.state.students.find(x => x.id === sid);
@@ -577,7 +607,7 @@ const ui = {
         this.loadScoreFields();
         this.updateDashboardStats();
         this.renderInterventionList();
-        this.renderRiskAnalysisPanel();
+        this.renderPerformanceAnalysisPanel();
         this.renderClassSummary();
         this.renderStudentChips();
         this.renderResultsTable();
@@ -760,10 +790,10 @@ const ui = {
         if (app.dom.chartStudentSelect) app.dom.chartStudentSelect.onchange = () => app.charts.renderStudentChart(app.dom.chartStudentSelect.value, app);
         if (app.dom.searchInput) app.dom.searchInput.oninput = (e) => { app.state.searchTerm = e.target.value; this.renderResultsTable(); };
         if (app.dom.reportCloseBtn) app.dom.reportCloseBtn.onclick = () => app.dom.reportModal.classList.remove('active');
-        if (app.dom.reportPrintBtn) app.dom.reportPrintBtn.onclick = () => window.print();
+        if (app.dom.reportPrintBtn) app.dom.reportPrintBtn.onclick = () => this.printReportOnly();
         if (app.dom.exportCsvBtn) app.dom.exportCsvBtn.onclick = () => app.export.exportCSV(app);
         if (app.dom.exportExcelBtn) app.dom.exportExcelBtn.onclick = () => app.export.exportExcel(app);
-        if (app.dom.printBtn) app.dom.printBtn.onclick = () => window.print();
+        if (app.dom.printBtn) app.dom.printBtn.onclick = () => this.printReportOnly();
         if (app.dom.resultsBody) app.dom.resultsBody.addEventListener('click', (e) => {
           const reportCell = e.target.closest('.report-cell');
           if (reportCell && reportCell.dataset.reportId) {
@@ -775,7 +805,7 @@ const ui = {
         if (app.dom.riskCategorySelect) {
           app.dom.riskCategorySelect.onchange = (e) => {
             app.state.selectedRiskCategory = e.target.value || 'strong';
-            this.renderRiskAnalysisPanel();
+            this.renderPerformanceAnalysisPanel();
           };
         }
 
