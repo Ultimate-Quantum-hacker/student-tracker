@@ -117,10 +117,10 @@ const ui = {
 
     formatImprovement: function (current, previous) {
       if (previous === null || previous === undefined || isNaN(previous) || current === null || current === undefined || isNaN(current)) {
-        return { text: '—', className: 'improv-neutral' };
+        return { text: 'N/A', className: 'improv-neutral' };
       }
       const diff = Number(current) - Number(previous);
-      if (isNaN(diff)) return { text: '—', className: 'improv-neutral' };
+      if (isNaN(diff)) return { text: 'N/A', className: 'improv-neutral' };
       if (diff > 0) return { text: '+' + diff.toFixed(1), className: 'improv-up' };
       if (diff < 0) return { text: diff.toFixed(1), className: 'improv-down' };
       return { text: '0', className: 'improv-neutral' };
@@ -188,13 +188,35 @@ const ui = {
     },
 
     populateSelects: function () {
+      const selectedScoreExamId = app.dom.scoreMockSelect?.value || '';
+      const selectedBulkExamId = app.dom.bulkMockSelect?.value || app.state.selectedBulkExamId || '';
+      const selectedScoreStudentId = app.dom.scoreStudentSelect?.value || '';
+      const selectedChartStudentId = app.dom.chartStudentSelect?.value || '';
+
       const mOps = app.state.exams.map(m => `<option value="${m.id}">${app.utils.esc(m.title || m.name)}</option>`).join('');
-      if (app.dom.scoreMockSelect) app.dom.scoreMockSelect.innerHTML = mOps;
-      if (app.dom.bulkMockSelect) app.dom.bulkMockSelect.innerHTML = mOps;
+      if (app.dom.scoreMockSelect) {
+        app.dom.scoreMockSelect.innerHTML = mOps;
+        app.dom.scoreMockSelect.value = app.state.exams.some(m => m.id === selectedScoreExamId)
+          ? selectedScoreExamId
+          : (app.state.exams[0]?.id || '');
+      }
+      if (app.dom.bulkMockSelect) {
+        app.dom.bulkMockSelect.innerHTML = mOps;
+        app.dom.bulkMockSelect.value = app.state.exams.some(m => m.id === selectedBulkExamId)
+          ? selectedBulkExamId
+          : (app.state.exams[0]?.id || '');
+        app.state.selectedBulkExamId = app.dom.bulkMockSelect.value || '';
+      }
       
       const sOps = '<option value="">— Select Student —</option>' + app.state.students.map(s => `<option value="${s.id}">${app.utils.esc(s.name)}</option>`).join('');
-      if (app.dom.scoreStudentSelect) app.dom.scoreStudentSelect.innerHTML = sOps;
-      if (app.dom.chartStudentSelect) app.dom.chartStudentSelect.innerHTML = sOps;
+      if (app.dom.scoreStudentSelect) {
+        app.dom.scoreStudentSelect.innerHTML = sOps;
+        app.dom.scoreStudentSelect.value = app.state.students.some(s => s.id === selectedScoreStudentId) ? selectedScoreStudentId : '';
+      }
+      if (app.dom.chartStudentSelect) {
+        app.dom.chartStudentSelect.innerHTML = sOps;
+        app.dom.chartStudentSelect.value = app.state.students.some(s => s.id === selectedChartStudentId) ? selectedChartStudentId : '';
+      }
     },
 
     getStudentExamTotal: function(studentId, examId) {
@@ -227,11 +249,14 @@ const ui = {
 
       app.dom.resultsBody.innerHTML = ranked.map((s, i) => {
         const examCount = app.state.exams.length;
+        const canComputeImprovement = examCount >= 2;
         const currentExam = app.state.exams[examCount - 1];
         const previousExam = app.state.exams[examCount - 2];
         const currentTotal = currentExam ? this.getStudentExamTotal(s.id, currentExam.id) : null;
-        const previousTotal = previousExam ? this.getStudentExamTotal(s.id, previousExam.id) : null;
-        const improvData = this.formatImprovement(currentTotal, previousTotal);
+        const previousTotal = canComputeImprovement && previousExam ? this.getStudentExamTotal(s.id, previousExam.id) : null;
+        const improvData = canComputeImprovement
+          ? this.formatImprovement(currentTotal, previousTotal)
+          : { text: '', className: 'improv-neutral' };
         let examCells = app.state.exams.map(m => {
           let subCells = app.state.subjects.map(sub => {
             const score = app.analytics.getScore(s, sub, m);
@@ -248,7 +273,7 @@ const ui = {
           <td><strong class="rank-num rank-highlight">${i + 1}</strong></td><td class="sticky-col">${app.utils.esc(s.name)}</td>
           ${examCells}
           <td><strong class="${avgCls} avg-emphasis">${avgVal?.toFixed(1) ?? '&#8212;'}</strong></td>
-          <td>${previousTotal !== null ? previousTotal.toFixed(1) : '&#8212;'}</td>
+          <td>${canComputeImprovement ? (previousTotal !== null ? previousTotal.toFixed(1) : 'N/A') : '&#8212;'}</td>
           <td class="${improvData.className}">${improvData.text}</td>
           <td><span class="risk-pill status-pill ${statusClass}">${this.formatRiskLabel(status)}</span></td>
           <td class="notes-cell" onclick="window.TrackerApp.ui.openNotes('${s.id}')">${s.notes ? '&#128221; View' : '+ Add'}</td>
@@ -330,19 +355,6 @@ const ui = {
       const ranked = app.state.students.map(st => ({ id: st.id, avg: app.analytics.calcAverages(st).overall || 0 })).sort((a, b) => b.avg - a.avg);
       const rank = ranked.findIndex(r => r.id === s.id) + 1;
       let strongest = null, weakest = null, maxS = -1, minS = Infinity;
-      app.state.subjects.forEach(sub => { if (avgs[sub.id] !== null && avgs[sub.id] !== undefined) { if (avgs[sub.id] > maxS) { maxS = avgs[sub.id]; strongest = sub.name; } if (avgs[sub.id] < minS) { minS = avgs[sub.id]; weakest = sub.name; } } });
-      const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-      const riskClass = risk === 'at-risk' ? 'rc-risk' : (risk === 'borderline' ? 'rc-borderline' : 'rc-safe');
-      const avgClass = avg >= 70 ? 'rc-safe' : (avg >= 50 ? 'rc-borderline' : 'rc-risk');
-      let scoresHtml = '<table class="rc-table"><thead><tr><th>Subject</th>' + app.state.exams.map(m => `<th>${app.utils.esc(m.title || m.name)}</th>`).join('') + '<th>Average</th></tr></thead><tbody>';
-      app.state.subjects.forEach(sub => { scoresHtml += '<tr><td class="rc-subject">' + app.utils.esc(sub.name) + '</td>'; app.state.exams.forEach(m => { const val = app.analytics.getScore(s, sub, m); const cls = val !== '' && val !== null && val !== undefined ? (val >= 70 ? 'rc-safe' : (val >= 50 ? 'rc-borderline' : 'rc-risk')) : ''; scoresHtml += `<td class="${cls}">${val === '' ? '\u2014' : val}</td>`; }); const subAvg = avgs[sub.name]; scoresHtml += `<td><strong>${subAvg !== null && subAvg !== undefined ? subAvg.toFixed(1) : '\u2014'}</strong></td></tr>`; });
-      scoresHtml += '</tbody></table>';
-      const trendText = improvement.className === 'improv-up' ? 'Improving ▲' : (improvement.className === 'improv-down' ? 'Declining ▼' : (improvement.text !== '—' ? 'Stable' : 'Insufficient data'));
-      const trendClass = improvement.className === 'improv-up' ? 'rc-safe' : (improvement.className === 'improv-down' ? 'rc-risk' : '');
-      if (app.dom.reportContainer) {
-        app.dom.reportContainer.innerHTML = `<div class="report-card"><div class="rc-header"><div class="rc-school">Vickmore International School</div><div class="rc-location">Krispol City, Asamoah Town</div><div class="rc-title">Academic Performance Report</div></div><div class="rc-info"><div><span>Student:</span> <strong>${app.utils.esc(s.name)}</strong></div><div><span>Class:</span> <strong>JHS 3</strong></div><div><span>Term:</span> <strong>Mock Examination</strong></div><div><span>Date:</span> <strong>${today}</strong></div></div><div class="rc-section"><h4>Subject Performance</h4>${scoresHtml}</div><div class="rc-summary"><div class="rc-summary-item"><span>Overall Average</span><strong class="${avgClass}">${avg.toFixed(1)}%</strong></div><div class="rc-summary-item"><span>Class Rank</span><strong>${rank} / ${app.state.students.length}</strong></div><div class="rc-summary-item"><span>Status</span><strong class="${riskClass}">${this.formatRiskLabel(risk)}</strong></div><div class="rc-summary-item"><span>Previous Score</span><strong>${previousScore !== null ? previousScore.toFixed(1) + '%' : '—'}</strong></div><div class="rc-summary-item"><span>Improvement</span><strong class="${improvement.className}">${improvement.text}</strong></div></div><div class="rc-section"><h4>Performance Analysis</h4><div class="rc-analysis"><div><span>Strongest Subject:</span> <strong>${strongest || '\u2014'}</strong></div><div><span>Weakest Subject:</span> <strong>${weakest || '\u2014'}</strong></div><div><span>Performance Trend:</span> <strong class="${trendClass}">${trendText}</strong></div></div></div><div class="rc-section"><h4>Teacher Comments</h4><div class="rc-notes">${s.notes ? app.utils.esc(s.notes) : 'No comments recorded.'}</div></div><div class="rc-footer"><div class="rc-sig"><div class="rc-sig-line"></div><span>Class Teacher</span></div><div class="rc-sig"><div class="rc-sig-line"></div><span>Head Teacher</span></div></div></div>`;
-      }
-      if (app.dom.reportModal) app.dom.reportModal.classList.add('active');
     },
 
     loadScoreFields: function () {
@@ -365,12 +377,13 @@ const ui = {
       const headHtml = '<th>Student</th>' + app.state.subjects.map(s => `<th>${app.utils.esc(s.name)}</th>`).join('');
       app.dom.bulkScoreHead.innerHTML = `<tr>${headHtml}</tr>`;
       
-      const examId = app.dom.bulkMockSelect.value;
+      const examId = app.dom.bulkMockSelect?.value || app.state.selectedBulkExamId || '';
+      app.state.selectedBulkExamId = examId;
       const exam = app.state.exams.find(e => e.id === examId);
       const bodyHtml = app.state.students.map(s => {
         const row = app.state.subjects.map(sub => {
           const val = exam ? app.analytics.getScore(s, sub, exam) : '';
-          return `<td><input type="number" class="bulk-score-input" data-sid="${s.id}" data-sub="${sub.name}" value="${val}" min="0" max="100"></td>`;
+          return `<td><input type="number" class="bulk-score-input" data-sid="${s.id}" data-sub="${sub.name}" value="${val === '' ? '' : val}" min="0" max="100"></td>`;
         }).join('');
         return `<tr><td class="sticky-col">${app.utils.esc(s.name)}</td>${row}</tr>`;
       }).join('');
@@ -562,7 +575,10 @@ const ui = {
         };
         if (app.dom.scoreStudentSelect) app.dom.scoreStudentSelect.onchange = () => this.loadScoreFields();
         if (app.dom.scoreMockSelect) app.dom.scoreMockSelect.onchange = () => { this.loadScoreFields(); this.refreshUI(); };
-        if (app.dom.bulkMockSelect) app.dom.bulkMockSelect.onchange = () => { this.renderBulkTable(); this.refreshUI(); };
+        if (app.dom.bulkMockSelect) app.dom.bulkMockSelect.onchange = () => {
+          app.state.selectedBulkExamId = app.dom.bulkMockSelect.value || '';
+          this.renderBulkTable();
+        };
         if (app.dom.chartStudentSelect) app.dom.chartStudentSelect.onchange = () => app.charts.renderStudentChart(app.dom.chartStudentSelect.value, app);
         if (app.dom.searchInput) app.dom.searchInput.oninput = (e) => { app.state.searchTerm = e.target.value; this.renderResultsTable(); };
         if (app.dom.reportCloseBtn) app.dom.reportCloseBtn.onclick = () => app.dom.reportModal.classList.remove('active');

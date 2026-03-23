@@ -42,12 +42,20 @@ const analytics = {
 
   getTotal: function (student, exam) {
     const examLabel = this.getExamLabel(exam);
-    if (!examLabel) return 0;
+    if (!examLabel) return null;
 
-    return (app.state.subjects || []).reduce((sum, subject) => {
+    let total = 0;
+    let hasAnyScore = false;
+
+    (app.state.subjects || []).forEach(subject => {
       const score = this.getScore(student, subject, examLabel);
-      return sum + (score === '' ? 0 : Number(score) || 0);
-    }, 0);
+      if (score !== '' && score !== undefined && score !== null && !isNaN(score)) {
+        total += Number(score);
+        hasAnyScore = true;
+      }
+    });
+
+    return hasAnyScore ? total : null;
   },
 
   mockTotal: function (scores, exam) {
@@ -91,7 +99,7 @@ const analytics = {
     const from = this.getTotal(student, fromExam);
     const to = this.getTotal(student, toExam);
 
-    if (from === 0) return 0;
+    if (from === null || to === null || from === 0) return null;
     return ((to - from) / from) * 100;
   },
 
@@ -135,7 +143,7 @@ const analytics = {
 
       (app.state.students || []).forEach(student => {
         const total = this.getTotal(student, examLabel);
-        if (total > 0) {
+        if (total !== null) {
           sum += total;
           count++;
         }
