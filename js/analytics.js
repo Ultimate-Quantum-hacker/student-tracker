@@ -79,7 +79,7 @@ const analytics = {
 
   getAverage: function (student, exam) {
     const examLabel = this.getExamLabel(exam);
-    if (!examLabel) return 0;
+    if (!examLabel) return null;
 
     let total = 0;
     let count = 0;
@@ -92,7 +92,47 @@ const analytics = {
       }
     });
 
-    return count ? total / count : 0;
+    return count ? total / count : null;
+  },
+
+  getStudentStatusDetails: function (student, exam) {
+    const latestExam = exam || (app.state.exams || [])[app.state.exams.length - 1];
+    const examLabel = this.getExamLabel(latestExam);
+    const subjects = app.state.subjects || [];
+
+    if (!student || !examLabel || !subjects.length) {
+      return { status: 'no-data', average: null, complete: false, scoredCount: 0, expectedCount: subjects.length };
+    }
+
+    let total = 0;
+    let scoredCount = 0;
+    subjects.forEach(subject => {
+      const score = this.getScore(student, subject, examLabel);
+      if (score !== '' && score !== undefined && score !== null && !isNaN(score)) {
+        total += Number(score);
+        scoredCount++;
+      }
+    });
+
+    if (scoredCount === 0) {
+      return { status: 'no-data', average: null, complete: false, scoredCount, expectedCount: subjects.length };
+    }
+
+    const average = total / scoredCount;
+    const complete = scoredCount === subjects.length;
+    if (!complete) {
+      return { status: 'incomplete', average, complete: false, scoredCount, expectedCount: subjects.length };
+    }
+
+    if (average >= 80) return { status: 'strong', average, complete: true, scoredCount, expectedCount: subjects.length };
+    if (average >= 70) return { status: 'good', average, complete: true, scoredCount, expectedCount: subjects.length };
+    if (average >= 60) return { status: 'average', average, complete: true, scoredCount, expectedCount: subjects.length };
+    if (average >= 41) return { status: 'borderline', average, complete: true, scoredCount, expectedCount: subjects.length };
+    return { status: 'at-risk', average, complete: true, scoredCount, expectedCount: subjects.length };
+  },
+
+  getStudentStatus: function (student, exam) {
+    return this.getStudentStatusDetails(student, exam).status;
   },
 
   getImprovement: function (student, fromExam, toExam) {
@@ -158,29 +198,68 @@ const analytics = {
   },
 
   getRiskLevel: function (avgOrStudent) {
-    const avg = typeof avgOrStudent === 'number'
-      ? avgOrStudent
-      : this.getAverage(avgOrStudent, this.getLatestExam());
+    if (typeof avgOrStudent === 'number') {
+      const avg = avgOrStudent;
+      if (avg === null || avg === undefined || isNaN(avg)) return 'no-data';
+      if (avg <= 40) return 'at-risk';
+      if (avg <= 59) return 'borderline';
+      return 'safe';
+    }
 
-    if (avg >= 70) return 'safe';
-    if (avg >= 50) return 'borderline';
-    return 'at-risk';
+    const status = this.getStudentStatus(avgOrStudent);
+    if (status === 'at-risk') return 'at-risk';
+    if (status === 'borderline') return 'borderline';
+    if (status === 'strong' || status === 'good' || status === 'average') return 'safe';
+    return 'no-data';
   },
 
-  groupStudentsByRisk: function () {
-    const latestExam = this.getLatestExam();
-    const groups = { safe: [], borderline: [], 'at-risk': [] };
+  groupStudentsByStatus: function () {
+    const latestExam = (app.state.exams || [])[app.state.exams.length - 1] || null;
+    const latestExamLabel = this.getExamLabel(latestExam);
+    const groups = {
+      strong: [],
+      good: [],
+      average: [],
+      borderline: [],
+      'at-risk': [],
+      'no-data': [],
+      incomplete: []
+    };
 
     (app.state.students || []).forEach(student => {
-      const avg = this.getAverage(student, latestExam);
-      const risk = this.getRiskLevel(avg);
-      groups[risk].push({
+      const details = this.getStudentStatusDetails(student, latestExam);
+      const target = groups[details.status] ? details.status : 'no-data';
+      groups[target].push({
+        id: student.id,
         name: student.name,
-        avg: avg.toFixed(1)
+        average: details.average,
+        complete: details.complete,
+        scoredCount: details.scoredCount,
+        expectedCount: details.expectedCount
       });
     });
 
-    return groups;
+    return { groups, latestExam: latestExamLabel };
+  },
+
+  groupStudentsByRisk: function () {
+    const latestExam = (app.state.exams || [])[app.state.exams.length - 1] || null;
+    const groups = { safe: [], borderline: [], 'at-risk': [] };
+
+    (app.state.students || []).forEach(student => {
+      const details = this.getStudentStatusDetails(student, latestExam);
+      const risk = this.getRiskLevel(student);
+      if (!groups[risk]) return;
+      groups[risk].push({
+        name: student.name,
+        avg: details.average !== null ? details.average.toFixed(1) : 'N/A'
+      });
+    });
+
+    return {
+      groups,
+      latestExam: this.getExamLabel(latestExam)
+    };
   },
 
   getWeakestSubject: function (student) {

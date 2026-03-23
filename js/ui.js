@@ -84,7 +84,11 @@ const domIds = {
   printBtn: 'print-btn',
   saveScoresBtn: 'save-scores-btn',
   dynamicSubjectFields: 'dynamicSubjectFields',
-  bulkScoreHead: 'bulkScoreHead'
+  bulkScoreHead: 'bulkScoreHead',
+  riskCategorySelect: 'risk-category-select',
+  riskCategoryCounts: 'risk-category-counts',
+  riskFilteredList: 'risk-filtered-list',
+  interventionNeededList: 'intervention-needed-list'
 };
 
 const ui = {
@@ -126,21 +130,29 @@ const ui = {
       return { text: '0', className: 'improv-neutral' };
     },
 
+    formatStatusLabel: function (statusType) {
+      if (statusType === 'strong') return 'Strong';
+      if (statusType === 'good') return 'Good';
+      if (statusType === 'average') return 'Average';
+      if (statusType === 'borderline') return 'Borderline';
+      if (statusType === 'at-risk') return 'At Risk';
+      if (statusType === 'incomplete') return 'N/A';
+      if (statusType === 'no-data') return 'No Data';
+      if (statusType === 'safe') return 'Safe';
+      return 'No Data';
+    },
+
     formatRiskLabel: function (riskType) {
-      if (riskType === 'at-risk') return 'At Risk';
-      if (riskType === 'borderline') return 'Borderline';
-      return 'Safe';
+      return this.formatStatusLabel(riskType);
     },
 
     clearAllData: async function () {
       app.applyRawData({ students: [], subjects: [], exams: [] });
+      app.state.selectedBulkExamId = '';
+      app.state.selectedRiskCategory = 'strong';
       await app.save();
       this.refreshUI();
       this.showToast('All data cleared');
-    },
-
-    openRiskPage: function (type) {
-      window.open(`risk.html?type=${type}`, '_blank');
     },
 
     updateBackupStatus: function () {
@@ -157,17 +169,20 @@ const ui = {
     updateDashboardStats: function () {
       const total = app.state.students.length;
       if (app.dom.statTotalStudents) app.dom.statTotalStudents.textContent = total;
-      
-      let sum = 0, count = 0, pass = 0, atRisk = 0, borderline = 0, safe = 0;
-      app.state.students.forEach(s => {
-        const avg = app.analytics.calcAverages(s, app.state.subjects, app.state.exams).overall;
-        if (avg !== null) { sum += avg; count++; if (avg >= 50) pass++; }
-        const status = app.analytics.getRiskLevel(s);
-        if (status === 'at-risk') atRisk++;
-        else if (status === 'borderline') borderline++;
-        else safe++;
-      });
-      
+
+      const statusGroups = app.analytics.groupStudentsByStatus().groups;
+      const measured = ['strong', 'good', 'average', 'borderline', 'at-risk']
+        .flatMap(key => statusGroups[key] || [])
+        .map(item => item.average)
+        .filter(avg => avg !== null && avg !== undefined && !isNaN(avg));
+
+      const sum = measured.reduce((acc, value) => acc + Number(value), 0);
+      const count = measured.length;
+      const pass = measured.filter(avg => avg >= 50).length;
+      const atRisk = (statusGroups['at-risk'] || []).length;
+      const borderline = (statusGroups.borderline || []).length;
+      const safe = (statusGroups.strong || []).length + (statusGroups.good || []).length + (statusGroups.average || []).length;
+
       if (app.dom.statClassAvg) app.dom.statClassAvg.textContent = count ? (sum / count).toFixed(1) : '0.0';
       if (app.dom.statPassRate) app.dom.statPassRate.textContent = count ? Math.round((pass / count) * 100) + '%' : '0%';
       if (app.dom.statFailRate) app.dom.statFailRate.textContent = count ? Math.round(((count - pass) / count) * 100) + '%' : '0%';
@@ -265,7 +280,7 @@ const ui = {
           const total = this.getStudentExamTotal(s.id, m.id);
           return subCells + `<td class="avg">${total ?? '—'}</td>`;
         }).join('');
-        const status = app.analytics.getRiskLevel(s);
+        const status = app.analytics.getStudentStatus(s);
         const avgVal = s._avg.overall;
         const avgCls = avgVal !== null ? (avgVal >= 70 ? 'avg-green' : (avgVal >= 50 ? 'avg-yellow' : 'avg-red')) : '';
         const statusClass = `risk-${status}`;
@@ -275,7 +290,7 @@ const ui = {
           <td><strong class="${avgCls} avg-emphasis">${avgVal?.toFixed(1) ?? '&#8212;'}</strong></td>
           <td>${canComputeImprovement ? (previousTotal !== null ? previousTotal.toFixed(1) : 'N/A') : '&#8212;'}</td>
           <td class="${improvData.className}">${improvData.text}</td>
-          <td><span class="risk-pill status-pill ${statusClass}">${this.formatRiskLabel(status)}</span></td>
+          <td><span class="risk-pill status-pill ${statusClass}">${this.formatStatusLabel(status)}</span></td>
           <td class="notes-cell" onclick="window.TrackerApp.ui.openNotes('${s.id}')">${s.notes ? '&#128221; View' : '+ Add'}</td>
           <td class="report-cell" data-report-id="${s.id}">&#128196; Report</td>
         </tr>`;
@@ -284,38 +299,95 @@ const ui = {
 
     renderInterventionList: function () {
       if (!app.dom.interventionItems) return;
-      // Only show students with overall average ≤ 50 for intervention
-      const flagged = app.state.students
-        .map(s => {
-          const avgs = app.analytics.calcAverages(s);
-          return { student: s, avg: avgs.overall };
-        })
-        .filter(x => x.avg !== null && x.avg <= 50)
+      const studentLookup = new Map((app.state.students || []).map(student => [student.id, student]));
+      const flagged = (app.analytics.groupStudentsByStatus().groups['at-risk'] || [])
+        .map(item => ({ student: studentLookup.get(item.id), avg: item.average }))
+        .filter(item => item.student)
         .sort((a, b) => (a.avg || 0) - (b.avg || 0));
 
       if (!flagged.length) {
-        app.dom.interventionItems.innerHTML = '<p style="text-align:center; color:var(--text-secondary);">All students are on track.</p>';
+        app.dom.interventionItems.innerHTML = '<p style="text-align:center; color:var(--text-secondary);">No students currently need intervention.</p>';
         return;
       }
 
       app.dom.interventionItems.innerHTML = flagged.map(x => {
         const s = x.student;
         const avg = x.avg;
-        const status = app.analytics.getRiskLevel(s);
+        const status = app.analytics.getStudentStatus(s);
         const statusClass = `risk-${status}`;
         const weakest = app.analytics.getWeakestSubject(s);
         return `
         <div class="intervention-card">
           <div class="intervention-header">
             <span class="intervention-name">${app.utils.esc(s.name)}</span>
-            <span class="risk-pill status-pill ${statusClass}">${this.formatRiskLabel(status)}</span>
+            <span class="risk-pill status-pill ${statusClass}">${this.formatStatusLabel(status)}</span>
           </div>
           <div class="intervention-meta">
-            <span class="intervention-avg">Avg: ${avg.toFixed(1)}%</span>
+            <span class="intervention-avg">Avg: ${avg !== null && avg !== undefined ? avg.toFixed(1) : 'N/A'}%</span>
             <span class="intervention-weakest">Weakest: ${app.utils.esc(weakest)}</span>
           </div>
         </div>`;
       }).join('');
+    },
+
+    renderRiskAnalysisPanel: function () {
+      if (!app.dom.riskCategorySelect || !app.dom.riskCategoryCounts || !app.dom.riskFilteredList || !app.dom.interventionNeededList) return;
+
+      const categories = [
+        { key: 'strong', label: 'Strong' },
+        { key: 'good', label: 'Good' },
+        { key: 'average', label: 'Average' },
+        { key: 'borderline', label: 'Borderline' },
+        { key: 'at-risk', label: 'At Risk' }
+      ];
+
+      if (!app.dom.riskCategorySelect.options.length) {
+        app.dom.riskCategorySelect.innerHTML = categories
+          .map(option => `<option value="${option.key}">${option.label}</option>`)
+          .join('');
+      }
+
+      if (!categories.some(option => option.key === app.state.selectedRiskCategory)) {
+        app.state.selectedRiskCategory = 'strong';
+      }
+      app.dom.riskCategorySelect.value = app.state.selectedRiskCategory;
+
+      const { groups, latestExam } = app.analytics.groupStudentsByStatus();
+      app.dom.riskCategoryCounts.innerHTML = categories.map(option => {
+        const count = (groups[option.key] || []).length;
+        return `<div class="risk-count-chip risk-${option.key}"><span>${option.label}</span><strong>${count}</strong></div>`;
+      }).join('');
+
+      const selectedList = groups[app.state.selectedRiskCategory] || [];
+      const selectedLabel = categories.find(option => option.key === app.state.selectedRiskCategory)?.label || 'Category';
+      const selectedRows = selectedList.map(item => `
+        <div class="risk-analysis-item">
+          <div>
+            <div class="risk-analysis-name">${app.utils.esc(item.name)}</div>
+            <div class="risk-analysis-meta">${latestExam ? `Latest exam: ${app.utils.esc(latestExam)}` : 'No exam data yet'}</div>
+          </div>
+          <div class="risk-analysis-side">
+            <span class="risk-pill status-pill risk-${app.state.selectedRiskCategory}">${selectedLabel}</span>
+            <span class="risk-analysis-avg">${item.average !== null && item.average !== undefined ? item.average.toFixed(1) + '%' : 'N/A'}</span>
+          </div>
+        </div>
+      `).join('');
+
+      app.dom.riskFilteredList.innerHTML = selectedRows || `<p class="risk-analysis-empty">No students in ${selectedLabel} category.</p>`;
+
+      const interventionRows = (groups['at-risk'] || []).map(item => `
+        <div class="risk-analysis-item intervention">
+          <div>
+            <div class="risk-analysis-name">${app.utils.esc(item.name)}</div>
+            <div class="risk-analysis-meta">Immediate support recommended</div>
+          </div>
+          <div class="risk-analysis-side">
+            <span class="risk-pill status-pill risk-at-risk">Intervention Needed</span>
+            <span class="risk-analysis-avg">${item.average !== null && item.average !== undefined ? item.average.toFixed(1) + '%' : 'N/A'}</span>
+          </div>
+        </div>
+      `).join('');
+      app.dom.interventionNeededList.innerHTML = interventionRows || '<p class="risk-analysis-empty">No students currently in At Risk category.</p>';
     },
 
     renderClassSummary: function () {
@@ -400,6 +472,7 @@ const ui = {
         this.loadScoreFields();
         this.updateDashboardStats();
         this.renderInterventionList();
+        this.renderRiskAnalysisPanel();
         this.renderClassSummary();
         this.renderStudentChips();
         this.renderResultsTable();
@@ -594,11 +667,12 @@ const ui = {
           }
         });
 
-        const riskMap = ['safe', 'borderline', 'at-risk'];
-        document.querySelectorAll('.risk-summary .risk-item').forEach((item, index) => {
-          item.style.cursor = 'pointer';
-          item.onclick = () => this.openRiskPage(riskMap[index] || 'safe');
-        });
+        if (app.dom.riskCategorySelect) {
+          app.dom.riskCategorySelect.onchange = (e) => {
+            app.state.selectedRiskCategory = e.target.value || 'strong';
+            this.renderRiskAnalysisPanel();
+          };
+        }
 
         if (app.dom.dynamicSubjectFields) {
           app.dom.dynamicSubjectFields.addEventListener('input', (e) => {

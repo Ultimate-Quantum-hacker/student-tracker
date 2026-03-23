@@ -385,6 +385,7 @@
         <div class="sidebar-section">
           <div class="sidebar-title">Analytics</div>
           <button class="sidebar-item" data-section="results"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="12 3 20 7.5 20 16.5 12 21 4 16.5 4 7.5 12 3"/><polyline points="12 12 20 7.5"/><polyline points="12 12 12 21"/><polyline points="12 12 4 7.5"/></svg>Results</button>
+          <button class="sidebar-item" data-section="risk-analysis"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4v6c0 5-3.5 8-8 8s-8-3-8-8V7l8-4z"/><path d="M12 8v5"/><circle cx="12" cy="16" r="1"/></svg>Risk Analysis</button>
           <button class="sidebar-item" data-section="trends"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 17"/><polyline points="17 6 23 6 23 12"/></svg>Trends</button>
           <button class="sidebar-item" data-section="heatmap"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><rect x="7" y="7" width="3" height="3"/><rect x="14" y="7" width="3" height="3"/><rect x="7" y="14" width="3" height="3"/><rect x="14" y="14" width="3" height="3"/></svg>Heatmap</button>
         </div>
@@ -432,6 +433,24 @@
       <section id="results" class="content-section">
         <div class="section-header"><h2>Results & Rankings</h2><div class="section-controls"><input type="text" id="search-input" placeholder="Search student..." class="search-input"><button class="btn btn-secondary btn-sm" id="export-csv-btn">CSV</button><button class="btn btn-secondary btn-sm" id="export-excel-btn">Excel</button><button class="btn btn-secondary btn-sm" id="print-btn">Print</button></div></div>
         <div class="card"><div class="table-wrap"><table id="results-table"><thead><tr id="results-head-row-1"><th>Rank</th><th>Name</th><th>Avg</th><th>Improv %</th><th>Status</th><th>Notes</th><th>Report</th></tr><tr id="results-head-row-2"></tr></thead><tbody id="results-body"></tbody></table></div><p class="empty-msg" id="empty-msg">No records yet.</p></div>
+      </section>
+
+      <section id="risk-analysis" class="content-section">
+        <div class="section-header"><h2>Risk Analysis</h2></div>
+        <div class="card">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Category Filter</label>
+              <select id="risk-category-select"></select>
+            </div>
+          </div>
+          <div id="risk-category-counts" class="risk-category-counts"></div>
+          <div id="risk-filtered-list" class="risk-analysis-list"></div>
+        </div>
+        <div class="card">
+          <h3>Intervention Needed</h3>
+          <div id="intervention-needed-list" class="risk-analysis-list"></div>
+        </div>
       </section>
 
       <section id="trends" class="content-section">

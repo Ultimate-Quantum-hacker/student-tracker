@@ -38,7 +38,9 @@ window.TrackerApp = window.TrackerApp || {};
     deletingId: null,
     searchTerm: '',
     isLoading: false,
-    error: null
+    error: null,
+    selectedBulkExamId: '',
+    selectedRiskCategory: 'strong'
   };
 
   const STORAGE_KEY = 'studentAppData';
@@ -89,7 +91,26 @@ window.TrackerApp = window.TrackerApp || {};
 
   app.loadFromStorage = function () {
     const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : null;
+    if (!saved) return null;
+    try {
+      return JSON.parse(saved);
+    } catch (error) {
+      console.warn('Ignoring stale cache due to invalid JSON:', error);
+      localStorage.removeItem(STORAGE_KEY);
+      return null;
+    }
+  };
+
+  app.resetCachedData = function (rawData = createDefaultRawData()) {
+    const migrated = app.migrateToRawData(rawData);
+    app.saveToStorage(migrated);
+    return migrated;
+  };
+
+  app.overwriteStaleCache = function () {
+    const canonical = app.getRawData();
+    app.saveToStorage(canonical);
+    return canonical;
   };
 
   app.getRawData = function () {
@@ -217,7 +238,7 @@ window.TrackerApp = window.TrackerApp || {};
 
   // Persistence Methods - Now async with Firestore
   app.save = async function () {
-    app.saveToStorage(app.getRawData());
+    app.overwriteStaleCache();
   };
 
   app.load = async function () {
@@ -229,24 +250,34 @@ window.TrackerApp = window.TrackerApp || {};
       if (localData) {
         const migrated = app.migrateToRawData(localData);
         app.applyRawData(migrated);
+        app.resetCachedData(migrated);
         return;
       }
 
-      const [students, exams, subjects, scores] = await Promise.all([
-        getStudents(),
-        getExams(),
-        getSubjects(),
-        getScores()
-      ]);
+      let sourceData = createDefaultRawData();
+      try {
+        const [students, exams, subjects, scores] = await Promise.all([
+          getStudents(),
+          getExams(),
+          getSubjects(),
+          getScores()
+        ]);
+        sourceData = { students, exams, subjects, scores };
+      } catch (fetchError) {
+        console.warn('Failed to fetch remote data, using local fallback:', fetchError);
+        app.state.error = 'Using local fallback data due to a remote sync issue.';
+      }
 
-      const migrated = app.migrateToRawData({ students, exams, subjects, scores });
+      const migrated = app.migrateToRawData(sourceData);
       app.applyRawData(migrated);
-      await app.save();
+      app.resetCachedData(migrated);
       
     } catch (error) {
-      console.error('Failed to load data from Firestore:', error);
+      console.error('Failed to load data:', error);
       app.state.error = 'Failed to load data. Please check your internet connection.';
-      throw error;
+      const fallback = createDefaultRawData();
+      app.applyRawData(fallback);
+      app.resetCachedData(fallback);
     } finally {
       app.state.isLoading = false;
     }

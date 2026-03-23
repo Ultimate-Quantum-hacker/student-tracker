@@ -15,8 +15,25 @@
 .risk-at-risk{background:#fee2e2;color:#dc2626}
 .risk-borderline{background:#fffbeb;color:#d97706}
 .risk-safe{background:#ecfdf5;color:#059669}
+.risk-strong{background:#dcfce7;color:#15803d}
+.risk-good{background:#dbeafe;color:#1d4ed8}
+.risk-average{background:#fef9c3;color:#a16207}
+.risk-no-data,.risk-incomplete{background:#f1f5f9;color:#475569}
 .notes-cell,.report-cell{cursor:pointer;color:var(--primary);font-size:.82rem;font-weight:500}
 .notes-cell:hover,.report-cell:hover{text-decoration:underline}
+
+/* Risk Analysis tab */
+.risk-category-counts{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:.5rem;margin:1rem 0}
+.risk-count-chip{display:flex;align-items:center;justify-content:space-between;padding:.55rem .7rem;border-radius:10px;border:1px solid var(--border);background:var(--surface-secondary);font-size:.78rem}
+.risk-count-chip strong{font-size:.95rem}
+.risk-analysis-list{display:flex;flex-direction:column;gap:.6rem;margin-top:.4rem}
+.risk-analysis-item{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.75rem 1rem;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
+.risk-analysis-item.intervention{border-color:#fecaca;background:#fff5f5}
+.risk-analysis-name{font-weight:600;color:var(--text)}
+.risk-analysis-meta{font-size:.78rem;color:var(--text-secondary)}
+.risk-analysis-side{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;justify-content:flex-end}
+.risk-analysis-avg{font-weight:700;font-size:.82rem}
+.risk-analysis-empty{font-size:.85rem;color:var(--text-secondary);padding:.4rem 0}
 
 /* School Branding Header */
 .school-brand{text-align:center;padding:.5rem 0;font-size:.75rem;color:var(--text-secondary);border-bottom:1px solid var(--border);margin-bottom:0}
