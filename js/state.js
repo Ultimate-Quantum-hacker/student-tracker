@@ -1,24 +1,7 @@
 /* ═══════════════════════════════════════════════
    JHS 3 Mock Exam Tracker — state.js
-   Manages global application state with Firestore backend.
+   Manages global application state with localStorage persistence.
    ═══════════════════════════════════════════════ */
-
-import { 
-  getStudents, 
-  addStudent, 
-  updateStudent, 
-  deleteStudent,
-  getExams,
-  addExam,
-  updateExam,
-  deleteExam,
-  getSubjects,
-  addSubject,
-  updateSubject,
-  deleteSubject,
-  getScores,
-  saveScore
-} from '../services/db.js';
 
 window.TrackerApp = window.TrackerApp || {};
 
@@ -236,7 +219,7 @@ window.TrackerApp = window.TrackerApp || {};
     };
   };
 
-  // Persistence Methods - Now async with Firestore
+  // Persistence Methods
   app.save = async function () {
     app.overwriteStaleCache();
   };
@@ -254,23 +237,9 @@ window.TrackerApp = window.TrackerApp || {};
         return;
       }
 
-      let sourceData = createDefaultRawData();
-      try {
-        const [students, exams, subjects, scores] = await Promise.all([
-          getStudents(),
-          getExams(),
-          getSubjects(),
-          getScores()
-        ]);
-        sourceData = { students, exams, subjects, scores };
-      } catch (fetchError) {
-        console.warn('Failed to fetch remote data, using local fallback:', fetchError);
-        app.state.error = 'Using local fallback data due to a remote sync issue.';
-      }
-
-      const migrated = app.migrateToRawData(sourceData);
-      app.applyRawData(migrated);
-      app.resetCachedData(migrated);
+      const fresh = createDefaultRawData();
+      app.applyRawData(fresh);
+      app.resetCachedData(fresh);
       
     } catch (error) {
       console.error('Failed to load data:', error);
@@ -492,7 +461,11 @@ window.TrackerApp = window.TrackerApp || {};
   // Get scores for a specific student and exam
   app.getScoresForStudent = async function (studentId, examId) {
     try {
-      const scores = await getScores(studentId, examId);
+      const scores = (app.state.scores || []).filter(score => {
+        if (score.studentId !== studentId) return false;
+        if (examId && score.examId !== examId) return false;
+        return true;
+      });
       return scores;
     } catch (error) {
       console.error('Failed to get scores:', error);
@@ -517,7 +490,7 @@ window.TrackerApp = window.TrackerApp || {};
     app.applyTheme(savedTheme);
   };
 
-  // Backup/Restore operations (now export/import from Firestore)
+  // Backup/Restore operations
   app.exportData = async function () {
     try {
       const exportData = {

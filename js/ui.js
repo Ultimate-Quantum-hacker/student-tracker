@@ -414,19 +414,124 @@ const ui = {
     },
 
     openReport: function (uid) {
-      const s = app.state.students.find(x => x.id === uid); if (!s) return;
-      const avgs = app.analytics.calcAverages(s);
-      const avg = avgs.overall ?? 0;
-      const risk = app.analytics.getRiskLevel(s);
-      const mockCount = app.state.exams.length;
-      const currentMock = app.state.exams[mockCount - 1];
-      const previousMock = app.state.exams[mockCount - 2];
-      const currentScore = currentMock ? app.analytics.getTotal(s, currentMock) : null;
-      const previousScore = previousMock ? app.analytics.getTotal(s, previousMock) : null;
+      const s = app.state.students.find(x => x.id === uid);
+      if (!s || !app.dom.reportContainer || !app.dom.reportModal) return;
+
+      const exams = app.state.exams || [];
+      const subjects = app.state.subjects || [];
+      const avgs = app.analytics.calcAverages(s, subjects, exams);
+      const avg = avgs.overall;
+      const status = app.analytics.getStudentStatus(s);
+      const statusClass = status === 'at-risk' ? 'rc-risk' : (status === 'borderline' ? 'rc-borderline' : 'rc-safe');
+
+      const examCount = exams.length;
+      const currentExam = exams[examCount - 1] || null;
+      const previousExam = exams[examCount - 2] || null;
+      const currentScore = currentExam ? app.analytics.getTotal(s, currentExam) : null;
+      const previousScore = previousExam ? app.analytics.getTotal(s, previousExam) : null;
       const improvement = this.formatImprovement(currentScore, previousScore);
-      const ranked = app.state.students.map(st => ({ id: st.id, avg: app.analytics.calcAverages(st).overall || 0 })).sort((a, b) => b.avg - a.avg);
-      const rank = ranked.findIndex(r => r.id === s.id) + 1;
-      let strongest = null, weakest = null, maxS = -1, minS = Infinity;
+
+      const ranked = (app.state.students || [])
+        .map(student => ({ id: student.id, avg: app.analytics.calcAverages(student, subjects, exams).overall }))
+        .sort((a, b) => (b.avg ?? -1) - (a.avg ?? -1));
+      const rank = Math.max(1, ranked.findIndex(item => item.id === s.id) + 1);
+
+      let strongest = 'N/A';
+      let weakest = 'N/A';
+      let strongestScore = -Infinity;
+      let weakestScore = Infinity;
+      subjects.forEach(subject => {
+        const value = avgs[subject.name];
+        if (value === null || value === undefined || isNaN(value)) return;
+        if (value > strongestScore) {
+          strongestScore = value;
+          strongest = subject.name;
+        }
+        if (value < weakestScore) {
+          weakestScore = value;
+          weakest = subject.name;
+        }
+      });
+
+      const examHeaders = exams.length
+        ? exams.map(exam => `<th>${app.utils.esc(exam.title || exam.name)}</th>`).join('')
+        : '<th>No Exams</th>';
+
+      const subjectRows = subjects.length
+        ? subjects.map(subject => {
+          const examCells = exams.length
+            ? exams.map(exam => {
+              const score = app.analytics.getScore(s, subject, exam);
+              return `<td>${score === '' ? '&#8212;' : app.utils.esc(score)}</td>`;
+            }).join('')
+            : '<td>&#8212;</td>';
+          const subjectAverage = avgs[subject.name];
+          return `<tr>
+            <td class="rc-subject">${app.utils.esc(subject.name)}</td>
+            ${examCells}
+            <td>${subjectAverage !== null && subjectAverage !== undefined ? Number(subjectAverage).toFixed(1) : '&#8212;'}</td>
+          </tr>`;
+        }).join('')
+        : `<tr><td colspan="${Math.max(3, exams.length + 2)}">No subjects added yet.</td></tr>`;
+
+      const reportMarkup = `
+        <div class="report-card">
+          <div class="rc-header">
+            <div class="rc-school">Student Performance Report</div>
+            <div class="rc-location">Generated: ${new Date().toLocaleString()}</div>
+            <div class="rc-title">${app.utils.esc(s.name)}</div>
+          </div>
+
+          <div class="rc-info">
+            <div><span>Student</span><strong>${app.utils.esc(s.name)}</strong></div>
+            <div><span>Rank</span><strong>${rank}/${app.state.students.length || 1}</strong></div>
+            <div><span>Status</span><strong class="${statusClass}">${this.formatStatusLabel(status)}</strong></div>
+            <div><span>Overall Average</span><strong>${avg !== null && avg !== undefined ? Number(avg).toFixed(1) + '%' : 'N/A'}</strong></div>
+          </div>
+
+          <div class="rc-summary">
+            <div class="rc-summary-item"><span>Latest Total</span><strong>${currentScore !== null && currentScore !== undefined ? Number(currentScore).toFixed(1) : 'N/A'}</strong></div>
+            <div class="rc-summary-item"><span>Previous Total</span><strong>${previousScore !== null && previousScore !== undefined ? Number(previousScore).toFixed(1) : 'N/A'}</strong></div>
+            <div class="rc-summary-item"><span>Improvement</span><strong>${app.utils.esc(improvement.text || 'N/A')}</strong></div>
+            <div class="rc-summary-item"><span>Exams Taken</span><strong>${examCount}</strong></div>
+          </div>
+
+          <div class="rc-section">
+            <h4>Subject Performance</h4>
+            <table class="rc-table">
+              <thead>
+                <tr>
+                  <th>Subject</th>
+                  ${examHeaders}
+                  <th>Avg</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${subjectRows}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="rc-analysis">
+            <div><span>Strongest Subject</span><strong>${app.utils.esc(strongest)}</strong></div>
+            <div><span>Weakest Subject</span><strong>${app.utils.esc(weakest)}</strong></div>
+            <div><span>Performance Level</span><strong class="${statusClass}">${this.formatStatusLabel(status)}</strong></div>
+          </div>
+
+          <div class="rc-section">
+            <h4>Teacher Notes</h4>
+            <div class="rc-notes">${s.notes ? app.utils.esc(s.notes) : 'No notes added yet.'}</div>
+          </div>
+
+          <div class="rc-footer">
+            <div class="rc-sig"><div class="rc-sig-line"></div><span>Class Teacher</span></div>
+            <div class="rc-sig"><div class="rc-sig-line"></div><span>Head Teacher</span></div>
+          </div>
+        </div>
+      `;
+
+      app.dom.reportContainer.innerHTML = reportMarkup;
+      app.dom.reportModal.classList.add('active');
     },
 
     loadScoreFields: function () {
