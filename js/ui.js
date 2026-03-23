@@ -211,23 +211,41 @@ const ui = {
         count: (statusGroups?.[category.key] || []).length
       }));
       const maxCount = categoryCounts.reduce((max, item) => Math.max(max, item.count), 0);
+      const step = Math.max(1, Math.ceil(Math.max(maxCount, 4) / 4));
+      const scaleTop = step * 4;
+      const yTicks = [4, 3, 2, 1, 0].map(multiplier => multiplier * step);
 
-      app.dom.dashboardPerformanceChart.innerHTML = categoryCounts.map(item => {
-        const barHeight = maxCount
-          ? Math.max((item.count / maxCount) * 100, item.count > 0 ? 16 : 4)
-          : 4;
+      const yAxisHtml = yTicks
+        .map(tick => `<span class="dashboard-chart-tick">${tick}</span>`)
+        .join('');
+
+      const barsHtml = categoryCounts.map(item => {
+        const barHeight = item.count > 0
+          ? Math.max((item.count / scaleTop) * 100, 6)
+          : 0;
         const tooltip = `${item.label} - ${item.count} student${item.count === 1 ? '' : 's'}`;
 
         return `
-          <div class="dashboard-dist-item">
-            <div class="dashboard-dist-count">${item.count}</div>
-            <div class="dashboard-dist-bar-wrap">
-              <div class="dashboard-dist-bar risk-${item.key}" style="height:${barHeight}%" title="${app.utils.esc(tooltip)}" aria-label="${app.utils.esc(tooltip)}"></div>
+          <div class="dashboard-chart-col">
+            <div class="dashboard-chart-col-inner">
+              <div class="dashboard-chart-value">${item.count}</div>
+              <div class="dashboard-chart-bar risk-${item.key}" style="height:${barHeight}%" title="${app.utils.esc(tooltip)}" aria-label="${app.utils.esc(tooltip)}"></div>
             </div>
-            <div class="dashboard-dist-label">${item.label}</div>
+            <div class="dashboard-chart-label">${item.label}</div>
           </div>
         `;
       }).join('');
+
+      app.dom.dashboardPerformanceChart.innerHTML = `
+        <div class="dashboard-chart-inner">
+          <div class="dashboard-chart-y-axis" aria-label="Student count axis">
+            ${yAxisHtml}
+          </div>
+          <div class="dashboard-chart-plot" aria-label="Category distribution bars">
+            ${barsHtml}
+          </div>
+        </div>
+      `;
     },
 
     renderStudentChips: function () {

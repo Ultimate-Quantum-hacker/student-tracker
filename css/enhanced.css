@@ -512,66 +512,101 @@ table td{
 }
 
 .dashboard-dist-chart{
-  display:grid;
-  grid-template-columns:repeat(5,minmax(0,1fr));
-  gap:var(--space-2);
   margin-top:var(--space-2);
-  align-items:end;
 }
 
-.dashboard-dist-item{
+.dashboard-chart-inner{
+  display:grid;
+  grid-template-columns:42px 1fr;
+  gap:var(--space-2);
+  align-items:stretch;
+}
+
+.dashboard-chart-y-axis{
   display:flex;
   flex-direction:column;
-  gap:.45rem;
+  justify-content:space-between;
+  align-items:flex-end;
+  color:var(--text-secondary);
+  font-size:.73rem;
+  font-weight:600;
+  line-height:1;
+  padding:.2rem .25rem 1.6rem 0;
 }
 
-.dashboard-dist-count{
+.dashboard-chart-tick{
+  display:inline-flex;
+  align-items:center;
+}
+
+.dashboard-chart-plot{
+  min-height:230px;
+  border-left:1px solid var(--border);
+  border-bottom:1px solid var(--border);
+  padding:.45rem .45rem .55rem .7rem;
+  display:grid;
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:.65rem;
+  align-items:end;
+  background-image:linear-gradient(to top,rgba(100,116,139,.12) 1px,transparent 1px);
+  background-size:100% 25%;
+}
+
+.dashboard-chart-col{
+  display:flex;
+  flex-direction:column;
+  justify-content:flex-end;
+  min-width:0;
+  gap:.4rem;
+}
+
+.dashboard-chart-col-inner{
+  height:170px;
+  display:flex;
+  flex-direction:column;
+  justify-content:flex-end;
+  align-items:center;
+  gap:.35rem;
+}
+
+.dashboard-chart-value{
   text-align:center;
-  font-size:.9rem;
+  font-size:.84rem;
   font-weight:700;
   color:var(--text);
 }
 
-.dashboard-dist-bar-wrap{
-  height:152px;
-  border:1px solid var(--border);
-  border-radius:var(--radius-sm);
-  background:var(--surface-secondary);
-  padding:.42rem;
-  display:flex;
-  align-items:flex-end;
-}
-
-.dashboard-dist-bar{
-  width:100%;
-  border-radius:8px;
-  min-height:4px;
+.dashboard-chart-bar{
+  width:min(100%,48px);
+  border-radius:10px 10px 4px 4px;
+  min-height:0;
   transition:transform .14s ease,filter .14s ease;
 }
 
-.dashboard-dist-bar:hover{
+.dashboard-chart-bar:hover{
   transform:translateY(-2px);
   filter:saturate(1.06);
 }
 
-.dashboard-dist-label{
+.dashboard-chart-label{
   text-align:center;
-  font-size:.78rem;
+  font-size:.76rem;
   font-weight:600;
   color:var(--text-secondary);
 }
 
-.dashboard-dist-bar.risk-strong{background:#16a34a}
-.dashboard-dist-bar.risk-good{background:#2563eb}
-.dashboard-dist-bar.risk-average{background:#eab308}
-.dashboard-dist-bar.risk-borderline{background:#f97316}
-.dashboard-dist-bar.risk-at-risk{background:#dc2626}
+.dashboard-chart-bar.risk-strong{background:#16a34a}
+.dashboard-chart-bar.risk-good{background:#2563eb}
+.dashboard-chart-bar.risk-average{background:#eab308}
+.dashboard-chart-bar.risk-borderline{background:#f97316}
+.dashboard-chart-bar.risk-at-risk{background:#dc2626}
 
-body.dark-mode .dashboard-dist-bar-wrap{
-  background:color-mix(in srgb,var(--surface-secondary) 78%,#0f172a 22%);
+body.dark-mode .dashboard-chart-plot{
+  background-image:linear-gradient(to top,rgba(203,213,225,.18) 1px,transparent 1px);
 }
 
-body.dark-mode .dashboard-dist-label{
+body.dark-mode .dashboard-chart-label,
+body.dark-mode .dashboard-chart-y-axis{
   color:#dbe3ee;
 }
 
@@ -670,7 +705,7 @@ body.dark-mode .risk-item.risk-at-risk .risk-count{color:#f8fafc}
 @media (max-width:1024px){
   .main-content{padding:var(--space-3)}
   .section-controls .search-input{min-width:180px}
-  .dashboard-dist-chart{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .dashboard-chart-plot{gap:.5rem}
 }
 
 @media (max-width:768px){
@@ -684,8 +719,12 @@ body.dark-mode .risk-item.risk-at-risk .risk-count{color:#f8fafc}
   .form-row .btn{width:100%}
   .bulk-entry-controls .bulk-entry-clear-btn{width:100%}
   .risk-summary{grid-template-columns:1fr}
-  .dashboard-dist-chart{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .dashboard-dist-bar-wrap{height:132px}
+  .dashboard-chart-inner{grid-template-columns:34px 1fr;gap:.5rem}
+  .dashboard-chart-y-axis{font-size:.69rem;padding:.15rem .2rem 1.45rem 0}
+  .dashboard-chart-plot{padding:.35rem .3rem .45rem .5rem;gap:.42rem;min-height:208px}
+  .dashboard-chart-col-inner{height:150px}
+  .dashboard-chart-label{font-size:.69rem}
+  .dashboard-chart-value{font-size:.76rem}
   .table-wrap{margin-top:.65rem}
 }
 
