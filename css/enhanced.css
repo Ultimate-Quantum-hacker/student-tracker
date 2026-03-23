@@ -511,6 +511,70 @@ table td{
   padding:var(--space-2);
 }
 
+.dashboard-dist-chart{
+  display:grid;
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:var(--space-2);
+  margin-top:var(--space-2);
+  align-items:end;
+}
+
+.dashboard-dist-item{
+  display:flex;
+  flex-direction:column;
+  gap:.45rem;
+}
+
+.dashboard-dist-count{
+  text-align:center;
+  font-size:.9rem;
+  font-weight:700;
+  color:var(--text);
+}
+
+.dashboard-dist-bar-wrap{
+  height:152px;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  background:var(--surface-secondary);
+  padding:.42rem;
+  display:flex;
+  align-items:flex-end;
+}
+
+.dashboard-dist-bar{
+  width:100%;
+  border-radius:8px;
+  min-height:4px;
+  transition:transform .14s ease,filter .14s ease;
+}
+
+.dashboard-dist-bar:hover{
+  transform:translateY(-2px);
+  filter:saturate(1.06);
+}
+
+.dashboard-dist-label{
+  text-align:center;
+  font-size:.78rem;
+  font-weight:600;
+  color:var(--text-secondary);
+}
+
+.dashboard-dist-bar.risk-strong{background:#16a34a}
+.dashboard-dist-bar.risk-good{background:#2563eb}
+.dashboard-dist-bar.risk-average{background:#eab308}
+.dashboard-dist-bar.risk-borderline{background:#f97316}
+.dashboard-dist-bar.risk-at-risk{background:#dc2626}
+
+body.dark-mode .dashboard-dist-bar-wrap{
+  background:color-mix(in srgb,var(--surface-secondary) 78%,#0f172a 22%);
+}
+
+body.dark-mode .dashboard-dist-label{
+  color:#dbe3ee;
+}
+
 .modal{
   border-radius:var(--radius-lg);
   border:1px solid var(--border);
@@ -606,6 +670,7 @@ body.dark-mode .risk-item.risk-at-risk .risk-count{color:#f8fafc}
 @media (max-width:1024px){
   .main-content{padding:var(--space-3)}
   .section-controls .search-input{min-width:180px}
+  .dashboard-dist-chart{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
 
 @media (max-width:768px){
@@ -619,6 +684,8 @@ body.dark-mode .risk-item.risk-at-risk .risk-count{color:#f8fafc}
   .form-row .btn{width:100%}
   .bulk-entry-controls .bulk-entry-clear-btn{width:100%}
   .risk-summary{grid-template-columns:1fr}
+  .dashboard-dist-chart{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .dashboard-dist-bar-wrap{height:132px}
   .table-wrap{margin-top:.65rem}
 }
 

@@ -48,7 +48,7 @@ const domIds = {
   statAtRiskCount: 'stat-at-risk-count',
   statAtRiskCountSummary: 'stat-at-risk-count-summary',
   dashboardPerformanceSummary: 'dashboard-performance-summary',
-  interventionItems: 'intervention-items',
+  dashboardPerformanceChart: 'dashboard-performance-chart',
   classChart: 'class-chart',
   classChartPlaceholder: 'class-chart-placeholder',
   canvas: 'progress-chart',
@@ -199,6 +199,35 @@ const ui = {
           app.dom[domKey].textContent = (statusGroups[category.key] || []).length;
         }
       });
+
+      this.renderDashboardPerformanceChart(statusGroups, categories);
+    },
+
+    renderDashboardPerformanceChart: function (statusGroups, categories) {
+      if (!app.dom.dashboardPerformanceChart) return;
+
+      const categoryCounts = (categories || []).map(category => ({
+        ...category,
+        count: (statusGroups?.[category.key] || []).length
+      }));
+      const maxCount = categoryCounts.reduce((max, item) => Math.max(max, item.count), 0);
+
+      app.dom.dashboardPerformanceChart.innerHTML = categoryCounts.map(item => {
+        const barHeight = maxCount
+          ? Math.max((item.count / maxCount) * 100, item.count > 0 ? 16 : 4)
+          : 4;
+        const tooltip = `${item.label} - ${item.count} student${item.count === 1 ? '' : 's'}`;
+
+        return `
+          <div class="dashboard-dist-item">
+            <div class="dashboard-dist-count">${item.count}</div>
+            <div class="dashboard-dist-bar-wrap">
+              <div class="dashboard-dist-bar risk-${item.key}" style="height:${barHeight}%" title="${app.utils.esc(tooltip)}" aria-label="${app.utils.esc(tooltip)}"></div>
+            </div>
+            <div class="dashboard-dist-label">${item.label}</div>
+          </div>
+        `;
+      }).join('');
     },
 
     renderStudentChips: function () {
@@ -637,7 +666,6 @@ const ui = {
         this.populateSelects();
         this.loadScoreFields();
         this.updateDashboardStats();
-        this.renderInterventionList();
         this.renderPerformanceAnalysisPanel();
         this.renderClassSummary();
         this.renderStudentChips();
