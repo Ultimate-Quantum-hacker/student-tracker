@@ -670,7 +670,8 @@ const ui = {
           const val = exam ? app.analytics.getScore(s, sub, exam) : '';
           return `<td><input type="number" class="bulk-score-input" data-sid="${s.id}" data-sub="${sub.name}" value="${val === '' ? '' : val}" min="0" max="100"></td>`;
         }).join('');
-        return `<tr><td class="sticky-col">${app.utils.esc(s.name)}</td>${row}</tr>`;
+        const studentName = app.utils.esc(s.name);
+        return `<tr><td class="sticky-col"><div class="bulk-student-cell"><span class="bulk-student-name">${studentName}</span><button type="button" class="bulk-row-reset-btn" data-reset-student-id="${s.id}" title="Clear all marks for ${studentName}" aria-label="Clear all marks for ${studentName}">&#8635;</button></div></td>${row}</tr>`;
       }).join('');
       
       app.dom.bulkScoreBody.innerHTML = bodyHtml;
@@ -904,6 +905,22 @@ const ui = {
         }
 
         if (app.dom.bulkScoreBody) {
+          app.dom.bulkScoreBody.addEventListener('click', (e) => {
+            const resetBtn = e.target.closest('.bulk-row-reset-btn');
+            if (!resetBtn) return;
+
+            const row = resetBtn.closest('tr');
+            if (!row) return;
+
+            if (!confirm('Clear all marks for this student?')) return;
+
+            row.querySelectorAll('.bulk-score-input').forEach(input => {
+              input.value = '';
+            });
+
+            this.showToast('Student marks cleared');
+          });
+
           app.dom.bulkScoreBody.addEventListener('input', (e) => {
             if (e.target && e.target.matches('input[type="number"]')) {
               e.target.value = app.normalizeScore(e.target.value);

@@ -465,6 +465,51 @@ button:focus-visible,
   margin-top:1.25rem;
 }
 
+.bulk-student-cell{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:.45rem;
+  min-width:150px;
+}
+
+.bulk-student-name{
+  font-weight:600;
+  color:var(--text);
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.bulk-row-reset-btn{
+  border:1px solid var(--border);
+  background:var(--surface-secondary);
+  color:var(--text-secondary);
+  width:1.55rem;
+  height:1.55rem;
+  border-radius:999px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-size:.86rem;
+  line-height:1;
+  padding:0;
+  cursor:pointer;
+  transition:background .14s ease,color .14s ease,border-color .14s ease,transform .14s ease;
+}
+
+.bulk-row-reset-btn:hover{
+  background:var(--surface);
+  color:var(--primary);
+  border-color:var(--primary-light);
+  transform:translateY(-1px);
+}
+
+.bulk-row-reset-btn:focus-visible{
+  outline:none;
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--primary-light) 70%,transparent);
+}
+
 .section-controls .search-input{
   min-width:210px;
 }
