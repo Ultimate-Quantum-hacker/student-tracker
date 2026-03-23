@@ -446,6 +446,25 @@ button:focus-visible,
   gap:var(--space-2);
 }
 
+.bulk-entry-controls{
+  display:flex;
+  align-items:flex-end;
+  gap:var(--space-2);
+}
+
+.bulk-entry-controls .form-group{
+  margin-bottom:0;
+}
+
+.bulk-entry-clear-btn{
+  align-self:flex-end;
+  margin-bottom:0;
+}
+
+.bulk-entry-save-btn{
+  margin-top:1.25rem;
+}
+
 .section-controls .search-input{
   min-width:210px;
 }
@@ -598,6 +617,7 @@ body.dark-mode .risk-item.risk-at-risk .risk-count{color:#f8fafc}
   .section-controls .search-input{flex:1 1 100%;min-width:0}
   .form-group{flex-basis:100%;min-width:0}
   .form-row .btn{width:100%}
+  .bulk-entry-controls .bulk-entry-clear-btn{width:100%}
   .risk-summary{grid-template-columns:1fr}
   .table-wrap{margin-top:.65rem}
 }
