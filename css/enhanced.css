@@ -655,14 +655,25 @@ body.dark-mode .hm-category-badge{color:#f8fafc}
   }
 }
 
-/* Override header logo styling to stand out more */
-.logo h1{
-  font-size:1.2rem;
-  font-weight:800;
+/* Header branding refinement */
+.header-inner{
+  gap:.8rem;
+}
+
+.logo{
+  display:flex;
+  align-items:center;
+  gap:.7rem;
+  min-width:0;
+  flex:1;
+  justify-content:flex-start;
+}
+
+.app-logo{
+  width:34px;
+  height:34px;
   color:var(--primary);
-  letter-spacing:0.02em;
-  text-transform:none;
-  font-family:"Inter",system-ui,-apple-system,sans-serif;
+  flex-shrink:0;
 }
 
 .logo-branding{
@@ -672,9 +683,27 @@ body.dark-mode .hm-category-badge{color:#f8fafc}
   min-width:0;
 }
 
+.logo-title{
+  font-size:1.26rem;
+  font-weight:800;
+  color:var(--primary);
+  letter-spacing:.01em;
+  line-height:1.08;
+  font-family:"Inter",system-ui,-apple-system,sans-serif;
+  transform-origin:left center;
+  transition:transform .24s ease,color .24s ease;
+  cursor:default;
+  white-space:nowrap;
+}
+
+.logo-branding:hover .logo-title{
+  transform:scale(1.03);
+  color:var(--primary-hover);
+}
+
 .logo-motto{
   margin-top:4px;
-  font-size:.82rem;
+  font-size:.84rem;
   font-weight:500;
   line-height:1.35;
   letter-spacing:.03em;
@@ -682,12 +711,43 @@ body.dark-mode .hm-category-badge{color:#f8fafc}
   white-space:nowrap;
   overflow:hidden;
   text-overflow:ellipsis;
-  max-width:min(52vw,440px);
+  max-width:min(56vw,520px);
 }
 
-/* Center the school name block in the header */
-.logo{
-  justify-content:flex-start;
+.header-controls{
+  margin-left:auto;
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:.5rem;
+  flex:0 0 auto;
+}
+
+.header-tool-bridge{
+  display:none !important;
+}
+
+.header-install-btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:.42rem;
+  min-height:38px;
+  padding:.48rem .85rem;
+  border-radius:10px;
+  font-size:.82rem;
+  font-weight:700;
+  letter-spacing:.01em;
+  box-shadow:0 6px 14px rgba(59,130,246,.25);
+}
+
+.header-install-btn svg{
+  width:14px;
+  height:14px;
+}
+
+body.dark-mode .header-install-btn{
+  box-shadow:0 6px 14px rgba(37,99,235,.35);
 }
 
 @media (max-width:900px){
@@ -699,13 +759,23 @@ body.dark-mode .hm-category-badge{color:#f8fafc}
   .sidebar .sidebar-nav{gap:.8rem}
   .sidebar .sidebar-title{padding:.2rem .55rem}
   .sidebar .sidebar-item{font-size:.86rem;padding:.55rem .6rem;border-radius:12px}
-  .logo-motto{font-size:.75rem;max-width:48vw}
+  .app-logo{width:31px;height:31px}
+  .logo-title{font-size:1.02rem}
+  .logo-motto{font-size:.74rem;max-width:46vw}
+  .header-install-btn{min-height:34px;padding:.4rem .65rem;font-size:.78rem}
   .system-tools-section{padding:.62rem;gap:.45rem}
   .system-tools-status{font-size:.75rem;padding:.5rem .55rem}
   .system-tools-btn{font-size:.84rem;padding:.56rem .58rem;gap:.5rem}
   .system-tools-icon{font-size:.95rem;min-width:1.1rem;width:1.1rem}
   .performance-analysis-item{flex-direction:column;align-items:flex-start}
   .performance-analysis-side{justify-content:flex-start}
+}
+
+@media (max-width:560px){
+  .logo{gap:.55rem}
+  .logo-motto{max-width:40vw}
+  .header-install-btn span{display:none}
+  .header-install-btn{padding:.4rem .52rem;min-width:34px}
 }
 
 /* UI System Refresh */

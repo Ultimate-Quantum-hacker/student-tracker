@@ -339,24 +339,26 @@
     <div class="header-inner">
       <div class="logo">
         <button id="mobileMenuToggle" class="btn btn-icon mobile-menu-button" aria-label="Open menu" title="Open menu" type="button">☰</button>
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        <svg class="app-logo" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
         <div class="logo-branding">
-          <h1>Student Performance Tracker</h1>
+          <h1 class="logo-title">Student Performance Tracker</h1>
           <p class="logo-motto">Tracking Progress. Unlocking Potential.</p>
         </div>
       </div>
       <div class="header-controls">
-        <div id="backupStatus" class="backup-status">Last Backup: Never</div>
-        <button class="btn btn-secondary btn-sm" id="create-snapshot-btn" type="button" title="Create Restore Point">Create Restore Point</button>
-        <button class="btn btn-secondary btn-sm" id="snapshot-manager-btn" type="button" title="Manage Restore Points">Restore Points</button>
-        <button class="btn btn-icon" id="backup-btn" title="Download Backup"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></button>
-        <button class="btn btn-icon" id="restore-btn" title="Restore Backup"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
-        <input type="file" id="restore-input" style="display:none;" accept=".json">
-        <button class="btn btn-icon" id="themeToggle" title="Toggle Theme"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></button>
-        <button class="btn btn-icon btn-danger reset-icon" id="reset-btn" title="Start New Class"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+        <div class="header-tool-bridge" aria-hidden="true">
+          <div id="backupStatus" class="backup-status">Last Backup: Never</div>
+          <button class="btn btn-secondary btn-sm" id="create-snapshot-btn" type="button" title="Create Restore Point">Create Restore Point</button>
+          <button class="btn btn-secondary btn-sm" id="snapshot-manager-btn" type="button" title="Manage Restore Points">Restore Points</button>
+          <button class="btn btn-icon" id="backup-btn" title="Download Backup"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></button>
+          <button class="btn btn-icon" id="restore-btn" title="Restore Backup"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+          <input type="file" id="restore-input" style="display:none;" accept=".json">
+          <button class="btn btn-icon" id="themeToggle" title="Toggle Theme"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></button>
+          <button class="btn btn-icon btn-danger reset-icon" id="reset-btn" title="Start New Class"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
+        </div>
 
         <!-- Custom install button (shown by JS when eligible) -->
-        <button class="btn btn-icon" id="install-btn" title="Install app">
+        <button class="btn btn-primary header-install-btn" id="install-btn" title="Install app">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 3v12" />
             <path d="M8 11l4 4 4-4" />
