@@ -87,6 +87,9 @@ const domIds = {
   reportModal: 'report-modal',
   reportContainer: 'report-card-container',
   reportPrintBtn: 'report-print-btn',
+  reportExportPdfBtn: 'report-export-pdf-btn',
+  reportExportAllPdfBtn: 'report-export-all-pdf-btn',
+  reportExportStatus: 'report-export-status',
   reportCloseBtn: 'report-close-btn',
   exportCsvBtn: 'export-csv-btn',
   exportExcelBtn: 'export-excel-btn',
@@ -633,6 +636,137 @@ const ui = {
       if (app.dom.notesModal) app.dom.notesModal.classList.remove('active');
     },
 
+    getSafeReportFileName: function (name, fallback) {
+      const source = String(name || fallback || 'Student_Report').trim();
+      const cleaned = source
+        .replace(/[\\/:*?"<>|]/g, '')
+        .replace(/\s+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_+|_+$/g, '');
+      return cleaned || String(fallback || 'Student_Report');
+    },
+
+    setReportExportState: function (isLoading, message = '') {
+      const statusText = isLoading ? (message || 'Generating PDF...') : (message || '');
+      if (app.dom.reportExportStatus) {
+        app.dom.reportExportStatus.textContent = statusText;
+      }
+
+      [app.dom.reportExportPdfBtn, app.dom.reportExportAllPdfBtn].forEach(btn => {
+        if (!btn) return;
+        btn.disabled = !!isLoading;
+      });
+    },
+
+    buildPdfOptions: function (fileName) {
+      return {
+        margin: [10, 10, 10, 10],
+        filename: fileName,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['css', 'legacy'] }
+      };
+    },
+
+    exportCurrentReportPdf: async function () {
+      if (typeof window.html2pdf !== 'function') {
+        this.showToast('PDF export library unavailable');
+        return;
+      }
+      if (!app.dom.reportContainer) {
+        this.showToast('Open a student report first');
+        return;
+      }
+
+      const reportCard = app.dom.reportContainer.querySelector('.report-card');
+      if (!reportCard) {
+        this.showToast('Open a student report first');
+        return;
+      }
+
+      const studentName = reportCard.querySelector('.rc-title')?.textContent || 'Student';
+      const fileName = `${this.getSafeReportFileName(studentName, 'Student')}_Report.pdf`;
+
+      this.setReportExportState(true, 'Generating PDF...');
+      try {
+        const exportRoot = document.createElement('div');
+        exportRoot.className = 'rc-export-batch';
+        exportRoot.appendChild(reportCard.cloneNode(true));
+        await window.html2pdf().set(this.buildPdfOptions(fileName)).from(exportRoot).save();
+        this.setReportExportState(false, 'PDF exported');
+        setTimeout(() => this.setReportExportState(false, ''), 1800);
+      } catch (error) {
+        console.error('Failed to export student report PDF:', error);
+        this.setReportExportState(false, 'Export failed');
+        this.showToast('Failed to export PDF');
+      }
+    },
+
+    exportAllReportsPdf: async function () {
+      if (typeof window.html2pdf !== 'function') {
+        this.showToast('PDF export library unavailable');
+        return;
+      }
+      if (!app.dom.reportContainer || !app.dom.reportModal) {
+        this.showToast('Report UI unavailable');
+        return;
+      }
+
+      const students = app.state.students || [];
+      if (!students.length) {
+        this.showToast('No students to export');
+        return;
+      }
+
+      const wasOpen = app.dom.reportModal.classList.contains('active');
+      const originalMarkup = app.dom.reportContainer.innerHTML;
+
+      this.setReportExportState(true, `Generating PDF... (${students.length} reports)`);
+
+      try {
+        const exportRoot = document.createElement('div');
+        exportRoot.className = 'rc-export-batch';
+
+        students.forEach((student, idx) => {
+          this.openReport(student.id);
+          const reportCard = app.dom.reportContainer.querySelector('.report-card');
+          if (!reportCard) return;
+
+          const page = document.createElement('section');
+          page.className = 'rc-export-page';
+          if (idx > 0) {
+            page.classList.add('rc-export-page-break');
+          }
+          page.appendChild(reportCard.cloneNode(true));
+          exportRoot.appendChild(page);
+        });
+
+        app.dom.reportContainer.innerHTML = originalMarkup;
+        if (wasOpen) {
+          app.dom.reportModal.classList.add('active');
+        } else {
+          app.dom.reportModal.classList.remove('active');
+        }
+
+        await window.html2pdf().set(this.buildPdfOptions('All_Student_Reports.pdf')).from(exportRoot).save();
+
+        this.setReportExportState(false, 'PDF exported');
+        setTimeout(() => this.setReportExportState(false, ''), 1800);
+      } catch (error) {
+        app.dom.reportContainer.innerHTML = originalMarkup;
+        if (wasOpen) {
+          app.dom.reportModal.classList.add('active');
+        } else {
+          app.dom.reportModal.classList.remove('active');
+        }
+
+        console.error('Failed to export all reports PDF:', error);
+        this.setReportExportState(false, 'Export failed');
+        this.showToast('Failed to export all reports');
+      }
+    },
+
     openReport: function (uid) {
       const s = app.state.students.find(x => x.id === uid);
       if (!s || !app.dom.reportContainer || !app.dom.reportModal) return;
@@ -769,14 +903,9 @@ const ui = {
       const reportMarkup = `
         <div class="report-card">
           <div class="rc-header">
-            <div class="rc-title">
-              <h1>Student Performance Report</h1>
-              <div class="rc-student-name">${app.utils.esc(s.name)}</div>
-            </div>
-            <div style="text-align: right;">
-              <div style="font-size: 0.8rem; color: #64748b; font-weight: 700;">GENERATED</div>
-              <div style="font-size: 0.9rem; font-weight: 600;">${new Date().toLocaleDateString()}</div>
-            </div>
+            <div class="rc-school">Student Performance Report</div>
+            <div class="rc-title">${app.utils.esc(s.name)}</div>
+            <div class="rc-generated">Generated: ${new Date().toLocaleDateString()}</div>
           </div>
           <div class="rc-info">
             <div><span>Student</span><strong>${app.utils.esc(s.name)}</strong></div>
@@ -1089,6 +1218,8 @@ const ui = {
         if (app.dom.searchInput) app.dom.searchInput.oninput = (e) => { app.state.searchTerm = e.target.value; this.renderResultsTable(); };
         if (app.dom.reportCloseBtn) app.dom.reportCloseBtn.onclick = () => app.dom.reportModal.classList.remove('active');
         if (app.dom.reportPrintBtn) app.dom.reportPrintBtn.onclick = () => this.printReportOnly();
+        if (app.dom.reportExportPdfBtn) app.dom.reportExportPdfBtn.onclick = () => this.exportCurrentReportPdf();
+        if (app.dom.reportExportAllPdfBtn) app.dom.reportExportAllPdfBtn.onclick = () => this.exportAllReportsPdf();
         if (app.dom.exportCsvBtn) app.dom.exportCsvBtn.onclick = () => app.export.exportCSV(app);
         if (app.dom.exportExcelBtn) app.dom.exportExcelBtn.onclick = () => app.export.exportExcel(app);
         if (app.dom.printBtn) app.dom.printBtn.onclick = () => this.printReportOnly();

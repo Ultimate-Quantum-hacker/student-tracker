@@ -549,13 +549,15 @@
   <div class="modal-overlay" id="bulk-import-modal"><div class="modal"><h3>Bulk Add Students</h3><textarea id="bulk-import-textarea" rows="8" placeholder="Enter one name per line..."></textarea><div class="modal-actions"><button class="btn btn-secondary" id="bulk-import-cancel-btn">Cancel</button><button class="btn btn-primary" id="bulk-import-confirm-btn">Add All</button></div></div></div>
   <div class="modal-overlay" id="notes-modal"><div class="modal"><h3 id="notes-modal-title">Student Notes</h3><textarea id="notes-textarea" rows="5" placeholder="Enter observations..."></textarea><div class="modal-actions"><button class="btn btn-secondary" id="notes-cancel-btn">Cancel</button><button class="btn btn-primary" id="notes-save-btn">Save Notes</button></div></div></div>
   <div class="modal-overlay" id="reset-modal"><div class="modal"><h3>Clear All Data</h3><p>Start a new class? All current data will be erased.</p><div class="modal-actions"><button class="btn btn-secondary" id="reset-cancel-btn">Keep Data</button><button class="btn btn-danger" id="reset-confirm-btn">Erase Everything</button></div></div></div>
-  <div class="modal-overlay" id="report-modal"><div class="modal modal-lg"><div class="modal-actions"><button class="btn btn-primary" id="report-print-btn">Print</button><button class="btn btn-secondary" id="report-close-btn">Close</button></div><div id="report-card-container"></div></div></div>
+  <div class="modal-overlay" id="report-modal"><div class="modal modal-lg"><div class="modal-actions"><button class="btn btn-primary" id="report-print-btn">Print</button><button class="btn btn-secondary" id="report-export-pdf-btn">Export as PDF</button><button class="btn btn-secondary" id="report-export-all-pdf-btn">Export All Reports</button><span id="report-export-status" class="report-export-status" aria-live="polite"></span><button class="btn btn-secondary" id="report-close-btn">Close</button></div><div id="report-card-container"></div></div></div>
   <div class="modal-overlay" id="snapshot-modal"><div class="modal modal-lg snapshot-modal"><h3>Restore Points</h3><p class="snapshot-modal-note">Create manual restore points and roll back safely if needed.</p><div id="snapshot-list" class="snapshot-list"></div><div class="modal-actions"><button class="btn btn-secondary" id="snapshot-close-btn">Close</button></div></div></div>
   <div id="toast" class="toast"></div>
 
   <footer style="text-align:center;padding:0.75rem 1.5rem;font-size:0.75rem;color:#64748b;">
     &copy; 2026 Sage Innovations. All rights reserved.
   </footer>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
   <!-- Single module entry point -->
   <script type="module" src="js/app.js"></script>

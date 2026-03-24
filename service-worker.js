@@ -2,7 +2,7 @@
    Simple cache-first strategy for core assets.
 */
 
-const CACHE_NAME = 'app-cache-v3';
+const CACHE_NAME = 'app-cache-v4';
 
 const CORE_ASSETS = [
   '/',

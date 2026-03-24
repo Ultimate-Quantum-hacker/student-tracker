@@ -111,6 +111,10 @@ body.dark-mode{--intervention-bg:rgba(220,38,38,.18);--intervention-border:rgba(
 .rc-sig span{font-size:.82rem;color:#475569;font-weight:700}
 .rc-sig-date{margin-top:.35rem;font-size:.8rem;color:#64748b;font-weight:600}
 
+.rc-export-batch{background:#ffffff;color:#111827}
+.rc-export-page{page-break-inside:avoid;break-inside:avoid}
+.rc-export-page-break{page-break-before:always;break-before:page}
+
 @media (max-width: 720px){
   .report-card{padding:1.4rem;border-radius:12px}
   .rc-info{grid-template-columns:1fr;gap:.75rem}
@@ -474,17 +478,67 @@ body.dark-mode .hm-category-badge{color:#f8fafc}
 
 /* Report Modal */
 .modal-lg{max-width:850px;max-height:90vh;overflow-y:auto}
+.report-export-status{font-size:.78rem;color:var(--text-secondary);font-weight:600;align-self:center;min-height:1em}
 
 /* Print Report Card */
 @media print{
+  @page{size:A4 portrait;margin:10mm}
+
+  html, body{
+    background:#fff !important;
+    color:#000 !important;
+    -webkit-print-color-adjust:exact;
+    print-color-adjust:exact;
+  }
+
   body.printing-report *{visibility:hidden !important}
   body.printing-report #report-modal,
   body.printing-report #report-modal *{visibility:visible !important}
-  body.printing-report #report-modal{display:flex !important;position:absolute !important;inset:0 !important;background:#fff !important;z-index:9999 !important}
-  body.printing-report #report-modal .modal{box-shadow:none !important;width:100% !important;max-width:none !important;padding:0 !important}
+  body.printing-report #report-modal{display:block !important;position:static !important;inset:auto !important;background:#fff !important;z-index:9999 !important;padding:0 !important;margin:0 !important}
+  body.printing-report #report-modal .modal{box-shadow:none !important;width:100% !important;max-width:none !important;max-height:none !important;overflow:visible !important;padding:0 !important;margin:0 !important;border:none !important;background:#fff !important}
   body.printing-report #report-modal .modal-actions{display:none !important}
-  body.printing-report .report-card{border:none !important;box-shadow:none !important;padding:1.5rem !important;max-width:none !important;margin:0 !important}
-  body.printing-report .rc-header{border-bottom:3px double #000 !important}
+  body.printing-report #report-card-container{padding:0 !important;margin:0 !important;overflow:visible !important}
+  body.printing-report .report-card{border:none !important;box-shadow:none !important;padding:8mm !important;max-width:none !important;margin:0 !important;background:#fff !important;color:#000 !important;page-break-inside:avoid !important;break-inside:avoid !important}
+  body.printing-report .rc-header{border-bottom:2px solid #000 !important}
+  body.printing-report .rc-section,
+  body.printing-report .rc-summary,
+  body.printing-report .rc-summary-item,
+  body.printing-report .rc-analysis,
+  body.printing-report .rc-analysis-card,
+  body.printing-report .rc-footer,
+  body.printing-report .rc-notes,
+  body.printing-report .rc-sig{
+    page-break-inside:avoid !important;
+    break-inside:avoid !important;
+  }
+  body.printing-report .rc-table,
+  body.printing-report .rc-table thead,
+  body.printing-report .rc-table tbody,
+  body.printing-report .rc-table tr,
+  body.printing-report .rc-table th,
+  body.printing-report .rc-table td{
+    page-break-inside:avoid !important;
+    break-inside:avoid !important;
+  }
+  body.printing-report .rc-table th,
+  body.printing-report .rc-table td,
+  body.printing-report .rc-info span,
+  body.printing-report .rc-info strong,
+  body.printing-report .rc-analysis span,
+  body.printing-report .rc-analysis strong,
+  body.printing-report .rc-notes,
+  body.printing-report .rc-sig span,
+  body.printing-report .rc-sig-date{
+    color:#000 !important;
+  }
+  body.printing-report .rc-summary-item,
+  body.printing-report .rc-analysis-card,
+  body.printing-report .rc-info,
+  body.printing-report .rc-notes{
+    background:#fff !important;
+    box-shadow:none !important;
+    border-color:#d1d5db !important;
+  }
 }
 
 /* Override header logo styling to stand out more */
