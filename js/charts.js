@@ -100,21 +100,36 @@ const charts = {
         'div',
         {
           style: {
-            background: `linear-gradient(135deg, ${palette.cardFrom} 0%, ${palette.cardTo} 100%)`,
-            padding: '18px 18px 14px',
-            borderRadius: '16px',
+            background: `linear-gradient(145deg, ${palette.cardFrom} 0%, ${palette.cardTo} 100%)`,
+            padding: '24px 20px 16px',
+            borderRadius: '20px',
             border: `1px solid ${palette.border}`,
-            boxShadow: darkMode ? '0 14px 32px rgba(2, 6, 23, 0.55)' : '0 14px 30px rgba(15, 23, 42, 0.14)'
+            boxShadow: darkMode ? '0 20px 48px rgba(0, 0, 0, 0.4)' : '0 15px 35px rgba(15, 23, 42, 0.12)',
+            position: 'relative',
+            overflow: 'hidden'
           }
         },
+        // Decorative background glow
+        React.createElement('div', {
+          style: {
+            position: 'absolute',
+            top: '-50px',
+            right: '-50px',
+            width: '150px',
+            height: '150px',
+            background: 'radial-gradient(circle, rgba(59, 130, 246, 0.08) 0%, transparent 70%)',
+            pointerEvents: 'none'
+          }
+        }),
         React.createElement(
           'div',
           {
             style: {
               display: 'flex',
               justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: '14px'
+              alignItems: 'baseline',
+              marginBottom: '20px',
+              padding: '0 4px'
             }
           },
           React.createElement(
@@ -122,28 +137,47 @@ const charts = {
             {
               style: {
                 margin: 0,
-                fontSize: '16px',
-                fontWeight: 700,
-                letterSpacing: '0.01em',
-                color: palette.title
+                fontSize: '17px',
+                fontWeight: 800,
+                letterSpacing: '-0.01em',
+                color: palette.title,
+                fontFamily: 'Outfit, sans-serif'
               }
             },
-            'Class Performance Chart'
+            'Class Performance'
           ),
           React.createElement(
-            'span',
-            {
-              style: {
-                fontSize: '12px',
-                fontWeight: 700,
-                color: trendDirection === 'up' ? palette.trendUp : palette.trendDown,
-                background: darkMode ? 'rgba(15, 23, 42, 0.5)' : 'rgba(255, 255, 255, 0.65)',
-                border: `1px solid ${palette.border}`,
-                borderRadius: '999px',
-                padding: '4px 9px'
-              }
-            },
-            trendText
+            'div',
+            { style: { display: 'flex', gap: '8px', alignItems: 'center' } },
+            React.createElement(
+              'span',
+              {
+                style: {
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  color: palette.tick,
+                  opacity: 0.8
+                }
+              },
+              'Trend'
+            ),
+            React.createElement(
+              'span',
+              {
+                style: {
+                  fontSize: '13px',
+                  fontWeight: 800,
+                  color: '#fff',
+                  background: trendDirection === 'up' ? palette.trendUp : palette.trendDown,
+                  borderRadius: '6px',
+                  padding: '3px 8px',
+                  boxShadow: `0 4px 10px ${trendDirection === 'up' ? 'rgba(22, 163, 74, 0.2)' : 'rgba(220, 38, 38, 0.2)'}`
+                }
+              },
+              trendText
+            )
           )
         ),
         React.createElement(
@@ -151,70 +185,81 @@ const charts = {
           { width: '100%', height: 320 },
           React.createElement(
             LineChart,
-            { data: chartData, margin: { top: 8, right: 22, left: 8, bottom: 12 } },
+            { data: chartData, margin: { top: 15, right: 10, left: -15, bottom: 5 } },
             React.createElement('defs', null,
-              React.createElement('linearGradient', { id: 'classPerformanceLine', x1: '0', y1: '0', x2: '0', y2: '1' },
-                React.createElement('stop', { offset: '0%', stopColor: '#3B82F6', stopOpacity: 1 }),
-                React.createElement('stop', { offset: '100%', stopColor: '#3B82F6', stopOpacity: 0.2 })
+              React.createElement('linearGradient', { id: 'lineGradient', x1: '0', y1: '0', x2: '1', y2: '0' },
+                React.createElement('stop', { offset: '0%', stopColor: '#60a5fa' }),
+                React.createElement('stop', { offset: '100%', stopColor: '#2563eb' })
+              ),
+              React.createElement('filter', { id: 'glow', x: '-20%', y: '-20%', width: '140%', height: '140%' },
+                React.createElement('feGaussianBlur', { stdDeviation: '3', result: 'blur' }),
+                React.createElement('feComposite', { in: 'SourceGraphic', in2: 'blur', operator: 'over' })
               )
             ),
             React.createElement(CartesianGrid, {
               stroke: palette.grid,
-              strokeDasharray: '3 3',
-              vertical: false
+              strokeDasharray: '4 4',
+              vertical: false,
+              opacity: 0.5
             }),
             React.createElement(XAxis, {
               dataKey: 'name',
-              tick: { fill: palette.tick, fontSize: 13, fontWeight: 600 },
+              tick: { fill: palette.tick, fontSize: 12, fontWeight: 600 },
               axisLine: false,
-              tickLine: false
+              tickLine: false,
+              dy: 10
             }),
             React.createElement(YAxis, {
               domain: [domainMin, domainMax],
               tickFormatter: function (value) { return Math.round(value); },
-              tick: { fill: palette.tick, fontSize: 13, fontWeight: 600 },
+              tick: { fill: palette.tick, fontSize: 12, fontWeight: 600 },
               axisLine: false,
               tickLine: false,
-              width: 48
+              width: 40
             }),
             React.createElement(Tooltip, {
+              cursor: { stroke: palette.grid, strokeWidth: 1 },
               formatter: function (value) {
-                var num = Number(value);
-                return `${Number.isFinite(num) ? num.toFixed(1) : value} pts`;
+                return [React.createElement('strong', { style: { color: '#fff', fontSize: '14px' } }, `${Number(value).toFixed(1)}%`), 'Average'];
               },
               labelFormatter: function (_, payload) {
                 var point = payload && payload[0] ? payload[0].payload : null;
-                return point?.fullName || point?.name || '';
+                return point?.fullName || '';
               },
               contentStyle: {
-                backgroundColor: palette.tooltipBg,
-                border: `1px solid ${palette.tooltipBorder}`,
-                borderRadius: '10px',
-                color: '#fff',
-                fontSize: '12px',
-                boxShadow: '0 10px 22px rgba(2, 6, 23, 0.45)'
+                backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                backdropFilter: 'blur(8px)',
+                border: `1px solid ${palette.border}`,
+                borderRadius: '12px',
+                padding: '10px 14px',
+                boxShadow: '0 10px 25px rgba(0,0,0,0.3)'
               },
-              labelStyle: { color: '#94A3B8', fontWeight: 600 },
-              itemStyle: { color: '#e2e8f0', fontWeight: 600 }
+              labelStyle: { color: '#94a3b8', fontWeight: 700, marginBottom: '4px', fontSize: '11px', textTransform: 'uppercase' },
+              itemStyle: { padding: 0 }
             }),
             React.createElement(Line, {
               type: 'monotone',
               dataKey: 'score',
-              stroke: 'url(#classPerformanceLine)',
-              strokeWidth: 3,
-              dot: { r: 6, stroke: '#3B82F6', strokeWidth: 2, fill: palette.dotFill },
+              stroke: 'url(#lineGradient)',
+              strokeWidth: 4,
+              filter: 'url(#glow)',
+              connectNulls: true,
+              dot: { r: 5, fill: palette.dotFill, stroke: '#3b82f6', strokeWidth: 2.5 },
               activeDot: {
-                r: 8,
-                stroke: '#3B82F6',
-                strokeWidth: 2,
-                fill: palette.dotFill,
-                style: { filter: 'drop-shadow(0 0 6px #3B82F6)' }
-              }
+                r: 7,
+                fill: '#3b82f6',
+                stroke: '#fff',
+                strokeWidth: 3,
+                style: { filter: 'drop-shadow(0 0 8px rgba(59, 130, 246, 0.8))' }
+              },
+              animationDuration: 1500,
+              animationEasing: 'ease-in-out'
             })
           )
         )
       )
     );
+
   },
   renderStudentChart: function (studentId) {
     var s = app.state.students.find(function(x) { return x.id === studentId; });

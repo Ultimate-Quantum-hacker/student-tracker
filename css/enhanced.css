@@ -1277,8 +1277,326 @@ body.dark-mode #class-chart-container {
   .trends-grid {
     grid-template-columns: 1fr;
   }
+}
 
-  #class-chart-placeholder {
-    min-height: 300px;
+/* Upgraded Student Performance Report Card */
+.report-card {
+  padding: 2.5rem;
+  background: #fff;
+  color: #0f172a;
+  border-radius: 24px;
+  line-height: 1.6;
+  font-family: 'Inter', sans-serif;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.rc-header {
+  border-bottom: 2px solid #e2e8f0;
+  padding-bottom: 1.5rem;
+  margin-bottom: 2rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.rc-title h1 {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #1e293b;
+  margin: 0 0 0.25rem;
+  letter-spacing: -0.02em;
+}
+
+.rc-student-name {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #3b82f6;
+}
+
+/* Metric Cards Grid */
+.rc-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.25rem;
+  margin-bottom: 2.5rem;
+}
+
+.rc-metric-card {
+  background: #f8fafc;
+  padding: 1.25rem;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  text-align: center;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.rc-metric-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+}
+
+.rc-metric-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #64748b;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+  display: block;
+}
+
+.rc-metric-value {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #1e293b;
+}
+
+/* Dominant Overall Average */
+.rc-metric-card.dominant {
+  grid-column: span 2;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  border: 2px solid #e2e8f0;
+}
+
+.rc-metric-value.large {
+  font-size: 3rem;
+  line-height: 1;
+  margin: 0.25rem 0;
+}
+
+.rc-rank-badge {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #475569;
+  margin-top: 0.5rem;
+}
+
+/* Performance Color Coding */
+.perf-strong { color: #16a34a !important; }
+.bg-perf-strong { background-color: #dcfce7 !important; border-color: #bbf7d0 !important; }
+
+.perf-average { color: #ca8a04 !important; }
+.bg-perf-average { background-color: #fef9c3 !important; border-color: #fef08a !important; }
+
+.perf-at-risk { color: #dc2626 !important; }
+.bg-perf-at-risk { background-color: #fee2e2 !important; border-color: #fecaca !important; }
+
+/* Subject Table Improvement */
+.rc-table-container {
+  margin-bottom: 2.5rem;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+}
+
+.rc-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.rc-table th {
+  background: #f1f5f9;
+  text-align: left;
+  padding: 1rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.rc-table td {
+  padding: 1rem;
+  border-top: 1px solid #e2e8f0;
+  font-size: 0.95rem;
+}
+
+.rc-table tbody tr:nth-child(even) {
+  background-color: #fbfcfd;
+}
+
+.rc-table tbody tr:hover {
+  background-color: #f1f5f9;
+}
+
+.rc-table .score-high {
+  font-weight: 800;
+}
+
+.rc-avg-col {
+  font-weight: 800;
+  width: 80px;
+  text-align: center;
+}
+
+/* Insight Cards Section */
+.rc-insights {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.25rem;
+  margin-bottom: 2.5rem;
+}
+
+.rc-insight-card {
+  padding: 1.25rem;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.rc-insight-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.rc-insight-value {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #1e293b;
+}
+
+/* Smart Summary Section */
+.rc-summary-section {
+  padding: 1.5rem;
+  background: #f8fafc;
+  border-radius: 16px;
+  border-left: 4px solid #3b82f6;
+  margin-bottom: 2.5rem;
+}
+
+.rc-summary-title {
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: #1e293b;
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.rc-summary-text {
+  font-size: 0.95rem;
+  color: #475569;
+  line-height: 1.6;
+}
+
+/* Signature & Footer */
+.rc-signatures {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4rem;
+  margin-top: 4rem;
+  border-top: 1px dashed #cbd5e1;
+  padding-top: 2rem;
+}
+
+.sig-block {
+  text-align: center;
+}
+
+.sig-line {
+  border-top: 2px solid #1e293b;
+  margin-bottom: 0.5rem;
+}
+
+.sig-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.sig-date {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  margin-top: 0.25rem;
+}
+
+/* Animations */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.report-card > * {
+  animation: fadeInUp 0.5s ease forwards;
+}
+
+/* Responsive adjustment for report */
+@media (max-width: 768px) {
+  .rc-metrics-grid { grid-template-columns: 1fr 1fr; }
+  .rc-insights { grid-template-columns: 1fr; }
+  .rc-header { flex-direction: column; gap: 1rem; }
+  .rc-signatures { grid-template-columns: 1fr; gap: 2.5rem; }
+}
+
+@media print {
+  .report-card { padding: 0; }
+  .btn, .modal-actions { display: none !important; }
+  .rc-metric-card, .rc-insight-card, .rc-summary-section {
+    border: 1px solid #e2e8f0 !important;
+    background: #fff !important;
   }
+}
+/* Global Polish & Transitions */
+.content-section {
+  display: none;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.content-section.active {
+  display: block;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.sidebar-item {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.sidebar-item:hover {
+  transform: translateX(4px);
+}
+
+.card, .stat-card, .rc-metric-card, .rc-insight-card {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.card:hover, .stat-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08) !important;
+}
+
+body.dark-mode .card:hover, body.dark-mode .stat-card:hover {
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* Modal Polish */
+.modal-overlay {
+  backdrop-filter: blur(4px);
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.modal {
+  transform: scale(0.95) translateY(10px);
+  opacity: 0;
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.modal-overlay.active .modal {
+  transform: scale(1) translateY(0);
+  opacity: 1;
 }

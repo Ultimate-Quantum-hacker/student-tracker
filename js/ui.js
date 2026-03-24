@@ -640,10 +640,28 @@ const ui = {
       const exams = app.state.exams || [];
       const subjects = app.state.subjects || [];
       const avgs = app.analytics.calcAverages(s);
-      const avg = app.analytics.getStudentOverallAverage(s);
+      const avgValue = app.analytics.getStudentOverallAverage(s);
       const { previousExam, latestExam } = app.analytics.getLastTwoExams();
       const status = app.analytics.getStudentStatus(s, latestExam);
-      const statusClass = status === 'at-risk' ? 'rc-risk' : (status === 'borderline' ? 'rc-borderline' : 'rc-safe');
+      
+      const getPerfClass = (val) => {
+        if (val === null || val === undefined || isNaN(val)) return '';
+        if (val >= 70) return 'perf-strong';
+        if (val >= 50) return 'perf-average';
+        return 'perf-at-risk';
+      };
+
+      const getPerfBgClass = (val) => {
+        if (val === null || val === undefined || isNaN(val)) return '';
+        if (val >= 70) return 'bg-perf-strong';
+        if (val >= 50) return 'bg-perf-average';
+        return 'bg-perf-at-risk';
+      };
+
+      const formatOrdinal = (n) => {
+        const s = ["th", "st", "nd", "rd"], v = n % 100;
+        return n + (s[(v - 20) % 10] || s[v] || s[0]);
+      };
 
       const examCount = exams.length;
       const currentScore = latestExam ? app.analytics.getTotal(s, latestExam) : null;
@@ -653,7 +671,9 @@ const ui = {
       const ranked = (app.state.students || [])
         .map(student => ({ id: student.id, avg: app.analytics.getStudentOverallAverage(student) }))
         .sort((a, b) => (b.avg ?? -1) - (a.avg ?? -1));
-      const rank = Math.max(1, ranked.findIndex(item => item.id === s.id) + 1);
+      const rankPos = Math.max(1, ranked.findIndex(item => item.id === s.id) + 1);
+      const totalStudents = app.state.students.length || 1;
+      const rankText = rankPos === 1 ? `🥇 ${formatOrdinal(rankPos)}` : rankPos === 2 ? `🥈 ${formatOrdinal(rankPos)}` : rankPos === 3 ? `🥉 ${formatOrdinal(rankPos)}` : formatOrdinal(rankPos);
 
       let strongest = 'N/A';
       let weakest = 'N/A';
@@ -678,51 +698,90 @@ const ui = {
 
       const subjectRows = subjects.length
         ? subjects.map(subject => {
+          let maxInRow = -Infinity;
+          exams.forEach(exam => {
+            const sc = app.analytics.getScore(s, subject, exam);
+            if (sc !== '' && !isNaN(sc)) maxInRow = Math.max(maxInRow, Number(sc));
+          });
+
           const examCells = exams.length
             ? exams.map(exam => {
               const score = app.analytics.getScore(s, subject, exam);
-              return `<td>${score === '' ? '&#8212;' : app.utils.esc(score)}</td>`;
+              const isHigh = score !== '' && !isNaN(score) && Number(score) === maxInRow && maxInRow > 0;
+              return `<td class="${isHigh ? 'score-high' : ''}">${score === '' ? '&#8212;' : app.utils.esc(score)}</td>`;
             }).join('')
             : '<td>&#8212;</td>';
+          
           const subjectAverage = avgs[subject.name];
+          const subPerfClass = getPerfClass(subjectAverage);
+          
           return `<tr>
-            <td class="rc-subject">${app.utils.esc(subject.name)}</td>
+            <td class="rc-subject"><strong>${app.utils.esc(subject.name)}</strong></td>
             ${examCells}
-            <td>${subjectAverage !== null && subjectAverage !== undefined ? Number(subjectAverage).toFixed(1) : '&#8212;'}</td>
+            <td class="rc-avg-col ${subPerfClass}">${subjectAverage !== null && subjectAverage !== undefined ? Number(subjectAverage).toFixed(1) : '&#8212;'}</td>
           </tr>`;
         }).join('')
         : `<tr><td colspan="${Math.max(3, exams.length + 2)}">No subjects added yet.</td></tr>`;
 
+      // Smart Summary Generation
+      let summaryText = s.notes ? app.utils.esc(s.notes) : '';
+      if (!summaryText) {
+        const name = app.utils.esc(s.name.split(' ')[0]);
+        if (avgValue >= 70) {
+          summaryText = `${name} is performing strongly overall, with excellent results in ${app.utils.esc(strongest)}. Consistency across all subjects is commendable.`;
+        } else if (avgValue >= 50) {
+          summaryText = `${name} is maintaining an average performance. While ${app.utils.esc(strongest)} is a strong point, further focus on ${app.utils.esc(weakest)} would help in achieving more balanced results.`;
+        } else {
+          summaryText = `${name} is currently at risk and requires immediate intervention. Significant improvement is needed in ${app.utils.esc(weakest)} to ensure success in upcoming assessments.`;
+        }
+      }
+
       const reportMarkup = `
         <div class="report-card">
           <div class="rc-header">
-            <div class="rc-school">Student Performance Report</div>
-            <div class="rc-location">Generated: ${new Date().toLocaleString()}</div>
-            <div class="rc-title">${app.utils.esc(s.name)}</div>
+            <div class="rc-title">
+              <h1>Student Performance Report</h1>
+              <div class="rc-student-name">${app.utils.esc(s.name)}</div>
+            </div>
+            <div style="text-align: right;">
+              <div style="font-size: 0.8rem; color: #64748b; font-weight: 700;">GENERATED</div>
+              <div style="font-size: 0.9rem; font-weight: 600;">${new Date().toLocaleDateString()}</div>
+            </div>
           </div>
 
-          <div class="rc-info">
-            <div><span>Student</span><strong>${app.utils.esc(s.name)}</strong></div>
-            <div><span>Rank</span><strong>${rank}/${app.state.students.length || 1}</strong></div>
-            <div><span>Status</span><strong class="${statusClass}">${this.formatStatusLabel(status)}</strong></div>
-            <div><span>Overall Average</span><strong>${avg !== null && avg !== undefined ? Number(avg).toFixed(1) + '%' : 'N/A'}</strong></div>
+          <div class="rc-metrics-grid">
+            <div class="rc-metric-card dominant">
+              <span class="rc-metric-label">Overall Average</span>
+              <div class="rc-metric-value large ${getPerfClass(avgValue)}">${avgValue !== null && avgValue !== undefined ? Number(avgValue).toFixed(1) + '%' : 'N/A'}</div>
+              <div class="rc-rank-badge"><strong>${rankText}</strong> out of ${totalStudents} students</div>
+            </div>
+            <div class="rc-metric-card">
+              <span class="rc-metric-label">Latest Total</span>
+              <div class="rc-metric-value">${currentScore !== null && currentScore !== undefined ? Number(currentScore).toFixed(1) : '&#8212;'}</div>
+            </div>
+            <div class="rc-metric-card">
+              <span class="rc-metric-label">Improvement</span>
+              <div class="rc-metric-value ${improvement.className === 'improv-pos' ? 'perf-strong' : (improvement.className === 'improv-neg' ? 'perf-at-risk' : '')}">
+                ${improvement.text ? (improvement.text.includes('+') ? '↑ ' : (improvement.text.includes('-') ? '↓ ' : '')) + improvement.text : '&#8212;'}
+              </div>
+            </div>
+            <div class="rc-metric-card">
+              <span class="rc-metric-label">Rank</span>
+              <div class="rc-metric-value">${rankPos}<small style="font-size: 0.6em; margin-left:2px;">/${totalStudents}</small></div>
+            </div>
+            <div class="rc-metric-card">
+              <span class="rc-metric-label">Mock Exams</span>
+              <div class="rc-metric-value">${examCount}</div>
+            </div>
           </div>
 
-          <div class="rc-summary">
-            <div class="rc-summary-item"><span>Latest Total</span><strong>${currentScore !== null && currentScore !== undefined ? Number(currentScore).toFixed(1) : 'N/A'}</strong></div>
-            <div class="rc-summary-item"><span>Previous Total</span><strong>${previousScore !== null && previousScore !== undefined ? Number(previousScore).toFixed(1) : 'N/A'}</strong></div>
-            <div class="rc-summary-item"><span>Improvement</span><strong>${app.utils.esc(improvement.text || 'N/A')}</strong></div>
-            <div class="rc-summary-item"><span>Exams Taken</span><strong>${examCount}</strong></div>
-          </div>
-
-          <div class="rc-section">
-            <h4>Subject Performance</h4>
+          <div class="rc-table-container">
             <table class="rc-table">
               <thead>
                 <tr>
                   <th>Subject</th>
                   ${examHeaders}
-                  <th>Avg</th>
+                  <th class="rc-avg-col">AVG</th>
                 </tr>
               </thead>
               <tbody>
@@ -731,20 +790,37 @@ const ui = {
             </table>
           </div>
 
-          <div class="rc-analysis">
-            <div><span>Strongest Subject</span><strong>${app.utils.esc(strongest)}</strong></div>
-            <div><span>Weakest Subject</span><strong>${app.utils.esc(weakest)}</strong></div>
-            <div><span>Performance Level</span><strong class="${statusClass}">${this.formatStatusLabel(status)}</strong></div>
+          <div class="rc-insights">
+            <div class="rc-insight-card">
+              <div class="rc-insight-header">🏆 Strongest Point</div>
+              <div class="rc-insight-value">${app.utils.esc(strongest)}</div>
+            </div>
+            <div class="rc-insight-card">
+              <div class="rc-insight-header">📉 Area for Focus</div>
+              <div class="rc-insight-value">${app.utils.esc(weakest)}</div>
+            </div>
+            <div class="rc-insight-card ${getPerfBgClass(avgValue)}">
+              <div class="rc-insight-header">📊 Performance Level</div>
+              <div class="rc-insight-value ${getPerfClass(avgValue)}">${this.formatStatusLabel(status)}</div>
+            </div>
           </div>
 
-          <div class="rc-section">
-            <h4>Teacher Notes</h4>
-            <div class="rc-notes">${s.notes ? app.utils.esc(s.notes) : 'No notes added yet.'}</div>
+          <div class="rc-summary-section">
+            <div class="rc-summary-title">📝 Teacher Feedback & Summary</div>
+            <div class="rc-summary-text">${summaryText}</div>
           </div>
 
-          <div class="rc-footer">
-            <div class="rc-sig"><div class="rc-sig-line"></div><span>Class Teacher</span></div>
-            <div class="rc-sig"><div class="rc-sig-line"></div><span>Head Teacher</span></div>
+          <div class="rc-signatures">
+            <div class="sig-block">
+              <div class="sig-line"></div>
+              <div class="sig-label">Class Teacher</div>
+              <div class="sig-date">${new Date().toLocaleDateString()}</div>
+            </div>
+            <div class="sig-block">
+              <div class="sig-line"></div>
+              <div class="sig-label">Head of Institution</div>
+              <div class="sig-date">${new Date().toLocaleDateString()}</div>
+            </div>
           </div>
         </div>
       `;
