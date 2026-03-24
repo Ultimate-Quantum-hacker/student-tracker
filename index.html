@@ -391,6 +391,19 @@
           <button class="sidebar-item" data-section="trends"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 17"/><polyline points="17 6 23 6 23 12"/></svg>Trends</button>
           <button class="sidebar-item" data-section="heatmap"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><rect x="7" y="7" width="3" height="3"/><rect x="14" y="7" width="3" height="3"/><rect x="7" y="14" width="3" height="3"/><rect x="14" y="14" width="3" height="3"/></svg>Heatmap</button>
         </div>
+        <div class="sidebar-section system-tools-section" aria-label="System tools">
+          <div class="sidebar-title">System Tools</div>
+          <div id="system-tools-backup-status" class="system-tools-status status-never">
+            <span class="system-tools-status-dot" aria-hidden="true"></span>
+            <span id="system-tools-backup-status-text">Last Backup: Never</span>
+          </div>
+          <button class="system-tools-btn" id="system-create-restore-point-btn" type="button" title="Create Restore Point"><span class="system-tools-icon" aria-hidden="true">💾</span><span class="system-tools-label">Create Restore Point</span></button>
+          <button class="system-tools-btn" id="system-restore-points-btn" type="button" title="Restore Points"><span class="system-tools-icon" aria-hidden="true">🗂️</span><span class="system-tools-label">Restore Points</span></button>
+          <button class="system-tools-btn" id="system-export-data-btn" type="button" title="Export Data"><span class="system-tools-icon" aria-hidden="true">⬇️</span><span class="system-tools-label">Export Data</span></button>
+          <button class="system-tools-btn" id="system-import-data-btn" type="button" title="Import Data"><span class="system-tools-icon" aria-hidden="true">⬆️</span><span class="system-tools-label">Import Data</span></button>
+          <button class="system-tools-btn" id="system-theme-toggle-btn" type="button" title="Toggle Dark Mode"><span class="system-tools-icon" aria-hidden="true">🌙</span><span class="system-tools-label">Dark Mode</span></button>
+          <button class="system-tools-btn system-tools-btn-danger" id="system-reset-btn" type="button" title="Reset System"><span class="system-tools-icon" aria-hidden="true">🔄</span><span class="system-tools-label">Reset System</span></button>
+        </div>
       </nav>
     </aside>
 

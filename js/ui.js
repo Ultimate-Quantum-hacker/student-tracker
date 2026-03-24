@@ -22,6 +22,14 @@ const domIds = {
   resetConfirmBtn: 'reset-confirm-btn',
   resetCancelBtn: 'reset-cancel-btn',
   backupStatus: 'backupStatus',
+  systemToolsBackupStatus: 'system-tools-backup-status',
+  systemToolsBackupStatusText: 'system-tools-backup-status-text',
+  systemCreateRestorePointBtn: 'system-create-restore-point-btn',
+  systemRestorePointsBtn: 'system-restore-points-btn',
+  systemExportDataBtn: 'system-export-data-btn',
+  systemImportDataBtn: 'system-import-data-btn',
+  systemThemeToggleBtn: 'system-theme-toggle-btn',
+  systemResetBtn: 'system-reset-btn',
   form: 'add-student-form',
   nameInput: 'student-name-input',
   searchInput: 'search-input',
@@ -226,14 +234,35 @@ const ui = {
     },
 
     updateBackupStatus: function () {
-      if (!app.dom.backupStatus) return;
+      const applyStatus = (text, statusClass) => {
+        if (app.dom.backupStatus) {
+          app.dom.backupStatus.textContent = text;
+          app.dom.backupStatus.classList.remove('status-recent', 'status-outdated', 'status-never');
+          app.dom.backupStatus.classList.add(statusClass);
+        }
+        if (app.dom.systemToolsBackupStatusText) {
+          app.dom.systemToolsBackupStatusText.textContent = text;
+        }
+        if (app.dom.systemToolsBackupStatus) {
+          app.dom.systemToolsBackupStatus.classList.remove('status-recent', 'status-outdated', 'status-never');
+          app.dom.systemToolsBackupStatus.classList.add(statusClass);
+        }
+      };
+
       if (!app.state.lastBackup) {
-        app.dom.backupStatus.textContent = 'Last Backup: Never ⚠';
+        applyStatus('Last Backup: Never', 'status-never');
         return;
       }
+
       const last = new Date(app.state.lastBackup);
       const diffDays = Math.floor((new Date() - last) / (1000 * 60 * 60 * 24));
-      app.dom.backupStatus.textContent = `Last Backup: ${diffDays === 0 ? 'Today' : diffDays + ' days ago'}`;
+      const label = `Last Backup: ${diffDays === 0 ? 'Today' : diffDays + ' days ago'}`;
+
+      if (diffDays <= 1) {
+        applyStatus(label, 'status-recent');
+      } else {
+        applyStatus(label, 'status-outdated');
+      }
     },
 
     updateDashboardStats: function () {
@@ -1150,6 +1179,18 @@ const ui = {
         if (app.dom.backupBtn) app.dom.backupBtn.onclick = () => app.export.exportBackup(app);
         if (app.dom.restoreBtn) app.dom.restoreBtn.onclick = () => app.dom.restoreInput.click();
         if (app.dom.restoreInput) app.dom.restoreInput.onchange = (e) => app.export.importBackup(e.target.files[0], app);
+        if (app.dom.systemCreateRestorePointBtn) app.dom.systemCreateRestorePointBtn.onclick = () => app.dom.createSnapshotBtn?.click();
+        if (app.dom.systemRestorePointsBtn) app.dom.systemRestorePointsBtn.onclick = () => app.dom.snapshotManagerBtn?.click();
+        if (app.dom.systemExportDataBtn) app.dom.systemExportDataBtn.onclick = () => app.dom.backupBtn?.click();
+        if (app.dom.systemImportDataBtn) app.dom.systemImportDataBtn.onclick = () => app.dom.restoreBtn?.click();
+        if (app.dom.systemThemeToggleBtn) app.dom.systemThemeToggleBtn.onclick = () => app.dom.themeToggle?.click();
+        if (app.dom.systemResetBtn) {
+          app.dom.systemResetBtn.onclick = () => {
+            const confirmed = confirm('Are you sure you want to reset the system? This action cannot be undone.');
+            if (!confirmed) return;
+            app.dom.resetBtn?.click();
+          };
+        }
         if (app.dom.snapshotCloseBtn) app.dom.snapshotCloseBtn.onclick = () => this.closeSnapshotModal();
         if (app.dom.themeToggle) app.dom.themeToggle.onclick = () => { app.state.theme = app.state.theme === 'light' ? 'dark' : 'light'; app.applyTheme(); };
         if (app.dom.resetBtn) app.dom.resetBtn.onclick = () => app.dom.resetModal.classList.add('active');
