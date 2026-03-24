@@ -39,6 +39,9 @@ const exportModule = {
         try {
           const data = JSON.parse(event.target.result);
           if (confirm("Import backup? This will REPLACE current data.")) {
+            if (app.snapshots && typeof app.snapshots.saveSnapshot === 'function') {
+              app.snapshots.saveSnapshot('Auto Backup Before Backup Restore');
+            }
             app.state.students = data.students || [];
             app.state.exams = data.exams || [];
             app.state.subjects = data.subjects || [];

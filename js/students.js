@@ -97,6 +97,9 @@ const students = {
 
   importStudents: async function (studentsData, app, ui) {
     try {
+      if (app.snapshots && typeof app.snapshots.saveSnapshot === 'function') {
+        app.snapshots.saveSnapshot('Auto Backup Before Bulk Student Import');
+      }
       for (const studentData of studentsData) {
         await app.addStudent({ ...studentData, scores: {} });
       }
@@ -148,6 +151,10 @@ const students = {
       if (!examLabel) {
         ui.showToast('Select an exam first');
         return;
+      }
+
+      if (app.snapshots && typeof app.snapshots.saveSnapshot === 'function') {
+        app.snapshots.saveSnapshot('Auto Backup Before Bulk Score Save');
       }
 
       const changedStudents = new Map();

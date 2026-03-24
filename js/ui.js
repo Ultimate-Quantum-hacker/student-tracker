@@ -11,6 +11,11 @@ const domIds = {
   backupBtn: 'backup-btn',
   restoreBtn: 'restore-btn',
   restoreInput: 'restore-input',
+  createSnapshotBtn: 'create-snapshot-btn',
+  snapshotManagerBtn: 'snapshot-manager-btn',
+  snapshotModal: 'snapshot-modal',
+  snapshotList: 'snapshot-list',
+  snapshotCloseBtn: 'snapshot-close-btn',
   themeToggle: 'themeToggle',
   resetBtn: 'reset-btn',
   resetModal: 'reset-modal',
@@ -147,12 +152,74 @@ const ui = {
     },
 
     clearAllData: async function () {
+      if (app.snapshots && typeof app.snapshots.saveSnapshot === 'function') {
+        app.snapshots.saveSnapshot('Auto Backup Before Reset');
+      }
       app.applyRawData({ students: [], subjects: [], exams: [] });
       app.state.selectedBulkExamId = '';
       app.state.selectedPerformanceCategory = 'strong';
       await app.save();
       this.refreshUI();
       this.showToast('All data cleared');
+    },
+
+    createSnapshot: function (name = 'Manual Restore Point', refreshList = false) {
+      if (!app.snapshots || typeof app.snapshots.saveSnapshot !== 'function') {
+        this.showToast('Snapshot system unavailable');
+        return null;
+      }
+
+      const snapshot = app.snapshots.saveSnapshot(name);
+      if (snapshot && refreshList) {
+        this.renderSnapshotList();
+      }
+      return snapshot;
+    },
+
+    formatSnapshotDate: function (value) {
+      if (!value) return 'Unknown date';
+      const parsed = new Date(value);
+      if (isNaN(parsed.getTime())) return app.utils.esc(String(value));
+      return parsed.toLocaleString();
+    },
+
+    renderSnapshotList: function () {
+      if (!app.dom.snapshotList) return;
+
+      const snapshots = app.snapshots && typeof app.snapshots.getSnapshots === 'function'
+        ? app.snapshots.getSnapshots()
+        : [];
+
+      if (!snapshots.length) {
+        app.dom.snapshotList.innerHTML = '<p class="snapshot-empty">No restore points available yet.</p>';
+        return;
+      }
+
+      app.dom.snapshotList.innerHTML = snapshots.map(snapshot => `
+        <div class="snapshot-item">
+          <div class="snapshot-item-main">
+            <div class="snapshot-name">${app.utils.esc(snapshot.name || 'Restore Point')}</div>
+            <div class="snapshot-date">${app.utils.esc(this.formatSnapshotDate(snapshot.date))}</div>
+          </div>
+          <div class="snapshot-item-actions">
+            <button class="btn btn-secondary btn-sm" type="button" data-snapshot-action="restore" data-snapshot-id="${app.utils.esc(snapshot.id)}">Restore</button>
+            <button class="btn btn-danger btn-sm" type="button" data-snapshot-action="delete" data-snapshot-id="${app.utils.esc(snapshot.id)}">Delete</button>
+          </div>
+        </div>
+      `).join('');
+    },
+
+    openSnapshotModal: function () {
+      this.renderSnapshotList();
+      if (app.dom.snapshotModal) {
+        app.dom.snapshotModal.classList.add('active');
+      }
+    },
+
+    closeSnapshotModal: function () {
+      if (app.dom.snapshotModal) {
+        app.dom.snapshotModal.classList.remove('active');
+      }
     },
 
     updateBackupStatus: function () {
@@ -866,9 +933,12 @@ const ui = {
         }
         
         if (app.dom.form) app.dom.form.onsubmit = (e) => { e.preventDefault(); app.students.addStudent(app.dom.nameInput.value, app, this); app.dom.nameInput.value = ''; };
+        if (app.dom.createSnapshotBtn) app.dom.createSnapshotBtn.onclick = () => this.createSnapshot('Manual Restore Point');
+        if (app.dom.snapshotManagerBtn) app.dom.snapshotManagerBtn.onclick = () => this.openSnapshotModal();
         if (app.dom.backupBtn) app.dom.backupBtn.onclick = () => app.export.exportBackup(app);
         if (app.dom.restoreBtn) app.dom.restoreBtn.onclick = () => app.dom.restoreInput.click();
         if (app.dom.restoreInput) app.dom.restoreInput.onchange = (e) => app.export.importBackup(e.target.files[0], app);
+        if (app.dom.snapshotCloseBtn) app.dom.snapshotCloseBtn.onclick = () => this.closeSnapshotModal();
         if (app.dom.themeToggle) app.dom.themeToggle.onclick = () => { app.state.theme = app.state.theme === 'light' ? 'dark' : 'light'; app.applyTheme(); };
         if (app.dom.resetBtn) app.dom.resetBtn.onclick = () => app.dom.resetModal.classList.add('active');
         if (app.dom.resetConfirmBtn) app.dom.resetConfirmBtn.onclick = async () => {
@@ -960,6 +1030,36 @@ const ui = {
             const trigger = e.target.closest('[data-performance-category]');
             if (!trigger) return;
             this.openPerformanceCategory(trigger.dataset.performanceCategory);
+          });
+        }
+
+        if (app.dom.snapshotModal) {
+          app.dom.snapshotModal.addEventListener('click', (e) => {
+            if (e.target === app.dom.snapshotModal) {
+              this.closeSnapshotModal();
+            }
+          });
+        }
+
+        if (app.dom.snapshotList) {
+          app.dom.snapshotList.addEventListener('click', (e) => {
+            const trigger = e.target.closest('[data-snapshot-action]');
+            if (!trigger) return;
+
+            const action = trigger.dataset.snapshotAction;
+            const snapshotId = trigger.dataset.snapshotId;
+            if (!snapshotId || !app.snapshots) return;
+
+            if (action === 'restore' && typeof app.snapshots.restoreSnapshot === 'function') {
+              app.snapshots.restoreSnapshot(snapshotId);
+              return;
+            }
+
+            if (action === 'delete' && typeof app.snapshots.deleteSnapshot === 'function') {
+              if (!confirm('Delete this restore point?')) return;
+              app.snapshots.deleteSnapshot(snapshotId);
+              this.renderSnapshotList();
+            }
           });
         }
 

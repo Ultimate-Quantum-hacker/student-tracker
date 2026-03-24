@@ -10,6 +10,7 @@ import './students.js';
 import './charts.js';
 import './heatmap.js';
 import './export.js';
+import './snapshots.js';
 import ui from './ui.js';
 import './sidebar.js';
 
