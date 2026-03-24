@@ -152,11 +152,9 @@ body.dark-mode #results-table .exam-group-alt{
   background:var(--surface);
   z-index:20;
   padding-right:0.35rem;
-  /* Blue line on right edge, drawn on top of next column */
-  box-shadow:2px 0 0 0 var(--primary);
 }
 
-/* Name column: sticky, sits behind Rank's shadow so line is visible */
+/* Name column: sticky with blue leading divider */
 #results-table thead tr#results-head-row-1 th:nth-child(2),
 #results-table tbody td:nth-child(2){
   position:sticky;
@@ -164,6 +162,7 @@ body.dark-mode #results-table .exam-group-alt{
   background:var(--surface);
   z-index:19;
   padding-left:0.35rem;
+  box-shadow:inset 2px 0 0 0 var(--primary);
 }
 
 
