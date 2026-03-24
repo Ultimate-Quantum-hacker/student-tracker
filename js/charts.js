@@ -53,13 +53,24 @@ const charts = {
     var rawStep = paddedMax / desiredTickCount;
     var magnitude = Math.pow(10, Math.floor(Math.log10(rawStep || 1)));
     var normalizedStep = rawStep / magnitude;
-    var niceStep = normalizedStep <= 1 ? 1 : normalizedStep <= 2 ? 2 : normalizedStep <= 5 ? 5 : 10;
-    var tickStep = niceStep * magnitude;
-    var yMax = tickStep * desiredTickCount;
-    var yTicks = [];
-    for (var tickIndex = desiredTickCount; tickIndex >= 0; tickIndex--) {
-      yTicks.push(tickIndex * tickStep);
+    var niceOptions = [1, 2, 5, 10];
+    var niceStep = niceOptions.reduce(function (best, option) {
+      return Math.abs(option - normalizedStep) < Math.abs(best - normalizedStep) ? option : best;
+    }, niceOptions[0]);
+    var tickStep = Math.max(1, niceStep * magnitude);
+    var yMax = Math.ceil(paddedMax / tickStep) * tickStep;
+    if (!Number.isFinite(yMax) || yMax <= 0) {
+      yMax = 10;
     }
+    var yTicks = [];
+    for (var tickValue = yMax; tickValue >= 0; tickValue -= tickStep) {
+      yTicks.push(Math.max(0, Number(tickValue.toFixed(6))));
+    }
+    if (yTicks[yTicks.length - 1] !== 0) {
+      yTicks.push(0);
+    }
+
+    var xInset = data.length > 1 ? Math.min(36, chartW * 0.12) : 0;
 
     // Prepare data
     var points = data.map(function (v, i) {
@@ -73,7 +84,7 @@ const charts = {
         val: score,
         label: label,
         fullName: v.name,
-        x: padding.left + (data.length > 1 ? (i / (data.length - 1)) * chartW : chartW / 2),
+        x: padding.left + (data.length > 1 ? xInset + (i / (data.length - 1)) * (chartW - (xInset * 2)) : chartW / 2),
         y: padding.top + chartH - normalizedScore * chartH
       };
     });
@@ -123,7 +134,7 @@ const charts = {
       ctx.beginPath();
       ctx.setLineDash([]);
       ctx.strokeStyle = lineColor;
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 3.2;
       ctx.lineJoin = 'round';
       ctx.lineCap = 'round';
 
@@ -159,7 +170,7 @@ const charts = {
     points.forEach(function(p) {
       // Draw point
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, 6.5, 0, Math.PI * 2);
       ctx.fillStyle = pointFill;
       ctx.fill();
       ctx.strokeStyle = lineColor;
@@ -169,7 +180,7 @@ const charts = {
       // Draw value above point
       ctx.fillStyle = chartText;
       ctx.font = '600 12px Inter';
-      ctx.fillText(p.val.toFixed(1), p.x, p.y - 18);
+      ctx.fillText(p.val.toFixed(1), p.x, Math.max(padding.top + 4, p.y - 18));
 
       // Draw label below axis
       ctx.fillStyle = chartSubText;
