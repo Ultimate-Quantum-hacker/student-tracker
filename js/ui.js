@@ -163,15 +163,19 @@ const ui = {
     },
 
     clearAllData: async function () {
-      if (app.snapshots && typeof app.snapshots.saveSnapshot === 'function') {
-        app.snapshots.saveSnapshot('Auto Backup Before Reset');
+      try {
+        if (app.snapshots && typeof app.snapshots.saveSnapshot === 'function') {
+          app.snapshots.saveSnapshot('Auto Backup Before Reset');
+        }
+        await app.importData({ students: [], subjects: [], exams: [] });
+        app.state.selectedBulkExamId = '';
+        app.state.selectedPerformanceCategory = 'strong';
+        this.refreshUI();
+        this.showToast('All data cleared');
+      } catch (error) {
+        console.error('Failed to clear data:', error);
+        this.showToast('Failed to clear data');
       }
-      app.applyRawData({ students: [], subjects: [], exams: [] });
-      app.state.selectedBulkExamId = '';
-      app.state.selectedPerformanceCategory = 'strong';
-      await app.save();
-      this.refreshUI();
-      this.showToast('All data cleared');
     },
 
     createSnapshot: function (name = 'Manual Restore Point', refreshList = false) {
@@ -713,9 +717,17 @@ const ui = {
       if (app.dom.notesModal) app.dom.notesModal.classList.add('active');
     },
 
-    saveNotes: function () {
-      const s = app.state.students.find(x => x.id === app.state.notesId);
-      if (s) { s.notes = app.dom.notesTextarea.value; app.save(); this.refreshUI(); }
+    saveNotes: async function () {
+      try {
+        const s = app.state.students.find(x => x.id === app.state.notesId);
+        if (s) {
+          await app.updateStudent(s.id, { notes: app.dom.notesTextarea.value });
+          this.refreshUI();
+        }
+      } catch (error) {
+        console.error('Failed to save notes:', error);
+        this.showToast('Failed to save notes');
+      }
       if (app.dom.notesModal) app.dom.notesModal.classList.remove('active');
     },
 

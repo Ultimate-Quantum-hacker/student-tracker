@@ -1,7 +1,9 @@
 /* ═══════════════════════════════════════════════
    JHS 3 Mock Exam Tracker — state.js
-   Manages global application state with localStorage persistence.
+   Manages global application state with Firestore sync + cache fallback.
    ═══════════════════════════════════════════════ */
+
+import * as dataService from '../services/db.js';
 
 window.TrackerApp = window.TrackerApp || {};
 
@@ -26,9 +28,11 @@ window.TrackerApp = window.TrackerApp || {};
     selectedPerformanceCategory: 'strong'
   };
 
-  const STORAGE_KEY = 'studentAppData';
+  const OFFLINE_CACHE_MESSAGE = 'Offline mode: using cached data';
   const LEGACY_DEFAULT_SUBJECTS = ['English Language', 'Mathematics', 'Integrated Science', 'Social Studies', 'Computing'];
   const LEGACY_DEFAULT_EXAMS = ['Mock 1'];
+  let stateWriteChain = Promise.resolve();
+  let hasShownOfflineToast = false;
 
   const createDefaultRawData = () => ({
     students: [],
@@ -68,40 +72,55 @@ window.TrackerApp = window.TrackerApp || {};
       : Math.max(0, Math.min(100, isNaN(Number(value)) ? 0 : Number(value)));
   };
 
-  app.saveToStorage = function (data) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  const enqueueStateWrite = (task) => {
+    stateWriteChain = stateWriteChain.then(task, task);
+    return stateWriteChain;
   };
 
-  app.loadFromStorage = function () {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (!saved) return null;
-    try {
-      return JSON.parse(saved);
-    } catch (error) {
-      console.warn('Ignoring stale cache due to invalid JSON:', error);
-      localStorage.removeItem(STORAGE_KEY);
-      return null;
-    }
+  const deepClone = (value) => JSON.parse(JSON.stringify(value));
+
+  app.readCachedData = function () {
+    return dataService.readCachedData();
+  };
+
+  app.writeCachedData = function (rawData) {
+    return dataService.writeCacheCopy(rawData);
   };
 
   app.resetCachedData = function (rawData = createDefaultRawData()) {
     const migrated = app.migrateToRawData(rawData);
-    app.saveToStorage(migrated);
+    app.writeCachedData(migrated);
     return migrated;
   };
 
   app.overwriteStaleCache = function () {
     const canonical = app.getRawData();
-    app.saveToStorage(canonical);
+    app.writeCachedData(canonical);
     return canonical;
   };
 
-  app.getRawData = function () {
-    const subjectLabels = (app.state.subjects || []).map(s => normalizeLabel(s.name)).filter(Boolean);
-    const examLabels = (app.state.exams || []).map(e => normalizeLabel(e.title || e.name)).filter(Boolean);
+  const applySyncStatus = (saveResult) => {
+    if (!saveResult?.remoteSaved) {
+      app.state.error = OFFLINE_CACHE_MESSAGE;
+      if (!hasShownOfflineToast && app.ui?.showToast) {
+        app.ui.showToast(OFFLINE_CACHE_MESSAGE);
+        hasShownOfflineToast = true;
+      }
+      return;
+    }
+
+    if (app.state.error === OFFLINE_CACHE_MESSAGE) {
+      app.state.error = null;
+    }
+    hasShownOfflineToast = false;
+  };
+
+  const composeRawData = (students = [], subjects = [], exams = []) => {
+    const subjectLabels = (subjects || []).map(s => normalizeLabel(s.name)).filter(Boolean);
+    const examLabels = (exams || []).map(e => normalizeLabel(e.title || e.name)).filter(Boolean);
 
     return {
-      students: (app.state.students || []).map(student => ({
+      students: (students || []).map(student => ({
         id: student.id,
         name: student.name,
         notes: student.notes || '',
@@ -111,6 +130,30 @@ window.TrackerApp = window.TrackerApp || {};
       subjects: subjectLabels,
       exams: examLabels
     };
+  };
+
+  app.getRawData = function () {
+    return composeRawData(app.state.students, app.state.subjects, app.state.exams);
+  };
+
+  const rebuildRuntimeScores = () => {
+    app.state.scores = [];
+    app.state.students.forEach(student => {
+      app.state.subjects.forEach(subject => {
+        app.state.exams.forEach(exam => {
+          const score = student.scores?.[subject.name]?.[exam.title];
+          if (score !== '' && score !== undefined && score !== null && !isNaN(score)) {
+            app.state.scores.push({
+              id: `${student.id}_${exam.id}_${subject.id}`,
+              studentId: student.id,
+              examId: exam.id,
+              subject: subject.name,
+              score: Number(score)
+            });
+          }
+        });
+      });
+    });
   };
 
   app.applyRawData = function (rawData) {
@@ -129,23 +172,7 @@ window.TrackerApp = window.TrackerApp || {};
       scores: student.scores && typeof student.scores === 'object' ? student.scores : {}
     }));
 
-    app.state.scores = [];
-    app.state.students.forEach(student => {
-      app.state.subjects.forEach(subject => {
-        app.state.exams.forEach(exam => {
-          const score = student.scores?.[subject.name]?.[exam.title];
-          if (score !== '' && score !== undefined && score !== null && !isNaN(score)) {
-            app.state.scores.push({
-              id: `${student.id}_${exam.id}_${subject.id}`,
-              studentId: student.id,
-              examId: exam.id,
-              subject: subject.name,
-              score: Number(score)
-            });
-          }
-        });
-      });
-    });
+    rebuildRuntimeScores();
   };
 
   app.migrateToRawData = function (legacyData) {
@@ -221,7 +248,15 @@ window.TrackerApp = window.TrackerApp || {};
 
   // Persistence Methods
   app.save = async function () {
-    app.overwriteStaleCache();
+    return enqueueStateWrite(async () => {
+      const canonical = app.getRawData();
+      const saveResult = await dataService.saveAllData(canonical);
+      app.writeCachedData(canonical);
+
+      applySyncStatus(saveResult);
+
+      return saveResult;
+    });
   };
 
   app.load = async function () {
@@ -229,233 +264,322 @@ window.TrackerApp = window.TrackerApp || {};
       app.state.isLoading = true;
       app.state.error = null;
 
-      const localData = app.loadFromStorage();
-      if (localData) {
-        const migrated = app.migrateToRawData(localData);
-        app.applyRawData(migrated);
-        app.resetCachedData(migrated);
-        return;
+      const cached = app.readCachedData();
+      if (cached?.data) {
+        app.applyRawData(app.migrateToRawData(cached.data));
       }
 
-      const fresh = createDefaultRawData();
-      app.applyRawData(fresh);
-      app.resetCachedData(fresh);
-      
+      const remoteResult = await dataService.fetchAllData();
+      const remoteData = app.migrateToRawData(remoteResult?.data || createDefaultRawData());
+      app.applyRawData(remoteData);
+      app.writeCachedData(remoteData);
+
+      if (remoteResult?.source !== 'firebase') {
+        app.state.error = OFFLINE_CACHE_MESSAGE;
+      }
     } catch (error) {
       console.error('Failed to load data:', error);
-      app.state.error = 'Failed to load data. Please check your internet connection.';
-      const fallback = createDefaultRawData();
-      app.applyRawData(fallback);
-      app.resetCachedData(fallback);
+      app.state.error = OFFLINE_CACHE_MESSAGE;
+
+      const fallbackCache = app.readCachedData();
+      if (fallbackCache?.data) {
+        app.applyRawData(app.migrateToRawData(fallbackCache.data));
+      } else {
+        const fallback = createDefaultRawData();
+        app.applyRawData(fallback);
+        app.writeCachedData(fallback);
+      }
     } finally {
       app.state.isLoading = false;
     }
   };
 
+  const applyRuntimeCollections = (students, subjects, exams) => {
+    app.state.students = students;
+    app.state.subjects = subjects;
+    app.state.exams = exams;
+    rebuildRuntimeScores();
+  };
+
+  const syncRuntimeAndCache = (students, subjects, exams, saveResult) => {
+    applyRuntimeCollections(students, subjects, exams);
+    app.writeCachedData(composeRawData(students, subjects, exams));
+    applySyncStatus(saveResult);
+  };
+
   // CRUD operations for students
   app.addStudent = async function (studentData) {
-    try {
-      const newStudent = {
-        id: app.utils.uuid(),
-        name: normalizeLabel(studentData.name),
-        class: studentData.class || '',
-        notes: studentData.notes || '',
-        scores: studentData.scores && typeof studentData.scores === 'object' ? studentData.scores : {}
-      };
-      app.state.students.push(newStudent);
-      await app.save();
-      return newStudent;
-    } catch (error) {
-      console.error('Failed to add student:', error);
-      throw error;
-    }
+    return enqueueStateWrite(async () => {
+      try {
+        const newStudent = {
+          id: app.utils.uuid(),
+          name: normalizeLabel(studentData.name),
+          class: studentData.class || '',
+          notes: studentData.notes || '',
+          scores: studentData.scores && typeof studentData.scores === 'object' ? studentData.scores : {}
+        };
+
+        const nextStudents = deepClone(app.state.students || []);
+        const nextSubjects = deepClone(app.state.subjects || []);
+        const nextExams = deepClone(app.state.exams || []);
+        nextStudents.push(newStudent);
+
+        const saveResult = await dataService.saveStudent(app.getRawData(), newStudent);
+        syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult);
+        return newStudent;
+      } catch (error) {
+        console.error('Failed to add student:', error);
+        throw error;
+      }
+    });
   };
 
   app.updateStudent = async function (studentId, studentData) {
-    try {
-      const index = app.state.students.findIndex(s => s.id === studentId);
-      if (index !== -1) {
-        app.state.students[index] = { ...app.state.students[index], ...studentData };
+    return enqueueStateWrite(async () => {
+      try {
+        const nextStudents = deepClone(app.state.students || []);
+        const nextSubjects = deepClone(app.state.subjects || []);
+        const nextExams = deepClone(app.state.exams || []);
+        const index = nextStudents.findIndex(s => s.id === studentId);
+        if (index !== -1) {
+          nextStudents[index] = { ...nextStudents[index], ...studentData };
+        }
+
+        const saveResult = await dataService.updateStudent(app.getRawData(), studentId, studentData);
+        syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult);
+        return nextStudents[index];
+      } catch (error) {
+        console.error('Failed to update student:', error);
+        throw error;
       }
-      await app.save();
-      return app.state.students[index];
-    } catch (error) {
-      console.error('Failed to update student:', error);
-      throw error;
-    }
+    });
   };
 
   app.deleteStudent = async function (studentId) {
-    try {
-      app.state.students = app.state.students.filter(s => s.id !== studentId);
-      app.state.scores = app.state.scores.filter(score => score.studentId !== studentId);
-      await app.save();
-      return true;
-    } catch (error) {
-      console.error('Failed to delete student:', error);
-      throw error;
-    }
+    return enqueueStateWrite(async () => {
+      try {
+        const nextStudents = deepClone(app.state.students || []).filter(s => s.id !== studentId);
+        const nextSubjects = deepClone(app.state.subjects || []);
+        const nextExams = deepClone(app.state.exams || []);
+
+        const saveResult = await dataService.deleteStudent(app.getRawData(), studentId);
+        syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult);
+        return true;
+      } catch (error) {
+        console.error('Failed to delete student:', error);
+        throw error;
+      }
+    });
   };
 
   // CRUD operations for exams
   app.addExam = async function (examData) {
-    try {
-      const title = normalizeLabel(examData.title || examData.name);
-      if (!title) throw new Error('Exam title is required');
-      const newExam = {
-        id: app.utils.uuid(),
-        title,
-        name: title,
-        date: examData.date || new Date().toISOString()
-      };
-      app.state.exams.push(newExam);
-      await app.save();
-      return newExam;
-    } catch (error) {
-      console.error('Failed to add exam:', error);
-      throw error;
-    }
+    return enqueueStateWrite(async () => {
+      try {
+        const title = normalizeLabel(examData.title || examData.name);
+        if (!title) throw new Error('Exam title is required');
+        const newExam = {
+          id: app.utils.uuid(),
+          title,
+          name: title,
+          date: examData.date || new Date().toISOString()
+        };
+
+        const nextStudents = deepClone(app.state.students || []);
+        const nextSubjects = deepClone(app.state.subjects || []);
+        const nextExams = deepClone(app.state.exams || []);
+        nextExams.push(newExam);
+
+        const saveResult = await dataService.updateExams(app.getRawData(), nextExams);
+        syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult);
+        return newExam;
+      } catch (error) {
+        console.error('Failed to add exam:', error);
+        throw error;
+      }
+    });
   };
 
   app.updateExam = async function (examId, examData) {
-    try {
-      const index = app.state.exams.findIndex(e => e.id === examId);
-      if (index !== -1) {
-        const current = app.state.exams[index];
-        const prevTitle = current.title || current.name;
-        const nextTitle = normalizeLabel(examData.title || examData.name || prevTitle);
-        app.state.exams[index] = { ...current, ...examData, title: nextTitle, name: nextTitle };
+    return enqueueStateWrite(async () => {
+      try {
+        const nextStudents = deepClone(app.state.students || []);
+        const nextSubjects = deepClone(app.state.subjects || []);
+        const nextExams = deepClone(app.state.exams || []);
+        const index = nextExams.findIndex(e => e.id === examId);
+        if (index !== -1) {
+          const current = nextExams[index];
+          const prevTitle = current.title || current.name;
+          const nextTitle = normalizeLabel(examData.title || examData.name || prevTitle);
+          nextExams[index] = { ...current, ...examData, title: nextTitle, name: nextTitle };
 
-        if (prevTitle !== nextTitle) {
-          app.state.students.forEach(student => {
+          if (prevTitle !== nextTitle) {
+            nextStudents.forEach(student => {
+              Object.keys(student.scores || {}).forEach(subject => {
+                const examScores = student.scores[subject] || {};
+                if (Object.prototype.hasOwnProperty.call(examScores, prevTitle)) {
+                  examScores[nextTitle] = examScores[prevTitle];
+                  delete examScores[prevTitle];
+                }
+              });
+            });
+          }
+        }
+
+        const saveResult = await dataService.saveAllData(composeRawData(nextStudents, nextSubjects, nextExams));
+        syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult);
+        return nextExams[index];
+      } catch (error) {
+        console.error('Failed to update exam:', error);
+        throw error;
+      }
+    });
+  };
+
+  app.deleteExam = async function (examId) {
+    return enqueueStateWrite(async () => {
+      try {
+        const nextStudents = deepClone(app.state.students || []);
+        const nextSubjects = deepClone(app.state.subjects || []);
+        const nextExams = deepClone(app.state.exams || []);
+
+        const exam = nextExams.find(e => e.id === examId);
+        const examTitle = exam?.title || exam?.name;
+        const filteredExams = nextExams.filter(e => e.id !== examId);
+
+        if (examTitle) {
+          nextStudents.forEach(student => {
             Object.keys(student.scores || {}).forEach(subject => {
-              const examScores = student.scores[subject] || {};
-              if (Object.prototype.hasOwnProperty.call(examScores, prevTitle)) {
-                examScores[nextTitle] = examScores[prevTitle];
-                delete examScores[prevTitle];
+              if (student.scores[subject]) {
+                delete student.scores[subject][examTitle];
               }
             });
           });
         }
+
+        const saveResult = await dataService.saveAllData(composeRawData(nextStudents, nextSubjects, filteredExams));
+        syncRuntimeAndCache(nextStudents, nextSubjects, filteredExams, saveResult);
+        return true;
+      } catch (error) {
+        console.error('Failed to delete exam:', error);
+        throw error;
       }
-      await app.save();
-      return app.state.exams[index];
-    } catch (error) {
-      console.error('Failed to update exam:', error);
-      throw error;
-    }
-  };
-
-  app.deleteExam = async function (examId) {
-    try {
-      const exam = app.state.exams.find(e => e.id === examId);
-      const examTitle = exam?.title || exam?.name;
-      app.state.exams = app.state.exams.filter(e => e.id !== examId);
-      app.state.scores = app.state.scores.filter(score => score.examId !== examId);
-
-      if (examTitle) {
-        app.state.students.forEach(student => {
-          Object.keys(student.scores || {}).forEach(subject => {
-            if (student.scores[subject]) {
-              delete student.scores[subject][examTitle];
-            }
-          });
-        });
-      }
-
-      await app.save();
-      return true;
-    } catch (error) {
-      console.error('Failed to delete exam:', error);
-      throw error;
-    }
+    });
   };
 
   // CRUD operations for subjects
   app.addSubject = async function (subjectData) {
-    try {
-      const name = normalizeLabel(subjectData.name);
-      if (!name) throw new Error('Subject name is required');
-      const newSubject = { id: app.utils.uuid(), name };
-      app.state.subjects.push(newSubject);
-      await app.save();
-      return newSubject;
-    } catch (error) {
-      console.error('Failed to add subject:', error);
-      throw error;
-    }
+    return enqueueStateWrite(async () => {
+      try {
+        const name = normalizeLabel(subjectData.name);
+        if (!name) throw new Error('Subject name is required');
+        const newSubject = { id: app.utils.uuid(), name };
+
+        const nextStudents = deepClone(app.state.students || []);
+        const nextSubjects = deepClone(app.state.subjects || []);
+        const nextExams = deepClone(app.state.exams || []);
+        nextSubjects.push(newSubject);
+
+        const saveResult = await dataService.updateSubjects(app.getRawData(), nextSubjects);
+        syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult);
+        return newSubject;
+      } catch (error) {
+        console.error('Failed to add subject:', error);
+        throw error;
+      }
+    });
   };
 
   app.updateSubject = async function (subjectId, subjectData) {
-    try {
-      const index = app.state.subjects.findIndex(s => s.id === subjectId);
-      if (index !== -1) {
-        const current = app.state.subjects[index];
-        const prevName = current.name;
-        const nextName = normalizeLabel(subjectData.name || prevName);
-        app.state.subjects[index] = { ...current, ...subjectData, name: nextName };
+    return enqueueStateWrite(async () => {
+      try {
+        const nextStudents = deepClone(app.state.students || []);
+        const nextSubjects = deepClone(app.state.subjects || []);
+        const nextExams = deepClone(app.state.exams || []);
+        const index = nextSubjects.findIndex(s => s.id === subjectId);
+        if (index !== -1) {
+          const current = nextSubjects[index];
+          const prevName = current.name;
+          const nextName = normalizeLabel(subjectData.name || prevName);
+          nextSubjects[index] = { ...current, ...subjectData, name: nextName };
 
-        if (prevName !== nextName) {
-          app.state.students.forEach(student => {
-            if (student.scores?.[prevName]) {
-              student.scores[nextName] = student.scores[prevName];
-              delete student.scores[prevName];
-            }
-          });
+          if (prevName !== nextName) {
+            nextStudents.forEach(student => {
+              if (student.scores?.[prevName]) {
+                student.scores[nextName] = student.scores[prevName];
+                delete student.scores[prevName];
+              }
+            });
+          }
         }
+
+        const saveResult = await dataService.saveAllData(composeRawData(nextStudents, nextSubjects, nextExams));
+        syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult);
+        return nextSubjects[index];
+      } catch (error) {
+        console.error('Failed to update subject:', error);
+        throw error;
       }
-      await app.save();
-      return app.state.subjects[index];
-    } catch (error) {
-      console.error('Failed to update subject:', error);
-      throw error;
-    }
+    });
   };
 
   app.deleteSubject = async function (subjectId) {
-    try {
-      const subject = app.state.subjects.find(s => s.id === subjectId);
-      const subjectName = subject?.name;
-      app.state.subjects = app.state.subjects.filter(s => s.id !== subjectId);
-      app.state.scores = app.state.scores.filter(score => score.subject !== subjectName);
+    return enqueueStateWrite(async () => {
+      try {
+        const nextStudents = deepClone(app.state.students || []);
+        const nextSubjects = deepClone(app.state.subjects || []);
+        const nextExams = deepClone(app.state.exams || []);
 
-      if (subjectName) {
-        app.state.students.forEach(student => {
-          if (student.scores?.[subjectName]) {
-            delete student.scores[subjectName];
-          }
-        });
+        const subject = nextSubjects.find(s => s.id === subjectId);
+        const subjectName = subject?.name;
+        const filteredSubjects = nextSubjects.filter(s => s.id !== subjectId);
+
+        if (subjectName) {
+          nextStudents.forEach(student => {
+            if (student.scores?.[subjectName]) {
+              delete student.scores[subjectName];
+            }
+          });
+        }
+
+        const saveResult = await dataService.saveAllData(composeRawData(nextStudents, filteredSubjects, nextExams));
+        syncRuntimeAndCache(nextStudents, filteredSubjects, nextExams, saveResult);
+        return true;
+      } catch (error) {
+        console.error('Failed to delete subject:', error);
+        throw error;
       }
-
-      await app.save();
-      return true;
-    } catch (error) {
-      console.error('Failed to delete subject:', error);
-      throw error;
-    }
+    });
   };
 
   // Score operations
   app.saveScore = async function (scoreData) {
-    try {
-      const student = app.state.students.find(s => s.id === scoreData.studentId);
-      const exam = app.state.exams.find(e => e.id === scoreData.examId);
-      if (!student || !exam || !scoreData.subject) {
-        throw new Error('Invalid score payload');
-      }
+    return enqueueStateWrite(async () => {
+      try {
+        const nextStudents = deepClone(app.state.students || []);
+        const nextSubjects = deepClone(app.state.subjects || []);
+        const nextExams = deepClone(app.state.exams || []);
 
-      const examLabel = exam.title || exam.name;
-      if (!student.scores[scoreData.subject]) {
-        student.scores[scoreData.subject] = {};
-      }
-      student.scores[scoreData.subject][examLabel] = app.normalizeScore(scoreData.score);
+        const student = nextStudents.find(s => s.id === scoreData.studentId);
+        const exam = nextExams.find(e => e.id === scoreData.examId);
+        if (!student || !exam || !scoreData.subject) {
+          throw new Error('Invalid score payload');
+        }
 
-      await app.save();
-      return scoreData;
-    } catch (error) {
-      console.error('Failed to save score:', error);
-      throw error;
-    }
+        const examLabel = exam.title || exam.name;
+        if (!student.scores[scoreData.subject]) {
+          student.scores[scoreData.subject] = {};
+        }
+        student.scores[scoreData.subject][examLabel] = app.normalizeScore(scoreData.score);
+
+        const saveResult = await dataService.saveScores(app.getRawData(), student.id, student.scores);
+        syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult);
+        return scoreData;
+      } catch (error) {
+        console.error('Failed to save score:', error);
+        throw error;
+      }
+    });
   };
 
   // Get scores for a specific student and exam
@@ -508,19 +632,23 @@ window.TrackerApp = window.TrackerApp || {};
   };
 
   app.importData = async function (importData) {
-    try {
-      app.state.isLoading = true;
+    return enqueueStateWrite(async () => {
+      try {
+        app.state.isLoading = true;
 
-      const migrated = app.migrateToRawData(importData);
-      app.applyRawData(migrated);
-      await app.save();
-      return true;
-    } catch (error) {
-      console.error('Failed to import data:', error);
-      throw error;
-    } finally {
-      app.state.isLoading = false;
-    }
+        const migrated = app.migrateToRawData(importData);
+        const saveResult = await dataService.saveAllData(migrated);
+        app.applyRawData(migrated);
+        app.writeCachedData(migrated);
+        applySyncStatus(saveResult);
+        return true;
+      } catch (error) {
+        console.error('Failed to import data:', error);
+        throw error;
+      } finally {
+        app.state.isLoading = false;
+      }
+    });
   };
 
   // Utilities used across modules

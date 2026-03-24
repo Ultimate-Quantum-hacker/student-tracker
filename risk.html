@@ -186,7 +186,15 @@
       const type = ['safe', 'borderline', 'at-risk'].includes(query.get('type')) ? query.get('type') : 'safe';
 
       const saved = localStorage.getItem(STORAGE_KEY);
-      const rawData = toRawData(saved ? JSON.parse(saved) : null);
+      let parsed = null;
+      try {
+        parsed = saved ? JSON.parse(saved) : null;
+      } catch (_error) {
+        parsed = null;
+      }
+
+      const payload = parsed && typeof parsed === 'object' && parsed.data ? parsed.data : parsed;
+      const rawData = toRawData(payload);
       const { groups, latestExam } = groupStudentsByRisk(rawData);
       const items = groups[type] || [];
 

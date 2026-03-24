@@ -35,20 +35,23 @@ const exportModule = {
         return;
       }
       const reader = new FileReader();
-      reader.onload = (event) => {
+      reader.onload = async (event) => {
         try {
           const data = JSON.parse(event.target.result);
           if (confirm("Import backup? This will REPLACE current data.")) {
             if (app.snapshots && typeof app.snapshots.saveSnapshot === 'function') {
               app.snapshots.saveSnapshot('Auto Backup Before Backup Restore');
             }
-            app.state.students = data.students || [];
-            app.state.exams = data.exams || [];
-            app.state.subjects = data.subjects || [];
+
+            await app.importData({
+              students: data.students || [],
+              exams: data.exams || [],
+              subjects: data.subjects || []
+            });
+
             app.state.lastBackup = data.lastBackup || null;
             app.state.theme = data.theme || "light";
-            
-            app.save();
+
             app.applyTheme(app.state.theme);
             app.ui.refreshUI();
             app.ui.showToast("Backup restored successfully");

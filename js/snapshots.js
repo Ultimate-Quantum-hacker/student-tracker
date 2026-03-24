@@ -6,7 +6,6 @@
 import app from './state.js';
 
 const SNAPSHOT_STORAGE_KEY = 'studentAppSnapshots';
-const DATA_STORAGE_KEY = 'studentAppData';
 const MAX_SNAPSHOTS = 10;
 
 const snapshotsModule = {
@@ -57,7 +56,7 @@ const snapshotsModule = {
     }
   },
 
-  restoreSnapshot: function (id) {
+  restoreSnapshot: async function (id) {
     const snapshots = this.getSnapshots();
     const snapshot = snapshots.find(item => item.id === id);
 
@@ -70,7 +69,8 @@ const snapshotsModule = {
     if (!ok) return false;
 
     try {
-      localStorage.setItem(DATA_STORAGE_KEY, JSON.stringify(snapshot.data));
+      const migrated = app.migrateToRawData(snapshot.data);
+      await app.importData(migrated);
       app.ui?.showToast?.('Snapshot restored. Reloading...');
       setTimeout(() => {
         location.reload();

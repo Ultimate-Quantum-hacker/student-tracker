@@ -122,19 +122,16 @@ const students = {
         return;
       }
 
-      if (!student.scores || typeof student.scores !== 'object') {
-        student.scores = {};
-      }
+      const nextScores = JSON.parse(JSON.stringify(student.scores || {}));
 
       for (const [subject, score] of Object.entries(scores)) {
-        if (!student.scores[subject] || typeof student.scores[subject] !== 'object') {
-          student.scores[subject] = {};
+        if (!nextScores[subject] || typeof nextScores[subject] !== 'object') {
+          nextScores[subject] = {};
         }
-        student.scores[subject][examLabel] = app.analytics.normalizeScore(score);
+        nextScores[subject][examLabel] = app.analytics.normalizeScore(score);
       }
 
-      await app.updateStudent(student.id, { scores: student.scores });
-      await app.save();
+      await app.updateStudent(student.id, { scores: nextScores });
       ui.refreshUI();
       ui.showToast('Scores saved');
     } catch (error) {
@@ -164,21 +161,25 @@ const students = {
         const score = app.analytics.normalizeScore(input.value);
         
         if (studentId && subject) {
-          const student = app.state.students.find(s => s.id === studentId);
-          if (!student) return;
-          if (!student.scores || typeof student.scores !== 'object') {
-            student.scores = {};
+          const stateStudent = app.state.students.find(s => s.id === studentId);
+          if (!stateStudent) return;
+
+          if (!changedStudents.has(studentId)) {
+            changedStudents.set(studentId, {
+              id: studentId,
+              scores: JSON.parse(JSON.stringify(stateStudent.scores || {}))
+            });
           }
-          if (!student.scores[subject] || typeof student.scores[subject] !== 'object') {
-            student.scores[subject] = {};
+
+          const studentDraft = changedStudents.get(studentId);
+          if (!studentDraft.scores[subject] || typeof studentDraft.scores[subject] !== 'object') {
+            studentDraft.scores[subject] = {};
           }
-          student.scores[subject][examLabel] = score;
-          changedStudents.set(student.id, student);
+          studentDraft.scores[subject][examLabel] = score;
         }
       });
 
       await Promise.all(Array.from(changedStudents.values()).map(student => app.updateStudent(student.id, { scores: student.scores })));
-      await app.save();
       ui.refreshUI();
       ui.showToast("Class scores saved");
     } catch (error) {

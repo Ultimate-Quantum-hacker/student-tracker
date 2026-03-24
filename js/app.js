@@ -84,6 +84,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     console.log('Events bound successfully');
 
+    if (app.state?.error && ui.showToast) {
+      ui.showToast(app.state.error);
+    }
+
     if (ui.refreshUI) {
       ui.refreshUI();
     }

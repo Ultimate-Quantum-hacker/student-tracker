@@ -1,396 +1,205 @@
 /* ═══════════════════════════════════════════════
    JHS 3 Mock Exam Tracker — services/db.js
-   Database abstraction layer for Firestore operations.
+   Centralized Firestore-first data access with cache fallback.
    ═══════════════════════════════════════════════ */
 
-import { db, collection, doc, addDoc, getDoc, getDocs, updateDoc, deleteDoc, query, where, orderBy, isFirebaseConfigured } from '../js/firebase.js';
+import { db, doc, getDoc, setDoc, isFirebaseConfigured } from '../js/firebase.js';
 
-// In-memory cache for offline fallback
-let cache = {
+const CACHE_KEY = 'studentAppData';
+const REMOTE_COLLECTION = 'appState';
+const REMOTE_DOC_ID = 'primary';
+
+const createDefaultRawData = () => ({
   students: [],
-  exams: [],
   subjects: [],
-  scores: []
+  exams: []
+});
+
+let writeChain = Promise.resolve();
+
+const clone = (value) => JSON.parse(JSON.stringify(value));
+const asArray = (value) => Array.isArray(value) ? value : [];
+
+const normalizeRawData = (rawData) => {
+  const input = rawData && typeof rawData === 'object' ? rawData : createDefaultRawData();
+
+  return {
+    students: asArray(input.students).map((student) => ({
+      id: student?.id,
+      name: String(student?.name || '').trim(),
+      notes: student?.notes || '',
+      class: student?.class || '',
+      scores: student?.scores && typeof student.scores === 'object' ? clone(student.scores) : {}
+    })),
+    subjects: asArray(input.subjects)
+      .map(subject => String(subject?.name || subject || '').trim())
+      .filter(Boolean),
+    exams: asArray(input.exams)
+      .map(exam => String(exam?.title || exam?.name || exam || '').trim())
+      .filter(Boolean)
+  };
 };
 
-// Error handling wrapper
-const handleFirestoreError = (error, operation) => {
-  console.error(`Firestore ${operation} error:`, error);
-  
-  // If Firebase is not configured, use cache-only mode
+const getRemoteDocRef = () => doc(db, REMOTE_COLLECTION, REMOTE_DOC_ID);
+
+const parseCache = (raw) => {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && parsed.data) {
+      return {
+        data: normalizeRawData(parsed.data),
+        lastUpdated: parsed.lastUpdated || null
+      };
+    }
+
+    return {
+      data: normalizeRawData(parsed),
+      lastUpdated: null
+    };
+  } catch (error) {
+    console.warn('Ignoring invalid app cache payload:', error);
+    localStorage.removeItem(CACHE_KEY);
+    return null;
+  }
+};
+
+const withTimestamp = (data) => ({
+  data: normalizeRawData(data),
+  lastUpdated: new Date().toISOString()
+});
+
+const enqueueWrite = (task) => {
+  writeChain = writeChain.then(task, task);
+  return writeChain;
+};
+
+const saveRemote = async (rawData) => {
   if (!isFirebaseConfigured || !db) {
-    console.log(`${operation} - using cache-only mode (Firebase not configured)`);
-    return; // Don't throw error, just continue with cache
+    throw new Error('Firebase unavailable');
   }
-  
-  // Return fallback data from cache if available
-  throw new Error(`Failed to ${operation}. Using offline cache.`);
+
+  const payload = {
+    data: normalizeRawData(rawData),
+    updatedAt: new Date().toISOString()
+  };
+
+  await setDoc(getRemoteDocRef(), payload, { merge: true });
+  console.log('Saved to Firebase');
+  return payload.data;
 };
 
-// STUDENTS OPERATIONS
-export const getStudents = async () => {
+const persistRemoteFirst = async (rawData, operationLabel) => {
+  const nextData = normalizeRawData(rawData);
+  try {
+    await saveRemote(nextData);
+    return { data: nextData, remoteSaved: true, error: null, operation: operationLabel };
+  } catch (error) {
+    console.error(`Failed to ${operationLabel} via Firebase:`, error);
+    return { data: nextData, remoteSaved: false, error, operation: operationLabel };
+  }
+};
+
+export const readCachedData = () => {
+  const cached = parseCache(localStorage.getItem(CACHE_KEY));
+  if (cached?.data) {
+    console.log('Loaded from cache');
+  }
+  return cached;
+};
+
+export const writeCacheCopy = (rawData) => {
+  const cacheEnvelope = withTimestamp(rawData);
+  localStorage.setItem(CACHE_KEY, JSON.stringify(cacheEnvelope));
+  return cacheEnvelope;
+};
+
+export const fetchAllData = async () => {
+  const cached = readCachedData();
+
   try {
     if (!isFirebaseConfigured || !db) {
-      console.log('getStudents - using cache-only mode');
-      return cache.students;
+      throw new Error('Firebase unavailable');
     }
-    
-    const q = query(collection(db, 'students'), orderBy('createdAt', 'desc'));
-    const querySnapshot = await getDocs(q);
-    const students = [];
-    querySnapshot.forEach((doc) => {
-      students.push({ id: doc.id, ...doc.data() });
-    });
-    cache.students = students;
-    return students;
-  } catch (error) {
-    handleFirestoreError(error, 'getStudents');
-    return cache.students; // Fallback to cache
-  }
-};
 
-export const addStudent = async (studentData) => {
-  try {
-    const studentWithTimestamp = {
-      ...studentData,
-      createdAt: new Date().toISOString()
+    const snapshot = await getDoc(getRemoteDocRef());
+    const remotePayload = snapshot.exists() ? snapshot.data() : null;
+    const remoteData = normalizeRawData(remotePayload?.data || remotePayload || createDefaultRawData());
+    writeCacheCopy(remoteData);
+    console.log('Synced from Firebase');
+    return {
+      data: remoteData,
+      source: 'firebase',
+      offline: false,
+      error: null
     };
-    const docRef = await addDoc(collection(db, 'students'), studentWithTimestamp);
-    const newStudent = { id: docRef.id, ...studentWithTimestamp };
-    cache.students.push(newStudent);
-    return newStudent;
   } catch (error) {
-    handleFirestoreError(error, 'addStudent');
-    // Fallback: add to cache with temporary ID
-    const tempStudent = { id: 'temp_' + Date.now(), ...studentData, createdAt: new Date().toISOString() };
-    cache.students.push(tempStudent);
-    return tempStudent;
-  }
-};
+    console.error('Failed to fetch remote data:', error);
 
-export const updateStudent = async (studentId, studentData) => {
-  try {
-    const studentRef = doc(db, 'students', studentId);
-    await updateDoc(studentRef, studentData);
-    // Update cache
-    const index = cache.students.findIndex(s => s.id === studentId);
-    if (index !== -1) {
-      cache.students[index] = { ...cache.students[index], ...studentData };
+    if (cached?.data) {
+      return {
+        data: cached.data,
+        source: 'cache',
+        offline: true,
+        error
+      };
     }
-    return { id: studentId, ...studentData };
-  } catch (error) {
-    handleFirestoreError(error, 'updateStudent');
-    // Fallback: update cache
-    const index = cache.students.findIndex(s => s.id === studentId);
-    if (index !== -1) {
-      cache.students[index] = { ...cache.students[index], ...studentData };
-    }
-    return cache.students[index];
-  }
-};
 
-export const deleteStudent = async (studentId) => {
-  try {
-    const studentRef = doc(db, 'students', studentId);
-    await deleteDoc(studentRef);
-    // Remove from cache
-    cache.students = cache.students.filter(s => s.id !== studentId);
-    return true;
-  } catch (error) {
-    handleFirestoreError(error, 'deleteStudent');
-    // Fallback: remove from cache
-    cache.students = cache.students.filter(s => s.id !== studentId);
-    return true;
-  }
-};
-
-// EXAMS OPERATIONS
-export const getExams = async () => {
-  try {
-    if (!isFirebaseConfigured || !db) {
-      console.log('getExams - using cache-only mode');
-      return cache.exams;
-    }
-    
-    const q = query(collection(db, 'exams'), orderBy('date', 'desc'));
-    const querySnapshot = await getDocs(q);
-    const exams = [];
-    querySnapshot.forEach((doc) => {
-      exams.push({ id: doc.id, ...doc.data() });
-    });
-    cache.exams = exams;
-    return exams;
-  } catch (error) {
-    handleFirestoreError(error, 'getExams');
-    return cache.exams; // Fallback to cache
-  }
-};
-
-export const addExam = async (examData) => {
-  try {
-    const examWithTimestamp = {
-      ...examData,
-      date: examData.date || new Date().toISOString()
+    const fallback = createDefaultRawData();
+    writeCacheCopy(fallback);
+    return {
+      data: fallback,
+      source: 'default',
+      offline: true,
+      error
     };
-    const docRef = await addDoc(collection(db, 'exams'), examWithTimestamp);
-    const newExam = { id: docRef.id, ...examWithTimestamp };
-    cache.exams.push(newExam);
-    return newExam;
-  } catch (error) {
-    handleFirestoreError(error, 'addExam');
-    // Fallback: add to cache with temporary ID
-    const tempExam = { id: 'temp_' + Date.now(), ...examData, date: examData.date || new Date().toISOString() };
-    cache.exams.push(tempExam);
-    return tempExam;
   }
 };
 
-export const updateExam = async (examId, examData) => {
-  try {
-    const examRef = doc(db, 'exams', examId);
-    await updateDoc(examRef, examData);
-    // Update cache
-    const index = cache.exams.findIndex(e => e.id === examId);
-    if (index !== -1) {
-      cache.exams[index] = { ...cache.exams[index], ...examData };
-    }
-    return { id: examId, ...examData };
-  } catch (error) {
-    handleFirestoreError(error, 'updateExam');
-    // Fallback: update cache
-    const index = cache.exams.findIndex(e => e.id === examId);
-    if (index !== -1) {
-      cache.exams[index] = { ...cache.exams[index], ...examData };
-    }
-    return cache.exams[index];
+export const saveAllData = async (rawData) => enqueueWrite(() => persistRemoteFirst(rawData, 'save data'));
+
+export const saveStudent = async (rawData, studentData) => enqueueWrite(async () => {
+  const next = normalizeRawData(rawData);
+  next.students.push(clone(studentData));
+  return persistRemoteFirst(next, 'save student');
+});
+
+export const updateStudent = async (rawData, studentId, studentData) => enqueueWrite(async () => {
+  const next = normalizeRawData(rawData);
+  const idx = next.students.findIndex(student => student.id === studentId);
+  if (idx !== -1) {
+    next.students[idx] = { ...next.students[idx], ...clone(studentData) };
   }
-};
+  return persistRemoteFirst(next, 'update student');
+});
 
-export const deleteExam = async (examId) => {
-  try {
-    const examRef = doc(db, 'exams', examId);
-    await deleteDoc(examRef);
-    // Remove from cache
-    cache.exams = cache.exams.filter(e => e.id !== examId);
-    // Also delete related scores
-    cache.scores = cache.scores.filter(s => s.examId !== examId);
-    return true;
-  } catch (error) {
-    handleFirestoreError(error, 'deleteExam');
-    // Fallback: remove from cache
-    cache.exams = cache.exams.filter(e => e.id !== examId);
-    cache.scores = cache.scores.filter(s => s.examId !== examId);
-    return true;
+export const deleteStudent = async (rawData, studentId) => enqueueWrite(async () => {
+  const next = normalizeRawData(rawData);
+  next.students = next.students.filter(student => student.id !== studentId);
+  return persistRemoteFirst(next, 'delete student');
+});
+
+export const saveScores = async (rawData, studentId, scores) => enqueueWrite(async () => {
+  const next = normalizeRawData(rawData);
+  const student = next.students.find(item => item.id === studentId);
+  if (student) {
+    student.scores = scores && typeof scores === 'object' ? clone(scores) : {};
   }
-};
+  return persistRemoteFirst(next, 'save scores');
+});
 
-// SUBJECTS OPERATIONS
-export const getSubjects = async () => {
-  try {
-    if (!isFirebaseConfigured || !db) {
-      console.log('getSubjects - using cache-only mode');
-      return cache.subjects;
-    }
-    
-    const q = query(collection(db, 'subjects'), orderBy('name'));
-    const querySnapshot = await getDocs(q);
-    const subjects = [];
-    querySnapshot.forEach((doc) => {
-      subjects.push({ id: doc.id, ...doc.data() });
-    });
-    cache.subjects = subjects;
-    return subjects;
-  } catch (error) {
-    handleFirestoreError(error, 'getSubjects');
-    return cache.subjects; // Fallback to cache
-  }
-};
+export const updateSubjects = async (rawData, subjects) => enqueueWrite(async () => {
+  const next = normalizeRawData(rawData);
+  next.subjects = asArray(subjects)
+    .map(subject => String(subject?.name || subject || '').trim())
+    .filter(Boolean);
+  return persistRemoteFirst(next, 'update subjects');
+});
 
-export const addSubject = async (subjectData) => {
-  try {
-    const docRef = await addDoc(collection(db, 'subjects'), subjectData);
-    const newSubject = { id: docRef.id, ...subjectData };
-    cache.subjects.push(newSubject);
-    return newSubject;
-  } catch (error) {
-    handleFirestoreError(error, 'addSubject');
-    // Fallback: add to cache with temporary ID
-    const tempSubject = { id: 'temp_' + Date.now(), ...subjectData };
-    cache.subjects.push(tempSubject);
-    return tempSubject;
-  }
-};
-
-export const updateSubject = async (subjectId, subjectData) => {
-  try {
-    const subjectRef = doc(db, 'subjects', subjectId);
-    await updateDoc(subjectRef, subjectData);
-    // Update cache
-    const index = cache.subjects.findIndex(s => s.id === subjectId);
-    if (index !== -1) {
-      cache.subjects[index] = { ...cache.subjects[index], ...subjectData };
-    }
-    return { id: subjectId, ...subjectData };
-  } catch (error) {
-    handleFirestoreError(error, 'updateSubject');
-    // Fallback: update cache
-    const index = cache.subjects.findIndex(s => s.id === subjectId);
-    if (index !== -1) {
-      cache.subjects[index] = { ...cache.subjects[index], ...subjectData };
-    }
-    return cache.subjects[index];
-  }
-};
-
-export const deleteSubject = async (subjectId) => {
-  try {
-    const subjectRef = doc(db, 'subjects', subjectId);
-    await deleteDoc(subjectRef);
-    // Remove from cache
-    cache.subjects = cache.subjects.filter(s => s.id !== subjectId);
-    // Also delete related scores
-    cache.scores = cache.scores.filter(s => s.subjectId !== subjectId);
-    return true;
-  } catch (error) {
-    handleFirestoreError(error, 'deleteSubject');
-    // Fallback: remove from cache
-    cache.subjects = cache.subjects.filter(s => s.id !== subjectId);
-    cache.scores = cache.scores.filter(s => s.subjectId !== subjectId);
-    return true;
-  }
-};
-
-// SCORES OPERATIONS
-export const getScores = async (studentId = null, examId = null) => {
-  try {
-    if (!isFirebaseConfigured || !db) {
-      console.log('getScores - using cache-only mode');
-      if (!studentId && !examId) {
-        return cache.scores;
-      }
-      return cache.scores.filter(s => 
-        (!studentId || s.studentId === studentId) && 
-        (!examId || s.examId === examId)
-      );
-    }
-    
-    let q = collection(db, 'scores');
-    
-    if (studentId && examId) {
-      q = query(q, where('studentId', '==', studentId), where('examId', '==', examId));
-    } else if (studentId) {
-      q = query(q, where('studentId', '==', studentId));
-    } else if (examId) {
-      q = query(q, where('examId', '==', examId));
-    }
-    
-    const querySnapshot = await getDocs(q);
-    const scores = [];
-    querySnapshot.forEach((doc) => {
-      scores.push({ id: doc.id, ...doc.data() });
-    });
-    
-    // Update cache
-    if (!studentId && !examId) {
-      cache.scores = scores;
-    }
-    
-    return scores;
-  } catch (error) {
-    handleFirestoreError(error, 'getScores');
-    // Fallback to cache
-    if (!studentId && !examId) {
-      return cache.scores;
-    }
-    return cache.scores.filter(s => 
-      (!studentId || s.studentId === studentId) && 
-      (!examId || s.examId === examId)
-    );
-  }
-};
-
-export const saveScore = async (scoreData) => {
-  try {
-    // Check if score already exists for this student/exam/subject combination
-    const existingScores = await getScores(scoreData.studentId, scoreData.examId);
-    const existingScore = existingScores.find(s => s.subject === scoreData.subject);
-    
-    if (existingScore) {
-      // Update existing score
-      const scoreRef = doc(db, 'scores', existingScore.id);
-      await updateDoc(scoreRef, { score: scoreData.score });
-      
-      // Update cache
-      const index = cache.scores.findIndex(s => s.id === existingScore.id);
-      if (index !== -1) {
-        cache.scores[index] = { ...cache.scores[index], score: scoreData.score };
-      }
-      
-      return { id: existingScore.id, ...existingScore, score: scoreData.score };
-    } else {
-      // Add new score
-      const scoreWithTimestamp = {
-        ...scoreData,
-        createdAt: new Date().toISOString()
-      };
-      const docRef = await addDoc(collection(db, 'scores'), scoreWithTimestamp);
-      const newScore = { id: docRef.id, ...scoreWithTimestamp };
-      cache.scores.push(newScore);
-      return newScore;
-    }
-  } catch (error) {
-    handleFirestoreError(error, 'saveScore');
-    // Fallback: update cache
-    const existingScore = cache.scores.find(s => 
-      s.studentId === scoreData.studentId && 
-      s.examId === scoreData.examId && 
-      s.subject === scoreData.subject
-    );
-    
-    if (existingScore) {
-      existingScore.score = scoreData.score;
-      return existingScore;
-    } else {
-      const tempScore = { 
-        id: 'temp_' + Date.now(), 
-        ...scoreData, 
-        createdAt: new Date().toISOString() 
-      };
-      cache.scores.push(tempScore);
-      return tempScore;
-    }
-  }
-};
-
-export const deleteScore = async (scoreId) => {
-  try {
-    const scoreRef = doc(db, 'scores', scoreId);
-    await deleteDoc(scoreRef);
-    // Remove from cache
-    cache.scores = cache.scores.filter(s => s.id !== scoreId);
-    return true;
-  } catch (error) {
-    handleFirestoreError(error, 'deleteScore');
-    // Fallback: remove from cache
-    cache.scores = cache.scores.filter(s => s.id !== scoreId);
-    return true;
-  }
-};
-
-// UTILITY FUNCTIONS
-export const initializeDefaultData = async () => {
-  try {
-    // Keep cache/data as-is. Subject/exam setup is user-managed in the app UI.
-    if (!isFirebaseConfigured || !db) {
-      return true;
-    }
-
-    return true;
-  } catch (error) {
-    console.error('Failed to initialize default data:', error);
-    return false;
-  }
-};
-
-// Export cache for debugging purposes
-export const getCache = () => cache;
+export const updateExams = async (rawData, exams) => enqueueWrite(async () => {
+  const next = normalizeRawData(rawData);
+  next.exams = asArray(exams)
+    .map(exam => String(exam?.title || exam?.name || exam || '').trim())
+    .filter(Boolean);
+  return persistRemoteFirst(next, 'update exams');
+});
