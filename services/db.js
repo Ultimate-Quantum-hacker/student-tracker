@@ -74,6 +74,61 @@ const enqueueWrite = (task) => {
   return writeChain;
 };
 
+const RETRY_ATTEMPTS = 2;
+const RETRY_DELAY_MS = 700;
+
+const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+const isNavigatorOffline = () => {
+  return typeof navigator !== 'undefined' && navigator.onLine === false;
+};
+
+const classifyFirebaseError = (error) => {
+  if (isNavigatorOffline()) {
+    return 'network_offline';
+  }
+
+  if (!isFirebaseConfigured || !db) {
+    return 'config';
+  }
+
+  const code = String(error?.code || '').toLowerCase();
+  const message = String(error?.message || '').toLowerCase();
+
+  if (code.includes('permission-denied') || code.includes('unauthenticated')) {
+    return 'permission';
+  }
+
+  if (code.includes('deadline-exceeded') || message.includes('timed out') || message.includes('timeout')) {
+    return 'timeout';
+  }
+
+  if (code.includes('unavailable') || code.includes('network-request-failed') || message.includes('network') || message.includes('failed to fetch')) {
+    return 'network';
+  }
+
+  return 'unknown';
+};
+
+const shouldRetry = (errorType) => {
+  return errorType === 'timeout' || errorType === 'network';
+};
+
+const isOfflineError = (errorType) => {
+  return errorType === 'network_offline' || isNavigatorOffline();
+};
+
+const logOnlineFailure = (context, errorType) => {
+  if (isNavigatorOffline()) return;
+
+  if (errorType === 'permission' || errorType === 'config') {
+    console.warn(`Online but Firebase ${errorType} issue during ${context}. Using cache fallback.`);
+    return;
+  }
+
+  console.warn(`Online but failed to ${context}. Using cache fallback.`);
+};
+
 const saveRemote = async (rawData) => {
   if (!isFirebaseConfigured || !db) {
     throw new Error('Firebase unavailable');
@@ -91,13 +146,47 @@ const saveRemote = async (rawData) => {
 
 const persistRemoteFirst = async (rawData, operationLabel) => {
   const nextData = normalizeRawData(rawData);
-  try {
-    await saveRemote(nextData);
-    return { data: nextData, remoteSaved: true, error: null, operation: operationLabel };
-  } catch (error) {
-    console.error(`Failed to ${operationLabel} via Firebase:`, error);
-    return { data: nextData, remoteSaved: false, error, operation: operationLabel };
+  let lastError = null;
+  let lastErrorType = null;
+
+  for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      await saveRemote(nextData);
+      return {
+        data: nextData,
+        remoteSaved: true,
+        error: null,
+        errorType: null,
+        operation: operationLabel,
+        offline: false
+      };
+    } catch (error) {
+      lastError = error;
+      lastErrorType = classifyFirebaseError(error);
+      console.error(`Failed to ${operationLabel} via Firebase:`, error);
+
+      if (attempt < RETRY_ATTEMPTS && shouldRetry(lastErrorType) && !isNavigatorOffline()) {
+        console.warn(`Retrying ${operationLabel} (${attempt + 1}/${RETRY_ATTEMPTS}) after ${lastErrorType} error`);
+        await wait(RETRY_DELAY_MS * attempt);
+        continue;
+      }
+
+      break;
+    }
   }
+
+  if (!isOfflineError(lastErrorType)) {
+    logOnlineFailure(operationLabel, lastErrorType);
+  }
+
+  return {
+    data: nextData,
+    remoteSaved: false,
+    error: lastError,
+    errorType: lastErrorType,
+    operation: operationLabel,
+    offline: isOfflineError(lastErrorType)
+  };
 };
 
 export const readCachedData = () => {
@@ -117,31 +206,15 @@ export const writeCacheCopy = (rawData) => {
 export const fetchAllData = async () => {
   const cached = readCachedData();
 
-  try {
-    if (!isFirebaseConfigured || !db) {
-      throw new Error('Firebase unavailable');
-    }
-
-    const snapshot = await getDoc(getRemoteDocRef());
-    const remotePayload = snapshot.exists() ? snapshot.data() : null;
-    const remoteData = normalizeRawData(remotePayload?.data || remotePayload || createDefaultRawData());
-    writeCacheCopy(remoteData);
-    console.log('Synced from Firebase');
-    return {
-      data: remoteData,
-      source: 'firebase',
-      offline: false,
-      error: null
-    };
-  } catch (error) {
-    console.error('Failed to fetch remote data:', error);
-
+  if (!isFirebaseConfigured || !db) {
+    console.warn('Firebase unavailable. Falling back to cache/default data.');
     if (cached?.data) {
       return {
         data: cached.data,
         source: 'cache',
-        offline: true,
-        error
+        offline: false,
+        error: null,
+        errorType: 'config'
       };
     }
 
@@ -150,10 +223,69 @@ export const fetchAllData = async () => {
     return {
       data: fallback,
       source: 'default',
-      offline: true,
-      error
+      offline: false,
+      error: null,
+      errorType: 'config'
     };
   }
+
+  let lastError = null;
+  let lastErrorType = null;
+
+  for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      const snapshot = await getDoc(getRemoteDocRef());
+      const remotePayload = snapshot.exists() ? snapshot.data() : null;
+      const remoteData = normalizeRawData(remotePayload?.data || remotePayload || createDefaultRawData());
+      writeCacheCopy(remoteData);
+      console.log('Synced from Firebase');
+      return {
+        data: remoteData,
+        source: 'firebase',
+        offline: false,
+        error: null,
+        errorType: null
+      };
+    } catch (error) {
+      lastError = error;
+      lastErrorType = classifyFirebaseError(error);
+      console.error('Firebase error:', error);
+
+      if (attempt < RETRY_ATTEMPTS && shouldRetry(lastErrorType) && !isNavigatorOffline()) {
+        console.warn(`Retrying Firebase fetch (${attempt + 1}/${RETRY_ATTEMPTS}) after ${lastErrorType} error`);
+        await wait(RETRY_DELAY_MS * attempt);
+        continue;
+      }
+
+      break;
+    }
+  }
+
+  if (!isOfflineError(lastErrorType)) {
+    logOnlineFailure('fetch data', lastErrorType);
+  }
+
+  const offline = isOfflineError(lastErrorType);
+
+  if (cached?.data) {
+    return {
+      data: cached.data,
+      source: 'cache',
+      offline,
+      error: lastError,
+      errorType: lastErrorType
+    };
+  }
+
+  const fallback = createDefaultRawData();
+  writeCacheCopy(fallback);
+  return {
+    data: fallback,
+    source: 'default',
+    offline,
+    error: lastError,
+    errorType: lastErrorType
+  };
 };
 
 export const saveAllData = async (rawData) => enqueueWrite(() => persistRemoteFirst(rawData, 'save data'));

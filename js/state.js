@@ -29,6 +29,7 @@ window.TrackerApp = window.TrackerApp || {};
   };
 
   const OFFLINE_CACHE_MESSAGE = 'Offline mode: using cached data';
+  const OFFLINE_GRACE_PERIOD_MS = 3000;
   const LEGACY_DEFAULT_SUBJECTS = ['English Language', 'Mathematics', 'Integrated Science', 'Social Studies', 'Computing'];
   const LEGACY_DEFAULT_EXAMS = ['Mock 1'];
   let stateWriteChain = Promise.resolve();
@@ -79,6 +80,25 @@ window.TrackerApp = window.TrackerApp || {};
 
   const deepClone = (value) => JSON.parse(JSON.stringify(value));
 
+  const isNavigatorOffline = () => {
+    return typeof navigator !== 'undefined' && navigator.onLine === false;
+  };
+
+  const setOfflineStatus = () => {
+    app.state.error = OFFLINE_CACHE_MESSAGE;
+    if (!hasShownOfflineToast && app.ui?.showToast) {
+      app.ui.showToast(OFFLINE_CACHE_MESSAGE);
+      hasShownOfflineToast = true;
+    }
+  };
+
+  const clearOfflineStatus = () => {
+    if (app.state.error === OFFLINE_CACHE_MESSAGE) {
+      app.state.error = null;
+    }
+    hasShownOfflineToast = false;
+  };
+
   app.readCachedData = function () {
     return dataService.readCachedData();
   };
@@ -100,19 +120,25 @@ window.TrackerApp = window.TrackerApp || {};
   };
 
   const applySyncStatus = (saveResult) => {
-    if (!saveResult?.remoteSaved) {
-      app.state.error = OFFLINE_CACHE_MESSAGE;
-      if (!hasShownOfflineToast && app.ui?.showToast) {
-        app.ui.showToast(OFFLINE_CACHE_MESSAGE);
-        hasShownOfflineToast = true;
-      }
+    if (saveResult?.remoteSaved) {
+      clearOfflineStatus();
       return;
     }
 
-    if (app.state.error === OFFLINE_CACHE_MESSAGE) {
-      app.state.error = null;
+    if (saveResult?.error) {
+      console.error('Firebase error:', saveResult.error);
     }
-    hasShownOfflineToast = false;
+
+    if (saveResult?.offline && isNavigatorOffline()) {
+      setOfflineStatus();
+      return;
+    }
+
+    if (!isNavigatorOffline()) {
+      clearOfflineStatus();
+      const errorType = saveResult?.errorType || 'unknown';
+      console.warn(`Online but failed to save data (${errorType})`);
+    }
   };
 
   const composeRawData = (students = [], subjects = [], exams = []) => {
@@ -260,6 +286,21 @@ window.TrackerApp = window.TrackerApp || {};
   };
 
   app.load = async function () {
+    const loadStartedAt = Date.now();
+    let firebaseDataLoaded = false;
+
+    const scheduleOfflineGraceCheck = () => {
+      const elapsed = Date.now() - loadStartedAt;
+      const waitMs = Math.max(OFFLINE_GRACE_PERIOD_MS - elapsed, 0);
+      return setTimeout(() => {
+        if (!firebaseDataLoaded && isNavigatorOffline()) {
+          setOfflineStatus();
+        }
+      }, waitMs);
+    };
+
+    const offlineGraceTimer = scheduleOfflineGraceCheck();
+
     try {
       app.state.isLoading = true;
       app.state.error = null;
@@ -274,12 +315,31 @@ window.TrackerApp = window.TrackerApp || {};
       app.applyRawData(remoteData);
       app.writeCachedData(remoteData);
 
-      if (remoteResult?.source !== 'firebase') {
-        app.state.error = OFFLINE_CACHE_MESSAGE;
+      if (remoteResult?.source === 'firebase') {
+        firebaseDataLoaded = true;
+        clearTimeout(offlineGraceTimer);
+        clearOfflineStatus();
+      } else if (!isNavigatorOffline()) {
+        clearTimeout(offlineGraceTimer);
+        clearOfflineStatus();
+        if (remoteResult?.error) {
+          console.warn(`Online but failed to fetch data (${remoteResult?.errorType || 'unknown'})`);
+        }
+      } else if ((Date.now() - loadStartedAt) >= OFFLINE_GRACE_PERIOD_MS) {
+        clearTimeout(offlineGraceTimer);
+        setOfflineStatus();
       }
     } catch (error) {
-      console.error('Failed to load data:', error);
-      app.state.error = OFFLINE_CACHE_MESSAGE;
+      console.error('Firebase error:', error);
+
+      if (!isNavigatorOffline()) {
+        clearTimeout(offlineGraceTimer);
+        clearOfflineStatus();
+        console.warn('Online but failed to fetch data (unexpected error)');
+      } else if ((Date.now() - loadStartedAt) >= OFFLINE_GRACE_PERIOD_MS) {
+        clearTimeout(offlineGraceTimer);
+        setOfflineStatus();
+      }
 
       const fallbackCache = app.readCachedData();
       if (fallbackCache?.data) {
