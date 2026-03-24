@@ -4,218 +4,136 @@
    ═══════════════════════════════════════════════ */
 
 import app from './state.js';
+import React from 'https://esm.sh/react@18';
+import { createRoot } from 'https://esm.sh/react-dom@18/client';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer
+} from 'https://esm.sh/recharts@2.12.7';
 
 const charts = {
   colors: ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#84cc16'],
   renderClassChart: function (data, hasData) {
     if (!app.dom.classChart) return;
-    var canvas = app.dom.classChart;
-    var ctx = canvas.getContext('2d');
+    var mountNode = app.dom.classChart;
+    var placeholder = app.dom.classChartPlaceholder;
 
-    // Improve sharpness on high-DPI screens
-    var dpr = window.devicePixelRatio || 1;
-    var rect = canvas.getBoundingClientRect();
-    if (rect.width && rect.height) {
-      canvas.width = rect.width * dpr;
-      canvas.height = rect.height * dpr;
+    if (!mountNode._rechartsRoot) {
+      mountNode._rechartsRoot = createRoot(mountNode);
     }
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    var w = canvas.width / dpr, h = canvas.height / dpr;
-    ctx.clearRect(0, 0, w, h);
 
     if (!hasData || !data.length) {
-      canvas.style.display = 'none';
-      if (app.dom.classChartPlaceholder) app.dom.classChartPlaceholder.style.display = 'block';
+      mountNode._rechartsRoot.render(null);
+      mountNode.style.display = 'none';
+      if (placeholder) placeholder.style.display = 'flex';
       return;
     }
-    canvas.style.display = 'block';
-    if (app.dom.classChartPlaceholder) app.dom.classChartPlaceholder.style.display = 'none';
+    mountNode.style.display = 'block';
+    if (placeholder) placeholder.style.display = 'none';
 
     var darkMode = document.body.classList.contains('dark-mode');
-    var chartText = darkMode ? '#f8fafc' : '#0f172a';
-    var chartSubText = darkMode ? '#94a3b8' : '#64748b';
-    var gridColor = darkMode ? 'rgba(248, 250, 252, 0.16)' : 'rgba(15, 23, 42, 0.12)';
-    var axisColor = darkMode ? 'rgba(226, 232, 240, 0.5)' : 'rgba(15, 23, 42, 0.32)';
-    var lineColor = darkMode ? '#60a5fa' : '#2563eb';
-    var pointFill = darkMode ? '#0f172a' : '#ffffff';
+    var palette = darkMode
+      ? {
+          grid: '#334155',
+          axis: '#475569',
+          tick: '#cbd5f5',
+          label: '#94a3b8',
+          line: '#3b82f6',
+          dotFill: '#0f172a',
+          tooltipBg: '#0f172a'
+        }
+      : {
+          grid: '#cbd5e1',
+          axis: '#94a3b8',
+          tick: '#334155',
+          label: '#475569',
+          line: '#2563eb',
+          dotFill: '#ffffff',
+          tooltipBg: '#0f172a'
+        };
 
-    // Padding for axes
-    var padding = { top: 30, right: 16, bottom: 48, left: 58 };
-    var chartW = w - padding.left - padding.right;
-    var chartH = h - padding.top - padding.bottom;
+    var chartData = data.map(function (v, i) {
+      var score = Number(v.overall || 0);
+      var fullName = v.name || ('Exam ' + (i + 1));
+      var shortName = (fullName && fullName.toLowerCase().startsWith('mock '))
+        ? 'M' + (i + 1)
+        : fullName;
 
-    var values = data
-      .map(function (v) { return Number(v.overall); })
-      .filter(function (v) { return Number.isFinite(v); });
-    var maxValue = values.length ? Math.max.apply(null, values) : 0;
-    var paddedMax = maxValue > 0 ? maxValue * 1.1 : 10;
-    var desiredTickCount = 4;
-    var rawStep = paddedMax / desiredTickCount;
-    var magnitude = Math.pow(10, Math.floor(Math.log10(rawStep || 1)));
-    var normalizedStep = rawStep / magnitude;
-    var niceOptions = [1, 2, 5, 10];
-    var niceStep = niceOptions.reduce(function (best, option) {
-      return Math.abs(option - normalizedStep) < Math.abs(best - normalizedStep) ? option : best;
-    }, niceOptions[0]);
-    var tickStep = Math.max(1, niceStep * magnitude);
-    var yMax = Math.ceil(paddedMax / tickStep) * tickStep;
-    if (!Number.isFinite(yMax) || yMax <= 0) {
-      yMax = 10;
-    }
-    var yTicks = [];
-    for (var tickValue = yMax; tickValue >= 0; tickValue -= tickStep) {
-      yTicks.push(Math.max(0, Number(tickValue.toFixed(6))));
-    }
-    if (yTicks[yTicks.length - 1] !== 0) {
-      yTicks.push(0);
-    }
-
-    var xInset = data.length > 1 ? Math.min(36, chartW * 0.12) : 0;
-
-    // Prepare data
-    var points = data.map(function (v, i) {
-      var score = v.overall || 0;
-      var label = (v.name && v.name.toLowerCase().startsWith('mock ')) 
-        ? 'M' + (i + 1) 
-        : (v.name || ('E' + (i + 1)));
-      var normalizedScore = yMax > 0 ? Math.min(score / yMax, 1) : 0;
-      
       return {
-        val: score,
-        label: label,
-        fullName: v.name,
-        x: padding.left + (data.length > 1 ? xInset + (i / (data.length - 1)) * (chartW - (xInset * 2)) : chartW / 2),
-        y: padding.top + chartH - normalizedScore * chartH
+        name: shortName,
+        fullName: fullName,
+        score: Number.isFinite(score) ? score : 0
       };
     });
 
-    // Draw Grid Lines (Horizontal)
-    ctx.strokeStyle = gridColor;
-    ctx.lineWidth = 1;
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'middle';
-    ctx.font = '600 11px Inter';
-    ctx.fillStyle = chartSubText;
-
-    yTicks.forEach(function(tick) {
-      var ty = padding.top + chartH - (tick / yMax) * chartH;
-      var crispTy = Math.round(ty) + 0.5;
-      ctx.beginPath();
-      ctx.moveTo(padding.left, crispTy);
-      ctx.lineTo(w - padding.right, crispTy);
-      ctx.stroke();
-      var tickLabel = Number.isInteger(tick) ? String(tick) : tick.toFixed(1);
-      ctx.fillText(tickLabel, padding.left - 12, crispTy);
-    });
-
-    ctx.strokeStyle = axisColor;
-    ctx.lineWidth = 1.4;
-    ctx.beginPath();
-    ctx.moveTo(padding.left + 0.5, padding.top);
-    ctx.lineTo(padding.left + 0.5, padding.top + chartH);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(padding.left, padding.top + chartH + 0.5);
-    ctx.lineTo(w - padding.right, padding.top + chartH + 0.5);
-    ctx.stroke();
-
-    ctx.save();
-    ctx.translate(20, padding.top + (chartH / 2));
-    ctx.rotate(-Math.PI / 2);
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = '700 12px Inter';
-    ctx.fillStyle = chartSubText;
-    ctx.fillText('Average Score', 0, 0);
-    ctx.restore();
-
-    // Draw Line
-    if (points.length > 1) {
-      ctx.beginPath();
-      ctx.setLineDash([]);
-      ctx.strokeStyle = lineColor;
-      ctx.lineWidth = 3.2;
-      ctx.lineJoin = 'round';
-      ctx.lineCap = 'round';
-
-      // Use Bezier curves for smooth line if more than 2 points
-      points.forEach(function(p, i) {
-        if (i === 0) {
-          ctx.moveTo(p.x, p.y);
-        } else {
-          // Add smooth curvature
-          var prev = points[i-1];
-          var cp1x = prev.x + (p.x - prev.x) / 2;
-          ctx.bezierCurveTo(cp1x, prev.y, cp1x, p.y, p.x, p.y);
-        }
-      });
-      ctx.stroke();
-
-      // Draw Area under line
-      ctx.lineTo(points[points.length - 1].x, padding.top + chartH);
-      ctx.lineTo(points[0].x, padding.top + chartH);
-      ctx.closePath();
-      var gradient = ctx.createLinearGradient(0, padding.top, 0, padding.top + chartH);
-      gradient.addColorStop(0, darkMode ? 'rgba(96, 165, 250, 0.3)' : 'rgba(37, 99, 235, 0.24)');
-      gradient.addColorStop(1, darkMode ? 'rgba(96, 165, 250, 0.02)' : 'rgba(37, 99, 235, 0.02)');
-      ctx.fillStyle = gradient;
-      ctx.fill();
-    }
-
-    // Draw Points and X-axis Labels
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.font = 'bold 11px Inter';
-
-    points.forEach(function(p) {
-      // Draw point
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 6.5, 0, Math.PI * 2);
-      ctx.fillStyle = pointFill;
-      ctx.fill();
-      ctx.strokeStyle = lineColor;
-      ctx.lineWidth = 2.5;
-      ctx.stroke();
-
-      // Draw value above point
-      ctx.fillStyle = chartText;
-      ctx.font = '600 12px Inter';
-      ctx.fillText(p.val.toFixed(1), p.x, Math.max(padding.top + 4, p.y - 18));
-
-      // Draw label below axis
-      ctx.fillStyle = chartSubText;
-      ctx.font = '700 11px Inter';
-      ctx.fillText(p.label, p.x, padding.top + chartH + 10);
-    });
-
-    // Save points for tooltip
-    charts._classChartMeta = { points: points, padding: padding };
-
-    if (!canvas._hasClassTooltipListener) {
-      canvas.addEventListener('mousemove', function (evt) {
-        var meta = charts._classChartMeta;
-        if (!meta || !meta.points) return;
-        var r2 = canvas.getBoundingClientRect();
-        var mx = evt.clientX - r2.left;
-        var my = evt.clientY - r2.top;
-        
-        var hovered = meta.points.find(function (p) {
-          var dx = mx - p.x;
-          var dy = my - p.y;
-          return Math.sqrt(dx * dx + dy * dy) < 10;
-        });
-
-        if (hovered) {
-          canvas.style.cursor = 'pointer';
-          var label = hovered.fullName || hovered.label;
-          canvas.title = label + ': ' + hovered.val.toFixed(1);
-        } else {
-          canvas.style.cursor = 'default';
-          canvas.title = '';
-        }
-      });
-      canvas._hasClassTooltipListener = true;
-    }
+    mountNode._rechartsRoot.render(
+      React.createElement(
+        ResponsiveContainer,
+        { width: '100%', height: '100%' },
+        React.createElement(
+          LineChart,
+          { data: chartData, margin: { top: 20, right: 18, left: 6, bottom: 6 } },
+          React.createElement(CartesianGrid, {
+            stroke: palette.grid,
+            strokeDasharray: '4 4',
+            vertical: false
+          }),
+          React.createElement(XAxis, {
+            dataKey: 'name',
+            tick: { fill: palette.tick, fontSize: 12, fontWeight: 600 },
+            axisLine: { stroke: palette.axis },
+            tickLine: false
+          }),
+          React.createElement(YAxis, {
+            domain: [0, 'dataMax + 20'],
+            tick: { fill: palette.tick, fontSize: 12, fontWeight: 600 },
+            axisLine: { stroke: palette.axis },
+            tickLine: false,
+            width: 58,
+            label: {
+              value: 'Average Score',
+              angle: -90,
+              position: 'insideLeft',
+              fill: palette.label,
+              dx: -4,
+              style: { fontSize: 12, fontWeight: 700 }
+            }
+          }),
+          React.createElement(Tooltip, {
+            formatter: function (value) {
+              var num = Number(value);
+              return [Number.isFinite(num) ? num.toFixed(1) : value, 'Average Score'];
+            },
+            labelFormatter: function (_, payload) {
+              var point = payload && payload[0] ? payload[0].payload : null;
+              return point?.fullName || point?.name || '';
+            },
+            contentStyle: {
+              backgroundColor: palette.tooltipBg,
+              border: 'none',
+              borderRadius: '8px',
+              color: '#fff',
+              boxShadow: '0 10px 22px rgba(2, 6, 23, 0.45)'
+            },
+            itemStyle: { color: '#e2e8f0' },
+            labelStyle: { color: '#94a3b8' }
+          }),
+          React.createElement(Line, {
+            type: 'monotone',
+            dataKey: 'score',
+            stroke: palette.line,
+            strokeWidth: 3,
+            dot: { r: 6, stroke: palette.line, strokeWidth: 2, fill: palette.dotFill },
+            activeDot: { r: 8, stroke: palette.line, strokeWidth: 2, fill: palette.dotFill }
+          })
+        )
+      )
+    );
   },
   renderStudentChart: function (studentId) {
     var s = app.state.students.find(function(x) { return x.id === studentId; });
