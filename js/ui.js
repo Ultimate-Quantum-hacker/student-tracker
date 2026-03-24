@@ -378,8 +378,9 @@ const ui = {
         .filter(s => s.name.toLowerCase().includes(app.state.searchTerm.toLowerCase()))
         .sort((a, b) => (b._overallAvg ?? -1) - (a._overallAvg ?? -1));
       
-      const subHeaders = app.state.exams.map(() => {
-        return app.state.subjects.map(sub => `<th>${app.utils.esc(sub.name.slice(0, 3))}</th>`).join('') + '<th>Total</th>';
+      const subHeaders = app.state.exams.map((_, examIdx) => {
+        const examGroupClass = examIdx % 2 === 1 ? ' exam-group-alt' : '';
+        return app.state.subjects.map(sub => `<th class="exam-sub-col${examGroupClass}">${app.utils.esc(sub.name.slice(0, 3))}</th>`).join('') + `<th class="exam-total-col exam-group-end${examGroupClass}">Total</th>`;
       }).join('');
       app.dom.resultsHeadRow2.innerHTML = subHeaders;
       app.dom.resultsHeadRow1.innerHTML = `
@@ -388,7 +389,8 @@ const ui = {
           const label = m.title && m.title.toLowerCase().startsWith('mock ')
             ? 'M' + (idx + 1)
             : app.utils.esc(m.title || m.name);
-          return `<th colspan="${app.state.subjects.length + 1}">${label}</th>`;
+          const examGroupClass = idx % 2 === 1 ? ' exam-group-alt' : '';
+          return `<th colspan="${app.state.subjects.length + 1}" class="exam-header exam-group-end${examGroupClass}">${label}</th>`;
         }).join('')}
         <th rowspan="2">Avg</th><th rowspan="2">Previous</th><th rowspan="2">Improvement</th><th rowspan="2">Status</th><th rowspan="2">Notes</th><th rowspan="2">Report</th>`;
 
@@ -398,13 +400,14 @@ const ui = {
         const improvData = canComputeImprovement
           ? this.formatImprovement(currentTotal, previousTotal)
           : { text: '', className: 'improv-neutral' };
-        let examCells = app.state.exams.map(m => {
+        let examCells = app.state.exams.map((m, examIdx) => {
+          const examGroupClass = examIdx % 2 === 1 ? ' exam-group-alt' : '';
           let subCells = app.state.subjects.map(sub => {
             const score = app.analytics.getScore(s, sub, m);
-            return `<td>${score === '' ? '—' : score}</td>`;
+            return `<td class="exam-cell${examGroupClass}">${score === '' ? '—' : score}</td>`;
           }).join('');
           const total = this.getStudentExamTotal(s.id, m.id);
-          return subCells + `<td class="avg">${total ?? '—'}</td>`;
+          return subCells + `<td class="avg exam-total-col exam-group-end${examGroupClass}">${total ?? '—'}</td>`;
         }).join('');
         const status = app.analytics.getStudentStatus(s, latestExam);
         const avgVal = s._overallAvg;
