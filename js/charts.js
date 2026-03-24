@@ -34,10 +34,13 @@ const charts = {
     var darkMode = document.body.classList.contains('dark-mode');
     var chartText = darkMode ? '#f8fafc' : '#0f172a';
     var chartSubText = darkMode ? '#94a3b8' : '#64748b';
-    var gridColor = darkMode ? 'rgba(248, 250, 252, 0.1)' : 'rgba(15, 23, 42, 0.06)';
+    var gridColor = darkMode ? 'rgba(248, 250, 252, 0.16)' : 'rgba(15, 23, 42, 0.12)';
+    var axisColor = darkMode ? 'rgba(226, 232, 240, 0.5)' : 'rgba(15, 23, 42, 0.32)';
+    var lineColor = darkMode ? '#60a5fa' : '#2563eb';
+    var pointFill = darkMode ? '#0f172a' : '#ffffff';
 
     // Padding for axes
-    var padding = { top: 40, right: 30, bottom: 40, left: 50 };
+    var padding = { top: 30, right: 16, bottom: 48, left: 58 };
     var chartW = w - padding.left - padding.right;
     var chartH = h - padding.top - padding.bottom;
 
@@ -80,25 +83,37 @@ const charts = {
     ctx.lineWidth = 1;
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
-    ctx.font = '10px Inter';
+    ctx.font = '600 11px Inter';
     ctx.fillStyle = chartSubText;
 
     yTicks.forEach(function(tick) {
       var ty = padding.top + chartH - (tick / yMax) * chartH;
+      var crispTy = Math.round(ty) + 0.5;
       ctx.beginPath();
-      ctx.moveTo(padding.left, ty);
-      ctx.lineTo(w - padding.right, ty);
+      ctx.moveTo(padding.left, crispTy);
+      ctx.lineTo(w - padding.right, crispTy);
       ctx.stroke();
       var tickLabel = Number.isInteger(tick) ? String(tick) : tick.toFixed(1);
-      ctx.fillText(tickLabel, padding.left - 10, ty);
+      ctx.fillText(tickLabel, padding.left - 12, crispTy);
     });
 
+    ctx.strokeStyle = axisColor;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(padding.left + 0.5, padding.top);
+    ctx.lineTo(padding.left + 0.5, padding.top + chartH);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(padding.left, padding.top + chartH + 0.5);
+    ctx.lineTo(w - padding.right, padding.top + chartH + 0.5);
+    ctx.stroke();
+
     ctx.save();
-    ctx.translate(16, padding.top + (chartH / 2));
+    ctx.translate(20, padding.top + (chartH / 2));
     ctx.rotate(-Math.PI / 2);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '600 11px Inter';
+    ctx.font = '700 12px Inter';
     ctx.fillStyle = chartSubText;
     ctx.fillText('Average Score', 0, 0);
     ctx.restore();
@@ -107,7 +122,7 @@ const charts = {
     if (points.length > 1) {
       ctx.beginPath();
       ctx.setLineDash([]);
-      ctx.strokeStyle = '#3b82f6';
+      ctx.strokeStyle = lineColor;
       ctx.lineWidth = 3;
       ctx.lineJoin = 'round';
       ctx.lineCap = 'round';
@@ -130,8 +145,8 @@ const charts = {
       ctx.lineTo(points[0].x, padding.top + chartH);
       ctx.closePath();
       var gradient = ctx.createLinearGradient(0, padding.top, 0, padding.top + chartH);
-      gradient.addColorStop(0, 'rgba(59, 130, 246, 0.2)');
-      gradient.addColorStop(1, 'rgba(59, 130, 246, 0)');
+      gradient.addColorStop(0, darkMode ? 'rgba(96, 165, 250, 0.3)' : 'rgba(37, 99, 235, 0.24)');
+      gradient.addColorStop(1, darkMode ? 'rgba(96, 165, 250, 0.02)' : 'rgba(37, 99, 235, 0.02)');
       ctx.fillStyle = gradient;
       ctx.fill();
     }
@@ -144,20 +159,21 @@ const charts = {
     points.forEach(function(p) {
       // Draw point
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-      ctx.fillStyle = '#fff';
+      ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+      ctx.fillStyle = pointFill;
       ctx.fill();
-      ctx.strokeStyle = '#3b82f6';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = lineColor;
+      ctx.lineWidth = 2.5;
       ctx.stroke();
 
       // Draw value above point
       ctx.fillStyle = chartText;
+      ctx.font = '600 12px Inter';
       ctx.fillText(p.val.toFixed(1), p.x, p.y - 18);
 
       // Draw label below axis
       ctx.fillStyle = chartSubText;
-      ctx.font = '600 11px Inter';
+      ctx.font = '700 11px Inter';
       ctx.fillText(p.label, p.x, padding.top + chartH + 10);
     });
 
