@@ -22,7 +22,8 @@ const charts = {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     var w = canvas.width / dpr, h = canvas.height / dpr;
     ctx.clearRect(0, 0, w, h);
-    if (!hasData) {
+
+    if (!hasData || !data.length) {
       canvas.style.display = 'none';
       if (app.dom.classChartPlaceholder) app.dom.classChartPlaceholder.style.display = 'block';
       return;
@@ -30,92 +31,127 @@ const charts = {
     canvas.style.display = 'block';
     if (app.dom.classChartPlaceholder) app.dom.classChartPlaceholder.style.display = 'none';
 
-    // Prepare pie data (overall averages per exam)
-    var values = data.map(function (v) { return Math.max(0, v.overall || 0); });
-    var labels = data.map(function (v, i) {
-      return (v.name && v.name.toLowerCase().startsWith('mock '))
-        ? 'M' + (i + 1)
-        : v.name || ('Exam ' + (i + 1));
-    });
-    var total = values.reduce(function (sum, v) { return sum + v; }, 0) || 1;
-
-    var radius = Math.min(w, h) * 0.32;
-    var cx = w * 0.32;
-    var cy = h * 0.55;
-
-    // Draw pie slices
-    var startAngle = -Math.PI / 2;
-    var slices = [];
-    values.forEach(function (val, i) {
-      var sliceAngle = (val / total) * Math.PI * 2;
-      var endAngle = startAngle + sliceAngle;
-      var color = charts.colors[i % charts.colors.length];
-
-      ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.arc(cx, cy, radius, startAngle, endAngle);
-      ctx.closePath();
-      ctx.fillStyle = color;
-      ctx.fill();
-
-      slices.push({
-        start: startAngle,
-        end: endAngle,
-        label: labels[i],
-        value: val
-      });
-      startAngle = endAngle;
-    });
-
     var darkMode = document.body.classList.contains('dark-mode');
     var chartText = darkMode ? '#f8fafc' : '#0f172a';
-    var chartSubText = darkMode ? '#cbd5e1' : '#475569';
+    var chartSubText = darkMode ? '#94a3b8' : '#64748b';
+    var gridColor = darkMode ? 'rgba(248, 250, 252, 0.1)' : 'rgba(15, 23, 42, 0.06)';
 
-    // Legend on the right
-    var legendX = w * 0.65;
-    var legendY = h * 0.3;
-    ctx.font = '12px Inter';
-    ctx.textAlign = 'left';
-    labels.forEach(function (label, i) {
-      var color = charts.colors[i % charts.colors.length];
-      var y = legendY + i * 22;
-      ctx.fillStyle = color;
-      ctx.fillRect(legendX, y - 10, 14, 14);
-      ctx.fillStyle = chartText;
-      ctx.fillText(label + ' (' + values[i].toFixed(1) + '%)', legendX + 20, y + 1);
+    // Padding for axes
+    var padding = { top: 40, right: 30, bottom: 40, left: 50 };
+    var chartW = w - padding.left - padding.right;
+    var chartH = h - padding.top - padding.bottom;
+
+    // Prepare data
+    var points = data.map(function (v, i) {
+      var score = v.overall || 0;
+      var label = (v.name && v.name.toLowerCase().startsWith('mock ')) 
+        ? 'M' + (i + 1) 
+        : (v.name || ('E' + (i + 1)));
+      
+      return {
+        val: score,
+        label: label,
+        fullName: v.name,
+        x: padding.left + (data.length > 1 ? (i / (data.length - 1)) * chartW : chartW / 2),
+        y: padding.top + chartH - (score / 100) * chartH
+      };
     });
 
-    // Title
-    ctx.fillStyle = chartText;
-    ctx.font = 'bold 14px Inter';
-    ctx.textAlign = 'center';
-    ctx.fillText('Class Performance Across Mock Exams', w / 2, 24);
+    // Draw Grid Lines (Horizontal)
+    ctx.strokeStyle = gridColor;
+    ctx.lineWidth = 1;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.font = '10px Inter';
+    ctx.fillStyle = chartSubText;
 
-    // Tooltip via title on hover
-    charts._classPieMeta = { cx: cx, cy: cy, radius: radius, slices: slices };
+    [0, 25, 50, 75, 100].forEach(function(tick) {
+      var ty = padding.top + chartH - (tick / 100) * chartH;
+      ctx.beginPath();
+      ctx.moveTo(padding.left, ty);
+      ctx.lineTo(w - padding.right, ty);
+      ctx.stroke();
+      ctx.fillText(tick + '%', padding.left - 10, ty);
+    });
+
+    // Draw Line
+    if (points.length > 1) {
+      ctx.beginPath();
+      ctx.setLineDash([]);
+      ctx.strokeStyle = '#3b82f6';
+      ctx.lineWidth = 3;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+
+      // Use Bezier curves for smooth line if more than 2 points
+      points.forEach(function(p, i) {
+        if (i === 0) {
+          ctx.moveTo(p.x, p.y);
+        } else {
+          // Add smooth curvature
+          var prev = points[i-1];
+          var cp1x = prev.x + (p.x - prev.x) / 2;
+          ctx.bezierCurveTo(cp1x, prev.y, cp1x, p.y, p.x, p.y);
+        }
+      });
+      ctx.stroke();
+
+      // Draw Area under line
+      ctx.lineTo(points[points.length - 1].x, padding.top + chartH);
+      ctx.lineTo(points[0].x, padding.top + chartH);
+      ctx.closePath();
+      var gradient = ctx.createLinearGradient(0, padding.top, 0, padding.top + chartH);
+      gradient.addColorStop(0, 'rgba(59, 130, 246, 0.2)');
+      gradient.addColorStop(1, 'rgba(59, 130, 246, 0)');
+      ctx.fillStyle = gradient;
+      ctx.fill();
+    }
+
+    // Draw Points and X-axis Labels
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.font = 'bold 11px Inter';
+
+    points.forEach(function(p) {
+      // Draw point
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+      ctx.fillStyle = '#fff';
+      ctx.fill();
+      ctx.strokeStyle = '#3b82f6';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Draw value above point
+      ctx.fillStyle = chartText;
+      ctx.fillText(p.val.toFixed(1) + '%', p.x, p.y - 18);
+
+      // Draw label below axis
+      ctx.fillStyle = chartSubText;
+      ctx.font = '600 11px Inter';
+      ctx.fillText(p.label, p.x, padding.top + chartH + 10);
+    });
+
+    // Save points for tooltip
+    charts._classChartMeta = { points: points, padding: padding };
+
     if (!canvas._hasClassTooltipListener) {
       canvas.addEventListener('mousemove', function (evt) {
-        var meta = charts._classPieMeta;
-        if (!meta || !meta.slices) return;
+        var meta = charts._classChartMeta;
+        if (!meta || !meta.points) return;
         var r2 = canvas.getBoundingClientRect();
         var mx = evt.clientX - r2.left;
         var my = evt.clientY - r2.top;
-        var dx = mx - meta.cx;
-        var dy = my - meta.cy;
-        var dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist > meta.radius) {
-          canvas.style.cursor = 'default';
-          canvas.title = '';
-          return;
-        }
-        var angle = Math.atan2(dy, dx);
-        if (angle < -Math.PI / 2) angle += 2 * Math.PI;
-        var hovered = meta.slices.find(function (s) {
-          return angle >= s.start && angle <= s.end;
+        
+        var hovered = meta.points.find(function (p) {
+          var dx = mx - p.x;
+          var dy = my - p.y;
+          return Math.sqrt(dx * dx + dy * dy) < 10;
         });
+
         if (hovered) {
           canvas.style.cursor = 'pointer';
-          canvas.title = hovered.label + ': ' + hovered.value.toFixed(1) + '%';
+          canvas.title = hovered.fullName + ': ' + hovered.val.toFixed(1) + '%';
         } else {
           canvas.style.cursor = 'default';
           canvas.title = '';

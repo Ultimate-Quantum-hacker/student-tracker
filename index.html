@@ -458,7 +458,26 @@
 
       <section id="trends" class="content-section">
         <div class="section-header"><h2>Class Trends</h2></div>
-        <div class="card"><div class="chart-grid"><div><h4>Average Scores by Exam</h4><div class="table-wrap"><table class="summary-table"><thead><tr id="summary-header"><th>Exam</th><th>Avg Score</th></tr></thead><tbody id="class-summary-body"></tbody></table></div></div><div><h4>Class Performance Chart</h4><div class="chart-container"><canvas id="class-chart" width="400" height="250"></canvas><p class="chart-placeholder" id="class-chart-placeholder">Add data to view chart</p></div></div></div></div>
+        <div class="card">
+          <div class="trends-grid">
+            <div class="trends-left">
+              <h4>Exam Highlights</h4>
+              <div id="class-summary-cards" class="trend-cards-container">
+                <!-- Summary cards will be injected here -->
+              </div>
+            </div>
+            <div class="trends-right">
+              <h4>Class Performance Chart</h4>
+              <div class="chart-container" id="class-chart-container">
+                <canvas id="class-chart" width="400" height="250"></canvas>
+                <p class="chart-placeholder" id="class-chart-placeholder">Add data to view chart</p>
+              </div>
+              <div id="class-insight-box" class="insight-panel">
+                <!-- Insights will be injected here -->
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
       <section id="heatmap" class="content-section">

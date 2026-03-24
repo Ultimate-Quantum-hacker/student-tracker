@@ -29,7 +29,8 @@ const domIds = {
   resultsHeadRow1: 'results-head-row-1',
   resultsHeadRow2: 'results-head-row-2',
   emptyMsg: 'empty-msg',
-  classSummaryBody: 'class-summary-body',
+  classSummaryCards: 'class-summary-cards',
+  classInsightBox: 'class-insight-box',
   toast: 'toast',
   mockList: 'mockList',
   addMockForm: 'addMockForm',
@@ -469,12 +470,78 @@ const ui = {
     },
 
     renderClassSummary: function () {
-      if (!app.dom.classSummaryBody) return;
+      if (!app.dom.classChart) return; 
       const avgs = app.analytics.calcClassAverages();
-      app.dom.classSummaryBody.innerHTML = avgs.map(m => `
-        <tr><td>${app.utils.esc(m.name)}</td><td>${m.overall?.toFixed(1) || '—'}</td></tr>
-      `).join('');
-      if (app.charts) app.charts.renderClassChart(avgs, avgs.some(v => v.overall !== null));
+      const hasData = avgs.some(v => v.overall !== null);
+      
+      // Update Chart
+      if (app.charts) app.charts.renderClassChart(avgs, hasData, app);
+
+      if (!hasData) {
+        if (app.dom.classSummaryCards) app.dom.classSummaryCards.innerHTML = '<p>No data available</p>';
+        return;
+      }
+
+      // Generate Summary Cards
+      if (app.dom.classSummaryCards) {
+        const lastExams = avgs.slice(-2); // Get last two for comparison
+        let cardsHtml = '';
+
+        avgs.forEach((exam, idx) => {
+          const isLatest = idx === avgs.length - 1;
+          const isPrevious = idx === avgs.length - 2 && avgs.length > 1;
+          let badge = '';
+          if (isLatest) badge = '<span class="trend-badge badge-current">Current</span>';
+          else if (isPrevious) badge = '<span class="trend-badge badge-previous">Previous</span>';
+
+          // Check for improvement badge (if current exam improved from its predecessor)
+          if (idx > 0 && exam.overall !== null && avgs[idx-1].overall !== null) {
+            if (exam.overall > avgs[idx-1].overall) {
+              badge = '<span class="trend-badge badge-improved">Improved</span>';
+            }
+          }
+
+          cardsHtml += `
+            <div class="trend-card">
+              <div class="trend-card-header">
+                <span class="trend-card-title">${app.utils.esc(exam.name)}</span>
+                ${badge}
+              </div>
+              <div class="trend-card-value">${exam.overall ? exam.overall.toFixed(1) + '%' : '—'}</div>
+            </div>
+          `;
+        });
+        app.dom.classSummaryCards.innerHTML = cardsHtml;
+      }
+
+      // Generate Insight Box
+      if (app.dom.classInsightBox && avgs.length >= 2) {
+        const current = avgs[avgs.length - 1];
+        const previous = avgs[avgs.length - 2];
+        
+        if (current.overall !== null && previous.overall !== null) {
+          const diff = current.overall - previous.overall;
+          const trendClass = diff >= 0 ? 'trend-up' : 'trend-down';
+          const icon = diff >= 0 ? '↑' : '↓';
+          const statusText = diff >= 0 ? 'improved overall' : 'declined slightly';
+          const trendMessage = diff >= 0 
+            ? 'Performance trend is upward' 
+            : 'Performance trend is downward';
+
+          app.dom.classInsightBox.innerHTML = `
+            <div class="insight-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+              Performance Insight
+            </div>
+            <div class="insight-text">
+              Class performance <span class="trend-indicator ${trendClass}">${icon} ${statusText}</span> by <strong>${Math.abs(diff).toFixed(1)}%</strong> from ${app.utils.esc(previous.name)} to ${app.utils.esc(current.name)}.
+              <br><span style="font-weight:600; color:var(--text); margin-top:0.35rem; display:inline-block;">${trendMessage}.</span>
+            </div>
+          `;
+        }
+      } else if (app.dom.classInsightBox) {
+        app.dom.classInsightBox.innerHTML = '<div class="insight-text">Add scores for another exam to see performance trends and insights.</div>';
+      }
     },
 
     openNotes: function (uid) {
