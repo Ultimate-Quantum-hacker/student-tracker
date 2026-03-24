@@ -237,11 +237,11 @@ const ui = {
       const total = app.state.students.length;
       if (app.dom.statTotalStudents) app.dom.statTotalStudents.textContent = total;
 
-      const { groups: statusGroups } = app.analytics.groupStudentsByStatus();
+      const latestExam = app.analytics.getLatestExam();
+      const { groups: statusGroups } = app.analytics.groupStudentsByStatus(latestExam);
       const categories = app.analytics.getPerformanceCategories();
-      const measured = categories
-        .flatMap(category => statusGroups[category.key] || [])
-        .map(item => item.average)
+      const measured = (app.state.students || [])
+        .map(student => app.analytics.getStudentAverageForExam(student, latestExam))
         .filter(avg => avg !== null && avg !== undefined && !isNaN(avg));
 
       const sum = measured.reduce((acc, value) => acc + Number(value), 0);
@@ -368,9 +368,15 @@ const ui = {
     renderResultsTable: function () {
       if (!app.dom.resultsHeadRow1 || !app.dom.resultsHeadRow2 || !app.dom.resultsBody) return;
 
-      const ranked = app.state.students.map(s => ({ ...s, _avg: app.analytics.calcAverages(s, app.state.subjects, app.state.exams) }))
+      const { previousExam, latestExam } = app.analytics.getLastTwoExams();
+      const canComputeImprovement = !!previousExam && !!latestExam;
+
+      const ranked = app.state.students.map(s => ({
+        ...s,
+        _overallAvg: app.analytics.getStudentOverallAverage(s)
+      }))
         .filter(s => s.name.toLowerCase().includes(app.state.searchTerm.toLowerCase()))
-        .sort((a, b) => (b._avg.overall || 0) - (a._avg.overall || 0));
+        .sort((a, b) => (b._overallAvg ?? -1) - (a._overallAvg ?? -1));
       
       const subHeaders = app.state.exams.map(() => {
         return app.state.subjects.map(sub => `<th>${app.utils.esc(sub.name.slice(0, 3))}</th>`).join('') + '<th>Total</th>';
@@ -387,12 +393,8 @@ const ui = {
         <th rowspan="2">Avg</th><th rowspan="2">Previous</th><th rowspan="2">Improvement</th><th rowspan="2">Status</th><th rowspan="2">Notes</th><th rowspan="2">Report</th>`;
 
       app.dom.resultsBody.innerHTML = ranked.map((s, i) => {
-        const examCount = app.state.exams.length;
-        const canComputeImprovement = examCount >= 2;
-        const currentExam = app.state.exams[examCount - 1];
-        const previousExam = app.state.exams[examCount - 2];
-        const currentTotal = currentExam ? this.getStudentExamTotal(s.id, currentExam.id) : null;
-        const previousTotal = canComputeImprovement && previousExam ? this.getStudentExamTotal(s.id, previousExam.id) : null;
+        const currentTotal = latestExam ? this.getStudentExamTotal(s.id, latestExam.id) : null;
+        const previousTotal = previousExam ? this.getStudentExamTotal(s.id, previousExam.id) : null;
         const improvData = canComputeImprovement
           ? this.formatImprovement(currentTotal, previousTotal)
           : { text: '', className: 'improv-neutral' };
@@ -404,8 +406,8 @@ const ui = {
           const total = this.getStudentExamTotal(s.id, m.id);
           return subCells + `<td class="avg">${total ?? '—'}</td>`;
         }).join('');
-        const status = app.analytics.getStudentStatus(s);
-        const avgVal = s._avg.overall;
+        const status = app.analytics.getStudentStatus(s, latestExam);
+        const avgVal = s._overallAvg;
         const avgCls = avgVal !== null ? (avgVal >= 70 ? 'avg-green' : (avgVal >= 50 ? 'avg-yellow' : 'avg-red')) : '';
         const statusClass = `risk-${status}`;
         return `<tr>
@@ -538,7 +540,9 @@ const ui = {
 
     renderClassSummary: function () {
       if (!app.dom.classChart) return; 
-      const avgs = app.analytics.calcClassAverages();
+      const { previousExam, latestExam } = app.analytics.getLastTwoExams();
+      const trendExams = [previousExam, latestExam].filter(Boolean);
+      const avgs = app.analytics.calcClassAverages(trendExams);
       const hasData = avgs.some(v => v.overall !== null);
       
       // Update Chart
@@ -551,19 +555,18 @@ const ui = {
 
       // Generate Summary Cards
       if (app.dom.classSummaryCards) {
-        const lastExams = avgs.slice(-2); // Get last two for comparison
         let cardsHtml = '';
 
         avgs.forEach((exam, idx) => {
           const isLatest = idx === avgs.length - 1;
-          const isPrevious = idx === avgs.length - 2 && avgs.length > 1;
+          const isPrevious = idx === 0 && avgs.length > 1;
           let badge = '';
           if (isLatest) badge = '<span class="trend-badge badge-current">Current</span>';
           else if (isPrevious) badge = '<span class="trend-badge badge-previous">Previous</span>';
 
           // Check for improvement badge (if current exam improved from its predecessor)
-          if (idx > 0 && exam.overall !== null && avgs[idx-1].overall !== null) {
-            if (exam.overall > avgs[idx-1].overall) {
+          if (avgs.length === 2 && idx === 1 && exam.overall !== null && avgs[0].overall !== null) {
+            if (exam.overall > avgs[0].overall) {
               badge = '<span class="trend-badge badge-improved">Improved</span>';
             }
           }
@@ -631,20 +634,19 @@ const ui = {
 
       const exams = app.state.exams || [];
       const subjects = app.state.subjects || [];
-      const avgs = app.analytics.calcAverages(s, subjects, exams);
-      const avg = avgs.overall;
-      const status = app.analytics.getStudentStatus(s);
+      const avgs = app.analytics.calcAverages(s);
+      const avg = app.analytics.getStudentOverallAverage(s);
+      const { previousExam, latestExam } = app.analytics.getLastTwoExams();
+      const status = app.analytics.getStudentStatus(s, latestExam);
       const statusClass = status === 'at-risk' ? 'rc-risk' : (status === 'borderline' ? 'rc-borderline' : 'rc-safe');
 
       const examCount = exams.length;
-      const currentExam = exams[examCount - 1] || null;
-      const previousExam = exams[examCount - 2] || null;
-      const currentScore = currentExam ? app.analytics.getTotal(s, currentExam) : null;
+      const currentScore = latestExam ? app.analytics.getTotal(s, latestExam) : null;
       const previousScore = previousExam ? app.analytics.getTotal(s, previousExam) : null;
       const improvement = this.formatImprovement(currentScore, previousScore);
 
       const ranked = (app.state.students || [])
-        .map(student => ({ id: student.id, avg: app.analytics.calcAverages(student, subjects, exams).overall }))
+        .map(student => ({ id: student.id, avg: app.analytics.getStudentOverallAverage(student) }))
         .sort((a, b) => (b.avg ?? -1) - (a.avg ?? -1));
       const rank = Math.max(1, ranked.findIndex(item => item.id === s.id) + 1);
 
@@ -826,10 +828,7 @@ const ui = {
         this.renderBulkTable();
         this.updateBackupStatus();
         
-        // Render charts and heatmap
-        const classAverages = app.analytics.calcClassAverages(app.state.students, app.state.subjects, app.state.exams);
-        const hasData = classAverages.some(a => a.overall !== null);
-        app.charts.renderClassChart(classAverages, hasData, app);
+        // Render heatmap
         app.heatmap.renderHeatmap(app);
       } catch (e) {
         console.error("RefreshUI Error:", e);

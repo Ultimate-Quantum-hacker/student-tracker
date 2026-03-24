@@ -34,14 +34,26 @@ const analytics = {
 
   getLatestExam: function () {
     const exams = app.state.exams || [];
-    if (!exams.length) return '';
-    return this.getExamLabel(exams[exams.length - 1]);
+    if (!exams.length) return null;
+    return exams[exams.length - 1];
   },
 
   getPreviousExam: function () {
     const exams = app.state.exams || [];
-    if (exams.length < 2) return '';
-    return this.getExamLabel(exams[exams.length - 2]);
+    if (exams.length < 2) return null;
+    return exams[exams.length - 2];
+  },
+
+  getLastTwoExams: function () {
+    const exams = app.state.exams || [];
+    return {
+      previousExam: exams.length >= 2 ? exams[exams.length - 2] : null,
+      latestExam: exams.length ? exams[exams.length - 1] : null
+    };
+  },
+
+  getLatestExamLabel: function () {
+    return this.getExamLabel(this.getLatestExam());
   },
 
   getScore: function (student, subject, exam) {
@@ -71,7 +83,7 @@ const analytics = {
   mockTotal: function (scores, exam) {
     if (!scores) return null;
 
-    const examLabel = this.getExamLabel(exam) || this.getLatestExam();
+    const examLabel = this.getExamLabel(exam) || this.getLatestExamLabel();
     let total = 0;
     let count = 0;
 
@@ -88,6 +100,10 @@ const analytics = {
   },
 
   getAverage: function (student, exam) {
+    return this.getStudentAverageForExam(student, exam);
+  },
+
+  getStudentAverageForExam: function (student, exam) {
     const examLabel = this.getExamLabel(exam);
     if (!examLabel) return null;
 
@@ -105,8 +121,27 @@ const analytics = {
     return count ? total / count : null;
   },
 
+  getStudentOverallAverage: function (student) {
+    let total = 0;
+    let count = 0;
+
+    (app.state.subjects || []).forEach(subject => {
+      const subjectLabel = this.getSubjectLabel(subject);
+      (app.state.exams || []).forEach(exam => {
+        const examLabel = this.getExamLabel(exam);
+        const value = this.getScore(student, subjectLabel, examLabel);
+        if (value !== '' && value !== undefined && value !== null && !isNaN(value)) {
+          total += Number(value);
+          count++;
+        }
+      });
+    });
+
+    return count ? total / count : null;
+  },
+
   getStudentStatusDetails: function (student, exam) {
-    const latestExam = exam || (app.state.exams || [])[app.state.exams.length - 1];
+    const latestExam = exam || this.getLatestExam();
     const examLabel = this.getExamLabel(latestExam);
     const subjects = app.state.subjects || [];
 
@@ -157,8 +192,6 @@ const analytics = {
 
   calcAverages: function (student) {
     const subAvgs = {};
-    let sum = 0;
-    let count = 0;
 
     (app.state.subjects || []).forEach(subject => {
       const subjectLabel = this.getSubjectLabel(subject);
@@ -172,8 +205,6 @@ const analytics = {
           const num = Number(val);
           subSum += num;
           subCount++;
-          sum += num;
-          count++;
         }
       });
 
@@ -183,12 +214,13 @@ const analytics = {
       }
     });
 
-    subAvgs.overall = count ? (sum / count) : null;
+    subAvgs.overall = this.getStudentOverallAverage(student);
     return subAvgs;
   },
 
-  calcClassAverages: function () {
-    return (app.state.exams || []).map(exam => {
+  calcClassAverages: function (examsInput) {
+    const exams = Array.isArray(examsInput) ? examsInput : (app.state.exams || []);
+    return exams.map(exam => {
       const examLabel = this.getExamLabel(exam);
       let sum = 0;
       let count = 0;
@@ -225,8 +257,8 @@ const analytics = {
     return 'no-data';
   },
 
-  groupStudentsByStatus: function () {
-    const latestExam = (app.state.exams || [])[app.state.exams.length - 1] || null;
+  groupStudentsByStatus: function (exam) {
+    const latestExam = exam || this.getLatestExam();
     const latestExamLabel = this.getExamLabel(latestExam);
     const groups = this.getPerformanceCategories().reduce((acc, category) => {
       acc[category.key] = [];
@@ -249,13 +281,13 @@ const analytics = {
     return { groups, latestExam: latestExamLabel };
   },
 
-  groupStudentsByRisk: function () {
-    const latestExam = (app.state.exams || [])[app.state.exams.length - 1] || null;
+  groupStudentsByRisk: function (exam) {
+    const latestExam = exam || this.getLatestExam();
     const groups = { safe: [], borderline: [], 'at-risk': [] };
 
     (app.state.students || []).forEach(student => {
       const details = this.getStudentStatusDetails(student, latestExam);
-      const risk = this.getRiskLevel(student);
+      const risk = this.getRiskLevel(details.average);
       if (!groups[risk]) return;
       groups[risk].push({
         name: student.name,

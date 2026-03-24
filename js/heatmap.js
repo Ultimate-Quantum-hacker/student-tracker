@@ -56,7 +56,7 @@ const heatmap = {
   getSelectedExam: function () {
     const exams = app.state.exams || [];
     if (!exams.length) return null;
-    return exams.find(exam => exam.id === this.uiState.examId) || exams[exams.length - 1];
+    return exams.find(exam => exam.id === this.uiState.examId) || null;
   },
 
   formatScore: function (score, digits) {
@@ -88,8 +88,11 @@ const heatmap = {
     if (!dom.examSelect || !dom.categoryFilter || !dom.sortSelect || !dom.searchInput || !dom.atRiskOnly) return;
 
     const exams = app.state.exams || [];
+    const hasSelectedExam = exams.some(exam => exam.id === this.uiState.examId);
+    if (!hasSelectedExam) {
+      this.uiState.examId = exams[0]?.id || '';
+    }
     const selectedExam = this.getSelectedExam();
-    this.uiState.examId = selectedExam?.id || '';
 
     dom.examSelect.innerHTML = exams.length
       ? exams.map(exam => `<option value="${exam.id}">${app.utils.esc(app.analytics.getExamLabel(exam))}</option>`).join('')
@@ -122,8 +125,6 @@ const heatmap = {
 
     return (app.state.students || []).map(student => {
       const subjectScores = {};
-      let sum = 0;
-      let count = 0;
 
       subjects.forEach(subject => {
         const subjectLabel = app.analytics.getSubjectLabel(subject);
@@ -132,13 +133,9 @@ const heatmap = {
           ? Number(value)
           : null;
         subjectScores[subjectLabel] = num;
-        if (num !== null) {
-          sum += num;
-          count++;
-        }
       });
 
-      const overall = count ? (sum / count) : null;
+      const overall = exam ? app.analytics.getStudentAverageForExam(student, exam) : null;
       const overallKey = this.getHeatmapCategoryKey(overall);
       const overallLabel = this.getHeatmapLabel(overall);
 
