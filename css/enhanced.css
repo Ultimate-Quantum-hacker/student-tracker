@@ -657,12 +657,32 @@ body.dark-mode .hm-category-badge{color:#f8fafc}
 
 /* Override header logo styling to stand out more */
 .logo h1{
-  font-size:1.15rem;
-  font-weight:700;
+  font-size:1.2rem;
+  font-weight:800;
   color:var(--primary);
   letter-spacing:0.02em;
   text-transform:none;
   font-family:"Inter",system-ui,-apple-system,sans-serif;
+}
+
+.logo-branding{
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  min-width:0;
+}
+
+.logo-motto{
+  margin-top:4px;
+  font-size:.82rem;
+  font-weight:500;
+  line-height:1.35;
+  letter-spacing:.03em;
+  color:var(--text-secondary);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  max-width:min(52vw,440px);
 }
 
 /* Center the school name block in the header */
@@ -679,6 +699,7 @@ body.dark-mode .hm-category-badge{color:#f8fafc}
   .sidebar .sidebar-nav{gap:.8rem}
   .sidebar .sidebar-title{padding:.2rem .55rem}
   .sidebar .sidebar-item{font-size:.86rem;padding:.55rem .6rem;border-radius:12px}
+  .logo-motto{font-size:.75rem;max-width:48vw}
   .system-tools-section{padding:.62rem;gap:.45rem}
   .system-tools-status{font-size:.75rem;padding:.5rem .55rem}
   .system-tools-btn{font-size:.84rem;padding:.56rem .58rem;gap:.5rem}
