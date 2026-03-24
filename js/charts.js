@@ -41,19 +41,37 @@ const charts = {
     var chartW = w - padding.left - padding.right;
     var chartH = h - padding.top - padding.bottom;
 
+    var values = data
+      .map(function (v) { return Number(v.overall); })
+      .filter(function (v) { return Number.isFinite(v); });
+    var maxValue = values.length ? Math.max.apply(null, values) : 0;
+    var paddedMax = maxValue > 0 ? maxValue * 1.1 : 10;
+    var desiredTickCount = 4;
+    var rawStep = paddedMax / desiredTickCount;
+    var magnitude = Math.pow(10, Math.floor(Math.log10(rawStep || 1)));
+    var normalizedStep = rawStep / magnitude;
+    var niceStep = normalizedStep <= 1 ? 1 : normalizedStep <= 2 ? 2 : normalizedStep <= 5 ? 5 : 10;
+    var tickStep = niceStep * magnitude;
+    var yMax = tickStep * desiredTickCount;
+    var yTicks = [];
+    for (var tickIndex = desiredTickCount; tickIndex >= 0; tickIndex--) {
+      yTicks.push(tickIndex * tickStep);
+    }
+
     // Prepare data
     var points = data.map(function (v, i) {
       var score = v.overall || 0;
       var label = (v.name && v.name.toLowerCase().startsWith('mock ')) 
         ? 'M' + (i + 1) 
         : (v.name || ('E' + (i + 1)));
+      var normalizedScore = yMax > 0 ? Math.min(score / yMax, 1) : 0;
       
       return {
         val: score,
         label: label,
         fullName: v.name,
         x: padding.left + (data.length > 1 ? (i / (data.length - 1)) * chartW : chartW / 2),
-        y: padding.top + chartH - (score / 100) * chartH
+        y: padding.top + chartH - normalizedScore * chartH
       };
     });
 
@@ -65,14 +83,25 @@ const charts = {
     ctx.font = '10px Inter';
     ctx.fillStyle = chartSubText;
 
-    [0, 25, 50, 75, 100].forEach(function(tick) {
-      var ty = padding.top + chartH - (tick / 100) * chartH;
+    yTicks.forEach(function(tick) {
+      var ty = padding.top + chartH - (tick / yMax) * chartH;
       ctx.beginPath();
       ctx.moveTo(padding.left, ty);
       ctx.lineTo(w - padding.right, ty);
       ctx.stroke();
-      ctx.fillText(tick + '%', padding.left - 10, ty);
+      var tickLabel = Number.isInteger(tick) ? String(tick) : tick.toFixed(1);
+      ctx.fillText(tickLabel, padding.left - 10, ty);
     });
+
+    ctx.save();
+    ctx.translate(16, padding.top + (chartH / 2));
+    ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '600 11px Inter';
+    ctx.fillStyle = chartSubText;
+    ctx.fillText('Average Score', 0, 0);
+    ctx.restore();
 
     // Draw Line
     if (points.length > 1) {
@@ -124,7 +153,7 @@ const charts = {
 
       // Draw value above point
       ctx.fillStyle = chartText;
-      ctx.fillText(p.val.toFixed(1) + '%', p.x, p.y - 18);
+      ctx.fillText(p.val.toFixed(1), p.x, p.y - 18);
 
       // Draw label below axis
       ctx.fillStyle = chartSubText;
@@ -151,7 +180,8 @@ const charts = {
 
         if (hovered) {
           canvas.style.cursor = 'pointer';
-          canvas.title = hovered.fullName + ': ' + hovered.val.toFixed(1) + '%';
+          var label = hovered.fullName || hovered.label;
+          canvas.title = label + ': ' + hovered.val.toFixed(1);
         } else {
           canvas.style.cursor = 'default';
           canvas.title = '';
