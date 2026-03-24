@@ -339,7 +339,7 @@
     <div class="header-inner">
       <div class="logo">
         <button id="mobileMenuToggle" class="btn btn-icon mobile-menu-button" aria-label="Open menu" title="Open menu" type="button">☰</button>
-        <svg class="app-logo" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        <svg class="app-logo" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5L12 4l9 4.5-9 4.5L3 8.5z"/><path d="M7 11.1V15c0 .8 2.2 2 5 2s5-1.2 5-2v-3.9"/><path d="M18 18h3"/><path d="M19.5 12.8v5.2"/><path d="M6 20h3"/><path d="M7.5 15.8V20"/><path d="M10.5 17.2V20"/></svg>
         <div class="logo-branding">
           <h1 class="logo-title">Student Performance Tracker</h1>
           <p class="logo-motto">Tracking Progress. Unlocking Potential.</p>
@@ -416,10 +416,22 @@
       <section id="dashboard" class="content-section active">
         <div class="section-header"><h2>Dashboard</h2></div>
         <div class="stats-grid">
-          <div class="stat-card"><div class="stat-title">Total Students</div><div class="stat-value" id="stat-total-students">0</div></div>
-          <div class="stat-card"><div class="stat-title">Class Average</div><div class="stat-value" id="stat-class-avg">0.0%</div></div>
-          <div class="stat-card"><div class="stat-title">Pass Rate</div><div class="stat-value" id="stat-pass-rate">0%</div></div>
-          <div class="stat-card"><div class="stat-title">At Risk</div><div class="stat-value" id="stat-at-risk-count">0</div></div>
+          <div class="stat-card stat-card-total">
+            <div class="stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+            <div class="stat-content"><div class="stat-title">Total Students</div><div class="stat-value" id="stat-total-students" data-animate-format="int">0</div></div>
+          </div>
+          <div class="stat-card stat-card-average">
+            <div class="stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="9" width="3" height="9"/><rect x="17" y="6" width="3" height="12"/></svg></div>
+            <div class="stat-content"><div class="stat-title">Class Average</div><div class="stat-value" id="stat-class-avg" data-animate-format="decimal">0.0%</div></div>
+          </div>
+          <div class="stat-card stat-card-pass">
+            <div class="stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div>
+            <div class="stat-content"><div class="stat-title">Pass Rate</div><div class="stat-value" id="stat-pass-rate" data-animate-format="percent">0%</div></div>
+          </div>
+          <div class="stat-card stat-card-risk">
+            <div class="stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3l-8.47-14.14a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+            <div class="stat-content"><div class="stat-title">At Risk</div><div class="stat-value" id="stat-at-risk-count" data-animate-format="int">0</div></div>
+          </div>
         </div>
         <div class="card"><h3>Performance Analysis</h3><div class="risk-summary" id="dashboard-performance-summary"><button type="button" class="risk-item risk-strong" data-performance-category="strong"><span class="risk-label">Strong</span><span class="risk-count" id="stat-strong-count">0</span></button><button type="button" class="risk-item risk-good" data-performance-category="good"><span class="risk-label">Good</span><span class="risk-count" id="stat-good-count">0</span></button><button type="button" class="risk-item risk-average" data-performance-category="average"><span class="risk-label">Average</span><span class="risk-count" id="stat-average-count">0</span></button><button type="button" class="risk-item risk-borderline" data-performance-category="borderline"><span class="risk-label">Borderline</span><span class="risk-count" id="stat-borderline-count">0</span></button><button type="button" class="risk-item risk-at-risk" data-performance-category="at-risk"><span class="risk-label">At Risk</span><span class="risk-count" id="stat-at-risk-count-summary">0</span></button></div></div>
         <div class="card">

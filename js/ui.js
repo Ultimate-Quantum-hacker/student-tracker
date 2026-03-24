@@ -265,9 +265,60 @@ const ui = {
       }
     },
 
+    parseDashboardStatValue: function (raw) {
+      const parsed = Number(String(raw ?? '').replace(/[^0-9.-]/g, ''));
+      return Number.isFinite(parsed) ? parsed : 0;
+    },
+
+    formatDashboardStatValue: function (value, format) {
+      if (format === 'percent') return `${Math.round(value)}%`;
+      if (format === 'decimal') return `${Number(value).toFixed(1)}%`;
+      return Math.round(value).toLocaleString();
+    },
+
+    animateDashboardStatValue: function (node, targetValue, format = 'int') {
+      if (!node) return;
+
+      const target = Number(targetValue);
+      const safeTarget = Number.isFinite(target) ? target : 0;
+      const currentTarget = Number(node.dataset.targetValue || NaN);
+      if (Number.isFinite(currentTarget) && Math.abs(currentTarget - safeTarget) < 0.001) {
+        node.textContent = this.formatDashboardStatValue(safeTarget, format);
+        return;
+      }
+
+      const isFirstRun = !node.dataset.hasAnimated;
+      const startValue = isFirstRun ? 0 : this.parseDashboardStatValue(node.textContent);
+      const duration = isFirstRun ? 880 : 620;
+      const startTime = performance.now();
+
+      if (node._dashboardStatFrame) {
+        cancelAnimationFrame(node._dashboardStatFrame);
+      }
+
+      const easeOut = t => 1 - Math.pow(1 - t, 3);
+      const animate = (time) => {
+        const progress = Math.min((time - startTime) / duration, 1);
+        const eased = easeOut(progress);
+        const value = startValue + (safeTarget - startValue) * eased;
+        node.textContent = this.formatDashboardStatValue(value, format);
+
+        if (progress < 1) {
+          node._dashboardStatFrame = requestAnimationFrame(animate);
+          return;
+        }
+
+        node.textContent = this.formatDashboardStatValue(safeTarget, format);
+        node.dataset.targetValue = String(safeTarget);
+        node.dataset.hasAnimated = '1';
+      };
+
+      node._dashboardStatFrame = requestAnimationFrame(animate);
+    },
+
     updateDashboardStats: function () {
       const total = app.state.students.length;
-      if (app.dom.statTotalStudents) app.dom.statTotalStudents.textContent = total;
+      this.animateDashboardStatValue(app.dom.statTotalStudents, total, 'int');
 
       const latestExam = app.analytics.getLatestExam();
       const { groups: statusGroups } = app.analytics.groupStudentsByStatus(latestExam);
@@ -288,10 +339,13 @@ const ui = {
         'at-risk': 'statAtRiskCountSummary'
       };
 
-      if (app.dom.statClassAvg) app.dom.statClassAvg.textContent = count ? (sum / count).toFixed(1) : '0.0';
-      if (app.dom.statPassRate) app.dom.statPassRate.textContent = count ? Math.round((pass / count) * 100) + '%' : '0%';
+      const classAverage = count ? (sum / count) : 0;
+      const passRate = count ? Math.round((pass / count) * 100) : 0;
+
+      this.animateDashboardStatValue(app.dom.statClassAvg, classAverage, 'decimal');
+      this.animateDashboardStatValue(app.dom.statPassRate, passRate, 'percent');
       if (app.dom.statFailRate) app.dom.statFailRate.textContent = count ? Math.round(((count - pass) / count) * 100) + '%' : '0%';
-      if (app.dom.statAtRiskCount) app.dom.statAtRiskCount.textContent = atRisk;
+      this.animateDashboardStatValue(app.dom.statAtRiskCount, atRisk, 'int');
 
       categories.forEach(category => {
         const domKey = countTargets[category.key];
