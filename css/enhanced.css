@@ -154,7 +154,7 @@ body.dark-mode #results-table .exam-group-alt{
   padding-right:0.35rem;
 }
 
-/* Name column: sticky with blue leading divider */
+/* Name column: sticky with blue trailing divider */
 #results-table thead tr#results-head-row-1 th:nth-child(2),
 #results-table tbody td:nth-child(2){
   position:sticky;
@@ -162,7 +162,7 @@ body.dark-mode #results-table .exam-group-alt{
   background:var(--surface);
   z-index:19;
   padding-left:0.35rem;
-  box-shadow:inset 2px 0 0 0 var(--primary);
+  box-shadow:2px 0 0 0 var(--primary);
 }
 
 
