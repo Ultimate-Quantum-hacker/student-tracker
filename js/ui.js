@@ -556,18 +556,22 @@ const ui = {
         let cardsHtml = '';
 
         avgs.forEach((exam, idx) => {
-          const isLatest = idx === avgs.length - 1;
-          const isPrevious = idx === avgs.length - 2 && avgs.length > 1;
           let badge = '';
-          if (isLatest) badge = '<span class="trend-badge badge-current">Current</span>';
-          else if (isPrevious) badge = '<span class="trend-badge badge-previous">Previous</span>';
+          const hasCurrent = exam.overall !== null && exam.overall !== undefined && !isNaN(exam.overall);
 
-          // Check for improvement badge (if current exam improved from its predecessor)
-          if (isLatest && avgs.length >= 2 && exam.overall !== null && avgs[avgs.length - 2].overall !== null) {
-            if (exam.overall > avgs[avgs.length - 2].overall) {
-              badge = '<span class="trend-badge badge-improved">Improved</span>';
+          if (idx > 0) {
+            const previousExam = avgs[idx - 1];
+            const hasPrevious = previousExam && previousExam.overall !== null && previousExam.overall !== undefined && !isNaN(previousExam.overall);
+
+            if (hasCurrent && hasPrevious) {
+              const diff = Number(exam.overall) - Number(previousExam.overall);
+              if (diff > 0) badge = '<span class="trend-badge badge-improved">Improved</span>';
+              else if (diff < 0) badge = '<span class="trend-badge badge-declined">Declined</span>';
+              else badge = '<span class="trend-badge badge-no-change">No Change</span>';
             }
           }
+
+          const avgDisplay = hasCurrent ? `${Number(exam.overall).toFixed(1)}%` : '—';
 
           cardsHtml += `
             <div class="trend-card">
@@ -575,7 +579,7 @@ const ui = {
                 <span class="trend-card-title">${app.utils.esc(exam.name)}</span>
                 ${badge}
               </div>
-              <div class="trend-card-value">${exam.overall ? exam.overall.toFixed(1) + '%' : '—'}</div>
+              <div class="trend-card-value">${avgDisplay}</div>
             </div>
           `;
         });

@@ -1202,6 +1202,8 @@ body.dark-mode #class-chart-container {
 }
 
 .badge-improved { background: #dcfce7; color: #15803d; }
+.badge-declined { background: #fee2e2; color: #b91c1c; }
+.badge-no-change { background: #f1f5f9; color: #475569; }
 .badge-previous { background: #f1f5f9; color: #475569; }
 .badge-current { background: #dbeafe; color: #1d4ed8; }
 
