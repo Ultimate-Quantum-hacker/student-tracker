@@ -540,9 +540,7 @@ const ui = {
 
     renderClassSummary: function () {
       if (!app.dom.classChart) return; 
-      const { previousExam, latestExam } = app.analytics.getLastTwoExams();
-      const trendExams = [previousExam, latestExam].filter(Boolean);
-      const avgs = app.analytics.calcClassAverages(trendExams);
+      const avgs = app.analytics.calcClassAverages();
       const hasData = avgs.some(v => v.overall !== null);
       
       // Update Chart
@@ -559,14 +557,14 @@ const ui = {
 
         avgs.forEach((exam, idx) => {
           const isLatest = idx === avgs.length - 1;
-          const isPrevious = idx === 0 && avgs.length > 1;
+          const isPrevious = idx === avgs.length - 2 && avgs.length > 1;
           let badge = '';
           if (isLatest) badge = '<span class="trend-badge badge-current">Current</span>';
           else if (isPrevious) badge = '<span class="trend-badge badge-previous">Previous</span>';
 
           // Check for improvement badge (if current exam improved from its predecessor)
-          if (avgs.length === 2 && idx === 1 && exam.overall !== null && avgs[0].overall !== null) {
-            if (exam.overall > avgs[0].overall) {
+          if (isLatest && avgs.length >= 2 && exam.overall !== null && avgs[avgs.length - 2].overall !== null) {
+            if (exam.overall > avgs[avgs.length - 2].overall) {
               badge = '<span class="trend-badge badge-improved">Improved</span>';
             }
           }
