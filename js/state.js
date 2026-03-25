@@ -15,6 +15,8 @@ window.TrackerApp = window.TrackerApp || {};
     classes: [],
     currentClassId: '',
     currentClassName: 'My Class',
+    currentUserRole: 'teacher',
+    isRoleResolved: false,
     students: [],
     studentTrash: [],
     classTrash: [],
@@ -39,12 +41,46 @@ window.TrackerApp = window.TrackerApp || {};
   const OFFLINE_CACHE_MESSAGE = 'Offline mode: using cached data';
   const OFFLINE_GRACE_PERIOD_MS = 3000;
   const CURRENT_CLASS_STORAGE_KEY = 'currentClassId';
+  const ROLE_TEACHER = 'teacher';
+  const ROLE_ADMIN = 'admin';
+  const ROLE_DEVELOPER = 'developer';
+  const ALLOWED_ROLES = [ROLE_TEACHER, ROLE_ADMIN, ROLE_DEVELOPER];
   const LEGACY_DEFAULT_SUBJECTS = ['English Language', 'Mathematics', 'Integrated Science', 'Social Studies', 'Computing'];
   const LEGACY_DEFAULT_EXAMS = ['Mock 1'];
   let stateWriteChain = Promise.resolve();
   let hasShownOfflineToast = false;
 
   const normalizeClassStorageId = (value) => String(value || '').trim();
+  const normalizeRole = (value) => {
+    const normalized = String(value || '').trim().toLowerCase();
+    return ALLOWED_ROLES.includes(normalized) ? normalized : ROLE_TEACHER;
+  };
+
+  app.getCurrentUserRole = function () {
+    return normalizeRole(app.state.currentUserRole);
+  };
+
+  app.setCurrentUserRole = function (role, { resolved = true } = {}) {
+    app.state.currentUserRole = normalizeRole(role);
+    app.state.isRoleResolved = Boolean(resolved);
+  };
+
+  app.clearCurrentUserRole = function () {
+    app.state.currentUserRole = ROLE_TEACHER;
+    app.state.isRoleResolved = false;
+  };
+
+  app.isTeacherRole = function () {
+    return app.getCurrentUserRole() === ROLE_TEACHER;
+  };
+
+  app.isAdminRole = function () {
+    return app.getCurrentUserRole() === ROLE_ADMIN;
+  };
+
+  app.isDeveloperRole = function () {
+    return app.getCurrentUserRole() === ROLE_DEVELOPER;
+  };
 
   const persistCurrentClassId = (classId) => {
     const normalizedClassId = normalizeClassStorageId(classId);
@@ -1203,6 +1239,10 @@ window.TrackerApp = window.TrackerApp || {};
   app.importData = async function (importData) {
     return enqueueStateWrite(async () => {
       try {
+        if (!app.state.isRoleResolved || !app.isDeveloperRole()) {
+          throw new Error('Developer access required for import');
+        }
+
         app.state.isLoading = true;
 
         const migrated = app.migrateToRawData(importData);

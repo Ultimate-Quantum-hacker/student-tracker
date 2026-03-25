@@ -1,24 +1,86 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isTeacher() {
+      return isAuthenticated() && getUserRole() == 'teacher';
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && getUserRole() == 'admin';
+    }
+
+    function isDeveloper() {
+      return isAuthenticated() && getUserRole() == 'developer';
+    }
+
+    function canAccessUserData(userId) {
+      return isOwner(userId) || isAdmin() || isDeveloper();
+    }
+
+    function isValidRole(role) {
+      return role in ['teacher', 'admin', 'developer'];
+    }
+
+    function hasValidUserProfileShape() {
+      return request.resource.data.keys().hasOnly(['role', 'name', 'email', 'createdAt'])
+        && request.resource.data.name is string
+        && request.resource.data.email is string
+        && isValidRole(request.resource.data.role);
+    }
+
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow create: if isOwner(userId)
+        && hasValidUserProfileShape()
+        && request.resource.data.role == 'teacher';
+
+      allow read: if canAccessUserData(userId);
+
+      allow update: if (
+          isOwner(userId)
+          && hasValidUserProfileShape()
+          && (
+            request.resource.data.role == resource.data.role
+            || (!('role' in resource.data) && request.resource.data.role == 'teacher')
+          )
+          && request.resource.data.createdAt == resource.data.createdAt
+        )
+        || (
+          isAdmin()
+          && hasValidUserProfileShape()
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.createdAt == resource.data.createdAt
+        )
+        || (
+          isDeveloper()
+          && hasValidUserProfileShape()
+          && request.resource.data.createdAt == resource.data.createdAt
+        );
+
+      allow delete: if isDeveloper();
 
       match /classes/{classId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow read, write: if canAccessUserData(userId);
 
-        match /students/{studentId} {
-          allow read, write: if request.auth != null && request.auth.uid == userId;
-        }
-
-        match /subjects/{subjectId} {
-          allow read, write: if request.auth != null && request.auth.uid == userId;
-        }
-
-        match /exams/{examId} {
-          allow read, write: if request.auth != null && request.auth.uid == userId;
+        match /{document=**} {
+          allow read, write: if canAccessUserData(userId);
         }
       }
+    }
+
+    match /devTools/{document=**} {
+      allow read, write: if isDeveloper();
     }
 
     match /{document=**} {

@@ -5,6 +5,7 @@
 
 import app from './state.js';
 import { auth } from './firebase.js';
+import { normalizeUserRole } from './auth.js';
 
 // DOM Node References
 app.dom = {};
@@ -150,6 +151,58 @@ const ui = {
           console.warn(`DOM element not found: ${domIds[k]} (key: ${k})`);
         }
         app.dom[k] = el;
+      });
+    },
+
+    getCurrentRole: function () {
+      return normalizeUserRole(app.state.currentUserRole);
+    },
+
+    canUseDeveloperTools: function () {
+      return Boolean(app.state.isRoleResolved) && this.getCurrentRole() === 'developer';
+    },
+
+    requireDeveloperAccess: function () {
+      if (this.canUseDeveloperTools()) {
+        return true;
+      }
+      this.showToast('Developer access required');
+      return false;
+    },
+
+    updateRoleBasedUIAccess: function () {
+      const roleResolved = Boolean(app.state.isRoleResolved);
+      const currentRole = this.getCurrentRole();
+      const canUseDeveloperTools = roleResolved && currentRole === 'developer';
+      const shouldHideDeveloperFeatures = !canUseDeveloperTools;
+
+      if (document.body) {
+        document.body.dataset.userRole = currentRole;
+        document.body.classList.toggle('role-loading', !roleResolved);
+      }
+
+      const developerOnlyControls = [
+        app.dom.restoreBtn,
+        app.dom.restoreInput,
+        app.dom.bulkImportBtn,
+        app.dom.bulkImportConfirmBtn,
+        app.dom.createSnapshotBtn,
+        app.dom.snapshotManagerBtn,
+        app.dom.resetBtn,
+        app.dom.systemCreateRestorePointBtn,
+        app.dom.systemRestorePointsBtn,
+        app.dom.systemImportDataBtn,
+        app.dom.systemResetBtn
+      ];
+
+      developerOnlyControls.forEach((element) => {
+        if (!element) return;
+        if (element.tagName === 'INPUT') {
+          element.disabled = shouldHideDeveloperFeatures;
+        } else {
+          element.hidden = shouldHideDeveloperFeatures;
+          element.disabled = shouldHideDeveloperFeatures;
+        }
       });
     },
 
@@ -521,6 +574,9 @@ const ui = {
     },
 
     clearAllData: async function () {
+      if (!this.requireDeveloperAccess()) {
+        return;
+      }
       try {
         if (app.snapshots && typeof app.snapshots.saveSnapshot === 'function') {
           app.snapshots.saveSnapshot('Auto Backup Before Reset');
@@ -537,6 +593,9 @@ const ui = {
     },
 
     createSnapshot: function (name = 'Manual Restore Point', refreshList = false) {
+      if (!this.requireDeveloperAccess()) {
+        return null;
+      }
       if (!app.snapshots || typeof app.snapshots.saveSnapshot !== 'function') {
         this.showToast('Snapshot system unavailable');
         return null;
@@ -1624,6 +1683,7 @@ const ui = {
     refreshUI: function () {
       console.log("Refreshing UI...");
       try {
+        this.updateRoleBasedUIAccess();
         if (app.dom.emptyMsg) app.dom.emptyMsg.style.display = app.state.students.length ? 'none' : 'block';
         this.renderClassControls();
         this.renderManagement();
@@ -1828,18 +1888,43 @@ const ui = {
             }
           };
         }
-        if (app.dom.createSnapshotBtn) app.dom.createSnapshotBtn.onclick = () => this.createSnapshot('Manual Restore Point');
-        if (app.dom.snapshotManagerBtn) app.dom.snapshotManagerBtn.onclick = () => this.openSnapshotModal();
+        if (app.dom.createSnapshotBtn) app.dom.createSnapshotBtn.onclick = () => {
+          if (!this.requireDeveloperAccess()) return;
+          this.createSnapshot('Manual Restore Point');
+        };
+        if (app.dom.snapshotManagerBtn) app.dom.snapshotManagerBtn.onclick = () => {
+          if (!this.requireDeveloperAccess()) return;
+          this.openSnapshotModal();
+        };
         if (app.dom.backupBtn) app.dom.backupBtn.onclick = () => app.export.exportBackup(app);
-        if (app.dom.restoreBtn) app.dom.restoreBtn.onclick = () => app.dom.restoreInput.click();
-        if (app.dom.restoreInput) app.dom.restoreInput.onchange = (e) => app.export.importBackup(e.target.files[0], app);
-        if (app.dom.systemCreateRestorePointBtn) app.dom.systemCreateRestorePointBtn.onclick = () => app.dom.createSnapshotBtn?.click();
-        if (app.dom.systemRestorePointsBtn) app.dom.systemRestorePointsBtn.onclick = () => app.dom.snapshotManagerBtn?.click();
+        if (app.dom.restoreBtn) app.dom.restoreBtn.onclick = () => {
+          if (!this.requireDeveloperAccess()) return;
+          app.dom.restoreInput.click();
+        };
+        if (app.dom.restoreInput) app.dom.restoreInput.onchange = (e) => {
+          if (!this.requireDeveloperAccess()) {
+            if (app.dom.restoreInput) app.dom.restoreInput.value = '';
+            return;
+          }
+          app.export.importBackup(e.target.files[0], app);
+        };
+        if (app.dom.systemCreateRestorePointBtn) app.dom.systemCreateRestorePointBtn.onclick = () => {
+          if (!this.requireDeveloperAccess()) return;
+          app.dom.createSnapshotBtn?.click();
+        };
+        if (app.dom.systemRestorePointsBtn) app.dom.systemRestorePointsBtn.onclick = () => {
+          if (!this.requireDeveloperAccess()) return;
+          app.dom.snapshotManagerBtn?.click();
+        };
         if (app.dom.systemExportDataBtn) app.dom.systemExportDataBtn.onclick = () => app.dom.backupBtn?.click();
-        if (app.dom.systemImportDataBtn) app.dom.systemImportDataBtn.onclick = () => app.dom.restoreBtn?.click();
+        if (app.dom.systemImportDataBtn) app.dom.systemImportDataBtn.onclick = () => {
+          if (!this.requireDeveloperAccess()) return;
+          app.dom.restoreBtn?.click();
+        };
         if (app.dom.systemThemeToggleBtn) app.dom.systemThemeToggleBtn.onclick = () => app.dom.themeToggle?.click();
         if (app.dom.systemResetBtn) {
           app.dom.systemResetBtn.onclick = () => {
+            if (!this.requireDeveloperAccess()) return;
             const confirmed = confirm('Are you sure you want to reset the system? This action cannot be undone.');
             if (!confirmed) return;
             app.dom.resetBtn?.click();
@@ -1847,14 +1932,25 @@ const ui = {
         }
         if (app.dom.snapshotCloseBtn) app.dom.snapshotCloseBtn.onclick = () => this.closeSnapshotModal();
         if (app.dom.themeToggle) app.dom.themeToggle.onclick = () => { app.state.theme = app.state.theme === 'light' ? 'dark' : 'light'; app.applyTheme(); };
-        if (app.dom.resetBtn) app.dom.resetBtn.onclick = () => app.dom.resetModal.classList.add('active');
+        if (app.dom.resetBtn) app.dom.resetBtn.onclick = () => {
+          if (!this.requireDeveloperAccess()) return;
+          app.dom.resetModal.classList.add('active');
+        };
         if (app.dom.resetConfirmBtn) app.dom.resetConfirmBtn.onclick = async () => {
+          if (!this.requireDeveloperAccess()) return;
           await this.clearAllData();
           app.dom.resetModal.classList.remove('active');
         };
         if (app.dom.resetCancelBtn) app.dom.resetCancelBtn.onclick = () => app.dom.resetModal.classList.remove('active');
-        if (app.dom.bulkImportBtn) app.dom.bulkImportBtn.onclick = () => app.dom.bulkImportModal.classList.add('active');
-        if (app.dom.bulkImportConfirmBtn) app.dom.bulkImportConfirmBtn.onclick = () => { app.students.bulkImport(app.dom.bulkImportTextarea.value, app, this); app.dom.bulkImportModal.classList.remove('active'); };
+        if (app.dom.bulkImportBtn) app.dom.bulkImportBtn.onclick = () => {
+          if (!this.requireDeveloperAccess()) return;
+          app.dom.bulkImportModal.classList.add('active');
+        };
+        if (app.dom.bulkImportConfirmBtn) app.dom.bulkImportConfirmBtn.onclick = () => {
+          if (!this.requireDeveloperAccess()) return;
+          app.students.bulkImport(app.dom.bulkImportTextarea.value, app, this);
+          app.dom.bulkImportModal.classList.remove('active');
+        };
         if (app.dom.bulkImportCancelBtn) app.dom.bulkImportCancelBtn.onclick = () => app.dom.bulkImportModal.classList.remove('active');
         if (app.dom.editSaveBtn) app.dom.editSaveBtn.onclick = () => app.students.saveEdit(app, this);
         if (app.dom.editCancelBtn) {

@@ -18,7 +18,9 @@ import {
   subscribeAuthState,
   logoutUser,
   formatAuthError,
-  isAuthAvailable
+  isAuthAvailable,
+  resolveUserRole,
+  normalizeUserRole
 } from './auth.js';
 
 app._initialized = app._initialized || false;
@@ -29,6 +31,15 @@ const LOGIN_PAGE_PATH = '/login.html';
 const redirectToLogin = () => {
   if (window.location.pathname.endsWith(LOGIN_PAGE_PATH)) return;
   window.location.replace(LOGIN_PAGE_PATH);
+};
+
+const setResolvedUserRole = async (authUser) => {
+  const nextRole = await resolveUserRole(authUser);
+  app.setCurrentUserRole(normalizeUserRole(nextRole), { resolved: true });
+
+  if (app.ui && typeof app.ui.updateRoleBasedUIAccess === 'function') {
+    app.ui.updateRoleBasedUIAccess();
+  }
 };
 
 const setAuthUserState = (authUser) => {
@@ -73,6 +84,9 @@ const clearLoadedDataForLogout = () => {
 
   app.state.error = null;
   app.state.isLoading = false;
+  if (typeof app.clearCurrentUserRole === 'function') {
+    app.clearCurrentUserRole();
+  }
 };
 
 const ensureAuthenticatedSession = async () => {
@@ -90,10 +104,12 @@ const ensureAuthenticatedSession = async () => {
     }
 
     setAuthUserState(authUser);
+    await setResolvedUserRole(authUser);
     console.log('Active UID:', authUser.uid);
     return true;
   } catch (error) {
     console.error('Failed to resolve authentication state:', error);
+    app.setCurrentUserRole('teacher', { resolved: true });
     redirectToLogin();
     return false;
   }
@@ -110,6 +126,7 @@ const handleAuthUserChange = async (authUser) => {
   }
 
   setAuthUserState(authUser);
+  await setResolvedUserRole(authUser);
   console.log('Active UID:', authUser.uid);
 
   const nextUid = authUser.uid;
@@ -119,6 +136,8 @@ const handleAuthUserChange = async (authUser) => {
   }
 
   clearLoadedDataForLogout();
+  setAuthUserState(authUser);
+  await setResolvedUserRole(authUser);
 
   try {
     await app.load();
