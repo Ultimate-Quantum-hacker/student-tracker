@@ -226,8 +226,11 @@ body.dark-mode{--intervention-bg:rgba(220,38,38,.18);--intervention-border:rgba(
 .rc-sig-date{margin-top:.35rem;font-size:.8rem;color:#64748b;font-weight:600}
 
 .rc-export-batch{background:#ffffff;color:#111827}
-.rc-export-page{page-break-inside:avoid;break-inside:avoid}
+.rc-export-page{page-break-inside:avoid;break-inside:avoid;padding:0 0 .75rem}
 .rc-export-page-break{page-break-before:always;break-before:page}
+.rc-export-meta{border:1px solid #e2e8f0;border-radius:12px;padding:.8rem 1rem;margin:0 auto .9rem;background:#f8fafc;max-width:800px}
+.rc-export-meta-title{margin:0;font-size:1rem;letter-spacing:.03em;color:#0f172a;text-transform:uppercase}
+.rc-export-meta-row{margin-top:.45rem;display:flex;align-items:center;justify-content:space-between;gap:.8rem;flex-wrap:wrap;font-size:.82rem;color:#334155;font-weight:600}
 
 @media (max-width: 720px){
   .report-card{padding:1.4rem;border-radius:12px}

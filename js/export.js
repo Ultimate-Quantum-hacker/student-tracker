@@ -6,6 +6,103 @@
 import app from './state.js';
 
 const exportModule = {
+    isExcelExporting: false,
+    xlsxLoadPromise: null,
+
+    getExportDateStamp: function () {
+      return new Date().toISOString().split('T')[0];
+    },
+
+    getTeacherNameForExport: function (app) {
+      if (typeof app.ui?.getTeacherNameForExport === 'function') {
+        return app.ui.getTeacherNameForExport();
+      }
+      const globalTeacherName = typeof window !== 'undefined'
+        ? String(window.__TEACHER_NAME__ || window.teacherName || '').trim()
+        : '';
+      return globalTeacherName || 'N/A';
+    },
+
+    setExcelExportState: function (app, isLoading) {
+      this.isExcelExporting = !!isLoading;
+      const button = app?.dom?.exportExcelBtn;
+      if (!button) return;
+
+      if (!button.dataset.originalLabel) {
+        button.dataset.originalLabel = button.textContent || 'Excel';
+      }
+
+      button.disabled = !!isLoading;
+      button.textContent = isLoading ? 'Generating report...' : button.dataset.originalLabel;
+    },
+
+    hasValidXlsx: function () {
+      return !!(window.XLSX && window.XLSX.utils && window.XLSX.writeFile);
+    },
+
+    loadScript: function (src) {
+      return new Promise((resolve, reject) => {
+        const existing = document.querySelector(`script[src="${src}"]`);
+        if (existing) {
+          if (this.hasValidXlsx()) {
+            resolve();
+            return;
+          }
+
+          existing.addEventListener('load', () => resolve(), { once: true });
+          existing.addEventListener('error', () => reject(new Error(`Failed to load ${src}`)), { once: true });
+          return;
+        }
+
+        const script = document.createElement('script');
+        script.src = src;
+        script.async = true;
+        script.crossOrigin = 'anonymous';
+        script.referrerPolicy = 'no-referrer';
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error(`Failed to load ${src}`));
+        document.head.appendChild(script);
+      });
+    },
+
+    ensureXlsxLibrary: async function () {
+      if (this.hasValidXlsx()) {
+        return true;
+      }
+
+      if (this.xlsxLoadPromise) {
+        await this.xlsxLoadPromise;
+        return this.hasValidXlsx();
+      }
+
+      const sources = [
+        'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
+        'https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js'
+      ];
+
+      this.xlsxLoadPromise = (async () => {
+        for (const src of sources) {
+          try {
+            await this.loadScript(src);
+            if (this.hasValidXlsx()) {
+              return true;
+            }
+          } catch (error) {
+            console.warn('Unable to load XLSX source:', src, error);
+          }
+        }
+
+        return false;
+      })();
+
+      try {
+        await this.xlsxLoadPromise;
+      } finally {
+        this.xlsxLoadPromise = null;
+      }
+
+      return this.hasValidXlsx();
+    },
     
     exportBackup: function (app) {
       app.state.lastBackup = new Date().toISOString();
@@ -96,274 +193,195 @@ const exportModule = {
       a.click();
     },
 
-    exportExcel: function (app) {
+    exportExcel: async function (app) {
+      if (this.isExcelExporting) {
+        return;
+      }
+
       try {
-        console.log('Export Excel clicked, XLSX available:', !!window.XLSX);
-        if (!window.XLSX || !window.XLSX.utils || !window.XLSX.writeFile) {
+        const xlsxReady = await this.ensureXlsxLibrary();
+        if (!xlsxReady) {
           console.error('Excel export library missing or incompatible', window.XLSX);
-          app.ui.showToast('Excel export unavailable. Please reload and try again.');
+          app.ui.showToast('Excel export unavailable. Check connection and try again.');
           return;
         }
 
-      const headers = [
-        'Rank',
-        'Student Name',
-        ...app.state.subjects.map(s => s.name || 'Subject'),
-        'Total Score',
-        'Previous Score',
-        'Improvement'
-      ];
+        if (app.state.isLoading) {
+          app.ui.showToast('Please wait for data to finish loading');
+          return;
+        }
 
-      const ranked = app.state.students.map((s) => ({
-        ...s,
-        _avg: app.analytics.calcAverages(s)
-      })).sort((a, b) => (b._avg.overall || 0) - (a._avg.overall || 0));
+        const students = Array.isArray(app.state.students) ? app.state.students : [];
+        if (!students.length) {
+          app.ui.showToast('No students to export');
+          return;
+        }
 
-      const rows = ranked.map((s, i) => {
-        const currentMock = app.state.exams[app.state.exams.length - 1];
-        const previousMock = app.state.exams[app.state.exams.length - 2];
-        const currentScore = currentMock ? app.analytics.getTotal(s, currentMock) : null;
-        const previousScore = previousMock ? app.analytics.getTotal(s, previousMock) : null;
-        const improvement = app.ui.formatImprovement(currentScore, previousScore);
+        this.setExcelExportState(app, true);
 
-        const subjectScores = app.state.subjects.map(sub => {
-          const v = currentMock ? app.analytics.getScore(s, sub, currentMock) : '';
-          return (v === null || v === undefined || isNaN(v)) ? '—' : Number(v);
+        const dateStamp = this.getExportDateStamp();
+        const generatedAt = new Date().toLocaleString();
+        const teacherName = this.getTeacherNameForExport(app);
+        const latestExam = app.analytics.getLatestExam();
+        const latestExamLabel = app.analytics.getExamLabel(latestExam) || 'N/A';
+        const headers = ['Name', 'Subjects', 'Scores', 'Total', 'Average', 'Status'];
+        const statusLabelMap = {
+          strong: 'Strong',
+          good: 'Good',
+          average: 'Average',
+          borderline: 'Borderline',
+          'at-risk': 'At Risk',
+          'no-data': 'No Data',
+          incomplete: 'N/A'
+        };
+
+        const ranked = students
+          .map(student => ({
+            ...student,
+            _overallAvg: app.analytics.getStudentOverallAverage(student)
+          }))
+          .sort((a, b) => (b._overallAvg ?? -1) - (a._overallAvg ?? -1));
+
+        const rows = ranked.map((student) => {
+          const subjectNames = (app.state.subjects || []).map(subject => subject.name || '').filter(Boolean);
+          const subjectsText = subjectNames.length ? subjectNames.join(', ') : 'N/A';
+
+          const scoreParts = subjectNames.map((subjectName) => {
+            const raw = latestExam ? app.analytics.getScore(student, subjectName, latestExam) : '';
+            const numeric = Number(raw);
+            const displayScore = (raw === '' || raw === null || raw === undefined || isNaN(numeric))
+              ? 'N/A'
+              : String(numeric);
+            return `${subjectName}: ${displayScore}`;
+          });
+
+          const scoresText = scoreParts.length ? scoreParts.join(' | ') : 'N/A';
+          const total = latestExam ? app.analytics.getTotal(student, latestExam) : null;
+          const average = app.analytics.getStudentOverallAverage(student);
+          const hasNumericTotal = total !== null && total !== undefined && !isNaN(total);
+          const hasNumericAverage = average !== null && average !== undefined && !isNaN(average);
+          const statusKey = app.analytics.getStudentStatus(student, latestExam);
+          const statusLabel = typeof app.ui?.formatStatusLabel === 'function'
+            ? app.ui.formatStatusLabel(statusKey)
+            : (statusLabelMap[statusKey] || 'No Data');
+
+          return [
+            student.name || 'N/A',
+            subjectsText,
+            scoresText,
+            hasNumericTotal ? Number(total) : 'N/A',
+            hasNumericAverage ? Number(average).toFixed(1) : 'N/A',
+            statusLabel
+          ];
         });
 
-        return [
-          i + 1,
-          s.name || '—',
-          ...subjectScores,
-          currentScore !== null && !isNaN(currentScore) ? Number(currentScore) : '—',
-          previousScore !== null && !isNaN(previousScore) ? Number(previousScore) : '—',
-          improvement.text === '—' ? '—' : improvement.text
+        const wsData = [
+          ['Student Performance Report'],
+          [`Date Generated: ${generatedAt}`],
+          [`Teacher: ${teacherName}`],
+          [`Latest Exam: ${latestExamLabel}`],
+          headers,
+          ...rows
         ];
-      });
 
-      const title = 'STUDENT EXAM REPORT';
-      const subtitle = 'Generated by Student Exam Tracker';
-      const schoolInfo = ['School Name: __________________', 'Class: __________________', 'Term: __________________'];
-      const wsData = [
-        [title],
-        [subtitle],
-        [],
-        [schoolInfo[0]],
-        [schoolInfo[1]],
-        [schoolInfo[2]],
-        [],
-        headers,
-        ...rows
-      ];
+        const ws = XLSX.utils.aoa_to_sheet(wsData);
+        const lastCol = headers.length - 1;
+        const headerRowIndex = 4;
+        const dataStartRowIndex = headerRowIndex + 1;
+        const totalRows = wsData.length;
 
-      const ws = XLSX.utils.aoa_to_sheet(wsData);
+        ws['!merges'] = [
+          { s: { r: 0, c: 0 }, e: { r: 0, c: lastCol } },
+          { s: { r: 1, c: 0 }, e: { r: 1, c: lastCol } },
+          { s: { r: 2, c: 0 }, e: { r: 2, c: lastCol } },
+          { s: { r: 3, c: 0 }, e: { r: 3, c: lastCol } }
+        ];
 
-      const lastCol = headers.length - 1;
-      ws['!merges'] = [
-        { s: { r: 0, c: 0 }, e: { r: 0, c: lastCol } },
-        { s: { r: 1, c: 0 }, e: { r: 1, c: lastCol } },
-        { s: { r: 3, c: 0 }, e: { r: 3, c: lastCol } },
-        { s: { r: 4, c: 0 }, e: { r: 4, c: lastCol } },
-        { s: { r: 5, c: 0 }, e: { r: 5, c: lastCol } }
-      ];
+        ws['!autofilter'] = { ref: `A${headerRowIndex + 1}:F${headerRowIndex + 1}` };
 
-      const colWidths = headers.map((h, idx) => {
-        const values = wsData.map(r => r[idx]);
-        const width = values.reduce((m, v) => {
-          const len = v === undefined || v === null ? 1 : String(v).length;
-          return Math.max(m, len);
-        }, h.length);
-        if (idx === 1) return { wch: Math.max(width + 4, 18) };
-        if (idx === 0 || idx >= headers.length - 3) return { wch: Math.max(width + 2, 10) };
-        return { wch: Math.max(width + 2, 12) };
-      });
-      ws['!cols'] = colWidths;
+        ws['!cols'] = [
+          { wch: 24 },
+          { wch: 34 },
+          { wch: 54 },
+          { wch: 12 },
+          { wch: 12 },
+          { wch: 14 }
+        ];
 
-      const setStyle = (cell, style) => { cell.s = { ...cell.s, ...style }; };
+        const setStyle = (cell, style) => {
+          if (!cell) return;
+          cell.s = { ...(cell.s || {}), ...style };
+        };
 
-      // Professional palette
-      const PALETTE = {
-        primary: '1F2937',      // dark slate
-        primarySoft: '2D3748',
-        accentPositive: '0F9D58',
-        accentNegative: 'D93025',
-        accentNeutral: 'F59E0B',
-        lightRow: 'F3F4F6',
-        lightBlue: 'EEF2FF',
-        darkHeader: '0F172A',
-        footerBg: 'F3F4F6',
-        border: 'CBD5E1'
-      };
+        const PALETTE = {
+          darkHeader: '0F172A',
+          metaBg: 'E2E8F0',
+          headerBg: '1F2937',
+          rowAlt: 'F8FAFC',
+          border: 'CBD5E1'
+        };
 
-      // Title and subtitle rows
-      const titleCell = ws['A1'];
-      if (titleCell) {
-        setStyle(titleCell, {
+        setStyle(ws.A1, {
           fill: { fgColor: { rgb: PALETTE.darkHeader } },
-          font: { bold: true, sz: 18, color: { rgb: 'FFFFFF' } },
+          font: { bold: true, sz: 16, color: { rgb: 'FFFFFF' } },
           alignment: { horizontal: 'center', vertical: 'center' }
         });
-      }
-      const subtitleCell = ws['A2'];
-      if (subtitleCell) {
-        setStyle(subtitleCell, {
-          fill: { fgColor: { rgb: '1E293B' } },
-          font: { italic: true, sz: 11, color: { rgb: 'D1D5DB' } },
-          alignment: { horizontal: 'center', vertical: 'center' }
-        });
-      }
 
-      // School details row styling
-      ['A4', 'A5', 'A6'].forEach((ref) => {
-        const cell = ws[ref];
-        if (!cell) return;
-        setStyle(cell, { font: { color: { rgb: '334155' }, sz: 10 }, alignment: { horizontal: 'left' } });
-      });
-
-      // Header row (row 8 in 1-indexed view, 7 in 0-indexed)
-      for (let c = 0; c <= lastCol; c++) {
-        const cell = ws[XLSX.utils.encode_cell({ r: 7, c })];
-        if (!cell) continue;
-        setStyle(cell, {
-          fill: { fgColor: { rgb: PALETTE.primary } },
-          font: { bold: true, color: { rgb: 'FFFFFF' } },
-          alignment: { horizontal: 'center', vertical: 'center' },
-          border: {
-            top: { style: 'thin', color: { rgb: PALETTE.border } },
-            bottom: { style: 'thin', color: { rgb: PALETTE.border } },
-            left: { style: 'thin', color: { rgb: PALETTE.border } },
-            right: { style: 'thin', color: { rgb: PALETTE.border } }
-          }
-        });
-      }
-
-      const rowCount = wsData.length;
-      for (let r = 8; r < rowCount; r++) {
-        const isEvenRow = ((r - 8) % 2) === 1;
-        const rowFill = isEvenRow ? { fgColor: { rgb: PALETTE.lightRow } } : { fgColor: { rgb: 'FFFFFF' } };
-
-        for (let c = 0; c <= lastCol; c++) {
-          const ref = XLSX.utils.encode_cell({ r, c });
-          let cell = ws[ref];
-          if (!cell) {
-            cell = { t: 's', v: '—' };
-            ws[ref] = cell;
-          }
-          if (!cell.s) cell.s = {};
-
-          cell.s.border = {
-            top: { style: 'thin', color: { rgb: PALETTE.border } },
-            bottom: { style: 'thin', color: { rgb: PALETTE.border } },
-            left: { style: 'thin', color: { rgb: PALETTE.border } },
-            right: { style: 'thin', color: { rgb: PALETTE.border } }
-          };
-          cell.s.fill = rowFill;
-
-          // Default alignment
-          cell.s.alignment = { horizontal: 'center', vertical: 'center' };
-          if (c === 1) {
-            cell.s.alignment.horizontal = 'left';
-          }
-        }
-
-        // Key columns highlight for each row
-        const totalColRef = XLSX.utils.encode_cell({ r, c: headers.length - 3 });
-        const prevColRef = XLSX.utils.encode_cell({ r, c: headers.length - 2 });
-        const improveColRef = XLSX.utils.encode_cell({ r, c: headers.length - 1 });
-        const rankCell = ws[XLSX.utils.encode_cell({ r, c: 0 })];
-
-        if (rankCell) {
-          setStyle(rankCell, {
-            font: { bold: true, color: { rgb: '0F172A' } },
-            alignment: { horizontal: 'center', vertical: 'center' }
+        ['A2', 'A3', 'A4'].forEach((ref) => {
+          setStyle(ws[ref], {
+            fill: { fgColor: { rgb: PALETTE.metaBg } },
+            font: { sz: 10, color: { rgb: '334155' } },
+            alignment: { horizontal: 'left', vertical: 'center' }
           });
-          if (rankCell.v === 1) {
-            setStyle(rankCell, { fill: { fgColor: { rgb: 'FFF7CD' } } });
-          } else if (rankCell.v === 2) {
-            setStyle(rankCell, { fill: { fgColor: { rgb: 'E9EDF6' } } });
-          } else if (rankCell.v === 3) {
-            setStyle(rankCell, { fill: { fgColor: { rgb: 'FDE8D2' } } });
-          }
-        }
+        });
 
-        const totalCell = ws[totalColRef];
-        if (totalCell) {
-          setStyle(totalCell, {
-            font: { bold: true, color: { rgb: '1D4ED8' } },
-            fill: { fgColor: { rgb: 'DBEAFE' } },
-            alignment: { horizontal: 'center', vertical: 'center' }
+        for (let c = 0; c <= lastCol; c += 1) {
+          const ref = XLSX.utils.encode_cell({ r: headerRowIndex, c });
+          setStyle(ws[ref], {
+            fill: { fgColor: { rgb: PALETTE.headerBg } },
+            font: { bold: true, color: { rgb: 'FFFFFF' } },
+            alignment: { horizontal: 'center', vertical: 'center' },
+            border: {
+              top: { style: 'thin', color: { rgb: PALETTE.border } },
+              bottom: { style: 'thin', color: { rgb: PALETTE.border } },
+              left: { style: 'thin', color: { rgb: PALETTE.border } },
+              right: { style: 'thin', color: { rgb: PALETTE.border } }
+            }
           });
         }
 
-        if (prevColRef in ws) {
-          const prevCell = ws[prevColRef];
-          setStyle(prevCell, { alignment: { horizontal: 'center', vertical: 'center' } });
-        }
+        for (let r = dataStartRowIndex; r < totalRows; r += 1) {
+          const isAltRow = ((r - dataStartRowIndex) % 2) === 1;
+          for (let c = 0; c <= lastCol; c += 1) {
+            const ref = XLSX.utils.encode_cell({ r, c });
+            const alignment = (c <= 2)
+              ? { horizontal: 'left', vertical: 'top', wrapText: true }
+              : { horizontal: 'center', vertical: 'center' };
 
-        const improveCell = ws[improveColRef];
-        if (improveCell) {
-          const value = String(improveCell.v || '');
-          if (value.startsWith('+')) {
-            setStyle(improveCell, {
-              font: { bold: true, color: { rgb: '0F9D58' } },
-              fill: { fgColor: { rgb: 'ECFDF3' } }
-            });
-          } else if (value.startsWith('-')) {
-            setStyle(improveCell, {
-              font: { bold: true, color: { rgb: 'D93025' } },
-              fill: { fgColor: { rgb: 'FEF3F2' } }
-            });
-          } else {
-            setStyle(improveCell, {
-              font: { color: { rgb: '6B7280' } },
-              fill: { fgColor: { rgb: 'FFFFFF' } }
+            setStyle(ws[ref], {
+              fill: { fgColor: { rgb: isAltRow ? PALETTE.rowAlt : 'FFFFFF' } },
+              alignment,
+              border: {
+                top: { style: 'thin', color: { rgb: PALETTE.border } },
+                bottom: { style: 'thin', color: { rgb: PALETTE.border } },
+                left: { style: 'thin', color: { rgb: PALETTE.border } },
+                right: { style: 'thin', color: { rgb: PALETTE.border } }
+              }
             });
           }
         }
-      }
 
-      // Footer
-      const footerRow = rowCount;
-      const footerTitle = `Generated on: ${new Date().toLocaleDateString()}`;
-      const footerSub = 'Powered by Student Exam Tracker';
-      XLSX.utils.sheet_add_aoa(ws, [[footerTitle]], { origin: { r: footerRow, c: 0 } });
-      XLSX.utils.sheet_add_aoa(ws, [[footerSub]], { origin: { r: footerRow + 1, c: 0 } });
-      ws['!merges'].push({ s: { r: footerRow, c: 0 }, e: { r: footerRow, c: lastCol } });
-      ws['!merges'].push({ s: { r: footerRow + 1, c: 0 }, e: { r: footerRow + 1, c: lastCol } });
-      const footer1 = ws[`A${footerRow + 1}`];
-      if (footer1) {
-        setStyle(footer1, {
-          fill: { fgColor: { rgb: PALETTE.footerBg } },
-          font: { color: { rgb: '475569' }, italic: true, sz: 10 },
-          alignment: { horizontal: 'left', vertical: 'center' }
-        });
-      }
-      const footer0 = ws[`A${footerRow}`];
-      if (footer0) {
-        setStyle(footer0, {
-          fill: { fgColor: { rgb: PALETTE.footerBg } },
-          font: { color: { rgb: '334155' }, sz: 10 },
-          alignment: { horizontal: 'left', vertical: 'center' }
-        });
-      }
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Student Data');
+        XLSX.writeFile(wb, `student-data-${dateStamp}.xlsx`, { bookType: 'xlsx', cellStyles: true });
 
-      // Ensure merged title area text color remains white
-      const titleRange = ['A1', 'A2'];
-      titleRange.forEach((ref) => {
-        const cell = ws[ref];
-        if (cell && cell.s && cell.s.font) {
-          cell.s.font.color = { rgb: 'FFFFFF' };
-        }
-      });
-
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Student Report');
-      XLSX.writeFile(wb, 'Student_Exam_Report.xlsx', { bookType: 'xlsx', cellStyles: true });
-      app.ui.showToast('Excel report generated');
-    } catch (err) {
-      console.error('Excel export error:', err);
-      app.ui.showToast('Excel export failed. See console for details.');
-    }
+        app.ui.showToast('Export complete');
+      } catch (err) {
+        console.error('Excel export error:', err);
+        app.ui.showToast('Excel export failed. See console for details.');
+      } finally {
+        this.setExcelExportState(app, false);
+      }
     }
 };
 

@@ -4,6 +4,7 @@
    ═══════════════════════════════════════════════ */
 
 import app from './state.js';
+import { auth } from './firebase.js';
 
 // DOM Node References
 app.dom = {};
@@ -114,6 +115,7 @@ const domIds = {
 };
 
 const ui = {
+    isReportExporting: false,
 
     init: function () {
       console.log('UI init running');
@@ -807,18 +809,59 @@ const ui = {
       if (app.dom.notesModal) app.dom.notesModal.classList.remove('active');
     },
 
-    getSafeReportFileName: function (name, fallback) {
-      const source = String(name || fallback || 'Student_Report').trim();
-      const cleaned = source
-        .replace(/[\\/:*?"<>|]/g, '')
-        .replace(/\s+/g, '_')
-        .replace(/_+/g, '_')
-        .replace(/^_+|_+$/g, '');
-      return cleaned || String(fallback || 'Student_Report');
+    getExportDateStamp: function () {
+      return new Date().toISOString().split('T')[0];
+    },
+
+    getTeacherNameForExport: function () {
+      const authName = String(auth?.currentUser?.displayName || '').trim();
+      const globalTeacherName = typeof window !== 'undefined'
+        ? String(window.__TEACHER_NAME__ || window.teacherName || '').trim()
+        : '';
+      return globalTeacherName || authName || 'N/A';
+    },
+
+    buildReportExportMeta: function () {
+      const dateGenerated = new Date().toLocaleString();
+      const teacherName = app.utils.esc(this.getTeacherNameForExport());
+      return `
+        <div class="rc-export-meta">
+          <h2 class="rc-export-meta-title">Student Performance Report</h2>
+          <div class="rc-export-meta-row">
+            <span>Date Generated: ${app.utils.esc(dateGenerated)}</span>
+            <span>Teacher: ${teacherName}</span>
+          </div>
+        </div>
+      `;
+    },
+
+    normalizeMissingValuesForExport: function (container) {
+      if (!container) return;
+      container.querySelectorAll('td, th, strong, span, div').forEach((node) => {
+        const value = String(node.textContent || '').trim();
+        if (value === '—' || value === '--' || value === '––') {
+          node.textContent = 'N/A';
+        }
+      });
+    },
+
+    buildReportExportPage: function (reportCard, addPageBreak = false) {
+      const page = document.createElement('section');
+      page.className = 'rc-export-page';
+      if (addPageBreak) {
+        page.classList.add('rc-export-page-break');
+      }
+
+      page.innerHTML = this.buildReportExportMeta();
+      const reportClone = reportCard.cloneNode(true);
+      this.normalizeMissingValuesForExport(reportClone);
+      page.appendChild(reportClone);
+      return page;
     },
 
     setReportExportState: function (isLoading, message = '') {
-      const statusText = isLoading ? (message || 'Generating PDF...') : (message || '');
+      this.isReportExporting = !!isLoading;
+      const statusText = isLoading ? (message || 'Generating report...') : (message || '');
       if (app.dom.reportExportStatus) {
         app.dom.reportExportStatus.textContent = statusText;
       }
@@ -836,13 +879,24 @@ const ui = {
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['css', 'legacy'] }
+        pagebreak: {
+          mode: ['css', 'legacy'],
+          avoid: ['.report-card', '.rc-table tr'],
+          before: '.rc-export-page-break'
+        }
       };
     },
 
     exportCurrentReportPdf: async function () {
+      if (this.isReportExporting) {
+        return;
+      }
       if (typeof window.html2pdf !== 'function') {
         this.showToast('PDF export library unavailable');
+        return;
+      }
+      if (!(app.state.students || []).length) {
+        this.showToast('No students to export');
         return;
       }
       if (!app.dom.reportContainer) {
@@ -857,15 +911,18 @@ const ui = {
       }
 
       const studentName = reportCard.querySelector('.rc-title')?.textContent || 'Student';
-      const fileName = `${this.getSafeReportFileName(studentName, 'Student')}_Report.pdf`;
+      const dateStamp = this.getExportDateStamp();
+      const fileName = `student-report-${dateStamp}.pdf`;
 
-      this.setReportExportState(true, 'Generating PDF...');
+      this.setReportExportState(true, 'Generating report...');
       try {
         const exportRoot = document.createElement('div');
         exportRoot.className = 'rc-export-batch';
-        exportRoot.appendChild(reportCard.cloneNode(true));
+        exportRoot.setAttribute('aria-label', `Student report for ${studentName}`);
+        exportRoot.appendChild(this.buildReportExportPage(reportCard));
         await window.html2pdf().set(this.buildPdfOptions(fileName)).from(exportRoot).save();
-        this.setReportExportState(false, 'PDF exported');
+        this.setReportExportState(false, 'Export complete');
+        this.showToast('Export complete');
         setTimeout(() => this.setReportExportState(false, ''), 1800);
       } catch (error) {
         console.error('Failed to export student report PDF:', error);
@@ -875,6 +932,9 @@ const ui = {
     },
 
     exportAllReportsPdf: async function () {
+      if (this.isReportExporting) {
+        return;
+      }
       if (typeof window.html2pdf !== 'function') {
         this.showToast('PDF export library unavailable');
         return;
@@ -892,8 +952,9 @@ const ui = {
 
       const wasOpen = app.dom.reportModal.classList.contains('active');
       const originalMarkup = app.dom.reportContainer.innerHTML;
+      const dateStamp = this.getExportDateStamp();
 
-      this.setReportExportState(true, `Generating PDF... (${students.length} reports)`);
+      this.setReportExportState(true, `Generating report... (${students.length} students)`);
 
       try {
         const exportRoot = document.createElement('div');
@@ -904,14 +965,12 @@ const ui = {
           const reportCard = app.dom.reportContainer.querySelector('.report-card');
           if (!reportCard) return;
 
-          const page = document.createElement('section');
-          page.className = 'rc-export-page';
-          if (idx > 0) {
-            page.classList.add('rc-export-page-break');
-          }
-          page.appendChild(reportCard.cloneNode(true));
-          exportRoot.appendChild(page);
+          exportRoot.appendChild(this.buildReportExportPage(reportCard, idx > 0));
         });
+
+        if (!exportRoot.childElementCount) {
+          throw new Error('No report content available for export');
+        }
 
         app.dom.reportContainer.innerHTML = originalMarkup;
         if (wasOpen) {
@@ -920,9 +979,10 @@ const ui = {
           app.dom.reportModal.classList.remove('active');
         }
 
-        await window.html2pdf().set(this.buildPdfOptions('All_Student_Reports.pdf')).from(exportRoot).save();
+        await window.html2pdf().set(this.buildPdfOptions(`student-report-${dateStamp}-all.pdf`)).from(exportRoot).save();
 
-        this.setReportExportState(false, 'PDF exported');
+        this.setReportExportState(false, 'Export complete');
+        this.showToast('Export complete');
         setTimeout(() => this.setReportExportState(false, ''), 1800);
       } catch (error) {
         app.dom.reportContainer.innerHTML = originalMarkup;
