@@ -280,13 +280,14 @@ const exportModule = {
           [`Date Generated: ${generatedAt}`],
           [`Teacher: ${teacherName}`],
           [`Latest Exam: ${latestExamLabel}`],
+          [],
           headers,
           ...rows
         ];
 
         const ws = XLSX.utils.aoa_to_sheet(wsData);
         const lastCol = headers.length - 1;
-        const headerRowIndex = 4;
+        const headerRowIndex = 5;
         const dataStartRowIndex = headerRowIndex + 1;
         const totalRows = wsData.length;
 
@@ -298,14 +299,38 @@ const exportModule = {
         ];
 
         ws['!autofilter'] = { ref: `A${headerRowIndex + 1}:F${headerRowIndex + 1}` };
+        ws['!freeze'] = {
+          xSplit: 0,
+          ySplit: dataStartRowIndex,
+          topLeftCell: `A${dataStartRowIndex + 1}`,
+          activePane: 'bottomLeft',
+          state: 'frozen'
+        };
+
+        const computeColumnWidth = (colIndex, minWidth, maxWidth) => {
+          const longest = wsData.reduce((max, row) => {
+            const value = row[colIndex];
+            const len = value === null || value === undefined ? 0 : String(value).length;
+            return Math.max(max, len);
+          }, headers[colIndex]?.length || minWidth);
+          return Math.max(minWidth, Math.min(maxWidth, longest + 2));
+        };
 
         ws['!cols'] = [
-          { wch: 24 },
-          { wch: 34 },
-          { wch: 54 },
-          { wch: 12 },
-          { wch: 12 },
-          { wch: 14 }
+          { wch: computeColumnWidth(0, 20, 30) },
+          { wch: computeColumnWidth(1, 28, 40) },
+          { wch: computeColumnWidth(2, 42, 70) },
+          { wch: computeColumnWidth(3, 10, 14) },
+          { wch: computeColumnWidth(4, 10, 14) },
+          { wch: computeColumnWidth(5, 12, 18) }
+        ];
+        ws['!rows'] = [
+          { hpt: 28 },
+          { hpt: 19 },
+          { hpt: 19 },
+          { hpt: 19 },
+          { hpt: 8 },
+          { hpt: 22 }
         ];
 
         const setStyle = (cell, style) => {
@@ -318,7 +343,13 @@ const exportModule = {
           metaBg: 'E2E8F0',
           headerBg: '1F2937',
           rowAlt: 'F8FAFC',
-          border: 'CBD5E1'
+          border: 'CBD5E1',
+          statusStrongBg: '16A34A',
+          statusGoodBg: '2563EB',
+          statusAverageBg: 'EAB308',
+          statusBorderlineBg: 'EA580C',
+          statusRiskBg: 'DC2626',
+          statusNeutralBg: '64748B'
         };
 
         setStyle(ws.A1, {
@@ -330,7 +361,7 @@ const exportModule = {
         ['A2', 'A3', 'A4'].forEach((ref) => {
           setStyle(ws[ref], {
             fill: { fgColor: { rgb: PALETTE.metaBg } },
-            font: { sz: 10, color: { rgb: '334155' } },
+            font: { sz: 11, color: { rgb: '334155' } },
             alignment: { horizontal: 'left', vertical: 'center' }
           });
         });
@@ -350,6 +381,26 @@ const exportModule = {
           });
         }
 
+        const getStatusStyle = (statusValue) => {
+          const status = String(statusValue || '').trim().toLowerCase();
+          if (status === 'strong') {
+            return { fill: { fgColor: { rgb: PALETTE.statusStrongBg } }, font: { bold: true, color: { rgb: 'FFFFFF' } } };
+          }
+          if (status === 'good') {
+            return { fill: { fgColor: { rgb: PALETTE.statusGoodBg } }, font: { bold: true, color: { rgb: 'FFFFFF' } } };
+          }
+          if (status === 'average') {
+            return { fill: { fgColor: { rgb: PALETTE.statusAverageBg } }, font: { bold: true, color: { rgb: '111827' } } };
+          }
+          if (status === 'borderline') {
+            return { fill: { fgColor: { rgb: PALETTE.statusBorderlineBg } }, font: { bold: true, color: { rgb: 'FFFFFF' } } };
+          }
+          if (status === 'at risk') {
+            return { fill: { fgColor: { rgb: PALETTE.statusRiskBg } }, font: { bold: true, color: { rgb: 'FFFFFF' } } };
+          }
+          return { fill: { fgColor: { rgb: PALETTE.statusNeutralBg } }, font: { bold: true, color: { rgb: 'FFFFFF' } } };
+        };
+
         for (let r = dataStartRowIndex; r < totalRows; r += 1) {
           const isAltRow = ((r - dataStartRowIndex) % 2) === 1;
           for (let c = 0; c <= lastCol; c += 1) {
@@ -361,6 +412,23 @@ const exportModule = {
             setStyle(ws[ref], {
               fill: { fgColor: { rgb: isAltRow ? PALETTE.rowAlt : 'FFFFFF' } },
               alignment,
+              font: { color: { rgb: '0F172A' } },
+              border: {
+                top: { style: 'thin', color: { rgb: PALETTE.border } },
+                bottom: { style: 'thin', color: { rgb: PALETTE.border } },
+                left: { style: 'thin', color: { rgb: PALETTE.border } },
+                right: { style: 'thin', color: { rgb: PALETTE.border } }
+              }
+            });
+          }
+
+          const statusRef = XLSX.utils.encode_cell({ r, c: 5 });
+          const statusCell = ws[statusRef];
+          if (statusCell) {
+            const statusStyle = getStatusStyle(statusCell.v);
+            setStyle(statusCell, {
+              ...statusStyle,
+              alignment: { horizontal: 'center', vertical: 'center' },
               border: {
                 top: { style: 'thin', color: { rgb: PALETTE.border } },
                 bottom: { style: 'thin', color: { rgb: PALETTE.border } },
@@ -372,7 +440,7 @@ const exportModule = {
         }
 
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Student Data');
+        XLSX.utils.book_append_sheet(wb, ws, 'Performance Report');
         XLSX.writeFile(wb, `student-data-${dateStamp}.xlsx`, { bookType: 'xlsx', cellStyles: true });
 
         app.ui.showToast('Export complete');
