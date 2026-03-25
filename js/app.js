@@ -35,7 +35,17 @@ const redirectToLogin = () => {
 
 const setResolvedUserRole = async (authUser) => {
   const nextRole = await resolveUserRole(authUser);
-  app.setCurrentUserRole(normalizeUserRole(nextRole), { resolved: true });
+  const normalizedRole = normalizeUserRole(nextRole);
+  app.setCurrentUserRole(normalizedRole, { resolved: true });
+
+  if (app.state.authUser?.uid && app.state.authUser.uid === authUser?.uid) {
+    app.state.authUser = {
+      ...app.state.authUser,
+      role: normalizedRole
+    };
+  }
+
+  console.log('Final role:', normalizedRole);
 
   if (app.ui && typeof app.ui.updateRoleBasedUIAccess === 'function') {
     app.ui.updateRoleBasedUIAccess();

@@ -131,7 +131,8 @@ const domIds = {
 };
 
 const FEATURE_ACCESS_RULES = {
-  developerTools: ['developer'],
+  developerTools: ['admin', 'developer'],
+  exportData: ['admin', 'developer'],
   importData: ['developer'],
   bulkImport: ['developer'],
   restorePoints: ['developer'],
@@ -140,7 +141,8 @@ const FEATURE_ACCESS_RULES = {
 };
 
 const FEATURE_ACCESS_MESSAGES = {
-  developerTools: 'Access restricted: Developer only',
+  developerTools: 'Access restricted: Admin or Developer only',
+  exportData: 'Access restricted: Admin or Developer only',
   importData: 'Access restricted: Developer only',
   bulkImport: 'Access restricted: Developer only',
   restorePoints: 'Access restricted: Developer only',
@@ -338,10 +340,39 @@ const ui = {
         app.dom.systemResetBtn
       ]);
 
+      this.applyFeatureAccessState('exportData', [
+        app.dom.backupBtn,
+        app.dom.systemExportDataBtn,
+        app.dom.exportCsvBtn,
+        app.dom.exportExcelBtn,
+        app.dom.reportExportPdfBtn,
+        app.dom.reportExportAllPdfBtn
+      ]);
+
       this.applyFeatureAccessState('adminPanel', [
         ...document.querySelectorAll('[data-section="admin-dashboard"]'),
         app.dom.adminDashboardBtn || document.getElementById('admin-dashboard-btn')
       ]);
+
+      const canViewAdminPanel = this.canAccess('adminPanel');
+      [...document.querySelectorAll('[data-section="admin-dashboard"]'), app.dom.adminDashboardBtn]
+        .filter(Boolean)
+        .forEach((element) => {
+          element.hidden = !canViewAdminPanel;
+        });
+
+      const canViewExportTools = this.canAccess('exportData');
+      [
+        app.dom.systemExportDataBtn,
+        app.dom.exportCsvBtn,
+        app.dom.exportExcelBtn,
+        app.dom.reportExportPdfBtn,
+        app.dom.reportExportAllPdfBtn
+      ]
+        .filter(Boolean)
+        .forEach((element) => {
+          element.hidden = !canViewExportTools;
+        });
     },
 
     hideToast: function () {
@@ -2063,7 +2094,10 @@ const ui = {
           if (!this.requireAccess('restorePoints')) return;
           this.openSnapshotModal();
         };
-        if (app.dom.backupBtn) app.dom.backupBtn.onclick = () => app.export.exportBackup(app);
+        if (app.dom.backupBtn) app.dom.backupBtn.onclick = () => {
+          if (!this.requireAccess('exportData')) return;
+          app.export.exportBackup(app);
+        };
         if (app.dom.restoreBtn) app.dom.restoreBtn.onclick = () => {
           if (!this.requireAccess('importData')) return;
           app.dom.restoreInput.click();
@@ -2083,7 +2117,10 @@ const ui = {
           if (!this.requireAccess('restorePoints')) return;
           app.dom.snapshotManagerBtn?.click();
         };
-        if (app.dom.systemExportDataBtn) app.dom.systemExportDataBtn.onclick = () => app.dom.backupBtn?.click();
+        if (app.dom.systemExportDataBtn) app.dom.systemExportDataBtn.onclick = () => {
+          if (!this.requireAccess('exportData')) return;
+          app.dom.backupBtn?.click();
+        };
         if (app.dom.systemImportDataBtn) app.dom.systemImportDataBtn.onclick = () => {
           if (!this.requireAccess('importData')) return;
           app.dom.restoreBtn?.click();
@@ -2314,10 +2351,22 @@ const ui = {
         }
         if (app.dom.reportCloseBtn) app.dom.reportCloseBtn.onclick = () => app.dom.reportModal.classList.remove('active');
         if (app.dom.reportPrintBtn) app.dom.reportPrintBtn.onclick = () => this.printReportOnly();
-        if (app.dom.reportExportPdfBtn) app.dom.reportExportPdfBtn.onclick = () => this.exportCurrentReportPdf();
-        if (app.dom.reportExportAllPdfBtn) app.dom.reportExportAllPdfBtn.onclick = () => this.exportAllReportsPdf();
-        if (app.dom.exportCsvBtn) app.dom.exportCsvBtn.onclick = () => app.export.exportCSV(app);
-        if (app.dom.exportExcelBtn) app.dom.exportExcelBtn.onclick = () => app.export.exportExcel(app);
+        if (app.dom.reportExportPdfBtn) app.dom.reportExportPdfBtn.onclick = () => {
+          if (!this.requireAccess('exportData')) return;
+          this.exportCurrentReportPdf();
+        };
+        if (app.dom.reportExportAllPdfBtn) app.dom.reportExportAllPdfBtn.onclick = () => {
+          if (!this.requireAccess('exportData')) return;
+          this.exportAllReportsPdf();
+        };
+        if (app.dom.exportCsvBtn) app.dom.exportCsvBtn.onclick = () => {
+          if (!this.requireAccess('exportData')) return;
+          app.export.exportCSV(app);
+        };
+        if (app.dom.exportExcelBtn) app.dom.exportExcelBtn.onclick = () => {
+          if (!this.requireAccess('exportData')) return;
+          app.export.exportExcel(app);
+        };
         if (app.dom.printBtn) app.dom.printBtn.onclick = () => this.printReportOnly();
         if (app.dom.resultsBody) app.dom.resultsBody.addEventListener('click', (e) => {
           const reportCell = e.target.closest('.report-cell');

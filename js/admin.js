@@ -70,6 +70,8 @@ const setLoading = (isLoading) => {
   dom.loading.style.display = isLoading ? 'block' : 'none';
 };
 
+const isPermissionDeniedError = (error) => String(error?.code || '').toLowerCase().includes('permission-denied');
+
 const formatCreatedAt = (value) => {
   if (!value) return '—';
   if (typeof value?.toDate === 'function') {
@@ -223,6 +225,10 @@ const fetchUsers = async () => {
     setStatus(`Loaded ${records.length} user${records.length === 1 ? '' : 's'}.`, 'success');
   } catch (error) {
     console.error('Failed to fetch users:', error);
+    if (isPermissionDeniedError(error)) {
+      setStatus('Access denied. You don\'t have permission.', 'error');
+      return;
+    }
     setStatus(`Failed to load users: ${formatAuthError(error)}`, 'error');
   } finally {
     setLoading(false);
@@ -273,6 +279,10 @@ const updateUserRole = async (uid, nextRole) => {
     setStatus('Role updated successfully.', 'success');
   } catch (error) {
     console.error('Failed to update role:', error);
+    if (isPermissionDeniedError(error)) {
+      setStatus('Access denied. You don\'t have permission.', 'error');
+      return;
+    }
     setStatus(`Failed to update role: ${formatAuthError(error)}`, 'error');
   }
 };

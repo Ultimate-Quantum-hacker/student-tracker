@@ -13,33 +13,13 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    function getUserRole() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
-    }
-
-    function isAdmin() {
-      return isAuthenticated() && getUserRole() == 'admin';
-    }
-
-    function isDeveloper() {
-      return isAuthenticated() && getUserRole() == 'developer';
-    }
-
-    function canAccessUserData(userId) {
-      return isOwner(userId) || isAdmin() || isDeveloper();
-    }
-
-    function isValidRole(role) {
-      return role in ['teacher', 'admin', 'developer'];
-    }
-
     function hasValidUserProfileShape(userId) {
       return request.resource.data.keys().hasOnly(['uid', 'role', 'name', 'email', 'createdAt'])
         && request.resource.data.uid is string
         && request.resource.data.uid == userId
         && request.resource.data.name is string
         && request.resource.data.email is string
-        && isValidRole(request.resource.data.role);
+        && request.resource.data.role in ['teacher', 'admin', 'developer'];
     }
 
     function isRoleUpdateByOwnerAllowed() {
@@ -49,16 +29,16 @@ service cloud.firestore {
           && request.resource.data.role == 'teacher'
         )
         || (
-          isDeveloperEmail()
-          && request.resource.data.role == 'developer'
-        )
-        || (
           !('role' in resource.data)
           && request.resource.data.role == 'teacher'
         );
     }
 
     match /users/{userId} {
+      allow read: if isAuthenticated();
+
+      allow write: if isAuthenticated() && isDeveloperEmail();
+
       allow create: if isOwner(userId)
         && hasValidUserProfileShape(userId)
         && (
@@ -66,39 +46,13 @@ service cloud.firestore {
           || (!isDeveloperEmail() && request.resource.data.role == 'teacher')
         );
 
-      allow read: if canAccessUserData(userId);
-
-      allow update: if (
-          isOwner(userId)
-          && hasValidUserProfileShape(userId)
-          && isRoleUpdateByOwnerAllowed()
-          && request.resource.data.createdAt == resource.data.createdAt
-        )
-        || (
-          isAdmin()
-          && hasValidUserProfileShape(userId)
-          && request.resource.data.role == resource.data.role
-          && request.resource.data.createdAt == resource.data.createdAt
-        )
-        || (
-          isDeveloper()
-          && hasValidUserProfileShape(userId)
-          && request.resource.data.createdAt == resource.data.createdAt
-        );
-
-      allow delete: if isDeveloper();
-
-      match /classes/{classId} {
-        allow read, write: if canAccessUserData(userId);
-
-        match /{document=**} {
-          allow read, write: if canAccessUserData(userId);
-        }
-      }
+      allow update: if isOwner(userId)
+        && hasValidUserProfileShape(userId)
+        && isRoleUpdateByOwnerAllowed();
     }
 
-    match /devTools/{document=**} {
-      allow read, write: if isDeveloper();
+    match /users/{userId}/{document=**} {
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
     }
 
     match /{document=**} {

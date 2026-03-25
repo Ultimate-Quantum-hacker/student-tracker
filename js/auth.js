@@ -62,13 +62,13 @@ const ensureUserProfileDocument = async (authUser) => {
   const uid = String(authUser?.uid || '').trim();
   const normalizedEmail = normalizeEmail(authUser?.email || auth?.currentUser?.email);
 
-  if (normalizedEmail) {
-    console.log('User email:', normalizedEmail);
-  }
+  console.log('Logged in email:', normalizedEmail || '(none)');
 
   if (!uid || !isFirebaseConfigured || !db) {
     const fallbackRole = resolveProfileRole(authUser);
+    console.log('Firestore role:', undefined);
     console.log('Assigned role:', fallbackRole);
+    console.log('Final role:', fallbackRole);
     return {
       uid,
       role: fallbackRole,
@@ -87,7 +87,9 @@ const ensureUserProfileDocument = async (authUser) => {
       email: normalizedEmail
     });
     await setDoc(profileRef, payload, { merge: true });
+    console.log('Firestore role:', undefined);
     console.log('Assigned role:', payload.role);
+    console.log('Final role:', payload.role);
     return {
       uid,
       role: payload.role,
@@ -97,6 +99,7 @@ const ensureUserProfileDocument = async (authUser) => {
   }
 
   const data = profileSnapshot.data() || {};
+  console.log('Firestore role:', data.role);
   const normalizedName = normalizeName(data.name || authUser?.name);
   const profileEmail = normalizeEmail(data.email || '');
   const resolvedEmailForProfile = normalizedEmail || profileEmail;
@@ -128,6 +131,7 @@ const ensureUserProfileDocument = async (authUser) => {
   }
 
   console.log('Assigned role:', resolvedRole);
+  console.log('Final role:', resolvedRole);
 
   return {
     uid,
@@ -182,6 +186,7 @@ export const formatAuthError = (error) => {
   if (code.includes('email-already-in-use')) return 'This email is already in use.';
   if (code.includes('user-not-found')) return 'No account found for this email.';
   if (code.includes('wrong-password') || code.includes('invalid-credential')) return 'Invalid email or password.';
+  if (code.includes('permission-denied')) return 'Access denied. You don\'t have permission.';
   if (code.includes('network-request-failed')) return 'Network error. Please check your internet connection.';
   if (code.includes('too-many-requests')) return 'Too many attempts. Please try again later.';
 
