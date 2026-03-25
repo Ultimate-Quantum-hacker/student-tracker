@@ -213,7 +213,7 @@ const persistSubjectDeleteByIdentity = async (subjectIdentity, nextData) => {
         updatedAt
       }, { merge: true });
 
-      const deletedId = String(subjectIdentity?.id || subjectDocRef.id || '').trim();
+      const deletedId = String(subjectDocRef?.id || subjectIdentity?.id || '').trim();
       const deletedName = String(subjectIdentity?.name || '').trim() || 'Subject';
 
       return {
@@ -296,7 +296,7 @@ const persistExamDeleteByIdentity = async (examIdentity, nextData) => {
         updatedAt
       }, { merge: true });
 
-      const deletedId = String(examIdentity?.id || examDocRef.id || '').trim();
+      const deletedId = String(examDocRef?.id || examIdentity?.id || '').trim();
       const deletedName = String(examIdentity?.title || examIdentity?.name || '').trim() || 'Exam';
 
       return {
