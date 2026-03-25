@@ -203,24 +203,41 @@ const ui = {
       }, timeoutMs);
     },
 
-    showUndoDeleteToast: function (studentId, studentName = 'Student') {
-      const normalizedStudentId = String(studentId || '').trim();
-      if (!normalizedStudentId) {
-        this.showToast('Student moved to Trash');
+    showUndoDeleteToast: function (itemId, itemName = 'Item', itemType = 'student') {
+      const normalizedId = String(itemId || '').trim();
+      const normalizedType = String(itemType || 'student').trim().toLowerCase();
+      const typeLabel = normalizedType === 'class'
+        ? 'Class'
+        : normalizedType === 'exam'
+        ? 'Exam'
+        : normalizedType === 'subject'
+          ? 'Subject'
+          : 'Student';
+
+      if (!normalizedId) {
+        this.showToast(`${typeLabel} moved to Trash`);
         return;
       }
 
-      this.showToast(`${studentName} moved to Trash`, {
+      this.showToast(`${itemName} moved to Trash`, {
         actionLabel: 'Undo',
         duration: 5000,
         onAction: async () => {
           try {
-            await app.restoreStudent(normalizedStudentId);
+            if (normalizedType === 'class') {
+              await app.restoreClass(normalizedId);
+            } else if (normalizedType === 'exam') {
+              await app.restoreExam(normalizedId);
+            } else if (normalizedType === 'subject') {
+              await app.restoreSubject(normalizedId);
+            } else {
+              await app.restoreStudent(normalizedId);
+            }
             this.refreshUI();
-            this.showToast('Student restored');
+            this.showToast(`${typeLabel} restored`);
           } catch (error) {
             console.error('Failed to undo delete:', error);
-            this.showToast('Failed to restore student');
+            this.showToast(`Failed to restore ${typeLabel.toLowerCase()}`);
           }
         }
       });
@@ -263,7 +280,12 @@ const ui = {
     renderTrashList: function () {
       if (!app.dom.trashList) return;
 
-      const trashItems = (Array.isArray(app.state.studentTrash) ? [...app.state.studentTrash] : [])
+      const trashItems = [
+        ...(Array.isArray(app.state.studentTrash) ? app.state.studentTrash.map(item => ({ ...item, type: 'student' })) : []),
+        ...(Array.isArray(app.state.classTrash) ? app.state.classTrash.map(item => ({ ...item, type: 'class' })) : []),
+        ...(Array.isArray(app.state.subjectTrash) ? app.state.subjectTrash.map(item => ({ ...item, type: 'subject' })) : []),
+        ...(Array.isArray(app.state.examTrash) ? app.state.examTrash.map(item => ({ ...item, type: 'exam' })) : [])
+      ]
         .sort((a, b) => {
           const aTime = new Date(a?.deletedAt || 0).getTime() || 0;
           const bTime = new Date(b?.deletedAt || 0).getTime() || 0;
@@ -287,20 +309,22 @@ const ui = {
 
       app.dom.trashList.innerHTML = trashItems.map((item) => {
         const id = String(item?.id || '').trim();
-        const name = String(item?.name || 'Student').trim() || 'Student';
+        const type = String(item?.type || 'student').trim().toLowerCase();
+        const typeLabel = type === 'class' ? 'Class' : type === 'exam' ? 'Exam' : type === 'subject' ? 'Subject' : 'Student';
+        const name = String(item?.name || typeLabel).trim() || typeLabel;
         const deletedAtLabel = this.formatDeletedAt(item?.deletedAt);
         const retentionCountdownLabel = this.getTrashRetentionCountdown(item?.deletedAt);
 
         return `
-          <div class="trash-item" data-trash-student-id="${app.utils.esc(id)}">
+          <div class="trash-item" data-trash-id="${app.utils.esc(id)}" data-trash-type="${app.utils.esc(type)}">
             <div class="trash-item-meta">
               <p class="trash-item-name">${app.utils.esc(name)}</p>
-              <p class="trash-item-date">Deleted ${app.utils.esc(deletedAtLabel)}</p>
+              <p class="trash-item-date">${app.utils.esc(typeLabel)} · Deleted ${app.utils.esc(deletedAtLabel)}</p>
               <p class="trash-item-retention">${app.utils.esc(retentionCountdownLabel)}</p>
             </div>
             <div class="trash-item-actions">
-              <button type="button" class="btn btn-secondary btn-sm" data-trash-action="restore" data-trash-student-id="${app.utils.esc(id)}">Restore</button>
-              <button type="button" class="btn btn-danger btn-sm" data-trash-action="permanent-delete" data-trash-student-id="${app.utils.esc(id)}">Delete Forever</button>
+              <button type="button" class="btn btn-secondary btn-sm" data-trash-action="restore" data-trash-id="${app.utils.esc(id)}" data-trash-type="${app.utils.esc(type)}">Restore</button>
+              <button type="button" class="btn btn-danger btn-sm" data-trash-action="permanent-delete" data-trash-id="${app.utils.esc(id)}" data-trash-type="${app.utils.esc(type)}">Delete Forever</button>
             </div>
           </div>
         `;
@@ -1649,8 +1673,12 @@ const ui = {
     deleteExam: async function (id) { 
       if (confirm("Delete exam?")) { 
         try {
-          await app.deleteExam(id);
+          const examName = app.state.exams.find(item => item.id === id)?.title
+            || app.state.exams.find(item => item.id === id)?.name
+            || 'Exam';
+          const deletedEntry = await app.deleteExam(id);
           this.refreshUI(); 
+          this.showUndoDeleteToast(deletedEntry?.id || id, deletedEntry?.name || examName, 'exam');
         } catch (error) {
           console.error('Failed to delete exam:', error);
           app.ui.showToast('Failed to delete exam');
@@ -1669,8 +1697,10 @@ const ui = {
     deleteSubject: async function (id) {
       if (confirm("Delete subject?")) {
         try {
-          await app.deleteSubject(id);
+          const subjectName = app.state.subjects.find(item => item.id === id)?.name || 'Subject';
+          const deletedEntry = await app.deleteSubject(id);
           this.refreshUI();
+          this.showUndoDeleteToast(deletedEntry?.id || id, deletedEntry?.name || subjectName, 'subject');
         } catch (error) {
           console.error('Failed to delete subject:', error);
           app.ui.showToast('Failed to delete subject');
@@ -1785,13 +1815,13 @@ const ui = {
         if (app.dom.deleteClassBtn) {
           app.dom.deleteClassBtn.onclick = async () => {
             const activeClassName = app.state.currentClassName || 'this class';
-            const shouldDelete = confirm(`Delete ${activeClassName}? This will remove all students, subjects, and exams in the class.`);
+            const shouldDelete = confirm(`Move ${activeClassName} to Trash? You can restore it later from Trash.`);
             if (!shouldDelete) return;
 
             try {
-              await app.deleteClass(app.state.currentClassId);
+              const deletedEntry = await app.deleteClass(app.state.currentClassId);
               this.refreshUI();
-              this.showToast('Class deleted');
+              this.showUndoDeleteToast(deletedEntry?.id || app.state.currentClassId, deletedEntry?.name || activeClassName, 'class');
             } catch (error) {
               console.error('Failed to delete class:', error);
               this.showToast(error?.message || 'Failed to delete class');
@@ -1930,27 +1960,45 @@ const ui = {
             if (!trigger) return;
 
             const action = String(trigger.dataset.trashAction || '').trim();
-            const studentId = String(trigger.dataset.trashStudentId || '').trim();
-            if (!action || !studentId) return;
+            const itemId = String(trigger.dataset.trashId || '').trim();
+            const itemType = String(trigger.dataset.trashType || 'student').trim().toLowerCase();
+            const typeLabel = itemType === 'class' ? 'class' : itemType === 'exam' ? 'exam' : itemType === 'subject' ? 'subject' : 'student';
+            if (!action || !itemId) return;
 
             trigger.disabled = true;
 
             try {
               if (action === 'restore') {
-                await app.restoreStudent(studentId);
+                if (itemType === 'class') {
+                  await app.restoreClass(itemId);
+                } else if (itemType === 'exam') {
+                  await app.restoreExam(itemId);
+                } else if (itemType === 'subject') {
+                  await app.restoreSubject(itemId);
+                } else {
+                  await app.restoreStudent(itemId);
+                }
                 this.refreshUI();
-                this.showToast('Student restored');
+                this.showToast(`${typeLabel.charAt(0).toUpperCase() + typeLabel.slice(1)} restored`);
                 return;
               }
 
               if (action === 'permanent-delete') {
-                if (!confirm('Permanently delete this student from Trash? This cannot be undone.')) {
+                if (!confirm(`Permanently delete this ${typeLabel} from Trash? This cannot be undone.`)) {
                   return;
                 }
 
-                await app.permanentlyDeleteStudent(studentId);
+                if (itemType === 'class') {
+                  await app.permanentlyDeleteClass(itemId);
+                } else if (itemType === 'exam') {
+                  await app.permanentlyDeleteExam(itemId);
+                } else if (itemType === 'subject') {
+                  await app.permanentlyDeleteSubject(itemId);
+                } else {
+                  await app.permanentlyDeleteStudent(itemId);
+                }
                 this.refreshUI();
-                this.showToast('Student permanently deleted');
+                this.showToast(`${typeLabel.charAt(0).toUpperCase() + typeLabel.slice(1)} permanently deleted`);
               }
             } catch (error) {
               console.error('Trash action failed:', error);
@@ -1967,11 +2015,11 @@ const ui = {
               const restoredCount = await app.restoreAllStudentsFromTrash();
               this.refreshUI();
               if (restoredCount > 0) {
-                this.showToast(`${restoredCount} student${restoredCount === 1 ? '' : 's'} restored`);
+                this.showToast(`${restoredCount} item${restoredCount === 1 ? '' : 's'} restored`);
               }
             } catch (error) {
-              console.error('Failed to restore all students:', error);
-              this.showToast('Failed to restore all students');
+              console.error('Failed to restore all trash items:', error);
+              this.showToast('Failed to restore trash items');
             }
           });
         }
@@ -1986,7 +2034,7 @@ const ui = {
               const deletedCount = await app.emptyStudentTrash();
               this.refreshUI();
               if (deletedCount > 0) {
-                this.showToast(`${deletedCount} student${deletedCount === 1 ? '' : 's'} permanently deleted`);
+                this.showToast(`${deletedCount} item${deletedCount === 1 ? '' : 's'} permanently deleted`);
               }
             } catch (error) {
               console.error('Failed to empty trash:', error);

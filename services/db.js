@@ -139,6 +139,507 @@ const persistStudentRestoreById = async (studentId, nextData) => {
   };
 };
 
+const resolveCollectionDocRef = async (collectionRef, identity = {}, labelFields = []) => {
+  const normalizedId = String(identity?.id || '').trim();
+  const normalizedLabel = String(identity?.name || identity?.title || identity?.label || '').trim().toLowerCase();
+
+  if (!normalizedId && !normalizedLabel) {
+    return null;
+  }
+
+  const snapshot = await getDocs(collectionRef);
+  let matchedRef = null;
+
+  snapshot.forEach((entry) => {
+    if (matchedRef) return;
+
+    const payload = entry.data() || {};
+    const payloadId = String(payload.id || entry.id || '').trim();
+    if (normalizedId && (payloadId === normalizedId || String(entry.id || '').trim() === normalizedId)) {
+      matchedRef = entry.ref;
+      return;
+    }
+
+    if (normalizedLabel) {
+      for (const field of labelFields) {
+        const value = String(payload?.[field] || '').trim().toLowerCase();
+        if (value && value === normalizedLabel) {
+          matchedRef = entry.ref;
+          return;
+        }
+      }
+    }
+  });
+
+  return matchedRef;
+};
+
+const persistSubjectDeleteByIdentity = async (subjectIdentity, nextData) => {
+  let lastError = null;
+  let lastErrorType = null;
+
+  for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      const userId = await ensureAuthenticatedUserId('delete subject');
+      const { classId } = await ensureActiveClassContext(userId);
+      const updatedAt = new Date().toISOString();
+
+      const subjectDocRef = await resolveCollectionDocRef(
+        getSubjectsCollectionRef(userId, classId),
+        subjectIdentity,
+        ['name']
+      );
+      if (!subjectDocRef) {
+        throw new Error('Subject not found');
+      }
+
+      await updateDoc(subjectDocRef, {
+        deleted: true,
+        deletedAt: serverTimestamp(),
+        updatedAt,
+        userId,
+        classId
+      });
+
+      await setDoc(getClassDocRef(userId, classId), {
+        id: classId,
+        updatedAt,
+        userId
+      }, { merge: true });
+
+      await setDoc(getUserRootRef(userId), {
+        userId,
+        activeClassId: classId,
+        updatedAt
+      }, { merge: true });
+
+      const deletedId = String(subjectIdentity?.id || subjectDocRef.id || '').trim();
+      const deletedName = String(subjectIdentity?.name || '').trim() || 'Subject';
+
+      return {
+        data: nextData,
+        remoteSaved: true,
+        error: null,
+        errorType: null,
+        operation: 'delete subject',
+        offline: false,
+        trashEntry: {
+          id: deletedId,
+          name: deletedName,
+          deletedAt: new Date().toISOString()
+        }
+      };
+    } catch (error) {
+      lastError = error;
+      lastErrorType = classifyFirebaseError(error);
+      console.error('Failed to delete subject via Firebase:', error);
+
+      if (attempt < RETRY_ATTEMPTS && shouldRetry(lastErrorType) && !isNavigatorOffline()) {
+        await wait(RETRY_DELAY_MS * attempt);
+        continue;
+      }
+
+      break;
+    }
+  }
+
+  if (!isOfflineError(lastErrorType)) {
+    logOnlineFailure('delete subject', lastErrorType);
+  }
+
+  return {
+    data: nextData,
+    remoteSaved: false,
+    error: lastError,
+    errorType: lastErrorType,
+    operation: 'delete subject',
+    offline: isOfflineError(lastErrorType)
+  };
+};
+
+const persistExamDeleteByIdentity = async (examIdentity, nextData) => {
+  let lastError = null;
+  let lastErrorType = null;
+
+  for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      const userId = await ensureAuthenticatedUserId('delete exam');
+      const { classId } = await ensureActiveClassContext(userId);
+      const updatedAt = new Date().toISOString();
+
+      const examDocRef = await resolveCollectionDocRef(
+        getExamsCollectionRef(userId, classId),
+        examIdentity,
+        ['title', 'name']
+      );
+      if (!examDocRef) {
+        throw new Error('Exam not found');
+      }
+
+      await updateDoc(examDocRef, {
+        deleted: true,
+        deletedAt: serverTimestamp(),
+        updatedAt,
+        userId,
+        classId
+      });
+
+      await setDoc(getClassDocRef(userId, classId), {
+        id: classId,
+        updatedAt,
+        userId
+      }, { merge: true });
+
+      await setDoc(getUserRootRef(userId), {
+        userId,
+        activeClassId: classId,
+        updatedAt
+      }, { merge: true });
+
+      const deletedId = String(examIdentity?.id || examDocRef.id || '').trim();
+      const deletedName = String(examIdentity?.title || examIdentity?.name || '').trim() || 'Exam';
+
+      return {
+        data: nextData,
+        remoteSaved: true,
+        error: null,
+        errorType: null,
+        operation: 'delete exam',
+        offline: false,
+        trashEntry: {
+          id: deletedId,
+          name: deletedName,
+          deletedAt: new Date().toISOString()
+        }
+      };
+    } catch (error) {
+      lastError = error;
+      lastErrorType = classifyFirebaseError(error);
+      console.error('Failed to delete exam via Firebase:', error);
+
+      if (attempt < RETRY_ATTEMPTS && shouldRetry(lastErrorType) && !isNavigatorOffline()) {
+        await wait(RETRY_DELAY_MS * attempt);
+        continue;
+      }
+
+      break;
+    }
+  }
+
+  if (!isOfflineError(lastErrorType)) {
+    logOnlineFailure('delete exam', lastErrorType);
+  }
+
+  return {
+    data: nextData,
+    remoteSaved: false,
+    error: lastError,
+    errorType: lastErrorType,
+    operation: 'delete exam',
+    offline: isOfflineError(lastErrorType)
+  };
+};
+
+const persistSubjectRestoreById = async (subjectId, nextData) => {
+  const normalizedSubjectId = String(subjectId || '').trim();
+  if (!normalizedSubjectId) {
+    return {
+      data: nextData,
+      remoteSaved: false,
+      error: new Error('Subject id is required to restore subject'),
+      errorType: 'unknown',
+      operation: 'restore subject',
+      offline: false
+    };
+  }
+
+  let lastError = null;
+  let lastErrorType = null;
+
+  for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      const userId = await ensureAuthenticatedUserId('restore subject');
+      const { classId } = await ensureActiveClassContext(userId);
+      const updatedAt = new Date().toISOString();
+
+      await updateDoc(getSubjectDocRef(userId, normalizedSubjectId, classId), {
+        deleted: false,
+        deletedAt: null,
+        updatedAt,
+        userId,
+        classId
+      });
+
+      await setDoc(getClassDocRef(userId, classId), {
+        id: classId,
+        updatedAt,
+        userId
+      }, { merge: true });
+
+      await setDoc(getUserRootRef(userId), {
+        userId,
+        activeClassId: classId,
+        updatedAt
+      }, { merge: true });
+
+      return {
+        data: nextData,
+        remoteSaved: true,
+        error: null,
+        errorType: null,
+        operation: 'restore subject',
+        offline: false
+      };
+    } catch (error) {
+      lastError = error;
+      lastErrorType = classifyFirebaseError(error);
+      console.error('Failed to restore subject via Firebase:', error);
+
+      if (attempt < RETRY_ATTEMPTS && shouldRetry(lastErrorType) && !isNavigatorOffline()) {
+        await wait(RETRY_DELAY_MS * attempt);
+        continue;
+      }
+
+      break;
+    }
+  }
+
+  if (!isOfflineError(lastErrorType)) {
+    logOnlineFailure('restore subject', lastErrorType);
+  }
+
+  return {
+    data: nextData,
+    remoteSaved: false,
+    error: lastError,
+    errorType: lastErrorType,
+    operation: 'restore subject',
+    offline: isOfflineError(lastErrorType)
+  };
+};
+
+const persistExamRestoreById = async (examId, nextData) => {
+  const normalizedExamId = String(examId || '').trim();
+  if (!normalizedExamId) {
+    return {
+      data: nextData,
+      remoteSaved: false,
+      error: new Error('Exam id is required to restore exam'),
+      errorType: 'unknown',
+      operation: 'restore exam',
+      offline: false
+    };
+  }
+
+  let lastError = null;
+  let lastErrorType = null;
+
+  for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      const userId = await ensureAuthenticatedUserId('restore exam');
+      const { classId } = await ensureActiveClassContext(userId);
+      const updatedAt = new Date().toISOString();
+
+      await updateDoc(getExamDocRef(userId, normalizedExamId, classId), {
+        deleted: false,
+        deletedAt: null,
+        updatedAt,
+        userId,
+        classId
+      });
+
+      await setDoc(getClassDocRef(userId, classId), {
+        id: classId,
+        updatedAt,
+        userId
+      }, { merge: true });
+
+      await setDoc(getUserRootRef(userId), {
+        userId,
+        activeClassId: classId,
+        updatedAt
+      }, { merge: true });
+
+      return {
+        data: nextData,
+        remoteSaved: true,
+        error: null,
+        errorType: null,
+        operation: 'restore exam',
+        offline: false
+      };
+    } catch (error) {
+      lastError = error;
+      lastErrorType = classifyFirebaseError(error);
+      console.error('Failed to restore exam via Firebase:', error);
+
+      if (attempt < RETRY_ATTEMPTS && shouldRetry(lastErrorType) && !isNavigatorOffline()) {
+        await wait(RETRY_DELAY_MS * attempt);
+        continue;
+      }
+
+      break;
+    }
+  }
+
+  if (!isOfflineError(lastErrorType)) {
+    logOnlineFailure('restore exam', lastErrorType);
+  }
+
+  return {
+    data: nextData,
+    remoteSaved: false,
+    error: lastError,
+    errorType: lastErrorType,
+    operation: 'restore exam',
+    offline: isOfflineError(lastErrorType)
+  };
+};
+
+const persistSubjectHardDeleteById = async (subjectId, nextData) => {
+  const normalizedSubjectId = String(subjectId || '').trim();
+  if (!normalizedSubjectId) {
+    return {
+      data: nextData,
+      remoteSaved: false,
+      error: new Error('Subject id is required to permanently delete subject'),
+      errorType: 'unknown',
+      operation: 'permanently delete subject',
+      offline: false
+    };
+  }
+
+  let lastError = null;
+  let lastErrorType = null;
+
+  for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      const userId = await ensureAuthenticatedUserId('permanently delete subject');
+      const { classId } = await ensureActiveClassContext(userId);
+      const updatedAt = new Date().toISOString();
+
+      await deleteDoc(getSubjectDocRef(userId, normalizedSubjectId, classId));
+
+      await setDoc(getClassDocRef(userId, classId), {
+        id: classId,
+        updatedAt,
+        userId
+      }, { merge: true });
+
+      await setDoc(getUserRootRef(userId), {
+        userId,
+        activeClassId: classId,
+        updatedAt
+      }, { merge: true });
+
+      return {
+        data: nextData,
+        remoteSaved: true,
+        error: null,
+        errorType: null,
+        operation: 'permanently delete subject',
+        offline: false
+      };
+    } catch (error) {
+      lastError = error;
+      lastErrorType = classifyFirebaseError(error);
+      console.error('Failed to permanently delete subject via Firebase:', error);
+
+      if (attempt < RETRY_ATTEMPTS && shouldRetry(lastErrorType) && !isNavigatorOffline()) {
+        await wait(RETRY_DELAY_MS * attempt);
+        continue;
+      }
+
+      break;
+    }
+  }
+
+  if (!isOfflineError(lastErrorType)) {
+    logOnlineFailure('permanently delete subject', lastErrorType);
+  }
+
+  return {
+    data: nextData,
+    remoteSaved: false,
+    error: lastError,
+    errorType: lastErrorType,
+    operation: 'permanently delete subject',
+    offline: isOfflineError(lastErrorType)
+  };
+};
+
+const persistExamHardDeleteById = async (examId, nextData) => {
+  const normalizedExamId = String(examId || '').trim();
+  if (!normalizedExamId) {
+    return {
+      data: nextData,
+      remoteSaved: false,
+      error: new Error('Exam id is required to permanently delete exam'),
+      errorType: 'unknown',
+      operation: 'permanently delete exam',
+      offline: false
+    };
+  }
+
+  let lastError = null;
+  let lastErrorType = null;
+
+  for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      const userId = await ensureAuthenticatedUserId('permanently delete exam');
+      const { classId } = await ensureActiveClassContext(userId);
+      const updatedAt = new Date().toISOString();
+
+      await deleteDoc(getExamDocRef(userId, normalizedExamId, classId));
+
+      await setDoc(getClassDocRef(userId, classId), {
+        id: classId,
+        updatedAt,
+        userId
+      }, { merge: true });
+
+      await setDoc(getUserRootRef(userId), {
+        userId,
+        activeClassId: classId,
+        updatedAt
+      }, { merge: true });
+
+      return {
+        data: nextData,
+        remoteSaved: true,
+        error: null,
+        errorType: null,
+        operation: 'permanently delete exam',
+        offline: false
+      };
+    } catch (error) {
+      lastError = error;
+      lastErrorType = classifyFirebaseError(error);
+      console.error('Failed to permanently delete exam via Firebase:', error);
+
+      if (attempt < RETRY_ATTEMPTS && shouldRetry(lastErrorType) && !isNavigatorOffline()) {
+        await wait(RETRY_DELAY_MS * attempt);
+        continue;
+      }
+
+      break;
+    }
+  }
+
+  if (!isOfflineError(lastErrorType)) {
+    logOnlineFailure('permanently delete exam', lastErrorType);
+  }
+
+  return {
+    data: nextData,
+    remoteSaved: false,
+    error: lastError,
+    errorType: lastErrorType,
+    operation: 'permanently delete exam',
+    offline: isOfflineError(lastErrorType)
+  };
+};
+
 const persistStudentHardDeleteById = async (studentId, nextData) => {
   const normalizedStudentId = String(studentId || '').trim();
   if (!normalizedStudentId) {
@@ -393,6 +894,16 @@ const toClassModel = (classId, payload = {}) => {
   };
 };
 
+const toClassTrashEntry = (classId, payload = {}) => {
+  const id = normalizeClassId(classId);
+  return {
+    id,
+    name: normalizeClassName(payload.name || payload.title || DEFAULT_CLASS_NAME),
+    createdAt: payload.createdAt || null,
+    deletedAt: normalizeDeletedAtValue(payload.deletedAt)
+  };
+};
+
 const sortClasses = (classes = []) => {
   return [...classes].sort((a, b) => {
     const aCreated = String(a?.createdAt || '');
@@ -404,12 +915,25 @@ const sortClasses = (classes = []) => {
   });
 };
 
+const sortClassTrashEntries = (entries = []) => {
+  return [...entries].sort((a, b) => {
+    const aTime = new Date(a?.deletedAt || 0).getTime() || 0;
+    const bTime = new Date(b?.deletedAt || 0).getTime() || 0;
+    if (aTime !== bTime) {
+      return bTime - aTime;
+    }
+    return String(a?.name || '').localeCompare(String(b?.name || ''));
+  });
+};
+
 const getClassesCollectionRef = (userId) => collection(db, USERS_COLLECTION, userId, CLASSES_SUBCOLLECTION);
 const getClassDocRef = (userId, classId) => doc(db, USERS_COLLECTION, userId, CLASSES_SUBCOLLECTION, classId);
 const getClassStudentsCollectionRef = (userId, classId) => collection(db, USERS_COLLECTION, userId, CLASSES_SUBCOLLECTION, classId, STUDENTS_SUBCOLLECTION);
 const getClassSubjectsCollectionRef = (userId, classId) => collection(db, USERS_COLLECTION, userId, CLASSES_SUBCOLLECTION, classId, SUBJECTS_SUBCOLLECTION);
 const getClassExamsCollectionRef = (userId, classId) => collection(db, USERS_COLLECTION, userId, CLASSES_SUBCOLLECTION, classId, EXAMS_SUBCOLLECTION);
 const getClassStudentDocRef = (userId, classId, studentId) => doc(db, USERS_COLLECTION, userId, CLASSES_SUBCOLLECTION, classId, STUDENTS_SUBCOLLECTION, studentId);
+const getClassSubjectDocRef = (userId, classId, subjectId) => doc(db, USERS_COLLECTION, userId, CLASSES_SUBCOLLECTION, classId, SUBJECTS_SUBCOLLECTION, subjectId);
+const getClassExamDocRef = (userId, classId, examId) => doc(db, USERS_COLLECTION, userId, CLASSES_SUBCOLLECTION, classId, EXAMS_SUBCOLLECTION, examId);
 
 const resolveClassIdFromCatalog = (userId, classes = []) => {
   const normalizedClasses = sortClasses(classes)
@@ -430,11 +954,14 @@ const resolveClassIdFromCatalog = (userId, classes = []) => {
 
 const getClassCatalogCacheKeyForUser = (userId) => `${CACHE_KEY_PREFIX}:classes:${userId}`;
 
-const writeClassCatalogCache = (userId, classes = []) => {
+const writeClassCatalogCache = (userId, classes = [], trashClasses = []) => {
   if (!userId || typeof localStorage === 'undefined') return;
   const payload = {
     classes: sortClasses(classes)
       .map(entry => toClassModel(entry.id, entry))
+      .filter(entry => entry.id),
+    trashClasses: sortClassTrashEntries(trashClasses)
+      .map(entry => toClassTrashEntry(entry.id, entry))
       .filter(entry => entry.id),
     lastUpdated: new Date().toISOString()
   };
@@ -452,6 +979,22 @@ const readClassCatalogCache = (userId) => {
       .map(entry => toClassModel(entry?.id, entry))
       .filter(entry => entry.id);
     return sortClasses(classes);
+  } catch (_error) {
+    return [];
+  }
+};
+
+const readClassTrashCache = (userId) => {
+  if (!userId || typeof localStorage === 'undefined') return [];
+  const raw = localStorage.getItem(getClassCatalogCacheKeyForUser(userId));
+  if (!raw) return [];
+
+  try {
+    const parsed = JSON.parse(raw);
+    const trashClasses = asArray(parsed?.trashClasses)
+      .map(entry => toClassTrashEntry(entry?.id, entry))
+      .filter(entry => entry.id);
+    return sortClassTrashEntries(trashClasses);
   } catch (_error) {
     return [];
   }
@@ -481,6 +1024,8 @@ const getStudentsCollectionRef = (userId, classId = getCurrentClassContext()) =>
 const getSubjectsCollectionRef = (userId, classId = getCurrentClassContext()) => getClassSubjectsCollectionRef(userId, normalizeClassId(classId));
 const getExamsCollectionRef = (userId, classId = getCurrentClassContext()) => getClassExamsCollectionRef(userId, normalizeClassId(classId));
 const getStudentDocRef = (userId, studentId, classId = getCurrentClassContext()) => getClassStudentDocRef(userId, normalizeClassId(classId), studentId);
+const getSubjectDocRef = (userId, subjectId, classId = getCurrentClassContext()) => getClassSubjectDocRef(userId, normalizeClassId(classId), subjectId);
+const getExamDocRef = (userId, examId, classId = getCurrentClassContext()) => getClassExamDocRef(userId, normalizeClassId(classId), examId);
 
 const mapStudentsToDocs = (students, userId, updatedAt) => {
   return asArray(students).map((student, index) => {
@@ -512,6 +1057,8 @@ const mapSubjectsToDocs = (subjects, userId, updatedAt) => {
       data: {
         id: docId,
         name,
+        deleted: false,
+        deletedAt: null,
         order: index,
         userId,
         updatedAt
@@ -530,6 +1077,8 @@ const mapExamsToDocs = (exams, userId, updatedAt) => {
         id: docId,
         title,
         name: title,
+        deleted: false,
+        deletedAt: null,
         order: index,
         userId,
         updatedAt
@@ -576,8 +1125,8 @@ const writeModularData = async (userId, classId, rawData) => {
 
   await Promise.all([
     syncCollectionDocuments(getStudentsCollectionRef(userId, normalizedClassId), studentDocs, { preserveDeleted: true }),
-    syncCollectionDocuments(getSubjectsCollectionRef(userId, normalizedClassId), subjectDocs),
-    syncCollectionDocuments(getExamsCollectionRef(userId, normalizedClassId), examDocs)
+    syncCollectionDocuments(getSubjectsCollectionRef(userId, normalizedClassId), subjectDocs, { preserveDeleted: true }),
+    syncCollectionDocuments(getExamsCollectionRef(userId, normalizedClassId), examDocs, { preserveDeleted: true })
   ]);
 
   await setDoc(getClassDocRef(userId, normalizedClassId), {
@@ -604,6 +1153,8 @@ const readRawDataFromCollectionRefs = async (studentsRef, subjectsRef, examsRef)
 
   const students = [];
   const trashStudents = [];
+  const trashSubjects = [];
+  const trashExams = [];
   studentsSnapshot.forEach((entry) => {
     const payload = entry.data() || {};
     const deletedAtIso = normalizeDeletedAtValue(payload.deletedAt);
@@ -629,7 +1180,13 @@ const readRawDataFromCollectionRefs = async (studentsRef, subjectsRef, examsRef)
   const subjects = [];
   subjectsSnapshot.forEach((entry) => {
     const payload = entry.data() || {};
+    const deletedAtIso = normalizeDeletedAtValue(payload.deletedAt);
     if (payload.deleted === true) {
+      trashSubjects.push({
+        id: String(payload.id || entry.id || '').trim(),
+        name: String(payload.name || '').trim() || 'Subject',
+        deletedAt: deletedAtIso
+      });
       return;
     }
     subjects.push({
@@ -642,7 +1199,13 @@ const readRawDataFromCollectionRefs = async (studentsRef, subjectsRef, examsRef)
   const exams = [];
   examsSnapshot.forEach((entry) => {
     const payload = entry.data() || {};
+    const deletedAtIso = normalizeDeletedAtValue(payload.deletedAt);
     if (payload.deleted === true) {
+      trashExams.push({
+        id: String(payload.id || entry.id || '').trim(),
+        name: String(payload.title || payload.name || '').trim() || 'Exam',
+        deletedAt: deletedAtIso
+      });
       return;
     }
     exams.push({
@@ -667,6 +1230,20 @@ const readRawDataFromCollectionRefs = async (studentsRef, subjectsRef, examsRef)
         const aTime = new Date(a.deletedAt || 0).getTime() || 0;
         const bTime = new Date(b.deletedAt || 0).getTime() || 0;
         return bTime - aTime;
+      }),
+    trashSubjects: trashSubjects
+      .filter(entry => entry.id)
+      .sort((a, b) => {
+        const aTime = new Date(a.deletedAt || 0).getTime() || 0;
+        const bTime = new Date(b.deletedAt || 0).getTime() || 0;
+        return bTime - aTime;
+      }),
+    trashExams: trashExams
+      .filter(entry => entry.id)
+      .sort((a, b) => {
+        const aTime = new Date(a.deletedAt || 0).getTime() || 0;
+        const bTime = new Date(b.deletedAt || 0).getTime() || 0;
+        return bTime - aTime;
       })
   };
 };
@@ -677,7 +1254,9 @@ const readModularRawData = async (userId, classId) => {
     return {
       data: createDefaultRawData(),
       hasData: false,
-      trashStudents: []
+      trashStudents: [],
+      trashSubjects: [],
+      trashExams: []
     };
   }
 
@@ -691,19 +1270,27 @@ const readModularRawData = async (userId, classId) => {
 const readClassCatalogFromFirestore = async (userId) => {
   const classesSnapshot = await getDocs(getClassesCollectionRef(userId));
   const classes = [];
+  const trashClasses = [];
 
   classesSnapshot.forEach((entry) => {
     const payload = entry.data() || {};
+    if (payload.deleted === true) {
+      trashClasses.push(toClassTrashEntry(entry.id, payload));
+      return;
+    }
     classes.push(toClassModel(entry.id, payload));
   });
 
-  return sortClasses(classes.filter(entry => entry.id));
+  return {
+    classes: sortClasses(classes.filter(entry => entry.id)),
+    trashClasses: sortClassTrashEntries(trashClasses.filter(entry => entry.id))
+  };
 };
 
 const ensureClassCatalog = async (userId) => {
-  const classes = await readClassCatalogFromFirestore(userId);
-  writeClassCatalogCache(userId, classes);
-  return classes;
+  const catalog = await readClassCatalogFromFirestore(userId);
+  writeClassCatalogCache(userId, catalog.classes, catalog.trashClasses);
+  return catalog;
 };
 
 const ensureActiveClassContext = async (userId, options = {}) => {
@@ -711,6 +1298,7 @@ const ensureActiveClassContext = async (userId, options = {}) => {
 
   if (!isFirebaseConfigured || !db) {
     const classes = readClassCatalogCache(userId);
+    const trashClasses = readClassTrashCache(userId);
 
     const { classId, className } = resolveActiveClassModel(userId, classes);
     if (requireClass && !classId) {
@@ -721,12 +1309,15 @@ const ensureActiveClassContext = async (userId, options = {}) => {
     console.log('User ID:', userId || '(none)');
     return {
       classes,
+      trashClasses,
       classId,
       className
     };
   }
 
-  const classes = await ensureClassCatalog(userId);
+  const catalog = await ensureClassCatalog(userId);
+  const classes = catalog.classes || [];
+  const trashClasses = catalog.trashClasses || [];
   const { classId, className } = resolveActiveClassModel(userId, classes);
   if (requireClass && !classId) {
     throw createMissingClassError('save class data');
@@ -736,6 +1327,7 @@ const ensureActiveClassContext = async (userId, options = {}) => {
   console.log('User ID:', userId || '(none)');
   return {
     classes,
+    trashClasses,
     classId,
     className
   };
@@ -1150,6 +1742,10 @@ export const fetchAllData = async () => {
   } catch (error) {
     return {
       data: createDefaultRawData(),
+      trashStudents: [],
+      trashSubjects: [],
+      trashExams: [],
+      trashClasses: [],
       classes: [],
       currentClassId: '',
       currentClassName: DEFAULT_CLASS_NAME,
@@ -1163,12 +1759,16 @@ export const fetchAllData = async () => {
   if (!isFirebaseConfigured || !db) {
     console.warn('Firebase unavailable. Falling back to cache/default data.');
     const cachedClasses = readClassCatalogCache(userId);
+    const cachedTrashClasses = readClassTrashCache(userId);
     const { classId, className } = resolveActiveClassModel(userId, cachedClasses);
     const cached = readCachedData(classId);
     if (cached?.data) {
       return {
         data: cached.data,
         trashStudents: [],
+        trashSubjects: [],
+        trashExams: [],
+        trashClasses: cachedTrashClasses,
         classes: cachedClasses,
         currentClassId: classId,
         currentClassName: className,
@@ -1184,6 +1784,9 @@ export const fetchAllData = async () => {
     return {
       data: fallback,
       trashStudents: [],
+      trashSubjects: [],
+      trashExams: [],
+      trashClasses: cachedTrashClasses,
       classes: cachedClasses,
       currentClassId: classId,
       currentClassName: className,
@@ -1201,6 +1804,7 @@ export const fetchAllData = async () => {
     try {
       const classContext = await ensureActiveClassContext(userId, { requireClass: false });
       const scopedClasses = classContext.classes || [];
+      const scopedTrashClasses = classContext.trashClasses || [];
       const scopedClassId = classContext.classId;
       const scopedClassName = classContext.className;
 
@@ -1208,6 +1812,9 @@ export const fetchAllData = async () => {
         return {
           data: createDefaultRawData(),
           trashStudents: [],
+          trashSubjects: [],
+          trashExams: [],
+          trashClasses: scopedTrashClasses,
           classes: scopedClasses,
           currentClassId: '',
           currentClassName: scopedClassName,
@@ -1219,7 +1826,7 @@ export const fetchAllData = async () => {
       }
 
       const modularResult = await readModularRawData(userId, scopedClassId);
-      writeClassCatalogCache(userId, scopedClasses);
+      writeClassCatalogCache(userId, scopedClasses, scopedTrashClasses);
 
       const nextData = modularResult?.data || createDefaultRawData();
       writeCacheCopy(nextData, scopedClassId);
@@ -1227,6 +1834,9 @@ export const fetchAllData = async () => {
       return {
         data: nextData,
         trashStudents: Array.isArray(modularResult?.trashStudents) ? modularResult.trashStudents : [],
+        trashSubjects: Array.isArray(modularResult?.trashSubjects) ? modularResult.trashSubjects : [],
+        trashExams: Array.isArray(modularResult?.trashExams) ? modularResult.trashExams : [],
+        trashClasses: scopedTrashClasses,
         classes: scopedClasses,
         currentClassId: scopedClassId,
         currentClassName: scopedClassName,
@@ -1256,6 +1866,7 @@ export const fetchAllData = async () => {
 
   const offline = isOfflineError(lastErrorType);
   const cachedClasses = readClassCatalogCache(userId);
+  const cachedTrashClasses = readClassTrashCache(userId);
   const { classId, className } = resolveActiveClassModel(userId, cachedClasses);
   const cached = readCachedData(classId);
 
@@ -1263,6 +1874,9 @@ export const fetchAllData = async () => {
     return {
       data: cached.data,
       trashStudents: [],
+      trashSubjects: [],
+      trashExams: [],
+      trashClasses: cachedTrashClasses,
       classes: cachedClasses,
       currentClassId: classId,
       currentClassName: className,
@@ -1278,6 +1892,9 @@ export const fetchAllData = async () => {
   return {
     data: fallback,
     trashStudents: [],
+    trashSubjects: [],
+    trashExams: [],
+    trashClasses: cachedTrashClasses,
     classes: cachedClasses,
     currentClassId: classId,
     currentClassName: className,
@@ -1301,20 +1918,25 @@ export const listClasses = async () => {
 
   if (!isFirebaseConfigured || !db) {
     const cachedClasses = readClassCatalogCache(userId);
+    const cachedTrashClasses = readClassTrashCache(userId);
     const { classId, className } = resolveActiveClassModel(userId, cachedClasses);
     return {
       classes: cachedClasses,
+      trashClasses: cachedTrashClasses,
       currentClassId: classId,
       currentClassName: className
     };
   }
 
-  const classes = await ensureClassCatalog(userId);
+  const catalog = await ensureClassCatalog(userId);
+  const classes = catalog.classes || [];
+  const trashClasses = catalog.trashClasses || [];
   const { classId, className } = resolveActiveClassModel(userId, classes);
-  writeClassCatalogCache(userId, classes);
+  writeClassCatalogCache(userId, classes, trashClasses);
 
   return {
     classes,
+    trashClasses,
     currentClassId: classId,
     currentClassName: className
   };
@@ -1329,6 +1951,8 @@ export const createClass = async (className) => {
     name: normalizedName,
     createdAt,
     updatedAt: createdAt,
+    deleted: false,
+    deletedAt: null,
     userId
   });
   const classId = normalizeClassId(classDocRef.id);
@@ -1337,13 +1961,15 @@ export const createClass = async (className) => {
     id: classId
   }, { merge: true });
 
-  const classes = await ensureClassCatalog(userId);
+  const catalog = await ensureClassCatalog(userId);
+  const classes = catalog.classes || [];
+  const trashClasses = catalog.trashClasses || [];
   const nextClasses = sortClasses([...classes.filter(entry => entry.id !== classId), {
     id: classId,
     name: normalizedName,
     createdAt
   }]);
-  writeClassCatalogCache(userId, nextClasses);
+  writeClassCatalogCache(userId, nextClasses, trashClasses);
   setCurrentClassContext(classId, userId);
 
   await setDoc(getUserRootRef(userId), {
@@ -1367,9 +1993,11 @@ export const deleteClass = async (classId) => {
     throw new Error('Class id is required');
   }
 
-  const classes = await ensureClassCatalog(userId);
-  const classExists = classes.some(entry => entry.id === normalizedClassId);
-  if (!classExists) {
+  const catalog = await ensureClassCatalog(userId);
+  const classes = catalog.classes || [];
+  const trashClasses = catalog.trashClasses || [];
+  const classEntry = classes.find(entry => entry.id === normalizedClassId);
+  if (!classEntry) {
     throw new Error('Class not found');
   }
 
@@ -1377,18 +2005,32 @@ export const deleteClass = async (classId) => {
     throw new Error('At least one class is required');
   }
 
-  await Promise.all([
-    deleteCollectionDocuments(getStudentsCollectionRef(userId, normalizedClassId)),
-    deleteCollectionDocuments(getSubjectsCollectionRef(userId, normalizedClassId)),
-    deleteCollectionDocuments(getExamsCollectionRef(userId, normalizedClassId))
-  ]);
-  await deleteDoc(getClassDocRef(userId, normalizedClassId));
+  const updatedAt = new Date().toISOString();
+
+  await setDoc(getClassDocRef(userId, normalizedClassId), {
+    id: normalizedClassId,
+    name: classEntry.name,
+    createdAt: classEntry.createdAt || null,
+    deleted: true,
+    deletedAt: serverTimestamp(),
+    updatedAt,
+    userId
+  }, { merge: true });
 
   const remainingClasses = sortClasses(classes.filter(entry => entry.id !== normalizedClassId));
-  writeClassCatalogCache(userId, remainingClasses);
+  const deletedEntry = {
+    id: normalizedClassId,
+    name: classEntry.name,
+    createdAt: classEntry.createdAt || null,
+    deletedAt: new Date().toISOString()
+  };
+  const nextTrashClasses = sortClassTrashEntries([
+    deletedEntry,
+    ...trashClasses.filter(entry => entry.id !== normalizedClassId)
+  ]);
+  writeClassCatalogCache(userId, remainingClasses, nextTrashClasses);
 
   const { classId: nextClassId, className: nextClassName } = resolveActiveClassModel(userId, remainingClasses);
-  const updatedAt = new Date().toISOString();
 
   await setDoc(getUserRootRef(userId), {
     userId,
@@ -1398,6 +2040,102 @@ export const deleteClass = async (classId) => {
 
   return {
     classes: remainingClasses,
+    trashClasses: nextTrashClasses,
+    currentClassId: nextClassId,
+    currentClassName: nextClassName,
+    trashEntry: deletedEntry
+  };
+};
+
+export const restoreClass = async (classId) => {
+  const userId = await ensureAuthenticatedUserId('restore class');
+  const normalizedClassId = normalizeClassId(classId);
+  if (!normalizedClassId) {
+    throw new Error('Class id is required');
+  }
+
+  const catalog = await ensureClassCatalog(userId);
+  const classes = catalog.classes || [];
+  const trashClasses = catalog.trashClasses || [];
+  const classEntry = trashClasses.find(entry => entry.id === normalizedClassId);
+  if (!classEntry) {
+    throw new Error('Class is not in trash');
+  }
+
+  const updatedAt = new Date().toISOString();
+
+  await setDoc(getClassDocRef(userId, normalizedClassId), {
+    id: normalizedClassId,
+    name: classEntry.name,
+    createdAt: classEntry.createdAt || null,
+    deleted: false,
+    deletedAt: null,
+    updatedAt,
+    userId
+  }, { merge: true });
+
+  const nextClasses = sortClasses([
+    ...classes.filter(entry => entry.id !== normalizedClassId),
+    {
+      id: normalizedClassId,
+      name: classEntry.name,
+      createdAt: classEntry.createdAt || null
+    }
+  ]);
+  const nextTrashClasses = sortClassTrashEntries(trashClasses.filter(entry => entry.id !== normalizedClassId));
+  writeClassCatalogCache(userId, nextClasses, nextTrashClasses);
+
+  const { classId: nextClassId, className: nextClassName } = resolveActiveClassModel(userId, nextClasses);
+  await setDoc(getUserRootRef(userId), {
+    userId,
+    activeClassId: nextClassId,
+    updatedAt
+  }, { merge: true });
+
+  return {
+    classes: nextClasses,
+    trashClasses: nextTrashClasses,
+    currentClassId: nextClassId,
+    currentClassName: nextClassName
+  };
+};
+
+export const permanentlyDeleteClass = async (classId) => {
+  const userId = await ensureAuthenticatedUserId('permanently delete class');
+  const normalizedClassId = normalizeClassId(classId);
+  if (!normalizedClassId) {
+    throw new Error('Class id is required');
+  }
+
+  const catalog = await ensureClassCatalog(userId);
+  const classes = catalog.classes || [];
+  const trashClasses = catalog.trashClasses || [];
+  const classEntry = trashClasses.find(entry => entry.id === normalizedClassId);
+  if (!classEntry) {
+    throw new Error('Class must be in trash before permanent deletion');
+  }
+
+  await Promise.all([
+    deleteCollectionDocuments(getStudentsCollectionRef(userId, normalizedClassId)),
+    deleteCollectionDocuments(getSubjectsCollectionRef(userId, normalizedClassId)),
+    deleteCollectionDocuments(getExamsCollectionRef(userId, normalizedClassId))
+  ]);
+  await deleteDoc(getClassDocRef(userId, normalizedClassId));
+
+  const updatedAt = new Date().toISOString();
+  const nextTrashClasses = sortClassTrashEntries(trashClasses.filter(entry => entry.id !== normalizedClassId));
+  writeClassCatalogCache(userId, classes, nextTrashClasses);
+
+  const { classId: nextClassId, className: nextClassName } = resolveActiveClassModel(userId, classes);
+  await setDoc(getUserRootRef(userId), {
+    userId,
+    activeClassId: nextClassId,
+    updatedAt
+  }, { merge: true });
+
+  return {
+    classes,
+    trashClasses: nextTrashClasses,
     currentClassId: nextClassId,
     currentClassName: nextClassName
   };
@@ -1462,10 +2200,54 @@ export const updateSubjects = async (rawData, subjects) => enqueueWrite(async ()
   return persistRemoteFirst(next, 'update subjects');
 });
 
+export const deleteSubject = async (rawData, subjectIdentity) => enqueueWrite(async () => {
+  const next = normalizeRawData(rawData);
+  const normalizedId = String(subjectIdentity?.id || subjectIdentity || '').trim();
+  const normalizedName = String(subjectIdentity?.name || '').trim();
+
+  if (normalizedName) {
+    next.subjects = next.subjects.filter(subject => String(subject || '').trim() !== normalizedName);
+  }
+
+  return persistSubjectDeleteByIdentity({ id: normalizedId, name: normalizedName }, next);
+});
+
+export const restoreSubject = async (rawData, subjectId) => enqueueWrite(async () => {
+  const next = normalizeRawData(rawData);
+  return persistSubjectRestoreById(subjectId, next);
+});
+
+export const permanentlyDeleteSubject = async (rawData, subjectId) => enqueueWrite(async () => {
+  const next = normalizeRawData(rawData);
+  return persistSubjectHardDeleteById(subjectId, next);
+});
+
 export const updateExams = async (rawData, exams) => enqueueWrite(async () => {
   const next = normalizeRawData(rawData);
   next.exams = asArray(exams)
     .map(exam => String(exam?.title || exam?.name || exam || '').trim())
     .filter(Boolean);
   return persistRemoteFirst(next, 'update exams');
+});
+
+export const deleteExam = async (rawData, examIdentity) => enqueueWrite(async () => {
+  const next = normalizeRawData(rawData);
+  const normalizedId = String(examIdentity?.id || examIdentity || '').trim();
+  const normalizedTitle = String(examIdentity?.title || examIdentity?.name || '').trim();
+
+  if (normalizedTitle) {
+    next.exams = next.exams.filter(exam => String(exam || '').trim() !== normalizedTitle);
+  }
+
+  return persistExamDeleteByIdentity({ id: normalizedId, title: normalizedTitle }, next);
+});
+
+export const restoreExam = async (rawData, examId) => enqueueWrite(async () => {
+  const next = normalizeRawData(rawData);
+  return persistExamRestoreById(examId, next);
+});
+
+export const permanentlyDeleteExam = async (rawData, examId) => enqueueWrite(async () => {
+  const next = normalizeRawData(rawData);
+  return persistExamHardDeleteById(examId, next);
 });

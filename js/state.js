@@ -17,6 +17,9 @@ window.TrackerApp = window.TrackerApp || {};
     currentClassName: 'My Class',
     students: [],
     studentTrash: [],
+    classTrash: [],
+    subjectTrash: [],
+    examTrash: [],
     exams: [],
     subjects: [],
     scores: [],
@@ -407,6 +410,9 @@ window.TrackerApp = window.TrackerApp || {};
       const remoteData = app.migrateToRawData(remoteResult?.data || createDefaultRawData());
       app.applyRawData(remoteData);
       app.state.studentTrash = sortTrashEntriesNewestFirst(Array.isArray(remoteResult?.trashStudents) ? remoteResult.trashStudents : []);
+      app.state.classTrash = sortTrashEntriesNewestFirst(Array.isArray(remoteResult?.trashClasses) ? remoteResult.trashClasses : []);
+      app.state.subjectTrash = sortTrashEntriesNewestFirst(Array.isArray(remoteResult?.trashSubjects) ? remoteResult.trashSubjects : []);
+      app.state.examTrash = sortTrashEntriesNewestFirst(Array.isArray(remoteResult?.trashExams) ? remoteResult.trashExams : []);
       app.writeCachedData(remoteData, nextClassId);
 
       if (remoteResult?.source === 'firebase') {
@@ -447,10 +453,16 @@ window.TrackerApp = window.TrackerApp || {};
         }
         app.applyRawData(app.migrateToRawData(fallbackCache.data));
         app.state.studentTrash = sortTrashEntriesNewestFirst([]);
+        app.state.classTrash = sortTrashEntriesNewestFirst([]);
+        app.state.subjectTrash = sortTrashEntriesNewestFirst([]);
+        app.state.examTrash = sortTrashEntriesNewestFirst([]);
       } else {
         const fallback = createDefaultRawData();
         app.applyRawData(fallback);
         app.state.studentTrash = sortTrashEntriesNewestFirst([]);
+        app.state.classTrash = sortTrashEntriesNewestFirst([]);
+        app.state.subjectTrash = sortTrashEntriesNewestFirst([]);
+        app.state.examTrash = sortTrashEntriesNewestFirst([]);
         app.writeCachedData(fallback);
       }
     } finally {
@@ -520,6 +532,9 @@ window.TrackerApp = window.TrackerApp || {};
 
       applyRuntimeCollections([], [], []);
       app.state.studentTrash = sortTrashEntriesNewestFirst([]);
+      app.state.classTrash = sortTrashEntriesNewestFirst([]);
+      app.state.subjectTrash = sortTrashEntriesNewestFirst([]);
+      app.state.examTrash = sortTrashEntriesNewestFirst([]);
 
       if (typeof dataService.setCurrentClassId === 'function') {
         dataService.setCurrentClassId(nextClassId);
@@ -537,14 +552,77 @@ window.TrackerApp = window.TrackerApp || {};
         throw new Error('Class id is required');
       }
 
+      const targetClass = deepClone(app.state.classes || []).find(entry => entry.id === targetClassId);
+
       const result = await dataService.deleteClass(targetClassId);
       app.state.classes = Array.isArray(result?.classes) ? result.classes : [];
       app.state.currentClassId = String(result?.currentClassId || '').trim();
       app.state.currentClassName = String(result?.currentClassName || '').trim() || 'My Class';
+      app.state.classTrash = sortTrashEntriesNewestFirst(Array.isArray(result?.trashClasses) ? result.trashClasses : app.state.classTrash || []);
       persistCurrentClassId(app.state.currentClassId);
 
       console.log('Current Class ID:', app.state.currentClassId || '(none)');
       console.log('User ID:', app.state.authUser?.uid || '(none)');
+
+      if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
+        dataService.setCurrentClassId(app.state.currentClassId);
+      }
+
+      await app.load();
+      return result?.trashEntry || {
+        id: targetClassId,
+        name: targetClass?.name || 'Class',
+        deletedAt: new Date().toISOString()
+      };
+    });
+  };
+
+  app.restoreClass = async function (classId) {
+    return enqueueStateWrite(async () => {
+      const targetClassId = normalizeLabel(classId);
+      if (!targetClassId) {
+        throw new Error('Class id is required');
+      }
+
+      const trashEntry = deepClone(app.state.classTrash || []).find(entry => entry.id === targetClassId);
+      if (!trashEntry) {
+        throw new Error('Class is not in trash');
+      }
+
+      const result = await dataService.restoreClass(targetClassId);
+      app.state.classes = Array.isArray(result?.classes) ? result.classes : app.state.classes;
+      app.state.classTrash = sortTrashEntriesNewestFirst(Array.isArray(result?.trashClasses) ? result.trashClasses : app.state.classTrash || []);
+      app.state.currentClassId = String(result?.currentClassId || app.state.currentClassId || '').trim();
+      app.state.currentClassName = String(result?.currentClassName || app.state.currentClassName || 'My Class').trim() || 'My Class';
+      persistCurrentClassId(app.state.currentClassId);
+
+      if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
+        dataService.setCurrentClassId(app.state.currentClassId);
+      }
+
+      await app.load();
+      return true;
+    });
+  };
+
+  app.permanentlyDeleteClass = async function (classId) {
+    return enqueueStateWrite(async () => {
+      const targetClassId = normalizeLabel(classId);
+      if (!targetClassId) {
+        throw new Error('Class id is required');
+      }
+
+      const trashEntry = deepClone(app.state.classTrash || []).find(entry => entry.id === targetClassId);
+      if (!trashEntry) {
+        throw new Error('Class is not in trash');
+      }
+
+      const result = await dataService.permanentlyDeleteClass(targetClassId);
+      app.state.classes = Array.isArray(result?.classes) ? result.classes : app.state.classes;
+      app.state.classTrash = sortTrashEntriesNewestFirst(Array.isArray(result?.trashClasses) ? result.trashClasses : app.state.classTrash || []);
+      app.state.currentClassId = String(result?.currentClassId || app.state.currentClassId || '').trim();
+      app.state.currentClassName = String(result?.currentClassName || app.state.currentClassName || 'My Class').trim() || 'My Class';
+      persistCurrentClassId(app.state.currentClassId);
 
       if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
         dataService.setCurrentClassId(app.state.currentClassId);
@@ -584,42 +662,92 @@ window.TrackerApp = window.TrackerApp || {};
 
   app.restoreAllStudentsFromTrash = async function () {
     return enqueueStateWrite(async () => {
-      const trashIds = sortTrashEntriesNewestFirst(app.state.studentTrash || [])
+      const studentTrashIds = sortTrashEntriesNewestFirst(app.state.studentTrash || [])
+        .map(entry => String(entry?.id || '').trim())
+        .filter(Boolean);
+      const classTrashIds = sortTrashEntriesNewestFirst(app.state.classTrash || [])
+        .map(entry => String(entry?.id || '').trim())
+        .filter(Boolean);
+      const subjectTrashIds = sortTrashEntriesNewestFirst(app.state.subjectTrash || [])
+        .map(entry => String(entry?.id || '').trim())
+        .filter(Boolean);
+      const examTrashIds = sortTrashEntriesNewestFirst(app.state.examTrash || [])
         .map(entry => String(entry?.id || '').trim())
         .filter(Boolean);
 
-      if (!trashIds.length) {
+      const totalTrashCount = studentTrashIds.length + classTrashIds.length + subjectTrashIds.length + examTrashIds.length;
+
+      if (!totalTrashCount) {
         return 0;
       }
 
-      for (const studentId of trashIds) {
+      for (const studentId of studentTrashIds) {
         const saveResult = await dataService.restoreStudent(app.getRawData(), studentId);
         assertRemoteWriteSucceeded(saveResult, 'restore student');
+      }
+      for (const classId of classTrashIds) {
+        await dataService.restoreClass(classId);
+      }
+      for (const subjectId of subjectTrashIds) {
+        const saveResult = await dataService.restoreSubject(app.getRawData(), subjectId);
+        assertRemoteWriteSucceeded(saveResult, 'restore subject');
+      }
+      for (const examId of examTrashIds) {
+        const saveResult = await dataService.restoreExam(app.getRawData(), examId);
+        assertRemoteWriteSucceeded(saveResult, 'restore exam');
       }
 
       await app.load();
       app.state.studentTrash = sortTrashEntriesNewestFirst(app.state.studentTrash || []);
-      return trashIds.length;
+      app.state.classTrash = sortTrashEntriesNewestFirst(app.state.classTrash || []);
+      app.state.subjectTrash = sortTrashEntriesNewestFirst(app.state.subjectTrash || []);
+      app.state.examTrash = sortTrashEntriesNewestFirst(app.state.examTrash || []);
+      return totalTrashCount;
     });
   };
 
   app.emptyStudentTrash = async function () {
     return enqueueStateWrite(async () => {
-      const trashIds = sortTrashEntriesNewestFirst(app.state.studentTrash || [])
+      const studentTrashIds = sortTrashEntriesNewestFirst(app.state.studentTrash || [])
+        .map(entry => String(entry?.id || '').trim())
+        .filter(Boolean);
+      const classTrashIds = sortTrashEntriesNewestFirst(app.state.classTrash || [])
+        .map(entry => String(entry?.id || '').trim())
+        .filter(Boolean);
+      const subjectTrashIds = sortTrashEntriesNewestFirst(app.state.subjectTrash || [])
+        .map(entry => String(entry?.id || '').trim())
+        .filter(Boolean);
+      const examTrashIds = sortTrashEntriesNewestFirst(app.state.examTrash || [])
         .map(entry => String(entry?.id || '').trim())
         .filter(Boolean);
 
-      if (!trashIds.length) {
+      const totalTrashCount = studentTrashIds.length + classTrashIds.length + subjectTrashIds.length + examTrashIds.length;
+
+      if (!totalTrashCount) {
         return 0;
       }
 
-      for (const studentId of trashIds) {
+      for (const studentId of studentTrashIds) {
         const saveResult = await dataService.permanentlyDeleteStudent(app.getRawData(), studentId);
         assertRemoteWriteSucceeded(saveResult, 'permanently delete student');
       }
+      for (const classId of classTrashIds) {
+        await dataService.permanentlyDeleteClass(classId);
+      }
+      for (const subjectId of subjectTrashIds) {
+        const saveResult = await dataService.permanentlyDeleteSubject(app.getRawData(), subjectId);
+        assertRemoteWriteSucceeded(saveResult, 'permanently delete subject');
+      }
+      for (const examId of examTrashIds) {
+        const saveResult = await dataService.permanentlyDeleteExam(app.getRawData(), examId);
+        assertRemoteWriteSucceeded(saveResult, 'permanently delete exam');
+      }
 
       app.state.studentTrash = [];
-      return trashIds.length;
+      app.state.classTrash = [];
+      app.state.subjectTrash = [];
+      app.state.examTrash = [];
+      return totalTrashCount;
     });
   };
 
@@ -794,19 +922,24 @@ window.TrackerApp = window.TrackerApp || {};
         const examTitle = exam?.title || exam?.name;
         const filteredExams = nextExams.filter(e => e.id !== examId);
 
-        if (examTitle) {
-          nextStudents.forEach(student => {
-            Object.keys(student.scores || {}).forEach(subject => {
-              if (student.scores[subject]) {
-                delete student.scores[subject][examTitle];
-              }
-            });
-          });
-        }
-
-        const saveResult = await dataService.saveAllData(composeRawData(nextStudents, nextSubjects, filteredExams));
+        const saveResult = await dataService.deleteExam(app.getRawData(), {
+          id: examId,
+          title: examTitle
+        });
         syncRuntimeAndCache(nextStudents, nextSubjects, filteredExams, saveResult, 'delete exam');
-        return true;
+
+        const deletedEntry = saveResult?.trashEntry || {
+          id: examId,
+          name: examTitle || 'Exam',
+          deletedAt: new Date().toISOString()
+        };
+
+        app.state.examTrash = sortTrashEntriesNewestFirst([
+          deletedEntry,
+          ...deepClone(app.state.examTrash || []).filter(entry => entry?.id !== examId)
+        ]);
+
+        return deletedEntry;
       } catch (error) {
         console.error('Failed to delete exam:', error);
         throw error;
@@ -881,19 +1014,108 @@ window.TrackerApp = window.TrackerApp || {};
         const subjectName = subject?.name;
         const filteredSubjects = nextSubjects.filter(s => s.id !== subjectId);
 
-        if (subjectName) {
-          nextStudents.forEach(student => {
-            if (student.scores?.[subjectName]) {
-              delete student.scores[subjectName];
-            }
-          });
-        }
-
-        const saveResult = await dataService.saveAllData(composeRawData(nextStudents, filteredSubjects, nextExams));
+        const saveResult = await dataService.deleteSubject(app.getRawData(), {
+          id: subjectId,
+          name: subjectName
+        });
         syncRuntimeAndCache(nextStudents, filteredSubjects, nextExams, saveResult, 'delete subject');
-        return true;
+
+        const deletedEntry = saveResult?.trashEntry || {
+          id: subjectId,
+          name: subjectName || 'Subject',
+          deletedAt: new Date().toISOString()
+        };
+
+        app.state.subjectTrash = sortTrashEntriesNewestFirst([
+          deletedEntry,
+          ...deepClone(app.state.subjectTrash || []).filter(entry => entry?.id !== subjectId)
+        ]);
+
+        return deletedEntry;
       } catch (error) {
         console.error('Failed to delete subject:', error);
+        throw error;
+      }
+    });
+  };
+
+  app.restoreExam = async function (examId) {
+    return enqueueStateWrite(async () => {
+      try {
+        const trashEntry = deepClone(app.state.examTrash || []).find(e => e.id === examId);
+        if (!trashEntry) {
+          throw new Error('Exam is not in trash');
+        }
+
+        const saveResult = await dataService.restoreExam(app.getRawData(), examId);
+        assertRemoteWriteSucceeded(saveResult, 'restore exam');
+
+        await app.load();
+        app.state.examTrash = deepClone(app.state.examTrash || []).filter(entry => entry?.id !== examId);
+        return true;
+      } catch (error) {
+        console.error('Failed to restore exam:', error);
+        throw error;
+      }
+    });
+  };
+
+  app.restoreSubject = async function (subjectId) {
+    return enqueueStateWrite(async () => {
+      try {
+        const trashEntry = deepClone(app.state.subjectTrash || []).find(s => s.id === subjectId);
+        if (!trashEntry) {
+          throw new Error('Subject is not in trash');
+        }
+
+        const saveResult = await dataService.restoreSubject(app.getRawData(), subjectId);
+        assertRemoteWriteSucceeded(saveResult, 'restore subject');
+
+        await app.load();
+        app.state.subjectTrash = deepClone(app.state.subjectTrash || []).filter(entry => entry?.id !== subjectId);
+        return true;
+      } catch (error) {
+        console.error('Failed to restore subject:', error);
+        throw error;
+      }
+    });
+  };
+
+  app.permanentlyDeleteExam = async function (examId) {
+    return enqueueStateWrite(async () => {
+      try {
+        const trashEntry = deepClone(app.state.examTrash || []).find(e => e.id === examId);
+        if (!trashEntry) {
+          throw new Error('Exam is not in trash');
+        }
+
+        const saveResult = await dataService.permanentlyDeleteExam(app.getRawData(), examId);
+        assertRemoteWriteSucceeded(saveResult, 'permanently delete exam');
+
+        app.state.examTrash = deepClone(app.state.examTrash || []).filter(entry => entry?.id !== examId);
+        return true;
+      } catch (error) {
+        console.error('Failed to permanently delete exam:', error);
+        throw error;
+      }
+    });
+  };
+
+  app.permanentlyDeleteSubject = async function (subjectId) {
+    return enqueueStateWrite(async () => {
+      try {
+        const trashEntry = deepClone(app.state.subjectTrash || []).find(s => s.id === subjectId);
+        if (!trashEntry) {
+          throw new Error('Subject is not in trash');
+        }
+
+        const saveResult = await dataService.permanentlyDeleteSubject(app.getRawData(), subjectId);
+        assertRemoteWriteSucceeded(saveResult, 'permanently delete subject');
+
+        app.state.subjectTrash = deepClone(app.state.subjectTrash || []).filter(entry => entry?.id !== subjectId);
+        return true;
+      } catch (error) {
+        console.error('Failed to permanently delete subject:', error);
         throw error;
       }
     });
