@@ -19,18 +19,6 @@ service cloud.firestore {
           allow read, write: if request.auth != null && request.auth.uid == userId;
         }
       }
-
-      match /students/{studentId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
-      }
-
-      match /subjects/{subjectId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
-      }
-
-      match /exams/{examId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
-      }
     }
 
     match /{document=**} {

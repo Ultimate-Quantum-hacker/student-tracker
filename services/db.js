@@ -3,7 +3,7 @@
    Centralized Firestore-first data access with cache fallback.
    ═══════════════════════════════════════════════ */
 
-import { db, doc, collection, getDocs, setDoc, updateDoc, deleteDoc, isFirebaseConfigured, auth, authReadyPromise, onAuthStateChanged } from '../js/firebase.js';
+import { db, doc, collection, addDoc, getDocs, setDoc, updateDoc, deleteDoc, isFirebaseConfigured, auth, authReadyPromise, onAuthStateChanged } from '../js/firebase.js';
 
 const CACHE_KEY_PREFIX = 'studentAppData';
 const USERS_COLLECTION = 'users';
@@ -113,15 +113,6 @@ const normalizeClassName = (value, fallback = DEFAULT_CLASS_NAME) => {
   return normalized || fallback;
 };
 
-const createClassDocId = (className = DEFAULT_CLASS_NAME) => {
-  const base = String(className || DEFAULT_CLASS_NAME)
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return `class_${base || 'default'}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-};
-
 const getClassSelectionKeyForUser = (userId) => `${CACHE_KEY_PREFIX}:activeClass:${userId}`;
 
 const persistClassSelection = (userId, classId) => {
@@ -196,10 +187,6 @@ const getClassSubjectsCollectionRef = (userId, classId) => collection(db, USERS_
 const getClassExamsCollectionRef = (userId, classId) => collection(db, USERS_COLLECTION, userId, CLASSES_SUBCOLLECTION, classId, EXAMS_SUBCOLLECTION);
 const getClassStudentDocRef = (userId, classId, studentId) => doc(db, USERS_COLLECTION, userId, CLASSES_SUBCOLLECTION, classId, STUDENTS_SUBCOLLECTION, studentId);
 
-const getLegacyStudentsCollectionRef = (userId) => collection(db, USERS_COLLECTION, userId, STUDENTS_SUBCOLLECTION);
-const getLegacySubjectsCollectionRef = (userId) => collection(db, USERS_COLLECTION, userId, SUBJECTS_SUBCOLLECTION);
-const getLegacyExamsCollectionRef = (userId) => collection(db, USERS_COLLECTION, userId, EXAMS_SUBCOLLECTION);
-
 const resolveClassIdFromCatalog = (userId, classes = []) => {
   const normalizedClasses = sortClasses(classes)
     .map(entry => toClassModel(entry.id, entry))
@@ -256,6 +243,12 @@ const resolveActiveClassModel = (userId, classes = []) => {
     classId,
     className: activeClass?.name || DEFAULT_CLASS_NAME
   };
+};
+
+const createMissingClassError = (operationLabel = 'access class data') => {
+  const error = new Error(`Create a class first to ${operationLabel}`);
+  error.code = 'class/not-found';
+  return error;
 };
 
 const getCacheKeyForUser = (userId, classId = '') => `${CACHE_KEY_PREFIX}:${userId}:${normalizeClassId(classId) || 'default'}`;
@@ -440,14 +433,6 @@ const readModularRawData = async (userId, classId) => {
   );
 };
 
-const readLegacyRootRawData = async (userId) => {
-  return readRawDataFromCollectionRefs(
-    getLegacyStudentsCollectionRef(userId),
-    getLegacySubjectsCollectionRef(userId),
-    getLegacyExamsCollectionRef(userId)
-  );
-};
-
 const readClassCatalogFromFirestore = async (userId) => {
   const classesSnapshot = await getDocs(getClassesCollectionRef(userId));
   const classes = [];
@@ -461,59 +446,24 @@ const readClassCatalogFromFirestore = async (userId) => {
 };
 
 const ensureClassCatalog = async (userId) => {
-  let classes = await readClassCatalogFromFirestore(userId);
-  if (classes.length) {
-    writeClassCatalogCache(userId, classes);
-    return classes;
-  }
-
-  const createdAt = new Date().toISOString();
-  const defaultClassId = createClassDocId(DEFAULT_CLASS_NAME);
-  const defaultClass = {
-    id: defaultClassId,
-    name: DEFAULT_CLASS_NAME,
-    createdAt
-  };
-
-  await setDoc(getClassDocRef(userId, defaultClassId), {
-    ...defaultClass,
-    updatedAt: createdAt,
-    userId
-  }, { merge: false });
-
-  try {
-    const legacyData = await readLegacyRootRawData(userId);
-    if (legacyData?.hasData) {
-      await writeModularData(userId, defaultClassId, legacyData.data);
-    }
-  } catch (error) {
-    console.warn('Legacy migration skipped:', error);
-  }
-
-  classes = await readClassCatalogFromFirestore(userId);
-  if (!classes.length) {
-    classes = [defaultClass];
-  }
-
+  const classes = await readClassCatalogFromFirestore(userId);
   writeClassCatalogCache(userId, classes);
   return classes;
 };
 
-const ensureActiveClassContext = async (userId) => {
+const ensureActiveClassContext = async (userId, options = {}) => {
+  const requireClass = options?.requireClass !== false;
+
   if (!isFirebaseConfigured || !db) {
-    let classes = readClassCatalogCache(userId);
-    if (!classes.length) {
-      const fallbackId = normalizeClassId(getCurrentClassContext() || readPersistedClassSelection(userId) || 'class_local_default');
-      if (fallbackId) {
-        classes = [{
-          id: fallbackId,
-          name: DEFAULT_CLASS_NAME,
-          createdAt: null
-        }];
-      }
-    }
+    const classes = readClassCatalogCache(userId);
 
     const { classId, className } = resolveActiveClassModel(userId, classes);
+    if (requireClass && !classId) {
+      throw createMissingClassError('save class data');
+    }
+
+    console.log('Current Class ID:', classId || '(none)');
+    console.log('User ID:', userId || '(none)');
     return {
       classes,
       classId,
@@ -523,6 +473,12 @@ const ensureActiveClassContext = async (userId) => {
 
   const classes = await ensureClassCatalog(userId);
   const { classId, className } = resolveActiveClassModel(userId, classes);
+  if (requireClass && !classId) {
+    throw createMissingClassError('save class data');
+  }
+
+  console.log('Current Class ID:', classId || '(none)');
+  console.log('User ID:', userId || '(none)');
   return {
     classes,
     classId,
@@ -974,10 +930,24 @@ export const fetchAllData = async () => {
 
   for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
     try {
-      const classContext = await ensureActiveClassContext(userId);
+      const classContext = await ensureActiveClassContext(userId, { requireClass: false });
       const scopedClasses = classContext.classes || [];
       const scopedClassId = classContext.classId;
       const scopedClassName = classContext.className;
+
+      if (!scopedClassId) {
+        return {
+          data: createDefaultRawData(),
+          classes: scopedClasses,
+          currentClassId: '',
+          currentClassName: scopedClassName,
+          source: 'firebase',
+          offline: false,
+          error: null,
+          errorType: null
+        };
+      }
+
       const modularResult = await readModularRawData(userId, scopedClassId);
       writeClassCatalogCache(userId, scopedClasses);
 
@@ -1095,15 +1065,18 @@ export const createClass = async (className) => {
   const userId = await ensureAuthenticatedUserId('create class');
   const normalizedName = normalizeClassName(className, DEFAULT_CLASS_NAME);
   const createdAt = new Date().toISOString();
-  const classId = createClassDocId(normalizedName);
 
-  await setDoc(getClassDocRef(userId, classId), {
-    id: classId,
+  const classDocRef = await addDoc(getClassesCollectionRef(userId), {
     name: normalizedName,
     createdAt,
     updatedAt: createdAt,
     userId
-  }, { merge: false });
+  });
+  const classId = normalizeClassId(classDocRef.id);
+
+  await setDoc(classDocRef, {
+    id: classId
+  }, { merge: true });
 
   const classes = await ensureClassCatalog(userId);
   const nextClasses = sortClasses([...classes.filter(entry => entry.id !== classId), {

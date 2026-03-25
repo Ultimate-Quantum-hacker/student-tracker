@@ -34,10 +34,47 @@ window.TrackerApp = window.TrackerApp || {};
 
   const OFFLINE_CACHE_MESSAGE = 'Offline mode: using cached data';
   const OFFLINE_GRACE_PERIOD_MS = 3000;
+  const CURRENT_CLASS_STORAGE_KEY = 'currentClassId';
   const LEGACY_DEFAULT_SUBJECTS = ['English Language', 'Mathematics', 'Integrated Science', 'Social Studies', 'Computing'];
   const LEGACY_DEFAULT_EXAMS = ['Mock 1'];
   let stateWriteChain = Promise.resolve();
   let hasShownOfflineToast = false;
+
+  const normalizeClassStorageId = (value) => String(value || '').trim();
+
+  const persistCurrentClassId = (classId) => {
+    const normalizedClassId = normalizeClassStorageId(classId);
+    if (typeof localStorage !== 'undefined') {
+      if (normalizedClassId) {
+        localStorage.setItem(CURRENT_CLASS_STORAGE_KEY, normalizedClassId);
+      } else {
+        localStorage.removeItem(CURRENT_CLASS_STORAGE_KEY);
+      }
+    }
+
+    if (typeof sessionStorage !== 'undefined') {
+      if (normalizedClassId) {
+        sessionStorage.setItem(CURRENT_CLASS_STORAGE_KEY, normalizedClassId);
+      } else {
+        sessionStorage.removeItem(CURRENT_CLASS_STORAGE_KEY);
+      }
+    }
+  };
+
+  const readPersistedCurrentClassId = () => {
+    const localValue = typeof localStorage !== 'undefined'
+      ? normalizeClassStorageId(localStorage.getItem(CURRENT_CLASS_STORAGE_KEY))
+      : '';
+    if (localValue) {
+      return localValue;
+    }
+
+    return typeof sessionStorage !== 'undefined'
+      ? normalizeClassStorageId(sessionStorage.getItem(CURRENT_CLASS_STORAGE_KEY))
+      : '';
+  };
+
+  app.state.currentClassId = readPersistedCurrentClassId();
 
   const createDefaultRawData = () => ({
     students: [],
@@ -332,6 +369,10 @@ window.TrackerApp = window.TrackerApp || {};
       app.state.isLoading = true;
       app.state.error = null;
 
+      if (!app.state.currentClassId) {
+        app.state.currentClassId = readPersistedCurrentClassId();
+      }
+
       if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
         dataService.setCurrentClassId(app.state.currentClassId);
       }
@@ -343,6 +384,10 @@ window.TrackerApp = window.TrackerApp || {};
       app.state.classes = nextClasses;
       app.state.currentClassId = nextClassId;
       app.state.currentClassName = nextClassName;
+      persistCurrentClassId(nextClassId);
+
+      console.log('Current Class ID:', nextClassId || '(none)');
+      console.log('User ID:', app.state.authUser?.uid || '(none)');
 
       if (typeof dataService.setCurrentClassId === 'function' && nextClassId) {
         dataService.setCurrentClassId(nextClassId);
@@ -383,6 +428,7 @@ window.TrackerApp = window.TrackerApp || {};
         const fallbackClassId = String(fallbackCache.classId || app.state.currentClassId || '').trim();
         if (fallbackClassId) {
           app.state.currentClassId = fallbackClassId;
+          persistCurrentClassId(fallbackClassId);
           if (typeof dataService.setCurrentClassId === 'function') {
             dataService.setCurrentClassId(fallbackClassId);
           }
@@ -409,6 +455,7 @@ window.TrackerApp = window.TrackerApp || {};
     assertRemoteWriteSucceeded(saveResult, operationLabel);
     if (saveResult?.classId) {
       app.state.currentClassId = String(saveResult.classId || '').trim();
+      persistCurrentClassId(app.state.currentClassId);
       if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
         dataService.setCurrentClassId(app.state.currentClassId);
       }
@@ -424,6 +471,10 @@ window.TrackerApp = window.TrackerApp || {};
       app.state.classes = Array.isArray(result?.classes) ? result.classes : app.state.classes;
       app.state.currentClassId = String(result?.currentClassId || '').trim();
       app.state.currentClassName = String(result?.currentClassName || nextName).trim() || nextName;
+      persistCurrentClassId(app.state.currentClassId);
+
+      console.log('Current Class ID:', app.state.currentClassId || '(none)');
+      console.log('User ID:', app.state.authUser?.uid || '(none)');
 
       if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
         dataService.setCurrentClassId(app.state.currentClassId);
@@ -448,6 +499,12 @@ window.TrackerApp = window.TrackerApp || {};
       app.state.currentClassId = nextClassId;
       const activeClass = (app.state.classes || []).find(entry => entry.id === nextClassId);
       app.state.currentClassName = activeClass?.name || app.state.currentClassName || 'My Class';
+      persistCurrentClassId(nextClassId);
+
+      console.log('Current Class ID:', nextClassId || '(none)');
+      console.log('User ID:', app.state.authUser?.uid || '(none)');
+
+      applyRuntimeCollections([], [], []);
 
       if (typeof dataService.setCurrentClassId === 'function') {
         dataService.setCurrentClassId(nextClassId);
@@ -469,6 +526,10 @@ window.TrackerApp = window.TrackerApp || {};
       app.state.classes = Array.isArray(result?.classes) ? result.classes : [];
       app.state.currentClassId = String(result?.currentClassId || '').trim();
       app.state.currentClassName = String(result?.currentClassName || '').trim() || 'My Class';
+      persistCurrentClassId(app.state.currentClassId);
+
+      console.log('Current Class ID:', app.state.currentClassId || '(none)');
+      console.log('User ID:', app.state.authUser?.uid || '(none)');
 
       if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
         dataService.setCurrentClassId(app.state.currentClassId);

@@ -95,15 +95,27 @@
 
   <script>
     const STORAGE_KEY_PREFIX = 'studentAppData';
+    const CURRENT_CLASS_STORAGE_KEY = 'currentClassId';
 
     function getCurrentAuthUid() {
       const uid = sessionStorage.getItem('currentAuthUid');
       return uid ? String(uid).trim() : '';
     }
 
+    function getCurrentClassId() {
+      const localClassId = localStorage.getItem(CURRENT_CLASS_STORAGE_KEY);
+      if (localClassId && String(localClassId).trim()) {
+        return String(localClassId).trim();
+      }
+
+      const sessionClassId = sessionStorage.getItem(CURRENT_CLASS_STORAGE_KEY);
+      return sessionClassId ? String(sessionClassId).trim() : '';
+    }
+
     function getStorageKeyForCurrentUser() {
       const uid = getCurrentAuthUid();
-      return uid ? `${STORAGE_KEY_PREFIX}:${uid}` : '';
+      const classId = getCurrentClassId();
+      return uid && classId ? `${STORAGE_KEY_PREFIX}:${uid}:${classId}` : '';
     }
 
     function normalizeLabel(value) {
