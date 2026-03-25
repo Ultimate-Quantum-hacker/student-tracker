@@ -183,7 +183,7 @@ const ui = {
       const normalizedRole = normalizeUserRole(role);
       if (normalizedRole === 'developer') return 'Developer';
       if (normalizedRole === 'admin') return 'Admin';
-      return 'User';
+      return 'Teacher';
     },
 
     canAccess: function (feature) {

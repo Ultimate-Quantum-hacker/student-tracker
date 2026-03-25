@@ -30,7 +30,7 @@ service cloud.firestore {
     }
 
     function isValidRole(role) {
-      return role in ['user', 'teacher', 'admin', 'developer'];
+      return role in ['teacher', 'admin', 'developer'];
     }
 
     function hasValidUserProfileShape(userId) {
@@ -45,8 +45,16 @@ service cloud.firestore {
     function isRoleUpdateByOwnerAllowed() {
       return request.resource.data.role == resource.data.role
         || (
+          resource.data.role == 'user'
+          && request.resource.data.role == 'teacher'
+        )
+        || (
+          isDeveloperEmail()
+          && request.resource.data.role == 'developer'
+        )
+        || (
           !('role' in resource.data)
-          && (request.resource.data.role == 'user' || request.resource.data.role == 'teacher')
+          && request.resource.data.role == 'teacher'
         );
     }
 
@@ -55,7 +63,7 @@ service cloud.firestore {
         && hasValidUserProfileShape(userId)
         && (
           (isDeveloperEmail() && request.resource.data.role == 'developer')
-          || (!isDeveloperEmail() && (request.resource.data.role == 'user' || request.resource.data.role == 'teacher'))
+          || (!isDeveloperEmail() && request.resource.data.role == 'teacher')
         );
 
       allow read: if canAccessUserData(userId);

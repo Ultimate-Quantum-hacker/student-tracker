@@ -17,19 +17,19 @@ import {
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
 const normalizeName = (name) => String(name || '').trim();
 const DEVELOPER_EMAIL = 'pokumike2@gmail.com';
-const ROLE_USER = 'user';
+const ROLE_TEACHER = 'teacher';
+const LEGACY_ROLE_USER = 'user';
 const ROLE_ADMIN = 'admin';
 const ROLE_DEVELOPER = 'developer';
-const LEGACY_ROLE_TEACHER = 'teacher';
-const USER_ROLES = [ROLE_USER, ROLE_ADMIN, ROLE_DEVELOPER, LEGACY_ROLE_TEACHER];
-const DEFAULT_USER_ROLE = ROLE_USER;
+const USER_ROLES = [ROLE_TEACHER, ROLE_ADMIN, ROLE_DEVELOPER, LEGACY_ROLE_USER];
+const DEFAULT_USER_ROLE = ROLE_TEACHER;
 
 export const isDeveloperAccountEmail = (email) => normalizeEmail(email) === DEVELOPER_EMAIL;
 
 export const normalizeUserRole = (role) => {
   const normalized = String(role || '').trim().toLowerCase();
-  if (normalized === LEGACY_ROLE_TEACHER) {
-    return ROLE_USER;
+  if (normalized === LEGACY_ROLE_USER) {
+    return ROLE_TEACHER;
   }
   return USER_ROLES.includes(normalized) ? normalized : DEFAULT_USER_ROLE;
 };
@@ -46,7 +46,7 @@ const resolveProfileRole = (authUser, existingRole = '') => {
     return ROLE_ADMIN;
   }
 
-  return ROLE_USER;
+  return ROLE_TEACHER;
 };
 
 const sanitizeProfilePayload = (authUser, existingRole = '') => ({
@@ -59,12 +59,20 @@ const sanitizeProfilePayload = (authUser, existingRole = '') => ({
 
 const ensureUserProfileDocument = async (authUser) => {
   const uid = String(authUser?.uid || '').trim();
+  const normalizedEmail = normalizeEmail(authUser?.email);
+
+  if (normalizedEmail) {
+    console.log('User email:', normalizedEmail);
+  }
+
   if (!uid || !isFirebaseConfigured || !db) {
+    const fallbackRole = resolveProfileRole(authUser);
+    console.log('Assigned role:', fallbackRole);
     return {
       uid,
-      role: resolveProfileRole(authUser),
+      role: fallbackRole,
       name: normalizeName(authUser?.name),
-      email: normalizeEmail(authUser?.email)
+      email: normalizedEmail
     };
   }
 
@@ -74,6 +82,7 @@ const ensureUserProfileDocument = async (authUser) => {
   if (!profileSnapshot.exists()) {
     const payload = sanitizeProfilePayload(authUser);
     await setDoc(profileRef, payload, { merge: true });
+    console.log('Assigned role:', payload.role);
     return {
       uid,
       role: payload.role,
@@ -84,12 +93,12 @@ const ensureUserProfileDocument = async (authUser) => {
 
   const data = profileSnapshot.data() || {};
   const normalizedName = normalizeName(data.name || authUser?.name);
-  const normalizedEmail = normalizeEmail(data.email || authUser?.email);
+  const normalizedProfileEmail = normalizeEmail(data.email || authUser?.email);
   const resolvedRole = resolveProfileRole(
     {
       uid,
       name: normalizedName,
-      email: normalizedEmail
+      email: normalizedProfileEmail
     },
     data.role
   );
@@ -101,8 +110,8 @@ const ensureUserProfileDocument = async (authUser) => {
   if (normalizeName(data.name) !== normalizedName) {
     patch.name = normalizedName;
   }
-  if (normalizeEmail(data.email) !== normalizedEmail) {
-    patch.email = normalizedEmail;
+  if (normalizeEmail(data.email) !== normalizedProfileEmail) {
+    patch.email = normalizedProfileEmail;
   }
   if (String(data.role || '').trim().toLowerCase() !== resolvedRole) {
     patch.role = resolvedRole;
@@ -112,11 +121,13 @@ const ensureUserProfileDocument = async (authUser) => {
     await setDoc(profileRef, patch, { merge: true });
   }
 
+  console.log('Assigned role:', resolvedRole);
+
   return {
     uid,
     role: resolvedRole,
     name: normalizedName,
-    email: normalizedEmail,
+    email: normalizedProfileEmail,
     createdAt: data.createdAt || null
   };
 };
@@ -126,7 +137,7 @@ export const resolveUserRole = async (authUser) => {
     const profile = await ensureUserProfileDocument(authUser);
     return normalizeUserRole(profile?.role);
   } catch (error) {
-    console.error('Failed to resolve user role. Falling back to user:', error);
+    console.error('Failed to resolve user role. Falling back to teacher:', error);
     return DEFAULT_USER_ROLE;
   }
 };

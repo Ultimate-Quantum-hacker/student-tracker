@@ -15,7 +15,7 @@ window.TrackerApp = window.TrackerApp || {};
     classes: [],
     currentClassId: '',
     currentClassName: 'My Class',
-    currentUserRole: 'user',
+    currentUserRole: 'teacher',
     isRoleResolved: false,
     students: [],
     studentTrash: [],
@@ -41,11 +41,11 @@ window.TrackerApp = window.TrackerApp || {};
   const OFFLINE_CACHE_MESSAGE = 'Offline mode: using cached data';
   const OFFLINE_GRACE_PERIOD_MS = 3000;
   const CURRENT_CLASS_STORAGE_KEY = 'currentClassId';
-  const ROLE_USER = 'user';
-  const ROLE_LEGACY_TEACHER = 'teacher';
+  const ROLE_TEACHER = 'teacher';
+  const ROLE_LEGACY_USER = 'user';
   const ROLE_ADMIN = 'admin';
   const ROLE_DEVELOPER = 'developer';
-  const ALLOWED_ROLES = [ROLE_USER, ROLE_ADMIN, ROLE_DEVELOPER, ROLE_LEGACY_TEACHER];
+  const ALLOWED_ROLES = [ROLE_TEACHER, ROLE_ADMIN, ROLE_DEVELOPER, ROLE_LEGACY_USER];
   const LEGACY_DEFAULT_SUBJECTS = ['English Language', 'Mathematics', 'Integrated Science', 'Social Studies', 'Computing'];
   const LEGACY_DEFAULT_EXAMS = ['Mock 1'];
   let stateWriteChain = Promise.resolve();
@@ -54,10 +54,10 @@ window.TrackerApp = window.TrackerApp || {};
   const normalizeClassStorageId = (value) => String(value || '').trim();
   const normalizeRole = (value) => {
     const normalized = String(value || '').trim().toLowerCase();
-    if (normalized === ROLE_LEGACY_TEACHER) {
-      return ROLE_USER;
+    if (normalized === ROLE_LEGACY_USER) {
+      return ROLE_TEACHER;
     }
-    return ALLOWED_ROLES.includes(normalized) ? normalized : ROLE_USER;
+    return ALLOWED_ROLES.includes(normalized) ? normalized : ROLE_TEACHER;
   };
 
   app.getCurrentUserRole = function () {
@@ -70,12 +70,12 @@ window.TrackerApp = window.TrackerApp || {};
   };
 
   app.clearCurrentUserRole = function () {
-    app.state.currentUserRole = ROLE_USER;
+    app.state.currentUserRole = ROLE_TEACHER;
     app.state.isRoleResolved = false;
   };
 
   app.isTeacherRole = function () {
-    return app.getCurrentUserRole() === ROLE_USER;
+    return app.getCurrentUserRole() === ROLE_TEACHER;
   };
 
   app.isAdminRole = function () {

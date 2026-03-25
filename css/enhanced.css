@@ -844,7 +844,6 @@ body.dark-mode .hm-category-badge{color:#f8fafc}
   user-select:none;
 }
 
-.auth-role-badge[data-role="user"],
 .auth-role-badge[data-role="teacher"]{
   color:#0f172a;
   border-color:rgba(148,163,184,.45);
@@ -876,7 +875,6 @@ body.dark-mode .auth-role-badge{
   background:#0f172a;
 }
 
-body.dark-mode .auth-role-badge[data-role="user"],
 body.dark-mode .auth-role-badge[data-role="teacher"]{
   background:#111827;
   border-color:#334155;

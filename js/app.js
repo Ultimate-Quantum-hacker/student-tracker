@@ -116,7 +116,7 @@ const ensureAuthenticatedSession = async () => {
     return true;
   } catch (error) {
     console.error('Failed to resolve authentication state:', error);
-    app.setCurrentUserRole('user', { resolved: true });
+    app.setCurrentUserRole('teacher', { resolved: true });
     redirectToLogin();
     return false;
   }

@@ -17,14 +17,14 @@ import {
 
 const DASHBOARD_PATH = '/index.html';
 const LOGIN_PATH = '/login.html';
-const ROLE_USER = 'user';
+const ROLE_TEACHER = 'teacher';
 const ROLE_ADMIN = 'admin';
 const ROLE_DEVELOPER = 'developer';
-const UPDATABLE_ROLES = [ROLE_USER, ROLE_ADMIN];
+const UPDATABLE_ROLES = [ROLE_TEACHER, ROLE_ADMIN];
 
 const state = {
   authUser: null,
-  currentRole: ROLE_USER,
+  currentRole: ROLE_TEACHER,
   users: []
 };
 
@@ -53,7 +53,7 @@ const formatRoleLabel = (role) => {
   const normalized = normalizeUserRole(role);
   if (normalized === ROLE_DEVELOPER) return 'Developer';
   if (normalized === ROLE_ADMIN) return 'Admin';
-  return 'User';
+  return 'Teacher';
 };
 
 const setStatus = (message, type = '') => {
@@ -109,7 +109,7 @@ const buildRoleSelect = (record) => {
   const select = document.createElement('select');
   select.className = 'role-select';
   select.dataset.userId = record.uid;
-  select.setAttribute('aria-label', `Select role for ${record.email || 'user'}`);
+  select.setAttribute('aria-label', `Select role for ${record.email || 'teacher'}`);
 
   const options = normalizedRole === ROLE_DEVELOPER
     ? [ROLE_DEVELOPER]
@@ -240,7 +240,7 @@ const updateUserRole = async (uid, nextRole) => {
   const currentRole = normalizeUserRole(record.role);
 
   if (!UPDATABLE_ROLES.includes(normalizedNextRole)) {
-    setStatus('Only user and admin roles can be assigned in this panel.', 'warning');
+    setStatus('Only teacher and admin roles can be assigned in this panel.', 'warning');
     return;
   }
 
