@@ -84,11 +84,43 @@ const ensureAuthenticatedSession = async () => {
     }
 
     setAuthUserState(authUser);
+    console.log('Active UID:', authUser.uid);
     return true;
   } catch (error) {
     console.error('Failed to resolve authentication state:', error);
     redirectToLogin();
     return false;
+  }
+};
+
+const handleAuthUserChange = async (authUser) => {
+  const previousUid = app.state.authUser?.uid || '';
+
+  if (!authUser) {
+    setAuthUserState(null);
+    clearLoadedDataForLogout();
+    redirectToLogin();
+    return;
+  }
+
+  setAuthUserState(authUser);
+  console.log('Active UID:', authUser.uid);
+
+  const nextUid = authUser.uid;
+  const hasUserChanged = Boolean(previousUid) && previousUid !== nextUid;
+  if (!hasUserChanged) {
+    return;
+  }
+
+  clearLoadedDataForLogout();
+
+  try {
+    await app.load();
+    if (ui.refreshUI) {
+      ui.refreshUI();
+    }
+  } catch (error) {
+    console.error('Failed to reload user-scoped data after auth change:', error);
   }
 };
 
@@ -144,14 +176,9 @@ const bindAuthStateWatcher = () => {
   }
 
   authSubscriptionCleanup = subscribeAuthState((authUser) => {
-    if (!authUser) {
-      setAuthUserState(null);
-      clearLoadedDataForLogout();
-      redirectToLogin();
-      return;
-    }
-
-    setAuthUserState(authUser);
+    handleAuthUserChange(authUser).catch((error) => {
+      console.error('Auth state handler failed:', error);
+    });
   });
 };
 

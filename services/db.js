@@ -3,7 +3,7 @@
    Centralized Firestore-first data access with cache fallback.
    ═══════════════════════════════════════════════ */
 
-import { db, doc, getDoc, setDoc, isFirebaseConfigured, auth } from '../js/firebase.js';
+import { db, doc, getDoc, setDoc, isFirebaseConfigured, auth, authReadyPromise, onAuthStateChanged } from '../js/firebase.js';
 
 const CACHE_KEY_PREFIX = 'studentAppData';
 const LEGACY_CACHE_KEY = 'studentAppData';
@@ -45,13 +45,41 @@ const getCurrentUserId = () => {
   return uid ? String(uid).trim() : '';
 };
 
+const waitForAuthResolution = async () => {
+  await authReadyPromise;
+
+  if (!auth) {
+    return null;
+  }
+
+  if (auth.currentUser) {
+    return auth.currentUser;
+  }
+
+  return new Promise((resolve) => {
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      (user) => {
+        unsubscribe();
+        resolve(user || null);
+      },
+      () => {
+        unsubscribe();
+        resolve(auth.currentUser || null);
+      }
+    );
+  });
+};
+
 const createUnauthenticatedError = (operationLabel = 'access data') => {
   const error = new Error(`Authentication required to ${operationLabel}`);
   error.code = 'auth/unauthenticated';
   return error;
 };
 
-const ensureAuthenticatedUserId = (operationLabel = 'access data') => {
+const ensureAuthenticatedUserId = async (operationLabel = 'access data') => {
+  await waitForAuthResolution();
+
   const userId = getCurrentUserId();
   if (!userId) {
     throw createUnauthenticatedError(operationLabel);
@@ -187,7 +215,8 @@ const persistRemoteFirst = async (rawData, operationLabel) => {
 
   for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
     try {
-      const userId = ensureAuthenticatedUserId(operationLabel);
+      const userId = await ensureAuthenticatedUserId(operationLabel);
+      console.log('Active UID:', userId);
       await saveRemote(nextData, userId);
       return {
         data: nextData,
@@ -255,7 +284,8 @@ export const writeCacheCopy = (rawData) => {
 export const fetchAllData = async () => {
   let userId = '';
   try {
-    userId = ensureAuthenticatedUserId('fetch data');
+    userId = await ensureAuthenticatedUserId('fetch data');
+    console.log('Active UID:', userId);
   } catch (error) {
     return {
       data: createDefaultRawData(),
