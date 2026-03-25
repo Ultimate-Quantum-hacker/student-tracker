@@ -3,11 +3,9 @@
    Centralized Firestore-first data access with cache fallback.
    ═══════════════════════════════════════════════ */
 
-import { db, doc, collection, getDoc, getDocs, setDoc, deleteDoc, isFirebaseConfigured, auth, authReadyPromise, onAuthStateChanged } from '../js/firebase.js';
+import { db, doc, collection, getDocs, setDoc, deleteDoc, isFirebaseConfigured, auth, authReadyPromise, onAuthStateChanged } from '../js/firebase.js';
 
 const CACHE_KEY_PREFIX = 'studentAppData';
-const LEGACY_CACHE_KEY = 'studentAppData';
-const LEGACY_REMOTE_COLLECTION = 'appState';
 const USERS_COLLECTION = 'users';
 const STUDENTS_SUBCOLLECTION = 'students';
 const SUBJECTS_SUBCOLLECTION = 'subjects';
@@ -106,15 +104,6 @@ const ensureAuthenticatedUserId = async (operationLabel = 'access data') => {
 };
 
 const getCacheKeyForUser = (userId) => `${CACHE_KEY_PREFIX}:${userId}`;
-
-const removeLegacyCacheIfPresent = () => {
-  if (typeof localStorage === 'undefined') return;
-  if (localStorage.getItem(LEGACY_CACHE_KEY)) {
-    localStorage.removeItem(LEGACY_CACHE_KEY);
-  }
-};
-
-const getLegacyDocRef = (userId) => doc(db, LEGACY_REMOTE_COLLECTION, userId);
 const getUserRootRef = (userId) => doc(db, USERS_COLLECTION, userId);
 const getStudentsCollectionRef = (userId) => collection(db, USERS_COLLECTION, userId, STUDENTS_SUBCOLLECTION);
 const getSubjectsCollectionRef = (userId) => collection(db, USERS_COLLECTION, userId, SUBJECTS_SUBCOLLECTION);
@@ -192,7 +181,7 @@ const syncCollectionDocuments = async (collectionRef, targetDocs) => {
   await Promise.all(operations);
 };
 
-const writeModularData = async (userId, rawData, options = {}) => {
+const writeModularData = async (userId, rawData) => {
   const normalized = normalizeRawData(rawData);
   const updatedAt = new Date().toISOString();
 
@@ -208,27 +197,14 @@ const writeModularData = async (userId, rawData, options = {}) => {
 
   await setDoc(getUserRootRef(userId), {
     userId,
-    updatedAt,
-    migrationComplete: options.migrationComplete ?? true,
-    migratedAt: options.migrationComplete ? updatedAt : undefined
+    updatedAt
   }, { merge: true });
 
   return normalized;
 };
 
-const readLegacyRawData = async (userId) => {
-  const snapshot = await getDoc(getLegacyDocRef(userId));
-  const remotePayload = snapshot.exists() ? snapshot.data() : null;
-  const remoteData = normalizeRawData(remotePayload?.data || remotePayload || createDefaultRawData());
-  return {
-    data: remoteData,
-    hasData: hasAnyRawData(remoteData)
-  };
-};
-
 const readModularRawData = async (userId) => {
-  const [userMetaSnapshot, studentsSnapshot, subjectsSnapshot, examsSnapshot] = await Promise.all([
-    getDoc(getUserRootRef(userId)),
+  const [studentsSnapshot, subjectsSnapshot, examsSnapshot] = await Promise.all([
     getDocs(getStudentsCollectionRef(userId)),
     getDocs(getSubjectsCollectionRef(userId)),
     getDocs(getExamsCollectionRef(userId))
@@ -268,7 +244,6 @@ const readModularRawData = async (userId) => {
   });
   exams.sort((a, b) => a.order - b.order);
 
-  const meta = userMetaSnapshot.exists() ? userMetaSnapshot.data() || {} : {};
   const data = normalizeRawData({
     students: students.map(({ id, name, notes, class: className, scores }) => ({ id, name, notes, class: className, scores })),
     subjects: subjects.map((subject) => subject.name),
@@ -277,15 +252,8 @@ const readModularRawData = async (userId) => {
 
   return {
     data,
-    hasData: hasAnyRawData(data),
-    migrationComplete: Boolean(meta?.migrationComplete)
+    hasData: hasAnyRawData(data)
   };
-};
-
-const migrateLegacyData = async (userId, legacyData) => {
-  const migrated = await writeModularData(userId, legacyData, { migrationComplete: true });
-  console.log('Migration complete for UID:', userId);
-  return migrated;
 };
 
 const parseCache = (raw) => {
@@ -382,14 +350,12 @@ const logOnlineFailure = (context, errorType) => {
   console.warn(`Online but failed to ${context}. Using cache fallback.`);
 };
 
-const saveRemote = async (rawData, userId, options = {}) => {
+const saveRemote = async (rawData, userId) => {
   if (!isFirebaseConfigured || !db) {
     throw new Error('Firebase unavailable');
   }
 
-  const payload = await writeModularData(userId, rawData, {
-    migrationComplete: options.migrationComplete ?? true
-  });
+  const payload = await writeModularData(userId, rawData);
   console.log('Saved to Firebase');
   return payload;
 };
@@ -447,7 +413,6 @@ export const readCachedData = () => {
     return null;
   }
 
-  removeLegacyCacheIfPresent();
   const cached = parseCache(localStorage.getItem(getCacheKeyForUser(userId)));
   if (cached?.data) {
     console.log('Loaded from cache');
@@ -461,7 +426,6 @@ export const writeCacheCopy = (rawData) => {
     return null;
   }
 
-  removeLegacyCacheIfPresent();
   const cacheEnvelope = withTimestamp(rawData);
   localStorage.setItem(getCacheKeyForUser(userId), JSON.stringify(cacheEnvelope));
   return cacheEnvelope;
@@ -518,32 +482,6 @@ export const fetchAllData = async () => {
         console.log('Synced from Firebase (modular)');
         return {
           data: modularResult.data,
-          source: 'firebase',
-          offline: false,
-          error: null,
-          errorType: null
-        };
-      }
-
-      const legacyResult = await readLegacyRawData(userId);
-
-      if (!modularResult?.migrationComplete) {
-        const migratedData = await migrateLegacyData(userId, legacyResult?.data || createDefaultRawData());
-        writeCacheCopy(migratedData);
-        return {
-          data: migratedData,
-          source: 'firebase',
-          offline: false,
-          error: null,
-          errorType: null
-        };
-      }
-
-      if (legacyResult?.hasData) {
-        writeCacheCopy(legacyResult.data);
-        console.log('Synced from Firebase (legacy fallback)');
-        return {
-          data: legacyResult.data,
           source: 'firebase',
           offline: false,
           error: null,
