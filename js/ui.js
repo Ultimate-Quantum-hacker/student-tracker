@@ -125,13 +125,33 @@ const domIds = {
   performanceCategorySelect: 'performance-category-select',
   performanceCategoryCounts: 'performance-category-counts',
   performanceFilteredList: 'performance-filtered-list',
-  performanceInterventionNeededList: 'performance-intervention-needed-list'
+  performanceInterventionNeededList: 'performance-intervention-needed-list',
+  authRoleBadge: 'auth-role-badge'
+};
+
+const FEATURE_ACCESS_RULES = {
+  developerTools: ['developer'],
+  importData: ['developer'],
+  bulkImport: ['developer'],
+  restorePoints: ['developer'],
+  resetSystem: ['developer'],
+  adminPanel: ['admin', 'developer']
+};
+
+const FEATURE_ACCESS_MESSAGES = {
+  developerTools: 'Access restricted: Developer only',
+  importData: 'Access restricted: Developer only',
+  bulkImport: 'Access restricted: Developer only',
+  restorePoints: 'Access restricted: Developer only',
+  resetSystem: 'Access restricted: Developer only',
+  adminPanel: 'Admin access required'
 };
 
 const ui = {
     isReportExporting: false,
     hasPromptedForMissingClass: false,
     hasBoundClassDropdownEvents: false,
+    hasBoundAccessGuardEvents: false,
     toastTimer: null,
     trashRetentionDays: 3,
 
@@ -158,52 +178,169 @@ const ui = {
       return normalizeUserRole(app.state.currentUserRole);
     },
 
+    formatRoleLabel: function (role) {
+      const normalizedRole = normalizeUserRole(role);
+      if (normalizedRole === 'developer') return 'Developer';
+      if (normalizedRole === 'admin') return 'Admin';
+      return 'Teacher';
+    },
+
+    canAccess: function (feature) {
+      const requiredRoles = FEATURE_ACCESS_RULES[feature];
+      if (!requiredRoles) {
+        return true;
+      }
+
+      if (!app.state.isRoleResolved) {
+        return false;
+      }
+
+      return requiredRoles.includes(this.getCurrentRole());
+    },
+
+    getAccessDeniedMessage: function (feature) {
+      if (!app.state.isRoleResolved) {
+        return 'Permissions are still loading';
+      }
+
+      return FEATURE_ACCESS_MESSAGES[feature] || 'You do not have permission for this action';
+    },
+
+    requireAccess: function (feature) {
+      if (this.canAccess(feature)) {
+        return true;
+      }
+
+      const reason = this.getAccessDeniedMessage(feature);
+      this.showToast(`Access denied: ${reason}`);
+      return false;
+    },
+
     canUseDeveloperTools: function () {
-      return Boolean(app.state.isRoleResolved) && this.getCurrentRole() === 'developer';
+      return this.canAccess('developerTools');
     },
 
     requireDeveloperAccess: function () {
-      if (this.canUseDeveloperTools()) {
-        return true;
+      return this.requireAccess('developerTools');
+    },
+
+    isRoleRestrictedElement: function (element) {
+      if (!element) return false;
+      if (element.classList && element.classList.contains('role-restricted')) return true;
+      return String(element.dataset?.roleRestricted || '') === 'true';
+    },
+
+    getElementAccessMessage: function (element) {
+      return String(element?.dataset?.accessMessage || '').trim() || 'You do not have permission for this action';
+    },
+
+    applyFeatureAccessState: function (feature, elements = []) {
+      const canAccessFeature = this.canAccess(feature);
+      const deniedMessage = this.getAccessDeniedMessage(feature);
+      const normalizedElements = Array.from(elements || []).filter(Boolean);
+
+      normalizedElements.forEach((element) => {
+        if (!element) return;
+        element.classList.add('role-gated');
+
+        if (element.tagName === 'INPUT') {
+          element.disabled = !canAccessFeature;
+          if (!canAccessFeature) {
+            element.dataset.accessFeature = feature;
+            element.dataset.accessMessage = deniedMessage;
+          } else {
+            delete element.dataset.accessFeature;
+            delete element.dataset.accessMessage;
+          }
+          return;
+        }
+
+        if (canAccessFeature) {
+          element.classList.remove('role-restricted');
+          element.removeAttribute('aria-disabled');
+          if (!element.dataset.originalTitle) {
+            element.removeAttribute('title');
+          } else {
+            element.title = element.dataset.originalTitle;
+          }
+          delete element.dataset.roleRestricted;
+          delete element.dataset.accessFeature;
+          delete element.dataset.accessMessage;
+          return;
+        }
+
+        if (typeof element.title === 'string' && element.title && !element.dataset.originalTitle) {
+          element.dataset.originalTitle = element.title;
+        }
+
+        element.classList.add('role-restricted');
+        element.setAttribute('aria-disabled', 'true');
+        element.dataset.roleRestricted = 'true';
+        element.dataset.accessFeature = feature;
+        element.dataset.accessMessage = deniedMessage;
+        element.title = deniedMessage;
+      });
+    },
+
+    updateRoleBadge: function () {
+      const roleBadge = app.dom.authRoleBadge || document.getElementById('auth-role-badge');
+      if (!roleBadge) return;
+
+      const roleResolved = Boolean(app.state.isRoleResolved && app.state.authUser?.uid);
+      if (!roleResolved) {
+        roleBadge.textContent = 'Role: Loading...';
+        roleBadge.dataset.role = 'pending';
+        roleBadge.classList.add('role-pending');
+        roleBadge.title = 'Resolving access permissions';
+        return;
       }
-      this.showToast('Developer access required');
-      return false;
+
+      const currentRole = this.getCurrentRole();
+      const roleLabel = this.formatRoleLabel(currentRole);
+      roleBadge.textContent = roleLabel;
+      roleBadge.dataset.role = currentRole;
+      roleBadge.classList.remove('role-pending');
+      roleBadge.title = `Current role: ${roleLabel}`;
     },
 
     updateRoleBasedUIAccess: function () {
       const roleResolved = Boolean(app.state.isRoleResolved);
       const currentRole = this.getCurrentRole();
-      const canUseDeveloperTools = roleResolved && currentRole === 'developer';
-      const shouldHideDeveloperFeatures = !canUseDeveloperTools;
 
       if (document.body) {
         document.body.dataset.userRole = currentRole;
         document.body.classList.toggle('role-loading', !roleResolved);
       }
 
-      const developerOnlyControls = [
+      this.updateRoleBadge();
+
+      this.applyFeatureAccessState('importData', [
         app.dom.restoreBtn,
         app.dom.restoreInput,
+        app.dom.systemImportDataBtn
+      ]);
+
+      this.applyFeatureAccessState('bulkImport', [
         app.dom.bulkImportBtn,
-        app.dom.bulkImportConfirmBtn,
+        app.dom.bulkImportConfirmBtn
+      ]);
+
+      this.applyFeatureAccessState('restorePoints', [
         app.dom.createSnapshotBtn,
         app.dom.snapshotManagerBtn,
-        app.dom.resetBtn,
         app.dom.systemCreateRestorePointBtn,
-        app.dom.systemRestorePointsBtn,
-        app.dom.systemImportDataBtn,
-        app.dom.systemResetBtn
-      ];
+        app.dom.systemRestorePointsBtn
+      ]);
 
-      developerOnlyControls.forEach((element) => {
-        if (!element) return;
-        if (element.tagName === 'INPUT') {
-          element.disabled = shouldHideDeveloperFeatures;
-        } else {
-          element.hidden = shouldHideDeveloperFeatures;
-          element.disabled = shouldHideDeveloperFeatures;
-        }
-      });
+      this.applyFeatureAccessState('resetSystem', [
+        app.dom.resetBtn,
+        app.dom.systemResetBtn
+      ]);
+
+      this.applyFeatureAccessState('adminPanel', [
+        ...document.querySelectorAll('[data-section="admin-dashboard"]'),
+        document.getElementById('admin-dashboard-btn')
+      ]);
     },
 
     hideToast: function () {
@@ -574,7 +711,7 @@ const ui = {
     },
 
     clearAllData: async function () {
-      if (!this.requireDeveloperAccess()) {
+      if (!this.requireAccess('resetSystem')) {
         return;
       }
       try {
@@ -593,7 +730,7 @@ const ui = {
     },
 
     createSnapshot: function (name = 'Manual Restore Point', refreshList = false) {
-      if (!this.requireDeveloperAccess()) {
+      if (!this.requireAccess('restorePoints')) {
         return null;
       }
       if (!app.snapshots || typeof app.snapshots.saveSnapshot !== 'function') {
@@ -1773,7 +1910,13 @@ const ui = {
       try {
         const tabs = document.querySelectorAll('.tab, .sidebar-item');
         tabs.forEach(tab => {
-          tab.addEventListener('click', () => {
+          tab.addEventListener('click', (event) => {
+            if (this.isRoleRestrictedElement(tab)) {
+              event.preventDefault();
+              this.showToast(`Access denied: ${this.getElementAccessMessage(tab)}`);
+              return;
+            }
+
             console.log('Tab clicked:', tab);
 
             const target = tab.dataset.section;
@@ -1801,6 +1944,29 @@ const ui = {
             console.log('Button clicked:', btn);
           });
         });
+
+        if (!this.hasBoundAccessGuardEvents) {
+          document.addEventListener('click', (event) => {
+            const restrictedTarget = event.target.closest('[data-role-restricted="true"]');
+            if (!restrictedTarget) return;
+
+            event.preventDefault();
+            event.stopPropagation();
+            this.showToast(`Access denied: ${this.getElementAccessMessage(restrictedTarget)}`);
+          }, true);
+
+          document.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            const restrictedTarget = event.target.closest('[data-role-restricted="true"]');
+            if (!restrictedTarget) return;
+
+            event.preventDefault();
+            event.stopPropagation();
+            this.showToast(`Access denied: ${this.getElementAccessMessage(restrictedTarget)}`);
+          }, true);
+
+          this.hasBoundAccessGuardEvents = true;
+        }
 
         // Initialize sidebar
         if (app.sidebar && app.sidebar.init) {
@@ -1889,42 +2055,42 @@ const ui = {
           };
         }
         if (app.dom.createSnapshotBtn) app.dom.createSnapshotBtn.onclick = () => {
-          if (!this.requireDeveloperAccess()) return;
+          if (!this.requireAccess('restorePoints')) return;
           this.createSnapshot('Manual Restore Point');
         };
         if (app.dom.snapshotManagerBtn) app.dom.snapshotManagerBtn.onclick = () => {
-          if (!this.requireDeveloperAccess()) return;
+          if (!this.requireAccess('restorePoints')) return;
           this.openSnapshotModal();
         };
         if (app.dom.backupBtn) app.dom.backupBtn.onclick = () => app.export.exportBackup(app);
         if (app.dom.restoreBtn) app.dom.restoreBtn.onclick = () => {
-          if (!this.requireDeveloperAccess()) return;
+          if (!this.requireAccess('importData')) return;
           app.dom.restoreInput.click();
         };
         if (app.dom.restoreInput) app.dom.restoreInput.onchange = (e) => {
-          if (!this.requireDeveloperAccess()) {
+          if (!this.requireAccess('importData')) {
             if (app.dom.restoreInput) app.dom.restoreInput.value = '';
             return;
           }
           app.export.importBackup(e.target.files[0], app);
         };
         if (app.dom.systemCreateRestorePointBtn) app.dom.systemCreateRestorePointBtn.onclick = () => {
-          if (!this.requireDeveloperAccess()) return;
+          if (!this.requireAccess('restorePoints')) return;
           app.dom.createSnapshotBtn?.click();
         };
         if (app.dom.systemRestorePointsBtn) app.dom.systemRestorePointsBtn.onclick = () => {
-          if (!this.requireDeveloperAccess()) return;
+          if (!this.requireAccess('restorePoints')) return;
           app.dom.snapshotManagerBtn?.click();
         };
         if (app.dom.systemExportDataBtn) app.dom.systemExportDataBtn.onclick = () => app.dom.backupBtn?.click();
         if (app.dom.systemImportDataBtn) app.dom.systemImportDataBtn.onclick = () => {
-          if (!this.requireDeveloperAccess()) return;
+          if (!this.requireAccess('importData')) return;
           app.dom.restoreBtn?.click();
         };
         if (app.dom.systemThemeToggleBtn) app.dom.systemThemeToggleBtn.onclick = () => app.dom.themeToggle?.click();
         if (app.dom.systemResetBtn) {
           app.dom.systemResetBtn.onclick = () => {
-            if (!this.requireDeveloperAccess()) return;
+            if (!this.requireAccess('resetSystem')) return;
             const confirmed = confirm('Are you sure you want to reset the system? This action cannot be undone.');
             if (!confirmed) return;
             app.dom.resetBtn?.click();
@@ -1933,21 +2099,21 @@ const ui = {
         if (app.dom.snapshotCloseBtn) app.dom.snapshotCloseBtn.onclick = () => this.closeSnapshotModal();
         if (app.dom.themeToggle) app.dom.themeToggle.onclick = () => { app.state.theme = app.state.theme === 'light' ? 'dark' : 'light'; app.applyTheme(); };
         if (app.dom.resetBtn) app.dom.resetBtn.onclick = () => {
-          if (!this.requireDeveloperAccess()) return;
+          if (!this.requireAccess('resetSystem')) return;
           app.dom.resetModal.classList.add('active');
         };
         if (app.dom.resetConfirmBtn) app.dom.resetConfirmBtn.onclick = async () => {
-          if (!this.requireDeveloperAccess()) return;
+          if (!this.requireAccess('resetSystem')) return;
           await this.clearAllData();
           app.dom.resetModal.classList.remove('active');
         };
         if (app.dom.resetCancelBtn) app.dom.resetCancelBtn.onclick = () => app.dom.resetModal.classList.remove('active');
         if (app.dom.bulkImportBtn) app.dom.bulkImportBtn.onclick = () => {
-          if (!this.requireDeveloperAccess()) return;
+          if (!this.requireAccess('bulkImport')) return;
           app.dom.bulkImportModal.classList.add('active');
         };
         if (app.dom.bulkImportConfirmBtn) app.dom.bulkImportConfirmBtn.onclick = () => {
-          if (!this.requireDeveloperAccess()) return;
+          if (!this.requireAccess('bulkImport')) return;
           app.students.bulkImport(app.dom.bulkImportTextarea.value, app, this);
           app.dom.bulkImportModal.classList.remove('active');
         };

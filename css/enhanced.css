@@ -827,6 +827,71 @@ body.dark-mode .hm-category-badge{color:#f8fafc}
   gap:.55rem;
 }
 
+.auth-role-badge{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-height:28px;
+  padding:.24rem .6rem;
+  border-radius:999px;
+  border:1px solid rgba(148,163,184,.45);
+  background:#f8fafc;
+  color:#334155;
+  font-size:.75rem;
+  font-weight:700;
+  letter-spacing:.03em;
+  text-transform:uppercase;
+  user-select:none;
+}
+
+.auth-role-badge[data-role="teacher"]{
+  color:#0f172a;
+  border-color:rgba(148,163,184,.45);
+  background:#f1f5f9;
+}
+
+.auth-role-badge[data-role="admin"]{
+  color:#0f172a;
+  border-color:rgba(245,158,11,.5);
+  background:#fffbeb;
+}
+
+.auth-role-badge[data-role="developer"]{
+  color:#1e1b4b;
+  border-color:rgba(79,70,229,.45);
+  background:#eef2ff;
+}
+
+.auth-role-badge.role-pending,
+.auth-role-badge[data-role="pending"]{
+  color:#475569;
+  border-color:rgba(148,163,184,.48);
+  background:#f8fafc;
+}
+
+body.dark-mode .auth-role-badge{
+  color:#e2e8f0;
+  border-color:#334155;
+  background:#0f172a;
+}
+
+body.dark-mode .auth-role-badge[data-role="teacher"]{
+  background:#111827;
+  border-color:#334155;
+}
+
+body.dark-mode .auth-role-badge[data-role="admin"]{
+  color:#fde68a;
+  background:rgba(120,53,15,.28);
+  border-color:rgba(217,119,6,.55);
+}
+
+body.dark-mode .auth-role-badge[data-role="developer"]{
+  color:#c4b5fd;
+  background:rgba(49,46,129,.35);
+  border-color:rgba(99,102,241,.55);
+}
+
 .user-avatar{
   width:36px;
   height:36px;
@@ -855,6 +920,31 @@ body.dark-mode .user-avatar{
   display:none !important;
 }
 
+.role-gated.role-restricted,
+.sidebar-item.role-restricted,
+.system-tools-btn.role-restricted,
+.btn.role-restricted{
+  opacity:.5;
+  cursor:not-allowed !important;
+  filter:grayscale(.25);
+}
+
+.role-gated.role-restricted:hover,
+.sidebar-item.role-restricted:hover,
+.system-tools-btn.role-restricted:hover,
+.btn.role-restricted:hover{
+  transform:none;
+  box-shadow:none;
+}
+
+.role-gated.role-restricted:focus-visible,
+.sidebar-item.role-restricted:focus-visible,
+.system-tools-btn.role-restricted:focus-visible,
+.btn.role-restricted:focus-visible{
+  outline:none;
+  box-shadow:0 0 0 3px rgba(148,163,184,.28);
+}
+
 .header-install-btn{
   display:inline-flex;
   align-items:center;
@@ -876,6 +966,14 @@ body.dark-mode .user-avatar{
 
 body.dark-mode .header-install-btn{
   box-shadow:0 6px 14px rgba(37,99,235,.35);
+}
+
+body.dark-mode .role-gated.role-restricted,
+body.dark-mode .sidebar-item.role-restricted,
+body.dark-mode .system-tools-btn.role-restricted,
+body.dark-mode .btn.role-restricted{
+  opacity:.55;
+  filter:grayscale(.32);
 }
 
 @media (max-width:900px){

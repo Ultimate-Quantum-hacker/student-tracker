@@ -66,6 +66,13 @@ const setAuthUserState = (authUser) => {
     authUserAvatarEl.title = email || 'User';
     authUserAvatarEl.setAttribute('aria-label', email ? `Signed in as ${email}` : 'Signed in user');
   }
+
+  const authRoleBadgeEl = document.getElementById('auth-role-badge');
+  if (authRoleBadgeEl && !app.state.authUser?.uid) {
+    authRoleBadgeEl.textContent = 'Role: Loading...';
+    authRoleBadgeEl.dataset.role = 'pending';
+    authRoleBadgeEl.title = 'Resolving access permissions';
+  }
 };
 
 const clearLoadedDataForLogout = () => {
@@ -158,6 +165,14 @@ const ensureLogoutButton = () => {
   const authControl = document.createElement('div');
   authControl.className = 'auth-session-control';
 
+  const roleBadge = document.createElement('span');
+  roleBadge.id = 'auth-role-badge';
+  roleBadge.className = 'auth-role-badge role-pending';
+  roleBadge.setAttribute('aria-live', 'polite');
+  roleBadge.textContent = 'Role: Loading...';
+  roleBadge.dataset.role = 'pending';
+  roleBadge.title = 'Resolving access permissions';
+
   const avatar = document.createElement('div');
   avatar.id = 'auth-user-avatar';
   avatar.className = 'user-avatar';
@@ -193,6 +208,7 @@ const ensureLogoutButton = () => {
   });
 
   authControl.appendChild(avatar);
+  authControl.appendChild(roleBadge);
   authControl.appendChild(button);
   headerControls.appendChild(authControl);
 };
