@@ -32,6 +32,14 @@ const redirectToLogin = () => {
 };
 
 const setAuthUserState = (authUser) => {
+  if (typeof sessionStorage !== 'undefined') {
+    if (authUser?.uid) {
+      sessionStorage.setItem('currentAuthUid', String(authUser.uid));
+    } else {
+      sessionStorage.removeItem('currentAuthUid');
+    }
+  }
+
   app.state.authUser = authUser
     ? {
       uid: authUser.uid,
@@ -44,6 +52,21 @@ const setAuthUserState = (authUser) => {
   if (authUserEmailEl) {
     authUserEmailEl.textContent = app.state.authUser?.email || '';
   }
+};
+
+const clearLoadedDataForLogout = () => {
+  const emptyData = { students: [], subjects: [], exams: [] };
+  if (typeof app.applyRawData === 'function') {
+    app.applyRawData(emptyData);
+  } else {
+    app.state.students = [];
+    app.state.subjects = [];
+    app.state.exams = [];
+    app.state.scores = [];
+  }
+
+  app.state.error = null;
+  app.state.isLoading = false;
 };
 
 const ensureAuthenticatedSession = async () => {
@@ -97,6 +120,7 @@ const ensureLogoutButton = () => {
     try {
       await logoutUser();
       setAuthUserState(null);
+      clearLoadedDataForLogout();
       redirectToLogin();
     } catch (error) {
       console.error('Logout failed:', error);
@@ -122,6 +146,7 @@ const bindAuthStateWatcher = () => {
   authSubscriptionCleanup = subscribeAuthState((authUser) => {
     if (!authUser) {
       setAuthUserState(null);
+      clearLoadedDataForLogout();
       redirectToLogin();
       return;
     }

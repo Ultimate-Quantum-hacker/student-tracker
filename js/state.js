@@ -141,6 +141,27 @@ window.TrackerApp = window.TrackerApp || {};
     }
   };
 
+  const createSyncFailure = (saveResult, operationLabel = 'save data') => {
+    if (saveResult?.error instanceof Error) {
+      saveResult.error.errorType = saveResult?.errorType || saveResult.error.errorType || 'unknown';
+      return saveResult.error;
+    }
+
+    const errorType = saveResult?.errorType || 'unknown';
+    const syncError = new Error(`Failed to ${operationLabel} in Firebase (${errorType})`);
+    syncError.errorType = errorType;
+    return syncError;
+  };
+
+  const assertRemoteWriteSucceeded = (saveResult, operationLabel = 'save data') => {
+    applySyncStatus(saveResult);
+    if (saveResult?.remoteSaved) {
+      return;
+    }
+
+    throw createSyncFailure(saveResult, operationLabel);
+  };
+
   const composeRawData = (students = [], subjects = [], exams = []) => {
     const subjectLabels = (subjects || []).map(s => normalizeLabel(s.name)).filter(Boolean);
     const examLabels = (exams || []).map(e => normalizeLabel(e.title || e.name)).filter(Boolean);
@@ -277,9 +298,11 @@ window.TrackerApp = window.TrackerApp || {};
     return enqueueStateWrite(async () => {
       const canonical = app.getRawData();
       const saveResult = await dataService.saveAllData(canonical);
-      app.writeCachedData(canonical);
-
       applySyncStatus(saveResult);
+
+      if (saveResult?.remoteSaved) {
+        app.writeCachedData(canonical);
+      }
 
       return saveResult;
     });
@@ -304,11 +327,6 @@ window.TrackerApp = window.TrackerApp || {};
     try {
       app.state.isLoading = true;
       app.state.error = null;
-
-      const cached = app.readCachedData();
-      if (cached?.data) {
-        app.applyRawData(app.migrateToRawData(cached.data));
-      }
 
       const remoteResult = await dataService.fetchAllData();
       const remoteData = app.migrateToRawData(remoteResult?.data || createDefaultRawData());
@@ -361,10 +379,10 @@ window.TrackerApp = window.TrackerApp || {};
     rebuildRuntimeScores();
   };
 
-  const syncRuntimeAndCache = (students, subjects, exams, saveResult) => {
+  const syncRuntimeAndCache = (students, subjects, exams, saveResult, operationLabel = 'save data') => {
+    assertRemoteWriteSucceeded(saveResult, operationLabel);
     applyRuntimeCollections(students, subjects, exams);
     app.writeCachedData(composeRawData(students, subjects, exams));
-    applySyncStatus(saveResult);
   };
 
   // CRUD operations for students
@@ -385,7 +403,7 @@ window.TrackerApp = window.TrackerApp || {};
         nextStudents.push(newStudent);
 
         const saveResult = await dataService.saveStudent(app.getRawData(), newStudent);
-        syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult);
+        syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult, 'save student');
         return newStudent;
       } catch (error) {
         console.error('Failed to add student:', error);
@@ -406,7 +424,7 @@ window.TrackerApp = window.TrackerApp || {};
         }
 
         const saveResult = await dataService.updateStudent(app.getRawData(), studentId, studentData);
-        syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult);
+        syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult, 'update student');
         return nextStudents[index];
       } catch (error) {
         console.error('Failed to update student:', error);
@@ -423,7 +441,7 @@ window.TrackerApp = window.TrackerApp || {};
         const nextExams = deepClone(app.state.exams || []);
 
         const saveResult = await dataService.deleteStudent(app.getRawData(), studentId);
-        syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult);
+        syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult, 'delete student');
         return true;
       } catch (error) {
         console.error('Failed to delete student:', error);
@@ -451,7 +469,7 @@ window.TrackerApp = window.TrackerApp || {};
         nextExams.push(newExam);
 
         const saveResult = await dataService.updateExams(app.getRawData(), nextExams);
-        syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult);
+        syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult, 'update exams');
         return newExam;
       } catch (error) {
         console.error('Failed to add exam:', error);
@@ -487,7 +505,7 @@ window.TrackerApp = window.TrackerApp || {};
         }
 
         const saveResult = await dataService.saveAllData(composeRawData(nextStudents, nextSubjects, nextExams));
-        syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult);
+        syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult, 'save exam changes');
         return nextExams[index];
       } catch (error) {
         console.error('Failed to update exam:', error);
@@ -518,7 +536,7 @@ window.TrackerApp = window.TrackerApp || {};
         }
 
         const saveResult = await dataService.saveAllData(composeRawData(nextStudents, nextSubjects, filteredExams));
-        syncRuntimeAndCache(nextStudents, nextSubjects, filteredExams, saveResult);
+        syncRuntimeAndCache(nextStudents, nextSubjects, filteredExams, saveResult, 'delete exam');
         return true;
       } catch (error) {
         console.error('Failed to delete exam:', error);
@@ -541,7 +559,7 @@ window.TrackerApp = window.TrackerApp || {};
         nextSubjects.push(newSubject);
 
         const saveResult = await dataService.updateSubjects(app.getRawData(), nextSubjects);
-        syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult);
+        syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult, 'update subjects');
         return newSubject;
       } catch (error) {
         console.error('Failed to add subject:', error);
@@ -574,7 +592,7 @@ window.TrackerApp = window.TrackerApp || {};
         }
 
         const saveResult = await dataService.saveAllData(composeRawData(nextStudents, nextSubjects, nextExams));
-        syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult);
+        syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult, 'save subject changes');
         return nextSubjects[index];
       } catch (error) {
         console.error('Failed to update subject:', error);
@@ -603,7 +621,7 @@ window.TrackerApp = window.TrackerApp || {};
         }
 
         const saveResult = await dataService.saveAllData(composeRawData(nextStudents, filteredSubjects, nextExams));
-        syncRuntimeAndCache(nextStudents, filteredSubjects, nextExams, saveResult);
+        syncRuntimeAndCache(nextStudents, filteredSubjects, nextExams, saveResult, 'delete subject');
         return true;
       } catch (error) {
         console.error('Failed to delete subject:', error);
@@ -633,7 +651,7 @@ window.TrackerApp = window.TrackerApp || {};
         student.scores[scoreData.subject][examLabel] = app.normalizeScore(scoreData.score);
 
         const saveResult = await dataService.saveScores(app.getRawData(), student.id, student.scores);
-        syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult);
+        syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult, 'save scores');
         return scoreData;
       } catch (error) {
         console.error('Failed to save score:', error);
@@ -698,9 +716,9 @@ window.TrackerApp = window.TrackerApp || {};
 
         const migrated = app.migrateToRawData(importData);
         const saveResult = await dataService.saveAllData(migrated);
+        assertRemoteWriteSucceeded(saveResult, 'import data');
         app.applyRawData(migrated);
         app.writeCachedData(migrated);
-        applySyncStatus(saveResult);
         return true;
       } catch (error) {
         console.error('Failed to import data:', error);

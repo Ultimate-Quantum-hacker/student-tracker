@@ -94,7 +94,17 @@
   </div>
 
   <script>
-    const STORAGE_KEY = 'studentAppData';
+    const STORAGE_KEY_PREFIX = 'studentAppData';
+
+    function getCurrentAuthUid() {
+      const uid = sessionStorage.getItem('currentAuthUid');
+      return uid ? String(uid).trim() : '';
+    }
+
+    function getStorageKeyForCurrentUser() {
+      const uid = getCurrentAuthUid();
+      return uid ? `${STORAGE_KEY_PREFIX}:${uid}` : '';
+    }
 
     function normalizeLabel(value) {
       return String(value || '').trim();
@@ -185,7 +195,8 @@
       const query = new URLSearchParams(window.location.search);
       const type = ['safe', 'borderline', 'at-risk'].includes(query.get('type')) ? query.get('type') : 'safe';
 
-      const saved = localStorage.getItem(STORAGE_KEY);
+      const userStorageKey = getStorageKeyForCurrentUser();
+      const saved = userStorageKey ? localStorage.getItem(userStorageKey) : null;
       let parsed = null;
       try {
         parsed = saved ? JSON.parse(saved) : null;

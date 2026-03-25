@@ -3,11 +3,11 @@
    Centralized Firestore-first data access with cache fallback.
    ═══════════════════════════════════════════════ */
 
-import { db, doc, getDoc, setDoc, isFirebaseConfigured } from '../js/firebase.js';
+import { db, doc, getDoc, setDoc, isFirebaseConfigured, auth } from '../js/firebase.js';
 
-const CACHE_KEY = 'studentAppData';
+const CACHE_KEY_PREFIX = 'studentAppData';
+const LEGACY_CACHE_KEY = 'studentAppData';
 const REMOTE_COLLECTION = 'appState';
-const REMOTE_DOC_ID = 'primary';
 
 const createDefaultRawData = () => ({
   students: [],
@@ -40,7 +40,35 @@ const normalizeRawData = (rawData) => {
   };
 };
 
-const getRemoteDocRef = () => doc(db, REMOTE_COLLECTION, REMOTE_DOC_ID);
+const getCurrentUserId = () => {
+  const uid = auth?.currentUser?.uid;
+  return uid ? String(uid).trim() : '';
+};
+
+const createUnauthenticatedError = (operationLabel = 'access data') => {
+  const error = new Error(`Authentication required to ${operationLabel}`);
+  error.code = 'auth/unauthenticated';
+  return error;
+};
+
+const ensureAuthenticatedUserId = (operationLabel = 'access data') => {
+  const userId = getCurrentUserId();
+  if (!userId) {
+    throw createUnauthenticatedError(operationLabel);
+  }
+  return userId;
+};
+
+const getCacheKeyForUser = (userId) => `${CACHE_KEY_PREFIX}:${userId}`;
+
+const removeLegacyCacheIfPresent = () => {
+  if (typeof localStorage === 'undefined') return;
+  if (localStorage.getItem(LEGACY_CACHE_KEY)) {
+    localStorage.removeItem(LEGACY_CACHE_KEY);
+  }
+};
+
+const getRemoteDocRef = (userId) => doc(db, REMOTE_COLLECTION, userId);
 
 const parseCache = (raw) => {
   if (!raw) return null;
@@ -59,7 +87,10 @@ const parseCache = (raw) => {
     };
   } catch (error) {
     console.warn('Ignoring invalid app cache payload:', error);
-    localStorage.removeItem(CACHE_KEY);
+    const currentUserId = getCurrentUserId();
+    if (currentUserId) {
+      localStorage.removeItem(getCacheKeyForUser(currentUserId));
+    }
     return null;
   }
 };
@@ -95,6 +126,10 @@ const classifyFirebaseError = (error) => {
   const code = String(error?.code || '').toLowerCase();
   const message = String(error?.message || '').toLowerCase();
 
+  if (code.includes('auth/unauthenticated') || code.includes('unauthenticated') || message.includes('authentication required')) {
+    return 'unauthenticated';
+  }
+
   if (code.includes('permission-denied') || code.includes('unauthenticated')) {
     return 'permission';
   }
@@ -121,7 +156,7 @@ const isOfflineError = (errorType) => {
 const logOnlineFailure = (context, errorType) => {
   if (isNavigatorOffline()) return;
 
-  if (errorType === 'permission' || errorType === 'config') {
+  if (errorType === 'permission' || errorType === 'config' || errorType === 'unauthenticated') {
     console.warn(`Online but Firebase ${errorType} issue during ${context}. Using cache fallback.`);
     return;
   }
@@ -129,17 +164,18 @@ const logOnlineFailure = (context, errorType) => {
   console.warn(`Online but failed to ${context}. Using cache fallback.`);
 };
 
-const saveRemote = async (rawData) => {
+const saveRemote = async (rawData, userId) => {
   if (!isFirebaseConfigured || !db) {
     throw new Error('Firebase unavailable');
   }
 
   const payload = {
     data: normalizeRawData(rawData),
+    userId,
     updatedAt: new Date().toISOString()
   };
 
-  await setDoc(getRemoteDocRef(), payload, { merge: true });
+  await setDoc(getRemoteDocRef(userId), payload, { merge: true });
   console.log('Saved to Firebase');
   return payload.data;
 };
@@ -151,7 +187,8 @@ const persistRemoteFirst = async (rawData, operationLabel) => {
 
   for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
     try {
-      await saveRemote(nextData);
+      const userId = ensureAuthenticatedUserId(operationLabel);
+      await saveRemote(nextData, userId);
       return {
         data: nextData,
         remoteSaved: true,
@@ -190,7 +227,13 @@ const persistRemoteFirst = async (rawData, operationLabel) => {
 };
 
 export const readCachedData = () => {
-  const cached = parseCache(localStorage.getItem(CACHE_KEY));
+  const userId = getCurrentUserId();
+  if (!userId) {
+    return null;
+  }
+
+  removeLegacyCacheIfPresent();
+  const cached = parseCache(localStorage.getItem(getCacheKeyForUser(userId)));
   if (cached?.data) {
     console.log('Loaded from cache');
   }
@@ -198,16 +241,34 @@ export const readCachedData = () => {
 };
 
 export const writeCacheCopy = (rawData) => {
+  const userId = getCurrentUserId();
+  if (!userId) {
+    return null;
+  }
+
+  removeLegacyCacheIfPresent();
   const cacheEnvelope = withTimestamp(rawData);
-  localStorage.setItem(CACHE_KEY, JSON.stringify(cacheEnvelope));
+  localStorage.setItem(getCacheKeyForUser(userId), JSON.stringify(cacheEnvelope));
   return cacheEnvelope;
 };
 
 export const fetchAllData = async () => {
-  const cached = readCachedData();
+  let userId = '';
+  try {
+    userId = ensureAuthenticatedUserId('fetch data');
+  } catch (error) {
+    return {
+      data: createDefaultRawData(),
+      source: 'default',
+      offline: false,
+      error,
+      errorType: 'unauthenticated'
+    };
+  }
 
   if (!isFirebaseConfigured || !db) {
     console.warn('Firebase unavailable. Falling back to cache/default data.');
+    const cached = readCachedData();
     if (cached?.data) {
       return {
         data: cached.data,
@@ -234,7 +295,7 @@ export const fetchAllData = async () => {
 
   for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
     try {
-      const snapshot = await getDoc(getRemoteDocRef());
+      const snapshot = await getDoc(getRemoteDocRef(userId));
       const remotePayload = snapshot.exists() ? snapshot.data() : null;
       const remoteData = normalizeRawData(remotePayload?.data || remotePayload || createDefaultRawData());
       writeCacheCopy(remoteData);
@@ -266,6 +327,7 @@ export const fetchAllData = async () => {
   }
 
   const offline = isOfflineError(lastErrorType);
+  const cached = readCachedData();
 
   if (cached?.data) {
     return {
