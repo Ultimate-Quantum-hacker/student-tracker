@@ -6,6 +6,7 @@
 // Import Firebase SDK modules
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { getFirestore, collection, doc, addDoc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, setPersistence, browserLocalPersistence, updateProfile } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
 
 // Firebase configuration
 const PLACEHOLDER_FIREBASE_CONFIG = {
@@ -53,6 +54,8 @@ if (!isFirebaseConfigured) {
 }
 
 let app, db;
+let auth = null;
+let authReadyPromise = Promise.resolve(null);
 
 if (isFirebaseConfigured) {
   try {
@@ -63,6 +66,15 @@ if (isFirebaseConfigured) {
     if (!db) {
       throw new Error('Firestore initialization returned null');
     }
+
+    auth = getAuth(app);
+    authReadyPromise = setPersistence(auth, browserLocalPersistence)
+      .then(() => auth)
+      .catch((error) => {
+        console.error('Failed to set auth persistence:', error);
+        return auth;
+      });
+
     console.log("Firebase initialized successfully with real configuration");
   } catch (error) {
     console.error("Firebase initialization failed:", error);
@@ -77,6 +89,8 @@ if (!isFirebaseConfigured) {
   // Create mock Firebase objects for fallback
   app = { name: "mock-app" };
   db = null;
+  auth = null;
+  authReadyPromise = Promise.resolve(null);
 }
 
 // Export Firebase modules for reuse
@@ -92,12 +106,19 @@ export {
   query,
   where,
   orderBy,
-  onSnapshot
+  onSnapshot,
+  onAuthStateChanged,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+  updateProfile
 };
 
 // Export app instance and db for potential future use
 export { app };
 export { db };
+export { auth };
+export { authReadyPromise };
 
 // Export configuration status
 export { isFirebaseConfigured };

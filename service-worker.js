@@ -2,17 +2,22 @@
    Network-first HTML + cache-first assets.
 */
 
-const CACHE_NAME = 'student-tracker-v3';
+const CACHE_NAME = 'student-tracker-v4';
 
 const CORE_ASSETS = [
   '/',
   '/index.html',
+  '/login.html',
+  '/signup.html',
   '/styles.css',
   '/css/enhanced.css',
+  '/css/auth.css',
   '/manifest.json',
   '/js/state.js',
   '/js/firebase-config.js',
   '/js/firebase.js',
+  '/js/auth.js',
+  '/js/auth-page.js',
   '/js/analytics.js',
   '/js/students.js',
   '/js/charts.js',
@@ -60,7 +65,12 @@ self.addEventListener('fetch', event => {
           if (networkRes && networkRes.status === 200) {
             const resClone = networkRes.clone();
             caches.open(CACHE_NAME).then(cache => {
-              cache.put('/index.html', resClone);
+              cache.put(req, resClone);
+
+              const reqUrl = new URL(req.url);
+              if (reqUrl.pathname === '/') {
+                cache.put('/index.html', networkRes.clone());
+              }
             });
           }
           return networkRes;

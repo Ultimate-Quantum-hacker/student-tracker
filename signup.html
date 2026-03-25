@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign Up - Student Performance Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/auth.css">
+</head>
+<body class="auth-page" data-auth-mode="signup">
+  <main class="auth-shell">
+    <section class="auth-card" aria-labelledby="signup-title">
+      <h1 id="signup-title" class="auth-title">Create account</h1>
+      <p class="auth-subtitle">Register to secure and sync your student data.</p>
+
+      <form id="signup-form" class="auth-form" novalidate>
+        <div class="auth-field">
+          <label for="signup-name">Name</label>
+          <input id="signup-name" name="name" type="text" autocomplete="name" maxlength="80" required>
+        </div>
+
+        <div class="auth-field">
+          <label for="signup-email">Email</label>
+          <input id="signup-email" name="email" type="email" autocomplete="email" required>
+        </div>
+
+        <div class="auth-field">
+          <label for="signup-password">Password</label>
+          <input id="signup-password" name="password" type="password" autocomplete="new-password" required minlength="6">
+        </div>
+
+        <div class="auth-field">
+          <label for="signup-confirm-password">Confirm Password</label>
+          <input id="signup-confirm-password" name="confirmPassword" type="password" autocomplete="new-password" required minlength="6">
+        </div>
+
+        <p id="auth-error" class="auth-error" aria-live="polite"></p>
+
+        <button id="auth-submit" class="auth-btn" type="submit">Create Account</button>
+
+        <div class="auth-row">
+          <span></span>
+          <a class="auth-link" href="login.html">Already have an account?</a>
+        </div>
+      </form>
+
+      <p class="auth-footnote">Email/password authentication via Firebase.</p>
+    </section>
+  </main>
+
+  <script src="js/firebase-config.js"></script>
+  <script type="module" src="js/firebase.js"></script>
+  <script type="module" src="js/auth-page.js"></script>
+</body>
+</html>
