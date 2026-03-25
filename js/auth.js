@@ -16,18 +16,42 @@ import {
 
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
 const normalizeName = (name) => String(name || '').trim();
-const USER_ROLES = ['teacher', 'admin', 'developer'];
-const DEFAULT_USER_ROLE = 'teacher';
+const DEVELOPER_EMAIL = 'pokumike2@gmail.com';
+const ROLE_USER = 'user';
+const ROLE_ADMIN = 'admin';
+const ROLE_DEVELOPER = 'developer';
+const LEGACY_ROLE_TEACHER = 'teacher';
+const USER_ROLES = [ROLE_USER, ROLE_ADMIN, ROLE_DEVELOPER, LEGACY_ROLE_TEACHER];
+const DEFAULT_USER_ROLE = ROLE_USER;
+
+export const isDeveloperAccountEmail = (email) => normalizeEmail(email) === DEVELOPER_EMAIL;
 
 export const normalizeUserRole = (role) => {
   const normalized = String(role || '').trim().toLowerCase();
+  if (normalized === LEGACY_ROLE_TEACHER) {
+    return ROLE_USER;
+  }
   return USER_ROLES.includes(normalized) ? normalized : DEFAULT_USER_ROLE;
 };
 
 const getUserProfileRef = (uid) => doc(db, 'users', String(uid || '').trim());
 
-const sanitizeProfilePayload = (authUser) => ({
-  role: DEFAULT_USER_ROLE,
+const resolveProfileRole = (authUser, existingRole = '') => {
+  if (isDeveloperAccountEmail(authUser?.email)) {
+    return ROLE_DEVELOPER;
+  }
+
+  const normalizedExistingRole = normalizeUserRole(existingRole);
+  if (normalizedExistingRole === ROLE_ADMIN) {
+    return ROLE_ADMIN;
+  }
+
+  return ROLE_USER;
+};
+
+const sanitizeProfilePayload = (authUser, existingRole = '') => ({
+  uid: String(authUser?.uid || '').trim(),
+  role: resolveProfileRole(authUser, existingRole),
   name: normalizeName(authUser?.name),
   email: normalizeEmail(authUser?.email),
   createdAt: serverTimestamp()
@@ -37,7 +61,8 @@ const ensureUserProfileDocument = async (authUser) => {
   const uid = String(authUser?.uid || '').trim();
   if (!uid || !isFirebaseConfigured || !db) {
     return {
-      role: DEFAULT_USER_ROLE,
+      uid,
+      role: resolveProfileRole(authUser),
       name: normalizeName(authUser?.name),
       email: normalizeEmail(authUser?.email)
     };
@@ -50,26 +75,37 @@ const ensureUserProfileDocument = async (authUser) => {
     const payload = sanitizeProfilePayload(authUser);
     await setDoc(profileRef, payload, { merge: true });
     return {
-      role: DEFAULT_USER_ROLE,
+      uid,
+      role: payload.role,
       name: payload.name,
       email: payload.email
     };
   }
 
   const data = profileSnapshot.data() || {};
-  const normalizedRole = normalizeUserRole(data.role);
   const normalizedName = normalizeName(data.name || authUser?.name);
   const normalizedEmail = normalizeEmail(data.email || authUser?.email);
+  const resolvedRole = resolveProfileRole(
+    {
+      uid,
+      name: normalizedName,
+      email: normalizedEmail
+    },
+    data.role
+  );
 
   const patch = {};
+  if (String(data.uid || '').trim() !== uid) {
+    patch.uid = uid;
+  }
   if (normalizeName(data.name) !== normalizedName) {
     patch.name = normalizedName;
   }
   if (normalizeEmail(data.email) !== normalizedEmail) {
     patch.email = normalizedEmail;
   }
-  if (!('role' in data)) {
-    patch.role = DEFAULT_USER_ROLE;
+  if (String(data.role || '').trim().toLowerCase() !== resolvedRole) {
+    patch.role = resolvedRole;
   }
 
   if (Object.keys(patch).length) {
@@ -77,7 +113,8 @@ const ensureUserProfileDocument = async (authUser) => {
   }
 
   return {
-    role: normalizedRole,
+    uid,
+    role: resolvedRole,
     name: normalizedName,
     email: normalizedEmail,
     createdAt: data.createdAt || null
@@ -89,7 +126,7 @@ export const resolveUserRole = async (authUser) => {
     const profile = await ensureUserProfileDocument(authUser);
     return normalizeUserRole(profile?.role);
   } catch (error) {
-    console.error('Failed to resolve user role. Falling back to teacher:', error);
+    console.error('Failed to resolve user role. Falling back to user:', error);
     return DEFAULT_USER_ROLE;
   }
 };

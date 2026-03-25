@@ -5,6 +5,10 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isDeveloperEmail() {
+      return isAuthenticated() && request.auth.token.email == 'pokumike2@gmail.com';
+    }
+
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
@@ -26,41 +30,51 @@ service cloud.firestore {
     }
 
     function isValidRole(role) {
-      return role in ['teacher', 'admin', 'developer'];
+      return role in ['user', 'teacher', 'admin', 'developer'];
     }
 
-    function hasValidUserProfileShape() {
-      return request.resource.data.keys().hasOnly(['role', 'name', 'email', 'createdAt'])
+    function hasValidUserProfileShape(userId) {
+      return request.resource.data.keys().hasOnly(['uid', 'role', 'name', 'email', 'createdAt'])
+        && request.resource.data.uid is string
+        && request.resource.data.uid == userId
         && request.resource.data.name is string
         && request.resource.data.email is string
         && isValidRole(request.resource.data.role);
     }
 
+    function isRoleUpdateByOwnerAllowed() {
+      return request.resource.data.role == resource.data.role
+        || (
+          !('role' in resource.data)
+          && (request.resource.data.role == 'user' || request.resource.data.role == 'teacher')
+        );
+    }
+
     match /users/{userId} {
       allow create: if isOwner(userId)
-        && hasValidUserProfileShape()
-        && request.resource.data.role == 'teacher';
+        && hasValidUserProfileShape(userId)
+        && (
+          (isDeveloperEmail() && request.resource.data.role == 'developer')
+          || (!isDeveloperEmail() && (request.resource.data.role == 'user' || request.resource.data.role == 'teacher'))
+        );
 
       allow read: if canAccessUserData(userId);
 
       allow update: if (
           isOwner(userId)
-          && hasValidUserProfileShape()
-          && (
-            request.resource.data.role == resource.data.role
-            || (!('role' in resource.data) && request.resource.data.role == 'teacher')
-          )
+          && hasValidUserProfileShape(userId)
+          && isRoleUpdateByOwnerAllowed()
           && request.resource.data.createdAt == resource.data.createdAt
         )
         || (
           isAdmin()
-          && hasValidUserProfileShape()
+          && hasValidUserProfileShape(userId)
           && request.resource.data.role == resource.data.role
           && request.resource.data.createdAt == resource.data.createdAt
         )
         || (
           isDeveloper()
-          && hasValidUserProfileShape()
+          && hasValidUserProfileShape(userId)
           && request.resource.data.createdAt == resource.data.createdAt
         );
 

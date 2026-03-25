@@ -1,0 +1,256 @@
+:root {
+  --bg: #f1f5f9;
+  --surface: #ffffff;
+  --text: #0f172a;
+  --muted: #64748b;
+  --border: #dbeafe;
+  --primary: #1d4ed8;
+  --primary-soft: #dbeafe;
+  --danger: #dc2626;
+  --success: #059669;
+  --warning: #b45309;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: radial-gradient(circle at top right, #dbeafe 0%, #f8fafc 45%, #eef2ff 100%);
+  color: var(--text);
+}
+
+.admin-shell {
+  width: min(1100px, calc(100% - 2rem));
+  margin: 1.5rem auto;
+  display: grid;
+  gap: 1rem;
+}
+
+.panel-header,
+.panel-card {
+  background: #ffffff;
+  border: 1px solid #dbeafe;
+  border-radius: 16px;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.85rem;
+  align-items: flex-start;
+  padding: 1.2rem;
+}
+
+.panel-eyebrow {
+  margin: 0 0 0.3rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.55rem;
+}
+
+.panel-subtitle {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+}
+
+.panel-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid #93c5fd;
+  color: #1e3a8a;
+  background: #eff6ff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.btn {
+  border: 1px solid transparent;
+  border-radius: 10px;
+  min-height: 36px;
+  padding: 0.45rem 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-secondary {
+  border-color: #bfdbfe;
+  background: #ffffff;
+  color: #1e3a8a;
+}
+
+.btn-secondary:hover {
+  background: #eff6ff;
+}
+
+.btn-primary {
+  border-color: #1d4ed8;
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.btn-primary:hover {
+  background: #1e40af;
+}
+
+.btn-danger {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: var(--danger);
+}
+
+.btn-danger:hover {
+  background: #fee2e2;
+}
+
+.btn[disabled] {
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+.panel-card {
+  padding: 1rem;
+}
+
+.panel-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.panel-toolbar h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.search-input {
+  width: min(360px, 100%);
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  padding: 0.58rem 0.68rem;
+  font: inherit;
+}
+
+.search-input:focus-visible {
+  outline: none;
+  border-color: #1d4ed8;
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.2);
+}
+
+.panel-status {
+  margin: 0 0 0.6rem;
+  min-height: 1.2rem;
+  font-size: 0.9rem;
+}
+
+.panel-status.success {
+  color: var(--success);
+}
+
+.panel-status.error {
+  color: var(--danger);
+}
+
+.panel-status.warning {
+  color: var(--warning);
+}
+
+.loading-state {
+  margin: 0 0 0.6rem;
+  color: var(--muted);
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.users-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.users-table th,
+.users-table td {
+  text-align: left;
+  padding: 0.65rem;
+  border-bottom: 1px solid #edf2f7;
+  vertical-align: middle;
+}
+
+.users-table th {
+  background: #f8fafc;
+  color: #334155;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.users-table tbody tr:hover {
+  background: #f8fbff;
+}
+
+.role-select {
+  min-width: 110px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  padding: 0.4rem;
+  font: inherit;
+}
+
+.email-cell {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+}
+
+.empty-row {
+  color: var(--muted);
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .panel-header {
+    flex-direction: column;
+  }
+
+  .panel-header-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .panel-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .search-input {
+    width: 100%;
+  }
+}

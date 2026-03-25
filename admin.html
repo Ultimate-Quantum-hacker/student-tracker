@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Developer Panel - Student Performance Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+  <main class="admin-shell">
+    <header class="panel-header">
+      <div class="panel-header-main">
+        <p class="panel-eyebrow">Access Control</p>
+        <h1>Developer Panel</h1>
+        <p class="panel-subtitle">Manage user roles and access permissions.</p>
+      </div>
+      <div class="panel-header-actions">
+        <span id="panel-role-badge" class="role-badge" aria-live="polite">Role: Loading...</span>
+        <button id="refresh-users-btn" class="btn btn-secondary" type="button">Refresh</button>
+        <button id="go-dashboard-btn" class="btn btn-secondary" type="button">Dashboard</button>
+        <button id="panel-logout-btn" class="btn btn-danger" type="button">Logout</button>
+      </div>
+    </header>
+
+    <section class="panel-card" aria-labelledby="users-panel-title">
+      <div class="panel-toolbar">
+        <h2 id="users-panel-title">Users</h2>
+        <input
+          id="users-search-input"
+          class="search-input"
+          type="search"
+          placeholder="Search by name or email"
+          aria-label="Search users by name or email"
+          autocomplete="off"
+        >
+      </div>
+
+      <p id="panel-status" class="panel-status" aria-live="polite"></p>
+      <p id="users-loading" class="loading-state" aria-live="polite">Loading users...</p>
+
+      <div class="table-wrap">
+        <table class="users-table" aria-label="Application users">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Role</th>
+              <th>Created</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="users-table-body">
+            <tr>
+              <td colspan="5" class="empty-row">No users loaded.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="js/firebase-config.js"></script>
+  <script type="module" src="js/admin.js"></script>
+</body>
+</html>

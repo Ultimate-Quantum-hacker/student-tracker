@@ -32,6 +32,7 @@ const domIds = {
   systemImportDataBtn: 'system-import-data-btn',
   systemThemeToggleBtn: 'system-theme-toggle-btn',
   systemResetBtn: 'system-reset-btn',
+  adminDashboardBtn: 'admin-dashboard-btn',
   form: 'add-student-form',
   classDropdown: 'class-dropdown',
   classDropdownToggle: 'class-dropdown-toggle',
@@ -135,7 +136,7 @@ const FEATURE_ACCESS_RULES = {
   bulkImport: ['developer'],
   restorePoints: ['developer'],
   resetSystem: ['developer'],
-  adminPanel: ['admin', 'developer']
+  adminPanel: ['developer']
 };
 
 const FEATURE_ACCESS_MESSAGES = {
@@ -144,7 +145,7 @@ const FEATURE_ACCESS_MESSAGES = {
   bulkImport: 'Access restricted: Developer only',
   restorePoints: 'Access restricted: Developer only',
   resetSystem: 'Access restricted: Developer only',
-  adminPanel: 'Admin access required'
+  adminPanel: 'Access restricted: Developer only'
 };
 
 const ui = {
@@ -182,7 +183,7 @@ const ui = {
       const normalizedRole = normalizeUserRole(role);
       if (normalizedRole === 'developer') return 'Developer';
       if (normalizedRole === 'admin') return 'Admin';
-      return 'Teacher';
+      return 'User';
     },
 
     canAccess: function (feature) {
@@ -339,7 +340,7 @@ const ui = {
 
       this.applyFeatureAccessState('adminPanel', [
         ...document.querySelectorAll('[data-section="admin-dashboard"]'),
-        document.getElementById('admin-dashboard-btn')
+        app.dom.adminDashboardBtn || document.getElementById('admin-dashboard-btn')
       ]);
     },
 
@@ -2088,6 +2089,13 @@ const ui = {
           app.dom.restoreBtn?.click();
         };
         if (app.dom.systemThemeToggleBtn) app.dom.systemThemeToggleBtn.onclick = () => app.dom.themeToggle?.click();
+        if (app.dom.adminDashboardBtn) {
+          app.dom.adminDashboardBtn.onclick = (event) => {
+            event.preventDefault();
+            if (!this.requireAccess('adminPanel')) return;
+            window.location.assign('/admin.html');
+          };
+        }
         if (app.dom.systemResetBtn) {
           app.dom.systemResetBtn.onclick = () => {
             if (!this.requireAccess('resetSystem')) return;
