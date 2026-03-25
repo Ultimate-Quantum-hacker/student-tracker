@@ -3,11 +3,15 @@
    Centralized Firestore-first data access with cache fallback.
    ═══════════════════════════════════════════════ */
 
-import { db, doc, getDoc, setDoc, isFirebaseConfigured, auth, authReadyPromise, onAuthStateChanged } from '../js/firebase.js';
+import { db, doc, collection, getDoc, getDocs, setDoc, deleteDoc, isFirebaseConfigured, auth, authReadyPromise, onAuthStateChanged } from '../js/firebase.js';
 
 const CACHE_KEY_PREFIX = 'studentAppData';
 const LEGACY_CACHE_KEY = 'studentAppData';
-const REMOTE_COLLECTION = 'appState';
+const LEGACY_REMOTE_COLLECTION = 'appState';
+const USERS_COLLECTION = 'users';
+const STUDENTS_SUBCOLLECTION = 'students';
+const SUBJECTS_SUBCOLLECTION = 'subjects';
+const EXAMS_SUBCOLLECTION = 'exams';
 
 const createDefaultRawData = () => ({
   students: [],
@@ -38,6 +42,20 @@ const normalizeRawData = (rawData) => {
       .map(exam => String(exam?.title || exam?.name || exam || '').trim())
       .filter(Boolean)
   };
+};
+
+const hasAnyRawData = (rawData) => {
+  const normalized = normalizeRawData(rawData);
+  return normalized.students.length > 0 || normalized.subjects.length > 0 || normalized.exams.length > 0;
+};
+
+const toDocId = (prefix, label, index) => {
+  const slug = String(label || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return `${prefix}_${slug || index + 1}_${index + 1}`;
 };
 
 const getCurrentUserId = () => {
@@ -96,7 +114,179 @@ const removeLegacyCacheIfPresent = () => {
   }
 };
 
-const getRemoteDocRef = (userId) => doc(db, REMOTE_COLLECTION, userId);
+const getLegacyDocRef = (userId) => doc(db, LEGACY_REMOTE_COLLECTION, userId);
+const getUserRootRef = (userId) => doc(db, USERS_COLLECTION, userId);
+const getStudentsCollectionRef = (userId) => collection(db, USERS_COLLECTION, userId, STUDENTS_SUBCOLLECTION);
+const getSubjectsCollectionRef = (userId) => collection(db, USERS_COLLECTION, userId, SUBJECTS_SUBCOLLECTION);
+const getExamsCollectionRef = (userId) => collection(db, USERS_COLLECTION, userId, EXAMS_SUBCOLLECTION);
+
+const mapStudentsToDocs = (students, userId, updatedAt) => {
+  return asArray(students).map((student, index) => {
+    const docId = String(student?.id || '').trim() || toDocId('st', student?.name, index);
+    return {
+      id: docId,
+      data: {
+        id: docId,
+        name: String(student?.name || '').trim(),
+        notes: student?.notes || '',
+        class: student?.class || '',
+        scores: student?.scores && typeof student.scores === 'object' ? clone(student.scores) : {},
+        order: index,
+        userId,
+        updatedAt
+      }
+    };
+  });
+};
+
+const mapSubjectsToDocs = (subjects, userId, updatedAt) => {
+  return asArray(subjects).map((subject, index) => {
+    const name = String(subject || '').trim();
+    const docId = toDocId('sub', name, index);
+    return {
+      id: docId,
+      data: {
+        id: docId,
+        name,
+        order: index,
+        userId,
+        updatedAt
+      }
+    };
+  });
+};
+
+const mapExamsToDocs = (exams, userId, updatedAt) => {
+  return asArray(exams).map((exam, index) => {
+    const title = String(exam || '').trim();
+    const docId = toDocId('exam', title, index);
+    return {
+      id: docId,
+      data: {
+        id: docId,
+        title,
+        name: title,
+        order: index,
+        userId,
+        updatedAt
+      }
+    };
+  });
+};
+
+const syncCollectionDocuments = async (collectionRef, targetDocs) => {
+  const existingSnapshot = await getDocs(collectionRef);
+  const targetMap = new Map((targetDocs || []).map((entry) => [entry.id, entry.data]));
+  const operations = [];
+
+  existingSnapshot.forEach((entry) => {
+    if (!targetMap.has(entry.id)) {
+      operations.push(deleteDoc(entry.ref));
+    }
+  });
+
+  targetMap.forEach((data, id) => {
+    operations.push(setDoc(doc(collectionRef, id), data, { merge: false }));
+  });
+
+  await Promise.all(operations);
+};
+
+const writeModularData = async (userId, rawData, options = {}) => {
+  const normalized = normalizeRawData(rawData);
+  const updatedAt = new Date().toISOString();
+
+  const studentDocs = mapStudentsToDocs(normalized.students, userId, updatedAt);
+  const subjectDocs = mapSubjectsToDocs(normalized.subjects, userId, updatedAt);
+  const examDocs = mapExamsToDocs(normalized.exams, userId, updatedAt);
+
+  await Promise.all([
+    syncCollectionDocuments(getStudentsCollectionRef(userId), studentDocs),
+    syncCollectionDocuments(getSubjectsCollectionRef(userId), subjectDocs),
+    syncCollectionDocuments(getExamsCollectionRef(userId), examDocs)
+  ]);
+
+  await setDoc(getUserRootRef(userId), {
+    userId,
+    updatedAt,
+    migrationComplete: options.migrationComplete ?? true,
+    migratedAt: options.migrationComplete ? updatedAt : undefined
+  }, { merge: true });
+
+  return normalized;
+};
+
+const readLegacyRawData = async (userId) => {
+  const snapshot = await getDoc(getLegacyDocRef(userId));
+  const remotePayload = snapshot.exists() ? snapshot.data() : null;
+  const remoteData = normalizeRawData(remotePayload?.data || remotePayload || createDefaultRawData());
+  return {
+    data: remoteData,
+    hasData: hasAnyRawData(remoteData)
+  };
+};
+
+const readModularRawData = async (userId) => {
+  const [userMetaSnapshot, studentsSnapshot, subjectsSnapshot, examsSnapshot] = await Promise.all([
+    getDoc(getUserRootRef(userId)),
+    getDocs(getStudentsCollectionRef(userId)),
+    getDocs(getSubjectsCollectionRef(userId)),
+    getDocs(getExamsCollectionRef(userId))
+  ]);
+
+  const students = [];
+  studentsSnapshot.forEach((entry) => {
+    const payload = entry.data() || {};
+    students.push({
+      id: String(payload.id || entry.id || '').trim(),
+      name: String(payload.name || '').trim(),
+      notes: payload.notes || '',
+      class: payload.class || '',
+      scores: payload.scores && typeof payload.scores === 'object' ? clone(payload.scores) : {},
+      order: Number.isFinite(Number(payload.order)) ? Number(payload.order) : Number.MAX_SAFE_INTEGER
+    });
+  });
+  students.sort((a, b) => a.order - b.order);
+
+  const subjects = [];
+  subjectsSnapshot.forEach((entry) => {
+    const payload = entry.data() || {};
+    subjects.push({
+      name: String(payload.name || '').trim(),
+      order: Number.isFinite(Number(payload.order)) ? Number(payload.order) : Number.MAX_SAFE_INTEGER
+    });
+  });
+  subjects.sort((a, b) => a.order - b.order);
+
+  const exams = [];
+  examsSnapshot.forEach((entry) => {
+    const payload = entry.data() || {};
+    exams.push({
+      title: String(payload.title || payload.name || '').trim(),
+      order: Number.isFinite(Number(payload.order)) ? Number(payload.order) : Number.MAX_SAFE_INTEGER
+    });
+  });
+  exams.sort((a, b) => a.order - b.order);
+
+  const meta = userMetaSnapshot.exists() ? userMetaSnapshot.data() || {} : {};
+  const data = normalizeRawData({
+    students: students.map(({ id, name, notes, class: className, scores }) => ({ id, name, notes, class: className, scores })),
+    subjects: subjects.map((subject) => subject.name),
+    exams: exams.map((exam) => exam.title)
+  });
+
+  return {
+    data,
+    hasData: hasAnyRawData(data),
+    migrationComplete: Boolean(meta?.migrationComplete)
+  };
+};
+
+const migrateLegacyData = async (userId, legacyData) => {
+  const migrated = await writeModularData(userId, legacyData, { migrationComplete: true });
+  console.log('Migration complete for UID:', userId);
+  return migrated;
+};
 
 const parseCache = (raw) => {
   if (!raw) return null;
@@ -192,20 +382,16 @@ const logOnlineFailure = (context, errorType) => {
   console.warn(`Online but failed to ${context}. Using cache fallback.`);
 };
 
-const saveRemote = async (rawData, userId) => {
+const saveRemote = async (rawData, userId, options = {}) => {
   if (!isFirebaseConfigured || !db) {
     throw new Error('Firebase unavailable');
   }
 
-  const payload = {
-    data: normalizeRawData(rawData),
-    userId,
-    updatedAt: new Date().toISOString()
-  };
-
-  await setDoc(getRemoteDocRef(userId), payload, { merge: true });
+  const payload = await writeModularData(userId, rawData, {
+    migrationComplete: options.migrationComplete ?? true
+  });
   console.log('Saved to Firebase');
-  return payload.data;
+  return payload;
 };
 
 const persistRemoteFirst = async (rawData, operationLabel) => {
@@ -325,13 +511,50 @@ export const fetchAllData = async () => {
 
   for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
     try {
-      const snapshot = await getDoc(getRemoteDocRef(userId));
-      const remotePayload = snapshot.exists() ? snapshot.data() : null;
-      const remoteData = normalizeRawData(remotePayload?.data || remotePayload || createDefaultRawData());
-      writeCacheCopy(remoteData);
-      console.log('Synced from Firebase');
+      const modularResult = await readModularRawData(userId);
+
+      if (modularResult?.hasData) {
+        writeCacheCopy(modularResult.data);
+        console.log('Synced from Firebase (modular)');
+        return {
+          data: modularResult.data,
+          source: 'firebase',
+          offline: false,
+          error: null,
+          errorType: null
+        };
+      }
+
+      const legacyResult = await readLegacyRawData(userId);
+
+      if (!modularResult?.migrationComplete) {
+        const migratedData = await migrateLegacyData(userId, legacyResult?.data || createDefaultRawData());
+        writeCacheCopy(migratedData);
+        return {
+          data: migratedData,
+          source: 'firebase',
+          offline: false,
+          error: null,
+          errorType: null
+        };
+      }
+
+      if (legacyResult?.hasData) {
+        writeCacheCopy(legacyResult.data);
+        console.log('Synced from Firebase (legacy fallback)');
+        return {
+          data: legacyResult.data,
+          source: 'firebase',
+          offline: false,
+          error: null,
+          errorType: null
+        };
+      }
+
+      const emptyData = createDefaultRawData();
+      writeCacheCopy(emptyData);
       return {
-        data: remoteData,
+        data: emptyData,
         source: 'firebase',
         offline: false,
         error: null,
