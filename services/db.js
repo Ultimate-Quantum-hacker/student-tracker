@@ -3,7 +3,7 @@
    Centralized Firestore-first data access with cache fallback.
    ═══════════════════════════════════════════════ */
 
-import { db, doc, collection, getDocs, setDoc, deleteDoc, isFirebaseConfigured, auth, authReadyPromise, onAuthStateChanged } from '../js/firebase.js';
+import { db, doc, collection, getDocs, setDoc, updateDoc, deleteDoc, isFirebaseConfigured, auth, authReadyPromise, onAuthStateChanged } from '../js/firebase.js';
 
 const CACHE_KEY_PREFIX = 'studentAppData';
 const USERS_COLLECTION = 'users';
@@ -108,6 +108,7 @@ const getUserRootRef = (userId) => doc(db, USERS_COLLECTION, userId);
 const getStudentsCollectionRef = (userId) => collection(db, USERS_COLLECTION, userId, STUDENTS_SUBCOLLECTION);
 const getSubjectsCollectionRef = (userId) => collection(db, USERS_COLLECTION, userId, SUBJECTS_SUBCOLLECTION);
 const getExamsCollectionRef = (userId) => collection(db, USERS_COLLECTION, userId, EXAMS_SUBCOLLECTION);
+const getStudentDocRef = (userId, studentId) => doc(db, USERS_COLLECTION, userId, STUDENTS_SUBCOLLECTION, studentId);
 
 const mapStudentsToDocs = (students, userId, updatedAt) => {
   return asArray(students).map((student, index) => {
@@ -350,6 +351,180 @@ const logOnlineFailure = (context, errorType) => {
   console.warn(`Online but failed to ${context}. Using cache fallback.`);
 };
 
+const normalizeStudentPatch = (studentData) => {
+  const source = studentData && typeof studentData === 'object' ? studentData : {};
+  const patch = {};
+
+  if (Object.prototype.hasOwnProperty.call(source, 'name')) {
+    patch.name = String(source.name || '').trim();
+  }
+
+  if (Object.prototype.hasOwnProperty.call(source, 'notes')) {
+    patch.notes = source.notes || '';
+  }
+
+  if (Object.prototype.hasOwnProperty.call(source, 'class')) {
+    patch.class = source.class || '';
+  }
+
+  if (Object.prototype.hasOwnProperty.call(source, 'scores')) {
+    patch.scores = source.scores && typeof source.scores === 'object' ? clone(source.scores) : {};
+  }
+
+  return patch;
+};
+
+const persistStudentUpdateById = async (studentId, studentData, nextData) => {
+  const normalizedStudentId = String(studentId || '').trim();
+  if (!normalizedStudentId) {
+    const error = new Error('Student id is required to update student');
+    return {
+      data: nextData,
+      remoteSaved: false,
+      error,
+      errorType: 'unknown',
+      operation: 'update student',
+      offline: false
+    };
+  }
+
+  const patch = normalizeStudentPatch(studentData);
+  if (!Object.keys(patch).length) {
+    return {
+      data: nextData,
+      remoteSaved: true,
+      error: null,
+      errorType: null,
+      operation: 'update student',
+      offline: false
+    };
+  }
+
+  let lastError = null;
+  let lastErrorType = null;
+
+  for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      const userId = await ensureAuthenticatedUserId('update student');
+      const updatedAt = new Date().toISOString();
+      console.log('Editing student:', normalizedStudentId);
+      console.log('User:', userId);
+
+      await updateDoc(getStudentDocRef(userId, normalizedStudentId), {
+        ...patch,
+        userId,
+        updatedAt
+      });
+
+      await setDoc(getUserRootRef(userId), {
+        userId,
+        updatedAt
+      }, { merge: true });
+
+      return {
+        data: nextData,
+        remoteSaved: true,
+        error: null,
+        errorType: null,
+        operation: 'update student',
+        offline: false
+      };
+    } catch (error) {
+      lastError = error;
+      lastErrorType = classifyFirebaseError(error);
+      console.error('Failed to update student via Firebase:', error);
+
+      if (attempt < RETRY_ATTEMPTS && shouldRetry(lastErrorType) && !isNavigatorOffline()) {
+        console.warn(`Retrying update student (${attempt + 1}/${RETRY_ATTEMPTS}) after ${lastErrorType} error`);
+        await wait(RETRY_DELAY_MS * attempt);
+        continue;
+      }
+
+      break;
+    }
+  }
+
+  if (!isOfflineError(lastErrorType)) {
+    logOnlineFailure('update student', lastErrorType);
+  }
+
+  return {
+    data: nextData,
+    remoteSaved: false,
+    error: lastError,
+    errorType: lastErrorType,
+    operation: 'update student',
+    offline: isOfflineError(lastErrorType)
+  };
+};
+
+const persistStudentDeleteById = async (studentId, nextData) => {
+  const normalizedStudentId = String(studentId || '').trim();
+  if (!normalizedStudentId) {
+    const error = new Error('Student id is required to delete student');
+    return {
+      data: nextData,
+      remoteSaved: false,
+      error,
+      errorType: 'unknown',
+      operation: 'delete student',
+      offline: false
+    };
+  }
+
+  let lastError = null;
+  let lastErrorType = null;
+
+  for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      const userId = await ensureAuthenticatedUserId('delete student');
+      const updatedAt = new Date().toISOString();
+      console.log('Deleting student:', normalizedStudentId);
+      console.log('User:', userId);
+
+      await deleteDoc(getStudentDocRef(userId, normalizedStudentId));
+      await setDoc(getUserRootRef(userId), {
+        userId,
+        updatedAt
+      }, { merge: true });
+
+      return {
+        data: nextData,
+        remoteSaved: true,
+        error: null,
+        errorType: null,
+        operation: 'delete student',
+        offline: false
+      };
+    } catch (error) {
+      lastError = error;
+      lastErrorType = classifyFirebaseError(error);
+      console.error('Failed to delete student via Firebase:', error);
+
+      if (attempt < RETRY_ATTEMPTS && shouldRetry(lastErrorType) && !isNavigatorOffline()) {
+        console.warn(`Retrying delete student (${attempt + 1}/${RETRY_ATTEMPTS}) after ${lastErrorType} error`);
+        await wait(RETRY_DELAY_MS * attempt);
+        continue;
+      }
+
+      break;
+    }
+  }
+
+  if (!isOfflineError(lastErrorType)) {
+    logOnlineFailure('delete student', lastErrorType);
+  }
+
+  return {
+    data: nextData,
+    remoteSaved: false,
+    error: lastError,
+    errorType: lastErrorType,
+    operation: 'delete student',
+    offline: isOfflineError(lastErrorType)
+  };
+};
+
 const saveRemote = async (rawData, userId) => {
   if (!isFirebaseConfigured || !db) {
     throw new Error('Firebase unavailable');
@@ -555,13 +730,13 @@ export const updateStudent = async (rawData, studentId, studentData) => enqueueW
   if (idx !== -1) {
     next.students[idx] = { ...next.students[idx], ...clone(studentData) };
   }
-  return persistRemoteFirst(next, 'update student');
+  return persistStudentUpdateById(studentId, studentData, next);
 });
 
 export const deleteStudent = async (rawData, studentId) => enqueueWrite(async () => {
   const next = normalizeRawData(rawData);
   next.students = next.students.filter(student => student.id !== studentId);
-  return persistRemoteFirst(next, 'delete student');
+  return persistStudentDeleteById(studentId, next);
 });
 
 export const saveScores = async (rawData, studentId, scores) => enqueueWrite(async () => {

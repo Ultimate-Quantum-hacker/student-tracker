@@ -32,6 +32,8 @@ const domIds = {
   systemResetBtn: 'system-reset-btn',
   form: 'add-student-form',
   nameInput: 'student-name-input',
+  studentRosterSearchInput: 'student-roster-search-input',
+  studentCount: 'student-count',
   searchInput: 'search-input',
   scoreStudentSelect: 'score-student-select',
   scoreMockSelect: 'scoreMockSelect',
@@ -406,14 +408,88 @@ const ui = {
       `;
     },
 
+    getStudentInitials: function (name) {
+      const words = String(name || '').trim().split(/\s+/).filter(Boolean);
+      if (!words.length) return 'ST';
+      const first = words[0].charAt(0) || '';
+      const second = words.length > 1 ? words[words.length - 1].charAt(0) : (words[0].charAt(1) || '');
+      return `${first}${second}`.toUpperCase() || 'ST';
+    },
+
+    getStudentAvatarTone: function (studentId) {
+      const tones = ['tone-a', 'tone-b', 'tone-c', 'tone-d', 'tone-e', 'tone-f'];
+      const key = String(studentId || 'student');
+      let hash = 0;
+      for (let i = 0; i < key.length; i += 1) {
+        hash = ((hash << 5) - hash) + key.charCodeAt(i);
+        hash |= 0;
+      }
+      return tones[Math.abs(hash) % tones.length];
+    },
+
     renderStudentChips: function () {
       if (!app.dom.studentList) return;
-      app.dom.studentList.innerHTML = app.state.students.map(s => `
-        <div class="student-chip ${s.notes ? 'chip-has-notes' : ''}">
-          <span>${app.utils.esc(s.name)}</span>
-          <button onclick="window.TrackerApp.students.startEdit('${s.id}')">✎</button>
-          <button onclick="window.TrackerApp.students.deleteStudent('${s.id}')">×</button>
-        </div>`).join('');
+
+      const rosterSearchTerm = String(app.state.studentRosterSearchTerm || '').trim().toLowerCase();
+      const students = Array.isArray(app.state.students) ? app.state.students : [];
+      const filteredStudents = rosterSearchTerm
+        ? students.filter(student => String(student?.name || '').toLowerCase().includes(rosterSearchTerm))
+        : students;
+
+      if (app.dom.studentCount) {
+        const totalCount = students.length;
+        if (rosterSearchTerm) {
+          app.dom.studentCount.textContent = `${filteredStudents.length} of ${totalCount} Student${totalCount === 1 ? '' : 's'}`;
+        } else {
+          app.dom.studentCount.textContent = `${totalCount} Student${totalCount === 1 ? '' : 's'}`;
+        }
+      }
+
+      if (!filteredStudents.length) {
+        const emptyLabel = students.length ? 'No students match your search' : 'No students added yet';
+        app.dom.studentList.innerHTML = `
+          <div class="student-roster-empty">
+            <span class="student-roster-empty-icon" aria-hidden="true">👥</span>
+            <p>${emptyLabel}</p>
+          </div>
+        `;
+        return;
+      }
+
+      app.dom.studentList.innerHTML = filteredStudents.map((student) => {
+        const id = String(student?.id || '').trim();
+        const name = String(student?.name || '').trim();
+        const initials = this.getStudentInitials(name);
+        const avatarToneClass = this.getStudentAvatarTone(id);
+        const hasNotesClass = student?.notes ? 'chip-has-notes' : '';
+
+        return `
+          <div class="student-chip ${hasNotesClass}" data-student-id="${app.utils.esc(id)}">
+            <div class="student-chip-main">
+              <span class="student-chip-avatar ${avatarToneClass}" aria-hidden="true">${app.utils.esc(initials)}</span>
+              <span class="student-chip-name">${app.utils.esc(name)}</span>
+            </div>
+            <div class="student-chip-actions">
+              <button
+                type="button"
+                class="student-chip-action"
+                data-student-action="edit"
+                data-student-id="${app.utils.esc(id)}"
+                title="Edit student"
+                aria-label="Edit ${app.utils.esc(name)}"
+              >✏️</button>
+              <button
+                type="button"
+                class="student-chip-action danger"
+                data-student-action="delete"
+                data-student-id="${app.utils.esc(id)}"
+                title="Delete student"
+                aria-label="Delete ${app.utils.esc(name)}"
+              >🗑</button>
+            </div>
+          </div>
+        `;
+      }).join('');
     },
 
     populateSelects: function () {
@@ -1239,7 +1315,16 @@ const ui = {
           app.sidebar.init();
         }
         
-        if (app.dom.form) app.dom.form.onsubmit = (e) => { e.preventDefault(); app.students.addStudent(app.dom.nameInput.value, app, this); app.dom.nameInput.value = ''; };
+        if (app.dom.form) {
+          app.dom.form.onsubmit = async (e) => {
+            e.preventDefault();
+            const didAddStudent = await app.students.addStudent(app.dom.nameInput.value, app, this);
+            if (didAddStudent && app.dom.nameInput) {
+              app.dom.nameInput.value = '';
+              app.dom.nameInput.focus();
+            }
+          };
+        }
         if (app.dom.createSnapshotBtn) app.dom.createSnapshotBtn.onclick = () => this.createSnapshot('Manual Restore Point');
         if (app.dom.snapshotManagerBtn) app.dom.snapshotManagerBtn.onclick = () => this.openSnapshotModal();
         if (app.dom.backupBtn) app.dom.backupBtn.onclick = () => app.export.exportBackup(app);
@@ -1269,9 +1354,27 @@ const ui = {
         if (app.dom.bulkImportConfirmBtn) app.dom.bulkImportConfirmBtn.onclick = () => { app.students.bulkImport(app.dom.bulkImportTextarea.value, app, this); app.dom.bulkImportModal.classList.remove('active'); };
         if (app.dom.bulkImportCancelBtn) app.dom.bulkImportCancelBtn.onclick = () => app.dom.bulkImportModal.classList.remove('active');
         if (app.dom.editSaveBtn) app.dom.editSaveBtn.onclick = () => app.students.saveEdit(app, this);
-        if (app.dom.editCancelBtn) app.dom.editCancelBtn.onclick = () => app.dom.editModal.classList.remove('active');
+        if (app.dom.editCancelBtn) {
+          app.dom.editCancelBtn.onclick = () => {
+            app.state.editingId = null;
+            app.dom.editModal.classList.remove('active');
+          };
+        }
         if (app.dom.deleteConfirmBtn) app.dom.deleteConfirmBtn.onclick = () => app.students.confirmDelete(app, this);
-        if (app.dom.deleteCancelBtn) app.dom.deleteCancelBtn.onclick = () => app.dom.deleteModal.classList.remove('active');
+        if (app.dom.deleteCancelBtn) {
+          app.dom.deleteCancelBtn.onclick = () => {
+            app.state.deletingId = null;
+            app.dom.deleteModal.classList.remove('active');
+          };
+        }
+        if (app.dom.editInput) {
+          app.dom.editInput.onkeydown = (e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              app.students.saveEdit(app, this);
+            }
+          };
+        }
         if (app.dom.notesSaveBtn) app.dom.notesSaveBtn.onclick = () => this.saveNotes();
         if (app.dom.notesCancelBtn) app.dom.notesCancelBtn.onclick = () => app.dom.notesModal.classList.remove('active');
         if (app.dom.bulkScoreBtn) app.dom.bulkScoreBtn.onclick = () => { app.dom.bulkScoreModal.classList.add('active'); this.renderBulkTable(); };
@@ -1322,7 +1425,32 @@ const ui = {
           this.renderBulkTable();
         };
         if (app.dom.chartStudentSelect) app.dom.chartStudentSelect.onchange = () => app.charts.renderStudentChart(app.dom.chartStudentSelect.value, app);
+        if (app.dom.studentRosterSearchInput) {
+          app.dom.studentRosterSearchInput.oninput = (e) => {
+            app.state.studentRosterSearchTerm = e.target.value || '';
+            this.renderStudentChips();
+          };
+        }
         if (app.dom.searchInput) app.dom.searchInput.oninput = (e) => { app.state.searchTerm = e.target.value; this.renderResultsTable(); };
+        if (app.dom.studentList) {
+          app.dom.studentList.addEventListener('click', (e) => {
+            const actionButton = e.target.closest('[data-student-action]');
+            if (!actionButton) return;
+
+            const studentId = String(actionButton.dataset.studentId || '').trim();
+            if (!studentId) return;
+
+            const action = actionButton.dataset.studentAction;
+            if (action === 'edit') {
+              app.students.startEdit(studentId, app, this);
+              return;
+            }
+
+            if (action === 'delete') {
+              app.students.deleteStudent(studentId, app, this);
+            }
+          });
+        }
         if (app.dom.reportCloseBtn) app.dom.reportCloseBtn.onclick = () => app.dom.reportModal.classList.remove('active');
         if (app.dom.reportPrintBtn) app.dom.reportPrintBtn.onclick = () => this.printReportOnly();
         if (app.dom.reportExportPdfBtn) app.dom.reportExportPdfBtn.onclick = () => this.exportCurrentReportPdf();

@@ -21,6 +21,7 @@ window.TrackerApp = window.TrackerApp || {};
     notesId: null,
     editingId: null,
     deletingId: null,
+    studentRosterSearchTerm: '',
     searchTerm: '',
     isLoading: false,
     error: null,

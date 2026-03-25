@@ -442,7 +442,31 @@
 
       <section id="students" class="content-section">
         <div class="section-header"><h2>Student Roster</h2></div>
-        <div class="card"><form id="add-student-form" class="form-row"><input type="text" id="student-name-input" placeholder="Enter student name" required maxlength="60"><button type="submit" class="btn btn-primary">Add Student</button><button type="button" class="btn btn-secondary" id="bulk-import-btn">Bulk Add</button></form><div id="student-list" class="student-chips"></div></div>
+        <div class="card student-roster-card">
+          <div class="student-roster-toolbar">
+            <form id="add-student-form" class="form-row student-roster-form">
+              <input type="text" id="student-name-input" class="student-roster-name-input" placeholder="Enter student name" required maxlength="60" autocomplete="off">
+              <div class="student-roster-actions">
+                <button type="submit" class="btn btn-primary">Add Student</button>
+                <button type="button" class="btn btn-secondary" id="bulk-import-btn">Bulk Add</button>
+              </div>
+            </form>
+
+            <div class="student-roster-meta">
+              <p id="student-count" class="student-count">0 Students</p>
+              <input
+                type="text"
+                id="student-roster-search-input"
+                class="search-input student-roster-search-input"
+                placeholder="Search students..."
+                aria-label="Search students"
+                autocomplete="off"
+              >
+            </div>
+          </div>
+
+          <div id="student-list" class="student-chips" aria-live="polite"></div>
+        </div>
       </section>
 
       <section id="mocks" class="content-section">

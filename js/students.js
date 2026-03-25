@@ -4,71 +4,104 @@
    ═══════════════════════════════════════════════ */
 
 import app from './state.js';
+import { auth } from './firebase.js';
+
+const resolveApp = (runtimeApp) => runtimeApp || app;
+const resolveUi = (runtimeUi, runtimeApp) => runtimeUi || runtimeApp?.ui;
 
 const students = {
-  addStudent: async function (name, app, ui) {
+  addStudent: async function (name, runtimeApp, runtimeUi) {
+    const appRef = resolveApp(runtimeApp);
+    const uiRef = resolveUi(runtimeUi, appRef);
     const n = name.trim();
-    if (!n) return;
+    if (!n) {
+      uiRef?.showToast?.('Enter a student name first');
+      return false;
+    }
     
     try {
-      await app.addStudent({ name: n, class: '', notes: '', scores: {} });
-      ui.refreshUI();
-      ui.showToast(`Added ${n}`);
+      await appRef.addStudent({ name: n, class: '', notes: '', scores: {} });
+      uiRef?.refreshUI?.();
+      uiRef?.showToast?.('Student added');
+      return true;
     } catch (error) {
       console.error('Failed to add student:', error);
-      ui.showToast('Failed to add student');
+      uiRef?.showToast?.('Failed to add student');
+      return false;
     }
   },
 
-  deleteStudent: function (uid, app, ui) {
-    const s = app.state.students.find(x => x.id === uid);
+  deleteStudent: function (uid, runtimeApp) {
+    const appRef = resolveApp(runtimeApp);
+    const s = appRef.state.students.find(x => x.id === uid);
     if (!s) return;
-    app.state.deletingId = uid;
-    if (app.dom.deleteConfirmMsg) app.dom.deleteConfirmMsg.textContent = `Delete "${s.name}"?`;
-    app.dom.deleteModal.classList.add('active');
+    console.log('Deleting student:', uid);
+    console.log('User:', auth?.currentUser?.uid || 'unknown');
+    appRef.state.deletingId = uid;
+    if (appRef.dom.deleteConfirmMsg) {
+      appRef.dom.deleteConfirmMsg.textContent = `Are you sure you want to delete this student? (${s.name})`;
+    }
+    appRef.dom.deleteModal?.classList.add('active');
   },
 
-  confirmDelete: async function (app, ui) {
-    const uid = app.state.deletingId;
+  confirmDelete: async function (runtimeApp, runtimeUi) {
+    const appRef = resolveApp(runtimeApp);
+    const uiRef = resolveUi(runtimeUi, appRef);
+    const uid = appRef.state.deletingId;
     if (!uid) return;
     
     try {
-      await app.deleteStudent(uid);
-      app.state.deletingId = null;
-      app.dom.deleteModal.classList.remove('active');
-      ui.refreshUI();
-      ui.showToast('Student deleted');
+      console.log('Deleting student:', uid);
+      console.log('User:', auth?.currentUser?.uid || 'unknown');
+      await appRef.deleteStudent(uid);
+      appRef.state.deletingId = null;
+      appRef.dom.deleteModal?.classList.remove('active');
+      uiRef?.refreshUI?.();
+      uiRef?.showToast?.('Student deleted');
     } catch (error) {
       console.error('Failed to delete student:', error);
-      ui.showToast('Failed to delete student');
+      uiRef?.showToast?.('Failed to delete student');
     }
   },
 
-  startEdit: function (uid, app, ui) {
-    const s = app.state.students.find(x => x.id === uid);
+  startEdit: function (uid, runtimeApp) {
+    const appRef = resolveApp(runtimeApp);
+    const s = appRef.state.students.find(x => x.id === uid);
     if (!s) return;
-    app.state.editingId = uid;
-    if (app.dom.editInput) app.dom.editInput.value = s.name;
-    app.dom.editModal.classList.add('active');
-    if (app.dom.editInput) app.dom.editInput.focus();
+    console.log('Editing student:', uid);
+    console.log('User:', auth?.currentUser?.uid || 'unknown');
+    appRef.state.editingId = uid;
+    if (appRef.dom.editInput) {
+      appRef.dom.editInput.value = s.name;
+      appRef.dom.editInput.focus();
+      appRef.dom.editInput.select();
+    }
+    appRef.dom.editModal?.classList.add('active');
   },
 
-  saveEdit: async function (app, ui) {
-    const uid = app.state.editingId;
+  saveEdit: async function (runtimeApp, runtimeUi) {
+    const appRef = resolveApp(runtimeApp);
+    const uiRef = resolveUi(runtimeUi, appRef);
+    const uid = appRef.state.editingId;
     if (!uid) return;
     
-    const newName = app.dom.editInput.value.trim();
-    if (!newName) return;
+    const newName = appRef.dom.editInput.value.trim();
+    if (!newName) {
+      uiRef?.showToast?.('Student name cannot be empty');
+      return;
+    }
     
     try {
-      await app.updateStudent(uid, { name: newName });
-      app.state.editingId = null;
-      app.dom.editModal.classList.remove('active');
-      ui.refreshUI();
-      ui.showToast('Student updated');
+      console.log('Editing student:', uid);
+      console.log('User:', auth?.currentUser?.uid || 'unknown');
+      await appRef.updateStudent(uid, { name: newName });
+      appRef.state.editingId = null;
+      appRef.dom.editModal?.classList.remove('active');
+      uiRef?.refreshUI?.();
+      uiRef?.showToast?.('Student updated');
     } catch (error) {
       console.error('Failed to update student:', error);
-      ui.showToast('Failed to update student');
+      uiRef?.showToast?.('Failed to update student');
     }
   },
 
