@@ -1,8 +1,8 @@
 /* Student Exam Tracker — service worker
-   Simple cache-first strategy for core assets.
+   Network-first HTML + cache-first assets.
 */
 
-const CACHE_NAME = 'app-cache-v4';
+const CACHE_NAME = 'student-tracker-v3';
 
 const CORE_ASSETS = [
   '/',
@@ -11,6 +11,8 @@ const CORE_ASSETS = [
   '/css/enhanced.css',
   '/manifest.json',
   '/js/state.js',
+  '/js/firebase-config.js',
+  '/js/firebase.js',
   '/js/analytics.js',
   '/js/students.js',
   '/js/charts.js',
@@ -50,6 +52,27 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const req = event.request;
   if (req.method !== 'GET') return;
+
+  if (req.mode === 'navigate') {
+    event.respondWith(
+      fetch(req)
+        .then(networkRes => {
+          if (networkRes && networkRes.status === 200) {
+            const resClone = networkRes.clone();
+            caches.open(CACHE_NAME).then(cache => {
+              cache.put('/index.html', resClone);
+            });
+          }
+          return networkRes;
+        })
+        .catch(() => {
+          return caches.match(req).then(cachedPage => {
+            return cachedPage || caches.match('/index.html');
+          });
+        })
+    );
+    return;
+  }
 
   event.respondWith(
     caches.match(req).then(cached => {
