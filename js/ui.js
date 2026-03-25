@@ -32,7 +32,10 @@ const domIds = {
   systemThemeToggleBtn: 'system-theme-toggle-btn',
   systemResetBtn: 'system-reset-btn',
   form: 'add-student-form',
-  classSelector: 'class-selector',
+  classDropdown: 'class-dropdown',
+  classDropdownToggle: 'class-dropdown-toggle',
+  classDropdownMenu: 'class-dropdown-menu',
+  classDropdownValue: 'class-dropdown-value',
   classPrevBtn: 'class-prev-btn',
   classNextBtn: 'class-next-btn',
   createClassBtn: 'create-class-btn',
@@ -123,6 +126,7 @@ const domIds = {
 const ui = {
     isReportExporting: false,
     hasPromptedForMissingClass: false,
+    hasBoundClassDropdownEvents: false,
 
     init: function () {
       console.log('UI init running');
@@ -173,13 +177,47 @@ const ui = {
       return 'No Data';
     },
 
+    getStatusToneClass: function (statusType) {
+      if (statusType === 'strong') return 'total-tone-strong';
+      if (statusType === 'good') return 'total-tone-good';
+      if (statusType === 'average') return 'total-tone-average';
+      if (statusType === 'borderline') return 'total-tone-borderline';
+      if (statusType === 'at-risk') return 'total-tone-at-risk';
+      return 'total-tone-neutral';
+    },
+
+    closeClassDropdown: function () {
+      if (app.dom.classDropdown) {
+        app.dom.classDropdown.classList.remove('open');
+      }
+      if (app.dom.classDropdownToggle) {
+        app.dom.classDropdownToggle.setAttribute('aria-expanded', 'false');
+      }
+    },
+
+    toggleClassDropdown: function () {
+      const classes = Array.isArray(app.state.classes) ? app.state.classes : [];
+      if (!classes.length || !app.dom.classDropdown || !app.dom.classDropdownToggle) {
+        return;
+      }
+
+      const shouldOpen = !app.dom.classDropdown.classList.contains('open');
+      app.dom.classDropdown.classList.toggle('open', shouldOpen);
+      app.dom.classDropdownToggle.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+    },
+
     setClassControlsBusy: function (isBusy) {
       const shouldDisable = Boolean(isBusy);
-      if (app.dom.classSelector) app.dom.classSelector.disabled = shouldDisable;
+      if (app.dom.classDropdownToggle) app.dom.classDropdownToggle.disabled = shouldDisable;
       if (app.dom.classPrevBtn) app.dom.classPrevBtn.disabled = shouldDisable;
       if (app.dom.classNextBtn) app.dom.classNextBtn.disabled = shouldDisable;
       if (app.dom.createClassBtn) app.dom.createClassBtn.disabled = shouldDisable;
       if (app.dom.deleteClassBtn) app.dom.deleteClassBtn.disabled = shouldDisable;
+      if (app.dom.classDropdownMenu) {
+        app.dom.classDropdownMenu.querySelectorAll('.class-dropdown-item').forEach((entry) => {
+          entry.disabled = shouldDisable || entry.disabled;
+        });
+      }
     },
 
     switchToClass: async function (classId) {
@@ -187,6 +225,7 @@ const ui = {
       if (!nextClassId) return;
 
       try {
+        this.closeClassDropdown();
         this.setClassControlsBusy(true);
         await app.switchClass(nextClassId);
         this.refreshUI();
@@ -232,19 +271,29 @@ const ui = {
         app.dom.classNameDisplay.textContent = `Class: ${activeClassName}`;
       }
 
-      if (app.dom.classSelector) {
+      if (app.dom.classDropdownValue) {
+        app.dom.classDropdownValue.textContent = classes.length ? activeClassName : 'Create Class';
+      }
+
+      if (app.dom.classDropdownToggle) {
+        app.dom.classDropdownToggle.disabled = !classes.length;
+      }
+
+      if (app.dom.classDropdownMenu) {
         if (!classes.length) {
-          app.dom.classSelector.innerHTML = '<option value="">No classes available</option>';
-          app.dom.classSelector.disabled = true;
+          app.dom.classDropdownMenu.innerHTML = '<button type="button" class="class-dropdown-item is-empty" disabled><span class="class-item-name">No classes available</span></button>';
         } else {
-          app.dom.classSelector.innerHTML = classes.map((entry) => {
+          app.dom.classDropdownMenu.innerHTML = classes.map((entry) => {
             const classId = String(entry?.id || '').trim();
             const className = String(entry?.name || 'My Class').trim() || 'My Class';
-            return `<option value="${app.utils.esc(classId)}">${app.utils.esc(className)}</option>`;
+            const isActive = classId === resolvedClassId;
+            return `
+              <button type="button" class="class-dropdown-item${isActive ? ' active' : ''}" data-class-id="${app.utils.esc(classId)}" role="option" aria-selected="${isActive ? 'true' : 'false'}">
+                <span class="class-item-icon" aria-hidden="true">🏫</span>
+                <span class="class-item-name">${app.utils.esc(className)}</span>
+                ${isActive ? '<span class="class-item-badge">Active</span>' : ''}
+              </button>`;
           }).join('');
-
-          app.dom.classSelector.disabled = false;
-          app.dom.classSelector.value = resolvedClassId || String(classes[0]?.id || '');
         }
       }
 
@@ -258,6 +307,10 @@ const ui = {
       }
       if (app.dom.classNextBtn) {
         app.dom.classNextBtn.disabled = disableArrows;
+      }
+
+      if (!classes.length) {
+        this.closeClassDropdown();
       }
 
       if (app.dom.form) {
@@ -692,6 +745,9 @@ const ui = {
         const improvData = canComputeImprovement
           ? this.formatImprovement(currentTotal, previousTotal)
           : { text: '', className: 'improv-neutral' };
+        const status = app.analytics.getStudentStatus(s, latestExam);
+        const statusClass = `risk-${status}`;
+        const totalToneClass = this.getStatusToneClass(status);
         let examCells = app.state.exams.map((m, examIdx) => {
           const examGroupClass = examIdx % 2 === 1 ? ' exam-group-alt' : '';
           let subCells = app.state.subjects.map(sub => {
@@ -699,12 +755,19 @@ const ui = {
             return `<td class="exam-cell${examGroupClass}">${score === '' ? '—' : score}</td>`;
           }).join('');
           const total = this.getStudentExamTotal(s.id, m.id);
-          return subCells + `<td class="avg exam-total-col exam-group-end${examGroupClass}">${total ?? '—'}</td>`;
+          const totalDisplay = total !== null && total !== undefined
+            ? app.utils.esc(String(Number(total).toFixed(1)).replace(/\.0$/, ''))
+            : '&#8212;';
+          return subCells + `
+            <td class="exam-total-col exam-group-end${examGroupClass}">
+              <div class="total-score-badge ${totalToneClass}">
+                <span class="total-score-label">TOTAL</span>
+                <strong class="total-score-value">${totalDisplay}</strong>
+              </div>
+            </td>`;
         }).join('');
-        const status = app.analytics.getStudentStatus(s, latestExam);
         const avgVal = s._overallAvg;
         const avgCls = avgVal !== null ? (avgVal >= 70 ? 'avg-green' : (avgVal >= 50 ? 'avg-yellow' : 'avg-red')) : '';
-        const statusClass = `risk-${status}`;
         return `<tr>
           <td><strong class="rank-num rank-highlight">${i + 1}</strong></td><td class="sticky-col">${app.utils.esc(s.name)}</td>
           ${examCells}
@@ -1510,12 +1573,34 @@ const ui = {
             }
           };
         }
-        if (app.dom.classSelector) {
-          app.dom.classSelector.onchange = async (e) => {
-            const nextClassId = String(e.target.value || '').trim();
+        if (app.dom.classDropdownToggle) {
+          app.dom.classDropdownToggle.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.toggleClassDropdown();
+          };
+        }
+        if (app.dom.classDropdownMenu) {
+          app.dom.classDropdownMenu.onclick = async (e) => {
+            const target = e.target.closest('.class-dropdown-item[data-class-id]');
+            if (!target || target.disabled) return;
+            const nextClassId = String(target.dataset.classId || '').trim();
             if (!nextClassId) return;
             await this.switchToClass(nextClassId);
           };
+        }
+        if (!this.hasBoundClassDropdownEvents) {
+          document.addEventListener('click', (e) => {
+            if (!app.dom.classDropdown) return;
+            if (app.dom.classDropdown.contains(e.target)) return;
+            this.closeClassDropdown();
+          });
+          document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+              this.closeClassDropdown();
+            }
+          });
+          this.hasBoundClassDropdownEvents = true;
         }
         if (app.dom.classPrevBtn) {
           app.dom.classPrevBtn.onclick = async () => {

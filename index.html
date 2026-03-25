@@ -373,8 +373,15 @@
   <div class="global-class-switcher" aria-label="Global class switcher">
     <div class="class-switcher-main">
       <button type="button" class="btn btn-secondary btn-sm class-nav-btn" id="class-prev-btn" aria-label="Switch to previous class" title="Previous class">←</button>
-      <label for="class-selector">Class</label>
-      <select id="class-selector" aria-label="Select class"></select>
+      <label for="class-dropdown-toggle">Class</label>
+      <div id="class-dropdown" class="class-dropdown">
+        <button type="button" class="class-dropdown-toggle" id="class-dropdown-toggle" aria-label="Select class" aria-expanded="false" aria-haspopup="listbox" aria-controls="class-dropdown-menu">
+          <span class="class-dropdown-icon" aria-hidden="true">🏫</span>
+          <span id="class-dropdown-value" class="class-dropdown-value">Select Class</span>
+          <span class="class-dropdown-chevron" aria-hidden="true">▾</span>
+        </button>
+        <div id="class-dropdown-menu" class="class-dropdown-menu" role="listbox" aria-label="Class list"></div>
+      </div>
       <button type="button" class="btn btn-secondary btn-sm class-nav-btn" id="class-next-btn" aria-label="Switch to next class" title="Next class">→</button>
       <button type="button" class="btn btn-secondary btn-sm" id="create-class-btn">Create Class</button>
       <button type="button" class="btn btn-danger btn-sm" id="delete-class-btn">Delete Class</button>
