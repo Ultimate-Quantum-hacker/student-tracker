@@ -44,6 +44,10 @@ const domIds = {
   nameInput: 'student-name-input',
   studentRosterSearchInput: 'student-roster-search-input',
   studentCount: 'student-count',
+  trashList: 'trash-list',
+  trashRestoreAllBtn: 'trash-restore-all-btn',
+  trashEmptyBtn: 'trash-empty-btn',
+  trashRetentionHint: 'trash-retention-hint',
   searchInput: 'search-input',
   scoreStudentSelect: 'score-student-select',
   scoreMockSelect: 'scoreMockSelect',
@@ -127,6 +131,8 @@ const ui = {
     isReportExporting: false,
     hasPromptedForMissingClass: false,
     hasBoundClassDropdownEvents: false,
+    toastTimer: null,
+    trashRetentionDays: 3,
 
     init: function () {
       console.log('UI init running');
@@ -147,11 +153,155 @@ const ui = {
       });
     },
 
-    showToast: function (m) {
+    hideToast: function () {
       if (!app.dom.toast) return;
-      app.dom.toast.textContent = m;
-      app.dom.toast.classList.add('show');
-      setTimeout(() => app.dom.toast.classList.remove('show'), 2000);
+      if (this.toastTimer) {
+        clearTimeout(this.toastTimer);
+        this.toastTimer = null;
+      }
+      app.dom.toast.classList.remove('show');
+    },
+
+    showToast: function (message, options = {}) {
+      if (!app.dom.toast) return;
+
+      if (this.toastTimer) {
+        clearTimeout(this.toastTimer);
+        this.toastTimer = null;
+      }
+
+      const toast = app.dom.toast;
+      toast.innerHTML = '';
+
+      const textNode = document.createElement('span');
+      textNode.className = 'toast-message';
+      textNode.textContent = String(message || '');
+      toast.appendChild(textNode);
+
+      const hasAction = typeof options?.onAction === 'function' && String(options?.actionLabel || '').trim();
+      if (hasAction) {
+        const actionButton = document.createElement('button');
+        actionButton.type = 'button';
+        actionButton.className = 'toast-action';
+        actionButton.textContent = String(options.actionLabel || '').trim();
+        actionButton.addEventListener('click', async () => {
+          actionButton.disabled = true;
+          this.hideToast();
+          await options.onAction();
+        });
+        toast.appendChild(actionButton);
+      }
+
+      toast.classList.add('show');
+      const duration = Number(options?.duration);
+      const timeoutMs = Number.isFinite(duration) && duration > 0 ? duration : 2200;
+      this.toastTimer = setTimeout(() => {
+        this.hideToast();
+      }, timeoutMs);
+    },
+
+    showUndoDeleteToast: function (studentId, studentName = 'Student') {
+      const normalizedStudentId = String(studentId || '').trim();
+      if (!normalizedStudentId) {
+        this.showToast('Student moved to Trash');
+        return;
+      }
+
+      this.showToast(`${studentName} moved to Trash`, {
+        actionLabel: 'Undo',
+        duration: 5000,
+        onAction: async () => {
+          try {
+            await app.restoreStudent(normalizedStudentId);
+            this.refreshUI();
+            this.showToast('Student restored');
+          } catch (error) {
+            console.error('Failed to undo delete:', error);
+            this.showToast('Failed to restore student');
+          }
+        }
+      });
+    },
+
+    formatDeletedAt: function (value) {
+      const parsed = new Date(value || '');
+      if (Number.isNaN(parsed.getTime())) {
+        return 'Recently';
+      }
+      return parsed.toLocaleString([], {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    },
+
+    getTrashRetentionCountdown: function (value) {
+      const parsed = new Date(value || '');
+      if (Number.isNaN(parsed.getTime())) {
+        return `Will be permanently deleted after ${this.trashRetentionDays} days`;
+      }
+
+      const retentionMs = this.trashRetentionDays * 24 * 60 * 60 * 1000;
+      const remainingMs = (parsed.getTime() + retentionMs) - Date.now();
+      if (remainingMs <= 0) {
+        return 'Eligible for permanent deletion';
+      }
+
+      const remainingHours = Math.ceil(remainingMs / (60 * 60 * 1000));
+      const days = Math.floor(remainingHours / 24);
+      const hours = remainingHours % 24;
+      if (days <= 0) {
+        return `${hours}h left before auto-delete window`;
+      }
+      return `${days}d ${hours}h left before auto-delete window`;
+    },
+
+    renderTrashList: function () {
+      if (!app.dom.trashList) return;
+
+      const trashItems = (Array.isArray(app.state.studentTrash) ? [...app.state.studentTrash] : [])
+        .sort((a, b) => {
+          const aTime = new Date(a?.deletedAt || 0).getTime() || 0;
+          const bTime = new Date(b?.deletedAt || 0).getTime() || 0;
+          return bTime - aTime;
+        });
+
+      if (app.dom.trashRestoreAllBtn) {
+        app.dom.trashRestoreAllBtn.disabled = !trashItems.length;
+      }
+      if (app.dom.trashEmptyBtn) {
+        app.dom.trashEmptyBtn.disabled = !trashItems.length;
+      }
+      if (app.dom.trashRetentionHint) {
+        app.dom.trashRetentionHint.textContent = `Will be permanently deleted after ${this.trashRetentionDays} days.`;
+      }
+
+      if (!trashItems.length) {
+        app.dom.trashList.innerHTML = '<p class="trash-empty">Trash is empty</p>';
+        return;
+      }
+
+      app.dom.trashList.innerHTML = trashItems.map((item) => {
+        const id = String(item?.id || '').trim();
+        const name = String(item?.name || 'Student').trim() || 'Student';
+        const deletedAtLabel = this.formatDeletedAt(item?.deletedAt);
+        const retentionCountdownLabel = this.getTrashRetentionCountdown(item?.deletedAt);
+
+        return `
+          <div class="trash-item" data-trash-student-id="${app.utils.esc(id)}">
+            <div class="trash-item-meta">
+              <p class="trash-item-name">${app.utils.esc(name)}</p>
+              <p class="trash-item-date">Deleted ${app.utils.esc(deletedAtLabel)}</p>
+              <p class="trash-item-retention">${app.utils.esc(retentionCountdownLabel)}</p>
+            </div>
+            <div class="trash-item-actions">
+              <button type="button" class="btn btn-secondary btn-sm" data-trash-action="restore" data-trash-student-id="${app.utils.esc(id)}">Restore</button>
+              <button type="button" class="btn btn-danger btn-sm" data-trash-action="permanent-delete" data-trash-student-id="${app.utils.esc(id)}">Delete Forever</button>
+            </div>
+          </div>
+        `;
+      }).join('');
     },
 
     formatImprovement: function (current, previous) {
@@ -1456,6 +1606,7 @@ const ui = {
         this.renderPerformanceAnalysisPanel();
         this.renderClassSummary();
         this.renderStudentChips();
+        this.renderTrashList();
         this.renderResultsTable();
         this.renderBulkTable();
         this.updateBackupStatus();
@@ -1767,6 +1918,76 @@ const ui = {
 
             if (action === 'delete') {
               app.students.deleteStudent(studentId, app, this);
+            }
+          });
+        }
+        if (app.dom.trashList) {
+          app.dom.trashList.addEventListener('click', async (e) => {
+            const trigger = e.target.closest('[data-trash-action]');
+            if (!trigger) return;
+
+            const action = String(trigger.dataset.trashAction || '').trim();
+            const studentId = String(trigger.dataset.trashStudentId || '').trim();
+            if (!action || !studentId) return;
+
+            trigger.disabled = true;
+
+            try {
+              if (action === 'restore') {
+                await app.restoreStudent(studentId);
+                this.refreshUI();
+                this.showToast('Student restored');
+                return;
+              }
+
+              if (action === 'permanent-delete') {
+                if (!confirm('Permanently delete this student from Trash? This cannot be undone.')) {
+                  return;
+                }
+
+                await app.permanentlyDeleteStudent(studentId);
+                this.refreshUI();
+                this.showToast('Student permanently deleted');
+              }
+            } catch (error) {
+              console.error('Trash action failed:', error);
+              this.showToast('Action failed');
+            } finally {
+              trigger.disabled = false;
+            }
+          });
+        }
+        if (app.dom.trashRestoreAllBtn) {
+          app.dom.trashRestoreAllBtn.addEventListener('click', async () => {
+            try {
+              app.dom.trashRestoreAllBtn.disabled = true;
+              const restoredCount = await app.restoreAllStudentsFromTrash();
+              this.refreshUI();
+              if (restoredCount > 0) {
+                this.showToast(`${restoredCount} student${restoredCount === 1 ? '' : 's'} restored`);
+              }
+            } catch (error) {
+              console.error('Failed to restore all students:', error);
+              this.showToast('Failed to restore all students');
+            }
+          });
+        }
+        if (app.dom.trashEmptyBtn) {
+          app.dom.trashEmptyBtn.addEventListener('click', async () => {
+            if (!confirm('Empty Trash and permanently delete all entries? This cannot be undone.')) {
+              return;
+            }
+
+            try {
+              app.dom.trashEmptyBtn.disabled = true;
+              const deletedCount = await app.emptyStudentTrash();
+              this.refreshUI();
+              if (deletedCount > 0) {
+                this.showToast(`${deletedCount} student${deletedCount === 1 ? '' : 's'} permanently deleted`);
+              }
+            } catch (error) {
+              console.error('Failed to empty trash:', error);
+              this.showToast('Failed to empty trash');
             }
           });
         }

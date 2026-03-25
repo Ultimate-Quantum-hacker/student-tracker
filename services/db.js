@@ -3,7 +3,7 @@
    Centralized Firestore-first data access with cache fallback.
    ═══════════════════════════════════════════════ */
 
-import { db, doc, collection, addDoc, getDocs, setDoc, updateDoc, deleteDoc, isFirebaseConfigured, auth, authReadyPromise, onAuthStateChanged } from '../js/firebase.js';
+import { db, doc, collection, addDoc, getDocs, setDoc, updateDoc, deleteDoc, serverTimestamp, isFirebaseConfigured, auth, authReadyPromise, onAuthStateChanged } from '../js/firebase.js';
 
 const CACHE_KEY_PREFIX = 'studentAppData';
 const USERS_COLLECTION = 'users';
@@ -12,6 +12,7 @@ const STUDENTS_SUBCOLLECTION = 'students';
 const SUBJECTS_SUBCOLLECTION = 'subjects';
 const EXAMS_SUBCOLLECTION = 'exams';
 const DEFAULT_CLASS_NAME = 'My Class';
+const TRASH_RETENTION_DAYS = 3;
 
 let currentClassId = '';
 
@@ -25,6 +26,18 @@ let writeChain = Promise.resolve();
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const asArray = (value) => Array.isArray(value) ? value : [];
+
+const normalizeDeletedAtValue = (value) => {
+  if (!value) return null;
+  if (typeof value?.toDate === 'function') {
+    return value.toDate().toISOString();
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return parsed.toISOString();
+};
 
 const normalizeRawData = (rawData) => {
   const input = rawData && typeof rawData === 'object' ? rawData : createDefaultRawData();
@@ -44,6 +57,217 @@ const normalizeRawData = (rawData) => {
       .map(exam => String(exam?.title || exam?.name || exam || '').trim())
       .filter(Boolean)
   };
+
+};
+
+const persistStudentRestoreById = async (studentId, nextData) => {
+  const normalizedStudentId = String(studentId || '').trim();
+  if (!normalizedStudentId) {
+    const error = new Error('Student id is required to restore student');
+    return {
+      data: nextData,
+      remoteSaved: false,
+      error,
+      errorType: 'unknown',
+      operation: 'restore student',
+      offline: false
+    };
+  }
+
+  let lastError = null;
+  let lastErrorType = null;
+
+  for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      const userId = await ensureAuthenticatedUserId('restore student');
+      const { classId } = await ensureActiveClassContext(userId);
+      const updatedAt = new Date().toISOString();
+
+      await updateDoc(getStudentDocRef(userId, normalizedStudentId, classId), {
+        deleted: false,
+        deletedAt: null,
+        updatedAt,
+        userId,
+        classId
+      });
+
+      await setDoc(getClassDocRef(userId, classId), {
+        id: classId,
+        updatedAt,
+        userId
+      }, { merge: true });
+
+      await setDoc(getUserRootRef(userId), {
+        userId,
+        activeClassId: classId,
+        updatedAt
+      }, { merge: true });
+
+      return {
+        data: nextData,
+        remoteSaved: true,
+        error: null,
+        errorType: null,
+        operation: 'restore student',
+        offline: false
+      };
+    } catch (error) {
+      lastError = error;
+      lastErrorType = classifyFirebaseError(error);
+      console.error('Failed to restore student via Firebase:', error);
+
+      if (attempt < RETRY_ATTEMPTS && shouldRetry(lastErrorType) && !isNavigatorOffline()) {
+        await wait(RETRY_DELAY_MS * attempt);
+        continue;
+      }
+
+      break;
+    }
+  }
+
+  if (!isOfflineError(lastErrorType)) {
+    logOnlineFailure('restore student', lastErrorType);
+  }
+
+  return {
+    data: nextData,
+    remoteSaved: false,
+    error: lastError,
+    errorType: lastErrorType,
+    operation: 'restore student',
+    offline: isOfflineError(lastErrorType)
+  };
+};
+
+const persistStudentHardDeleteById = async (studentId, nextData) => {
+  const normalizedStudentId = String(studentId || '').trim();
+  if (!normalizedStudentId) {
+    const error = new Error('Student id is required to permanently delete student');
+    return {
+      data: nextData,
+      remoteSaved: false,
+      error,
+      errorType: 'unknown',
+      operation: 'permanently delete student',
+      offline: false
+    };
+  }
+
+  let lastError = null;
+  let lastErrorType = null;
+
+  for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      const userId = await ensureAuthenticatedUserId('permanently delete student');
+      const { classId } = await ensureActiveClassContext(userId);
+      const updatedAt = new Date().toISOString();
+
+      await deleteDoc(getStudentDocRef(userId, normalizedStudentId, classId));
+
+      await setDoc(getClassDocRef(userId, classId), {
+        id: classId,
+        updatedAt,
+        userId
+      }, { merge: true });
+
+      await setDoc(getUserRootRef(userId), {
+        userId,
+        activeClassId: classId,
+        updatedAt
+      }, { merge: true });
+
+      return {
+        data: nextData,
+        remoteSaved: true,
+        error: null,
+        errorType: null,
+        operation: 'permanently delete student',
+        offline: false
+      };
+    } catch (error) {
+      lastError = error;
+      lastErrorType = classifyFirebaseError(error);
+      console.error('Failed to permanently delete student via Firebase:', error);
+
+      if (attempt < RETRY_ATTEMPTS && shouldRetry(lastErrorType) && !isNavigatorOffline()) {
+        await wait(RETRY_DELAY_MS * attempt);
+        continue;
+      }
+
+      break;
+    }
+  }
+
+  if (!isOfflineError(lastErrorType)) {
+    logOnlineFailure('permanently delete student', lastErrorType);
+  }
+
+  return {
+    data: nextData,
+    remoteSaved: false,
+    error: lastError,
+    errorType: lastErrorType,
+    operation: 'permanently delete student',
+    offline: isOfflineError(lastErrorType)
+  };
+};
+
+const fetchStudentTrashList = async () => {
+  const userId = await ensureAuthenticatedUserId('list student trash');
+  const { classId } = await ensureActiveClassContext(userId, { requireClass: false });
+  if (!classId) {
+    return [];
+  }
+
+  const snapshot = await getDocs(getStudentsCollectionRef(userId, classId));
+  const trash = [];
+
+  snapshot.forEach((entry) => {
+    const payload = entry.data() || {};
+    if (payload.deleted !== true) {
+      return;
+    }
+
+    trash.push({
+      id: String(payload.id || entry.id || '').trim(),
+      name: String(payload.name || '').trim() || 'Student',
+      deletedAt: normalizeDeletedAtValue(payload.deletedAt)
+    });
+  });
+
+  return trash
+    .filter(entry => entry.id)
+    .sort((a, b) => {
+      const aTime = new Date(a.deletedAt || 0).getTime() || 0;
+      const bTime = new Date(b.deletedAt || 0).getTime() || 0;
+      return bTime - aTime;
+    });
+};
+
+const cleanupDeletedStudentsOlderThan = async (days = TRASH_RETENTION_DAYS) => {
+  const studentTrash = await fetchStudentTrashList();
+  if (!studentTrash.length) {
+    return 0;
+  }
+
+  const cutoff = Date.now() - (Math.max(Number(days) || TRASH_RETENTION_DAYS, 1) * 24 * 60 * 60 * 1000);
+  const expiredIds = studentTrash
+    .filter(entry => {
+      const time = new Date(entry.deletedAt || 0).getTime();
+      return Number.isFinite(time) && time > 0 && time < cutoff;
+    })
+    .map(entry => entry.id);
+
+  if (!expiredIds.length) {
+    return 0;
+  }
+
+  for (const studentId of expiredIds) {
+    const fallback = createDefaultRawData();
+    await persistStudentHardDeleteById(studentId, fallback);
+  }
+
+  return expiredIds.length;
 };
 
 const hasAnyRawData = (rawData) => {
@@ -260,15 +484,17 @@ const getStudentDocRef = (userId, studentId, classId = getCurrentClassContext())
 
 const mapStudentsToDocs = (students, userId, updatedAt) => {
   return asArray(students).map((student, index) => {
-    const docId = String(student?.id || '').trim() || toDocId('st', student?.name, index);
+    const id = String(student?.id || '').trim() || toDocId('student', student?.name || 'student', index);
     return {
-      id: docId,
+      id,
       data: {
-        id: docId,
+        id,
         name: String(student?.name || '').trim(),
         notes: student?.notes || '',
         class: student?.class || '',
         scores: student?.scores && typeof student.scores === 'object' ? clone(student.scores) : {},
+        deleted: false,
+        deletedAt: null,
         order: index,
         userId,
         updatedAt
@@ -312,13 +538,18 @@ const mapExamsToDocs = (exams, userId, updatedAt) => {
   });
 };
 
-const syncCollectionDocuments = async (collectionRef, targetDocs) => {
+const syncCollectionDocuments = async (collectionRef, targetDocs, options = {}) => {
+  const preserveDeleted = options?.preserveDeleted === true;
   const existingSnapshot = await getDocs(collectionRef);
   const targetMap = new Map((targetDocs || []).map((entry) => [entry.id, entry.data]));
   const operations = [];
 
   existingSnapshot.forEach((entry) => {
+    const payload = entry.data() || {};
     if (!targetMap.has(entry.id)) {
+      if (preserveDeleted && payload.deleted === true) {
+        return;
+      }
       operations.push(deleteDoc(entry.ref));
     }
   });
@@ -344,7 +575,7 @@ const writeModularData = async (userId, classId, rawData) => {
   const examDocs = mapExamsToDocs(normalized.exams, userId, updatedAt);
 
   await Promise.all([
-    syncCollectionDocuments(getStudentsCollectionRef(userId, normalizedClassId), studentDocs),
+    syncCollectionDocuments(getStudentsCollectionRef(userId, normalizedClassId), studentDocs, { preserveDeleted: true }),
     syncCollectionDocuments(getSubjectsCollectionRef(userId, normalizedClassId), subjectDocs),
     syncCollectionDocuments(getExamsCollectionRef(userId, normalizedClassId), examDocs)
   ]);
@@ -372,8 +603,18 @@ const readRawDataFromCollectionRefs = async (studentsRef, subjectsRef, examsRef)
   ]);
 
   const students = [];
+  const trashStudents = [];
   studentsSnapshot.forEach((entry) => {
     const payload = entry.data() || {};
+    const deletedAtIso = normalizeDeletedAtValue(payload.deletedAt);
+    if (payload.deleted === true) {
+      trashStudents.push({
+        id: String(payload.id || entry.id || '').trim(),
+        name: String(payload.name || '').trim() || 'Student',
+        deletedAt: deletedAtIso
+      });
+      return;
+    }
     students.push({
       id: String(payload.id || entry.id || '').trim(),
       name: String(payload.name || '').trim(),
@@ -388,6 +629,9 @@ const readRawDataFromCollectionRefs = async (studentsRef, subjectsRef, examsRef)
   const subjects = [];
   subjectsSnapshot.forEach((entry) => {
     const payload = entry.data() || {};
+    if (payload.deleted === true) {
+      return;
+    }
     subjects.push({
       name: String(payload.name || '').trim(),
       order: Number.isFinite(Number(payload.order)) ? Number(payload.order) : Number.MAX_SAFE_INTEGER
@@ -398,6 +642,9 @@ const readRawDataFromCollectionRefs = async (studentsRef, subjectsRef, examsRef)
   const exams = [];
   examsSnapshot.forEach((entry) => {
     const payload = entry.data() || {};
+    if (payload.deleted === true) {
+      return;
+    }
     exams.push({
       title: String(payload.title || payload.name || '').trim(),
       order: Number.isFinite(Number(payload.order)) ? Number(payload.order) : Number.MAX_SAFE_INTEGER
@@ -413,7 +660,14 @@ const readRawDataFromCollectionRefs = async (studentsRef, subjectsRef, examsRef)
 
   return {
     data,
-    hasData: hasAnyRawData(data)
+    hasData: hasAnyRawData(data),
+    trashStudents: trashStudents
+      .filter(entry => entry.id)
+      .sort((a, b) => {
+        const aTime = new Date(a.deletedAt || 0).getTime() || 0;
+        const bTime = new Date(b.deletedAt || 0).getTime() || 0;
+        return bTime - aTime;
+      })
   };
 };
 
@@ -422,7 +676,8 @@ const readModularRawData = async (userId, classId) => {
   if (!normalizedClassId) {
     return {
       data: createDefaultRawData(),
-      hasData: false
+      hasData: false,
+      trashStudents: []
     };
   }
 
@@ -696,8 +951,9 @@ const persistStudentUpdateById = async (studentId, studentData, nextData) => {
   };
 };
 
-const persistStudentDeleteById = async (studentId, nextData) => {
+const persistStudentDeleteById = async (studentId, nextData, studentMeta = {}) => {
   const normalizedStudentId = String(studentId || '').trim();
+  const normalizedStudentName = String(studentMeta?.name || '').trim() || 'Student';
   if (!normalizedStudentId) {
     const error = new Error('Student id is required to delete student');
     return {
@@ -721,7 +977,13 @@ const persistStudentDeleteById = async (studentId, nextData) => {
       console.log('Deleting student:', normalizedStudentId);
       console.log('User:', userId);
 
-      await deleteDoc(getStudentDocRef(userId, normalizedStudentId, classId));
+      await updateDoc(getStudentDocRef(userId, normalizedStudentId, classId), {
+        deleted: true,
+        deletedAt: serverTimestamp(),
+        updatedAt,
+        userId,
+        classId
+      });
 
       await setDoc(getClassDocRef(userId, classId), {
         id: classId,
@@ -741,7 +1003,12 @@ const persistStudentDeleteById = async (studentId, nextData) => {
         error: null,
         errorType: null,
         operation: 'delete student',
-        offline: false
+        offline: false,
+        trashEntry: {
+          id: normalizedStudentId,
+          name: normalizedStudentName,
+          deletedAt: new Date().toISOString()
+        }
       };
     } catch (error) {
       lastError = error;
@@ -901,6 +1168,7 @@ export const fetchAllData = async () => {
     if (cached?.data) {
       return {
         data: cached.data,
+        trashStudents: [],
         classes: cachedClasses,
         currentClassId: classId,
         currentClassName: className,
@@ -915,6 +1183,7 @@ export const fetchAllData = async () => {
     writeCacheCopy(fallback, classId);
     return {
       data: fallback,
+      trashStudents: [],
       classes: cachedClasses,
       currentClassId: classId,
       currentClassName: className,
@@ -938,6 +1207,7 @@ export const fetchAllData = async () => {
       if (!scopedClassId) {
         return {
           data: createDefaultRawData(),
+          trashStudents: [],
           classes: scopedClasses,
           currentClassId: '',
           currentClassName: scopedClassName,
@@ -951,25 +1221,12 @@ export const fetchAllData = async () => {
       const modularResult = await readModularRawData(userId, scopedClassId);
       writeClassCatalogCache(userId, scopedClasses);
 
-      if (modularResult?.hasData) {
-        writeCacheCopy(modularResult.data, scopedClassId);
-        console.log('Synced from Firebase (modular)');
-        return {
-          data: modularResult.data,
-          classes: scopedClasses,
-          currentClassId: scopedClassId,
-          currentClassName: scopedClassName,
-          source: 'firebase',
-          offline: false,
-          error: null,
-          errorType: null
-        };
-      }
-
-      const emptyData = createDefaultRawData();
-      writeCacheCopy(emptyData, scopedClassId);
+      const nextData = modularResult?.data || createDefaultRawData();
+      writeCacheCopy(nextData, scopedClassId);
+      console.log('Synced from Firebase (modular)');
       return {
-        data: emptyData,
+        data: nextData,
+        trashStudents: Array.isArray(modularResult?.trashStudents) ? modularResult.trashStudents : [],
         classes: scopedClasses,
         currentClassId: scopedClassId,
         currentClassName: scopedClassName,
@@ -1005,6 +1262,7 @@ export const fetchAllData = async () => {
   if (cached?.data) {
     return {
       data: cached.data,
+      trashStudents: [],
       classes: cachedClasses,
       currentClassId: classId,
       currentClassName: className,
@@ -1019,6 +1277,7 @@ export const fetchAllData = async () => {
   writeCacheCopy(fallback, classId);
   return {
     data: fallback,
+    trashStudents: [],
     classes: cachedClasses,
     currentClassId: classId,
     currentClassName: className,
@@ -1164,8 +1423,27 @@ export const updateStudent = async (rawData, studentId, studentData) => enqueueW
 export const deleteStudent = async (rawData, studentId) => enqueueWrite(async () => {
   const next = normalizeRawData(rawData);
   next.students = next.students.filter(student => student.id !== studentId);
-  return persistStudentDeleteById(studentId, next);
+  const studentMeta = asArray(rawData?.students).find(student => student?.id === studentId) || {};
+  return persistStudentDeleteById(studentId, next, studentMeta);
 });
+
+export const restoreStudent = async (rawData, studentId) => enqueueWrite(async () => {
+  const next = normalizeRawData(rawData);
+  return persistStudentRestoreById(studentId, next);
+});
+
+export const permanentlyDeleteStudent = async (rawData, studentId) => enqueueWrite(async () => {
+  const next = normalizeRawData(rawData);
+  return persistStudentHardDeleteById(studentId, next);
+});
+
+export const fetchStudentTrash = async () => {
+  return fetchStudentTrashList();
+};
+
+export const cleanupDeletedStudents = async (days = TRASH_RETENTION_DAYS) => {
+  return cleanupDeletedStudentsOlderThan(days);
+};
 
 export const saveScores = async (rawData, studentId, scores) => enqueueWrite(async () => {
   const next = normalizeRawData(rawData);

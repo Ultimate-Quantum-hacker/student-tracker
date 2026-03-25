@@ -16,6 +16,7 @@ window.TrackerApp = window.TrackerApp || {};
     currentClassId: '',
     currentClassName: 'My Class',
     students: [],
+    studentTrash: [],
     exams: [],
     subjects: [],
     scores: [],
@@ -120,6 +121,16 @@ window.TrackerApp = window.TrackerApp || {};
   };
 
   const deepClone = (value) => JSON.parse(JSON.stringify(value));
+
+  const sortTrashEntriesNewestFirst = (entries = []) => {
+    return deepClone(entries)
+      .filter(entry => String(entry?.id || '').trim())
+      .sort((a, b) => {
+        const aTime = new Date(a?.deletedAt || 0).getTime() || 0;
+        const bTime = new Date(b?.deletedAt || 0).getTime() || 0;
+        return bTime - aTime;
+      });
+  };
 
   const isNavigatorOffline = () => {
     return typeof navigator !== 'undefined' && navigator.onLine === false;
@@ -395,6 +406,7 @@ window.TrackerApp = window.TrackerApp || {};
 
       const remoteData = app.migrateToRawData(remoteResult?.data || createDefaultRawData());
       app.applyRawData(remoteData);
+      app.state.studentTrash = sortTrashEntriesNewestFirst(Array.isArray(remoteResult?.trashStudents) ? remoteResult.trashStudents : []);
       app.writeCachedData(remoteData, nextClassId);
 
       if (remoteResult?.source === 'firebase') {
@@ -434,9 +446,11 @@ window.TrackerApp = window.TrackerApp || {};
           }
         }
         app.applyRawData(app.migrateToRawData(fallbackCache.data));
+        app.state.studentTrash = sortTrashEntriesNewestFirst([]);
       } else {
         const fallback = createDefaultRawData();
         app.applyRawData(fallback);
+        app.state.studentTrash = sortTrashEntriesNewestFirst([]);
         app.writeCachedData(fallback);
       }
     } finally {
@@ -505,6 +519,7 @@ window.TrackerApp = window.TrackerApp || {};
       console.log('User ID:', app.state.authUser?.uid || '(none)');
 
       applyRuntimeCollections([], [], []);
+      app.state.studentTrash = sortTrashEntriesNewestFirst([]);
 
       if (typeof dataService.setCurrentClassId === 'function') {
         dataService.setCurrentClassId(nextClassId);
@@ -567,6 +582,47 @@ window.TrackerApp = window.TrackerApp || {};
     });
   };
 
+  app.restoreAllStudentsFromTrash = async function () {
+    return enqueueStateWrite(async () => {
+      const trashIds = sortTrashEntriesNewestFirst(app.state.studentTrash || [])
+        .map(entry => String(entry?.id || '').trim())
+        .filter(Boolean);
+
+      if (!trashIds.length) {
+        return 0;
+      }
+
+      for (const studentId of trashIds) {
+        const saveResult = await dataService.restoreStudent(app.getRawData(), studentId);
+        assertRemoteWriteSucceeded(saveResult, 'restore student');
+      }
+
+      await app.load();
+      app.state.studentTrash = sortTrashEntriesNewestFirst(app.state.studentTrash || []);
+      return trashIds.length;
+    });
+  };
+
+  app.emptyStudentTrash = async function () {
+    return enqueueStateWrite(async () => {
+      const trashIds = sortTrashEntriesNewestFirst(app.state.studentTrash || [])
+        .map(entry => String(entry?.id || '').trim())
+        .filter(Boolean);
+
+      if (!trashIds.length) {
+        return 0;
+      }
+
+      for (const studentId of trashIds) {
+        const saveResult = await dataService.permanentlyDeleteStudent(app.getRawData(), studentId);
+        assertRemoteWriteSucceeded(saveResult, 'permanently delete student');
+      }
+
+      app.state.studentTrash = [];
+      return trashIds.length;
+    });
+  };
+
   app.updateStudent = async function (studentId, studentData) {
     return enqueueStateWrite(async () => {
       try {
@@ -591,15 +647,73 @@ window.TrackerApp = window.TrackerApp || {};
   app.deleteStudent = async function (studentId) {
     return enqueueStateWrite(async () => {
       try {
+        const existingStudent = deepClone(app.state.students || []).find(s => s.id === studentId);
+        if (!existingStudent) {
+          throw new Error('Student not found or already deleted');
+        }
+
         const nextStudents = deepClone(app.state.students || []).filter(s => s.id !== studentId);
         const nextSubjects = deepClone(app.state.subjects || []);
         const nextExams = deepClone(app.state.exams || []);
 
         const saveResult = await dataService.deleteStudent(app.getRawData(), studentId);
         syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult, 'delete student');
-        return true;
+
+        const deletedEntry = saveResult?.trashEntry || {
+          id: studentId,
+          name: existingStudent.name || 'Student',
+          deletedAt: new Date().toISOString()
+        };
+
+        app.state.studentTrash = sortTrashEntriesNewestFirst([
+          deletedEntry,
+          ...deepClone(app.state.studentTrash || []).filter(entry => entry?.id !== studentId)
+        ]);
+
+        return deletedEntry;
       } catch (error) {
         console.error('Failed to delete student:', error);
+        throw error;
+      }
+    });
+  };
+
+  app.restoreStudent = async function (studentId) {
+    return enqueueStateWrite(async () => {
+      try {
+        const trashEntry = deepClone(app.state.studentTrash || []).find(s => s.id === studentId);
+        if (!trashEntry) {
+          throw new Error('Student is not in trash');
+        }
+
+        const saveResult = await dataService.restoreStudent(app.getRawData(), studentId);
+        assertRemoteWriteSucceeded(saveResult, 'restore student');
+
+        await app.load();
+        app.state.studentTrash = deepClone(app.state.studentTrash || []).filter(entry => entry?.id !== studentId);
+        return true;
+      } catch (error) {
+        console.error('Failed to restore student:', error);
+        throw error;
+      }
+    });
+  };
+
+  app.permanentlyDeleteStudent = async function (studentId) {
+    return enqueueStateWrite(async () => {
+      try {
+        const trashEntry = deepClone(app.state.studentTrash || []).find(s => s.id === studentId);
+        if (!trashEntry) {
+          throw new Error('Student is not in trash');
+        }
+
+        const saveResult = await dataService.permanentlyDeleteStudent(app.getRawData(), studentId);
+        assertRemoteWriteSucceeded(saveResult, 'permanently delete student');
+
+        app.state.studentTrash = deepClone(app.state.studentTrash || []).filter(entry => entry?.id !== studentId);
+        return true;
+      } catch (error) {
+        console.error('Failed to permanently delete student:', error);
         throw error;
       }
     });

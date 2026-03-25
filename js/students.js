@@ -49,18 +49,56 @@ const students = {
     const uiRef = resolveUi(runtimeUi, appRef);
     const uid = appRef.state.deletingId;
     if (!uid) return;
+    const student = appRef.state.students.find(x => x.id === uid);
+    const studentName = student?.name || 'Student';
     
     try {
       console.log('Deleting student:', uid);
       console.log('User:', auth?.currentUser?.uid || 'unknown');
-      await appRef.deleteStudent(uid);
+      const deletedEntry = await appRef.deleteStudent(uid);
       appRef.state.deletingId = null;
       appRef.dom.deleteModal?.classList.remove('active');
       uiRef?.refreshUI?.();
-      uiRef?.showToast?.('Student deleted');
+      uiRef?.showUndoDeleteToast?.(deletedEntry?.id || uid, deletedEntry?.name || studentName);
     } catch (error) {
       console.error('Failed to delete student:', error);
       uiRef?.showToast?.('Failed to delete student');
+    }
+  },
+
+  restoreStudent: async function (uid, runtimeApp, runtimeUi) {
+    const appRef = resolveApp(runtimeApp);
+    const uiRef = resolveUi(runtimeUi, appRef);
+    const normalizedId = String(uid || '').trim();
+    if (!normalizedId) return false;
+
+    try {
+      await appRef.restoreStudent(normalizedId);
+      uiRef?.refreshUI?.();
+      uiRef?.showToast?.('Student restored');
+      return true;
+    } catch (error) {
+      console.error('Failed to restore student:', error);
+      uiRef?.showToast?.('Failed to restore student');
+      return false;
+    }
+  },
+
+  permanentlyDeleteStudent: async function (uid, runtimeApp, runtimeUi) {
+    const appRef = resolveApp(runtimeApp);
+    const uiRef = resolveUi(runtimeUi, appRef);
+    const normalizedId = String(uid || '').trim();
+    if (!normalizedId) return false;
+
+    try {
+      await appRef.permanentlyDeleteStudent(normalizedId);
+      uiRef?.refreshUI?.();
+      uiRef?.showToast?.('Student permanently deleted');
+      return true;
+    } catch (error) {
+      console.error('Failed to permanently delete student:', error);
+      uiRef?.showToast?.('Failed to delete student');
+      return false;
     }
   },
 
