@@ -339,15 +339,15 @@ const exportModule = {
         };
 
         const PALETTE = {
-          darkHeader: '0F172A',
-          metaBg: 'E2E8F0',
-          headerBg: '1F2937',
-          rowAlt: 'F8FAFC',
+          darkHeader: '1E3A8A',
+          metaBg: 'F3F4F6',
+          headerBg: '2563EB',
+          rowAlt: 'F9FAFB',
           border: 'CBD5E1',
           statusStrongBg: '16A34A',
           statusGoodBg: '2563EB',
-          statusAverageBg: 'EAB308',
-          statusBorderlineBg: 'EA580C',
+          statusAverageBg: 'FACC15',
+          statusBorderlineBg: 'FB923C',
           statusRiskBg: 'DC2626',
           statusNeutralBg: '64748B'
         };
@@ -355,13 +355,16 @@ const exportModule = {
         setStyle(ws.A1, {
           fill: { fgColor: { rgb: PALETTE.darkHeader } },
           font: { bold: true, sz: 16, color: { rgb: 'FFFFFF' } },
-          alignment: { horizontal: 'center', vertical: 'center' }
+          alignment: { horizontal: 'center', vertical: 'center' },
+          border: {
+            bottom: { style: 'medium', color: { rgb: PALETTE.border } }
+          }
         });
 
         ['A2', 'A3', 'A4'].forEach((ref) => {
           setStyle(ws[ref], {
             fill: { fgColor: { rgb: PALETTE.metaBg } },
-            font: { sz: 11, color: { rgb: '334155' } },
+            font: { sz: 12, color: { rgb: '334155' } },
             alignment: { horizontal: 'left', vertical: 'center' }
           });
         });
@@ -373,10 +376,10 @@ const exportModule = {
             font: { bold: true, color: { rgb: 'FFFFFF' } },
             alignment: { horizontal: 'center', vertical: 'center' },
             border: {
-              top: { style: 'thin', color: { rgb: PALETTE.border } },
-              bottom: { style: 'thin', color: { rgb: PALETTE.border } },
-              left: { style: 'thin', color: { rgb: PALETTE.border } },
-              right: { style: 'thin', color: { rgb: PALETTE.border } }
+              top: { style: 'medium', color: { rgb: PALETTE.border } },
+              bottom: { style: 'medium', color: { rgb: PALETTE.border } },
+              left: { style: 'medium', color: { rgb: PALETTE.border } },
+              right: { style: 'medium', color: { rgb: PALETTE.border } }
             }
           });
         }
@@ -437,6 +440,44 @@ const exportModule = {
               }
             });
           }
+        }
+
+        for (let r = headerRowIndex; r < totalRows; r += 1) {
+          const leftRef = XLSX.utils.encode_cell({ r, c: 0 });
+          const rightRef = XLSX.utils.encode_cell({ r, c: lastCol });
+          const leftCell = ws[leftRef];
+          const rightCell = ws[rightRef];
+
+          if (leftCell) {
+            setStyle(leftCell, {
+              border: {
+                ...(leftCell.s?.border || {}),
+                left: { style: 'medium', color: { rgb: PALETTE.border } }
+              }
+            });
+          }
+
+          if (rightCell) {
+            setStyle(rightCell, {
+              border: {
+                ...(rightCell.s?.border || {}),
+                right: { style: 'medium', color: { rgb: PALETTE.border } }
+              }
+            });
+          }
+        }
+
+        const lastTableRowIndex = Math.max(dataStartRowIndex, totalRows - 1);
+        for (let c = 0; c <= lastCol; c += 1) {
+          const bottomRef = XLSX.utils.encode_cell({ r: lastTableRowIndex, c });
+          const bottomCell = ws[bottomRef];
+          if (!bottomCell) continue;
+          setStyle(bottomCell, {
+            border: {
+              ...(bottomCell.s?.border || {}),
+              bottom: { style: 'medium', color: { rgb: PALETTE.border } }
+            }
+          });
         }
 
         const wb = XLSX.utils.book_new();
