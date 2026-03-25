@@ -2294,6 +2294,8 @@ body.dark-mode #class-chart-container {
   max-width:min(92vw,460px)
 }
 
+.toast.show{pointer-events:auto}
+
 .toast-message{
   flex:1;
   line-height:1.3

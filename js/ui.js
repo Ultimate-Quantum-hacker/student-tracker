@@ -186,8 +186,11 @@ const ui = {
         actionButton.textContent = String(options.actionLabel || '').trim();
         actionButton.addEventListener('click', async () => {
           actionButton.disabled = true;
-          this.hideToast();
-          await options.onAction();
+          try {
+            await options.onAction();
+          } catch (error) {
+            console.error('Toast action failed:', error);
+          }
         });
         toast.appendChild(actionButton);
       }
