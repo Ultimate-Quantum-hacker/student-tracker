@@ -73,7 +73,32 @@
 .notes-cell:hover,.report-cell:hover{text-decoration:underline}
 
 /* Sidebar redesign */
-.sidebar{padding:1rem .7rem 1.15rem;border-right:1px solid var(--border)}
+#app-main{
+  transition:grid-template-columns .3s ease;
+}
+
+#app-main.sidebar-collapsed{
+  grid-template-columns:0 1fr;
+}
+
+.sidebar{
+  padding:1rem .7rem 1.15rem;
+  border-right:1px solid var(--border);
+  transition:transform .3s ease, opacity .3s ease;
+}
+
+.sidebar.closed{
+  transform:translateX(-100%);
+  opacity:.98;
+  pointer-events:none;
+}
+
+.sidebar.open{
+  transform:translateX(0);
+  opacity:1;
+  pointer-events:auto;
+}
+
 .sidebar-nav{gap:1rem}
 .sidebar-section{display:flex;flex-direction:column;gap:.3rem}
 .sidebar-title{font-size:.7rem;font-weight:700;color:var(--text-secondary);letter-spacing:.08em;text-transform:uppercase;padding:.2rem .65rem}
@@ -709,8 +734,14 @@ body.dark-mode .hm-category-badge{color:#f8fafc}
 }
 
 /* Header branding refinement */
+#app-header{
+  padding:.85rem 1rem;
+}
+
 .header-inner{
   gap:.8rem;
+  justify-content:space-between;
+  align-items:center;
 }
 
 .logo{
@@ -720,6 +751,12 @@ body.dark-mode .hm-category-badge{color:#f8fafc}
   min-width:0;
   flex:1;
   justify-content:flex-start;
+}
+
+.mobile-menu-button{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
 }
 
 .app-logo{
@@ -784,6 +821,36 @@ body.dark-mode .hm-category-badge{color:#f8fafc}
   flex:0 0 auto;
 }
 
+.auth-session-control{
+  display:flex;
+  align-items:center;
+  gap:.55rem;
+}
+
+.user-avatar{
+  width:36px;
+  height:36px;
+  border-radius:50%;
+  background:linear-gradient(135deg, #4f46e5, #3b82f6);
+  color:#fff;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-weight:700;
+  font-size:.95rem;
+  cursor:pointer;
+  transition:opacity .2s ease;
+  user-select:none;
+}
+
+.user-avatar:hover{
+  opacity:.85;
+}
+
+body.dark-mode .user-avatar{
+  background:linear-gradient(135deg, #2563eb, #1d4ed8);
+}
+
 .header-tool-bridge{
   display:none !important;
 }
@@ -816,6 +883,7 @@ body.dark-mode .header-install-btn{
 }
 
 @media (max-width:768px){
+  #app-main.sidebar-collapsed{grid-template-columns:1fr}
   .sidebar{padding:.85rem .55rem 1rem}
   .sidebar .sidebar-nav{gap:.8rem}
   .sidebar .sidebar-title{padding:.2rem .55rem}
@@ -824,6 +892,8 @@ body.dark-mode .header-install-btn{
   .logo-title{font-size:1.02rem}
   .logo-motto{font-size:.74rem;max-width:46vw}
   .header-install-btn{min-height:34px;padding:.4rem .65rem;font-size:.78rem}
+  .auth-session-control{gap:.45rem}
+  .user-avatar{width:34px;height:34px;font-size:.88rem}
   .system-tools-section{padding:.62rem;gap:.45rem}
   .system-tools-status{font-size:.75rem;padding:.5rem .55rem}
   .system-tools-btn{font-size:.84rem;padding:.56rem .58rem;gap:.5rem}

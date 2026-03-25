@@ -48,9 +48,12 @@ const setAuthUserState = (authUser) => {
     }
     : null;
 
-  const authUserEmailEl = document.getElementById('auth-user-email');
-  if (authUserEmailEl) {
-    authUserEmailEl.textContent = app.state.authUser?.email || '';
+  const authUserAvatarEl = document.getElementById('auth-user-avatar');
+  if (authUserAvatarEl) {
+    const email = String(app.state.authUser?.email || '').trim();
+    authUserAvatarEl.textContent = email ? email.charAt(0).toUpperCase() : '?';
+    authUserAvatarEl.title = email || 'User';
+    authUserAvatarEl.setAttribute('aria-label', email ? `Signed in as ${email}` : 'Signed in user');
   }
 };
 
@@ -136,10 +139,13 @@ const ensureLogoutButton = () => {
   const authControl = document.createElement('div');
   authControl.className = 'auth-session-control';
 
-  const email = document.createElement('span');
-  email.id = 'auth-user-email';
-  email.className = 'backup-status';
-  email.textContent = app.state.authUser?.email || '';
+  const avatar = document.createElement('div');
+  avatar.id = 'auth-user-avatar';
+  avatar.className = 'user-avatar';
+  const email = String(app.state.authUser?.email || '').trim();
+  avatar.textContent = email ? email.charAt(0).toUpperCase() : '?';
+  avatar.title = email || 'User';
+  avatar.setAttribute('aria-label', email ? `Signed in as ${email}` : 'Signed in user');
 
   const button = document.createElement('button');
   button.id = 'auth-logout-btn';
@@ -167,7 +173,7 @@ const ensureLogoutButton = () => {
     }
   });
 
-  authControl.appendChild(email);
+  authControl.appendChild(avatar);
   authControl.appendChild(button);
   headerControls.appendChild(authControl);
 };

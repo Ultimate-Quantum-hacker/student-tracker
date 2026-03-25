@@ -6,13 +6,20 @@
 import app from './state.js';
 
 const sidebar = {
+  initialized: false,
+
   init: function () {
+    if (this.initialized) return;
+    this.initialized = true;
+
     console.log("Initializing sidebar...");
     
     const sidebar = document.querySelector('.sidebar');
     const overlay = document.querySelector('.sidebar-overlay');
     const items = document.querySelectorAll('.sidebar-item');
     const toggleBtn = document.getElementById('mobileMenuToggle');
+    const appMain = document.getElementById('app-main');
+    let isSidebarOpen = true;
 
     console.log("Sidebar elements found:", {
       items: items.length,
@@ -21,49 +28,63 @@ const sidebar = {
       toggleBtn: !!toggleBtn
     });
 
-    const closeSidebar = () => {
-      console.log("Closing sidebar");
-      if (sidebar) sidebar.classList.remove('open');
-      if (overlay) overlay.classList.remove('active');
+    const isMobileViewport = () => window.innerWidth <= 768;
+
+    const applySidebarState = () => {
+      if (!sidebar) return;
+
+      sidebar.classList.toggle('open', isSidebarOpen);
+      sidebar.classList.toggle('closed', !isSidebarOpen);
+
+      if (appMain) {
+        appMain.classList.toggle('sidebar-collapsed', !isSidebarOpen);
+      }
+
+      if (overlay) {
+        const shouldShowOverlay = isMobileViewport() && isSidebarOpen;
+        overlay.classList.toggle('active', shouldShowOverlay);
+      }
+
+      if (toggleBtn) {
+        toggleBtn.setAttribute('aria-expanded', String(isSidebarOpen));
+        toggleBtn.title = isSidebarOpen ? 'Close menu' : 'Open menu';
+      }
     };
 
-    const openSidebar = () => {
-      console.log("Opening sidebar");
-      if (sidebar) sidebar.classList.add('open');
-      if (overlay) overlay.classList.add('active');
+    const setSidebarOpen = (nextState) => {
+      isSidebarOpen = Boolean(nextState);
+      applySidebarState();
     };
+
+    const toggleSidebar = () => {
+      setSidebarOpen(!isSidebarOpen);
+    };
+
+    if (isMobileViewport()) {
+      setSidebarOpen(false);
+    } else {
+      applySidebarState();
+    }
 
     if (toggleBtn) {
+      toggleBtn.setAttribute('aria-controls', 'sidebar-nav');
+      toggleBtn.setAttribute('aria-expanded', String(isSidebarOpen));
+
       toggleBtn.addEventListener('click', (e) => {
         console.log("Menu toggle clicked", e);
         e.preventDefault();
         e.stopPropagation();
-        
-        if (sidebar && sidebar.classList.contains('open')) {
-          closeSidebar();
-        } else {
-          openSidebar();
-        }
-      });
-      
-      // Also add touch event for mobile
-      toggleBtn.addEventListener('touchstart', (e) => {
-        console.log("Menu toggle touched", e);
-        e.preventDefault();
-        e.stopPropagation();
-        
-        if (sidebar && sidebar.classList.contains('open')) {
-          closeSidebar();
-        } else {
-          openSidebar();
-        }
+
+        toggleSidebar();
       });
     } else {
       console.warn("Mobile menu toggle button not found!");
     }
 
     if (overlay) {
-      overlay.addEventListener('click', closeSidebar);
+      overlay.addEventListener('click', () => {
+        setSidebarOpen(false);
+      });
     }
 
     items.forEach(item => {
@@ -79,7 +100,7 @@ const sidebar = {
 
         // Close mobile sidebar after selection
         if (window.innerWidth <= 768) {
-          closeSidebar();
+          setSidebarOpen(false);
         }
       });
     });
@@ -87,7 +108,9 @@ const sidebar = {
     // Close sidebar when navigating away/resizing to desktop
     window.addEventListener('resize', () => {
       if (window.innerWidth > 768) {
-        closeSidebar();
+        setSidebarOpen(true);
+      } else {
+        setSidebarOpen(false);
       }
     });
     
