@@ -442,6 +442,15 @@
 
       <section id="students" class="content-section">
         <div class="section-header"><h2>Student Roster</h2></div>
+        <div class="class-switcher card">
+          <div class="class-switcher-main">
+            <label for="class-selector">Current Class</label>
+            <select id="class-selector" aria-label="Select class"></select>
+            <button type="button" class="btn btn-secondary btn-sm" id="create-class-btn">Create Class</button>
+            <button type="button" class="btn btn-danger btn-sm" id="delete-class-btn">Delete Class</button>
+          </div>
+          <p id="class-name-display" class="class-switcher-name">Class: My Class</p>
+        </div>
         <div class="card student-roster-card">
           <div class="student-roster-toolbar">
             <form id="add-student-form" class="form-row student-roster-form">

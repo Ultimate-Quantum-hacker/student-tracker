@@ -32,6 +32,10 @@ const domIds = {
   systemThemeToggleBtn: 'system-theme-toggle-btn',
   systemResetBtn: 'system-reset-btn',
   form: 'add-student-form',
+  classSelector: 'class-selector',
+  createClassBtn: 'create-class-btn',
+  deleteClassBtn: 'delete-class-btn',
+  classNameDisplay: 'class-name-display',
   nameInput: 'student-name-input',
   studentRosterSearchInput: 'student-roster-search-input',
   studentCount: 'student-count',
@@ -116,6 +120,7 @@ const domIds = {
 
 const ui = {
     isReportExporting: false,
+    hasPromptedForMissingClass: false,
 
     init: function () {
       console.log('UI init running');
@@ -164,6 +169,70 @@ const ui = {
       if (statusType === 'no-data') return 'No Data';
       if (statusType === 'safe') return 'Safe';
       return 'No Data';
+    },
+
+    renderClassControls: function () {
+      const classes = Array.isArray(app.state.classes) ? app.state.classes : [];
+      const currentClassId = String(app.state.currentClassId || '').trim();
+      const activeClass = classes.find(entry => String(entry?.id || '').trim() === currentClassId) || classes[0] || null;
+      const resolvedClassId = String(activeClass?.id || currentClassId || '').trim();
+      const activeClassName = activeClass?.name || app.state.currentClassName || 'My Class';
+
+      app.state.currentClassId = resolvedClassId;
+      app.state.currentClassName = activeClassName;
+
+      if (app.dom.classNameDisplay) {
+        app.dom.classNameDisplay.textContent = `Class: ${activeClassName}`;
+      }
+
+      if (app.dom.classSelector) {
+        if (!classes.length) {
+          app.dom.classSelector.innerHTML = '<option value="">No classes available</option>';
+          app.dom.classSelector.disabled = true;
+        } else {
+          app.dom.classSelector.innerHTML = classes.map((entry) => {
+            const classId = String(entry?.id || '').trim();
+            const className = String(entry?.name || 'My Class').trim() || 'My Class';
+            return `<option value="${app.utils.esc(classId)}">${app.utils.esc(className)}</option>`;
+          }).join('');
+
+          app.dom.classSelector.disabled = false;
+          app.dom.classSelector.value = resolvedClassId || String(classes[0]?.id || '');
+        }
+      }
+
+      if (app.dom.deleteClassBtn) {
+        app.dom.deleteClassBtn.disabled = classes.length <= 1 || !resolvedClassId;
+      }
+
+      if (app.dom.form) {
+        app.dom.form.querySelectorAll('input, button').forEach((entry) => {
+          entry.disabled = !classes.length;
+        });
+      }
+
+      if (!classes.length && !app.state.isLoading && !this.hasPromptedForMissingClass) {
+        this.hasPromptedForMissingClass = true;
+        setTimeout(async () => {
+          const className = prompt('No class found. Enter a class name to get started:', 'My Class');
+          const normalizedName = String(className || '').trim();
+          if (!normalizedName) {
+            this.showToast('Create a class to continue');
+            return;
+          }
+
+          try {
+            await app.createClass(normalizedName);
+            this.refreshUI();
+            this.showToast('Class created');
+          } catch (error) {
+            console.error('Failed to create class:', error);
+            this.showToast('Failed to create class');
+          }
+        }, 0);
+      } else if (classes.length) {
+        this.hasPromptedForMissingClass = false;
+      }
     },
 
     clearAllData: async function () {
@@ -1261,6 +1330,7 @@ const ui = {
       console.log("Refreshing UI...");
       try {
         if (app.dom.emptyMsg) app.dom.emptyMsg.style.display = app.state.students.length ? 'none' : 'block';
+        this.renderClassControls();
         this.renderManagement();
         this.populateSelects();
         this.loadScoreFields();
@@ -1382,6 +1452,58 @@ const ui = {
             if (didAddStudent && app.dom.nameInput) {
               app.dom.nameInput.value = '';
               app.dom.nameInput.focus();
+            }
+          };
+        }
+        if (app.dom.classSelector) {
+          app.dom.classSelector.onchange = async (e) => {
+            const nextClassId = String(e.target.value || '').trim();
+            if (!nextClassId) return;
+
+            try {
+              if (app.dom.classSelector) app.dom.classSelector.disabled = true;
+              if (app.dom.createClassBtn) app.dom.createClassBtn.disabled = true;
+              if (app.dom.deleteClassBtn) app.dom.deleteClassBtn.disabled = true;
+              await app.switchClass(nextClassId);
+              this.refreshUI();
+              this.showToast('Class switched');
+            } catch (error) {
+              console.error('Failed to switch class:', error);
+              this.showToast('Failed to switch class');
+            } finally {
+              this.renderClassControls();
+            }
+          };
+        }
+        if (app.dom.createClassBtn) {
+          app.dom.createClassBtn.onclick = async () => {
+            const className = prompt('Enter class name', 'My Class');
+            const normalizedName = String(className || '').trim();
+            if (!normalizedName) return;
+
+            try {
+              await app.createClass(normalizedName);
+              this.refreshUI();
+              this.showToast('Class created');
+            } catch (error) {
+              console.error('Failed to create class:', error);
+              this.showToast(error?.message || 'Failed to create class');
+            }
+          };
+        }
+        if (app.dom.deleteClassBtn) {
+          app.dom.deleteClassBtn.onclick = async () => {
+            const activeClassName = app.state.currentClassName || 'this class';
+            const shouldDelete = confirm(`Delete ${activeClassName}? This will remove all students, subjects, and exams in the class.`);
+            if (!shouldDelete) return;
+
+            try {
+              await app.deleteClass(app.state.currentClassId);
+              this.refreshUI();
+              this.showToast('Class deleted');
+            } catch (error) {
+              console.error('Failed to delete class:', error);
+              this.showToast(error?.message || 'Failed to delete class');
             }
           };
         }

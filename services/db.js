@@ -7,9 +7,13 @@ import { db, doc, collection, getDocs, setDoc, updateDoc, deleteDoc, isFirebaseC
 
 const CACHE_KEY_PREFIX = 'studentAppData';
 const USERS_COLLECTION = 'users';
+const CLASSES_SUBCOLLECTION = 'classes';
 const STUDENTS_SUBCOLLECTION = 'students';
 const SUBJECTS_SUBCOLLECTION = 'subjects';
 const EXAMS_SUBCOLLECTION = 'exams';
+const DEFAULT_CLASS_NAME = 'My Class';
+
+let currentClassId = '';
 
 const createDefaultRawData = () => ({
   students: [],
@@ -103,12 +107,163 @@ const ensureAuthenticatedUserId = async (operationLabel = 'access data') => {
   return userId;
 };
 
-const getCacheKeyForUser = (userId) => `${CACHE_KEY_PREFIX}:${userId}`;
+const normalizeClassId = (value) => String(value || '').trim();
+const normalizeClassName = (value, fallback = DEFAULT_CLASS_NAME) => {
+  const normalized = String(value || '').trim();
+  return normalized || fallback;
+};
+
+const createClassDocId = (className = DEFAULT_CLASS_NAME) => {
+  const base = String(className || DEFAULT_CLASS_NAME)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return `class_${base || 'default'}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+};
+
+const getClassSelectionKeyForUser = (userId) => `${CACHE_KEY_PREFIX}:activeClass:${userId}`;
+
+const persistClassSelection = (userId, classId) => {
+  if (!userId) return;
+  const selectionKey = getClassSelectionKeyForUser(userId);
+  const normalizedClassId = normalizeClassId(classId);
+
+  if (typeof sessionStorage !== 'undefined') {
+    if (normalizedClassId) {
+      sessionStorage.setItem(selectionKey, normalizedClassId);
+    } else {
+      sessionStorage.removeItem(selectionKey);
+    }
+  }
+
+  if (typeof localStorage !== 'undefined') {
+    if (normalizedClassId) {
+      localStorage.setItem(selectionKey, normalizedClassId);
+    } else {
+      localStorage.removeItem(selectionKey);
+    }
+  }
+};
+
+const readPersistedClassSelection = (userId) => {
+  if (!userId) return '';
+  const selectionKey = getClassSelectionKeyForUser(userId);
+  const sessionClassId = typeof sessionStorage !== 'undefined'
+    ? normalizeClassId(sessionStorage.getItem(selectionKey))
+    : '';
+  if (sessionClassId) return sessionClassId;
+
+  return typeof localStorage !== 'undefined'
+    ? normalizeClassId(localStorage.getItem(selectionKey))
+    : '';
+};
+
+const setCurrentClassContext = (classId, userId = getCurrentUserId()) => {
+  currentClassId = normalizeClassId(classId);
+  if (userId) {
+    persistClassSelection(userId, currentClassId);
+  }
+  return currentClassId;
+};
+
+const getCurrentClassContext = () => normalizeClassId(currentClassId);
+
+const toClassModel = (classId, payload = {}) => {
+  const id = normalizeClassId(classId);
+  return {
+    id,
+    name: normalizeClassName(payload.name || payload.title || DEFAULT_CLASS_NAME),
+    createdAt: payload.createdAt || null
+  };
+};
+
+const sortClasses = (classes = []) => {
+  return [...classes].sort((a, b) => {
+    const aCreated = String(a?.createdAt || '');
+    const bCreated = String(b?.createdAt || '');
+    if (aCreated && bCreated && aCreated !== bCreated) {
+      return aCreated.localeCompare(bCreated);
+    }
+    return String(a?.name || '').localeCompare(String(b?.name || ''));
+  });
+};
+
+const getClassesCollectionRef = (userId) => collection(db, USERS_COLLECTION, userId, CLASSES_SUBCOLLECTION);
+const getClassDocRef = (userId, classId) => doc(db, USERS_COLLECTION, userId, CLASSES_SUBCOLLECTION, classId);
+const getClassStudentsCollectionRef = (userId, classId) => collection(db, USERS_COLLECTION, userId, CLASSES_SUBCOLLECTION, classId, STUDENTS_SUBCOLLECTION);
+const getClassSubjectsCollectionRef = (userId, classId) => collection(db, USERS_COLLECTION, userId, CLASSES_SUBCOLLECTION, classId, SUBJECTS_SUBCOLLECTION);
+const getClassExamsCollectionRef = (userId, classId) => collection(db, USERS_COLLECTION, userId, CLASSES_SUBCOLLECTION, classId, EXAMS_SUBCOLLECTION);
+const getClassStudentDocRef = (userId, classId, studentId) => doc(db, USERS_COLLECTION, userId, CLASSES_SUBCOLLECTION, classId, STUDENTS_SUBCOLLECTION, studentId);
+
+const getLegacyStudentsCollectionRef = (userId) => collection(db, USERS_COLLECTION, userId, STUDENTS_SUBCOLLECTION);
+const getLegacySubjectsCollectionRef = (userId) => collection(db, USERS_COLLECTION, userId, SUBJECTS_SUBCOLLECTION);
+const getLegacyExamsCollectionRef = (userId) => collection(db, USERS_COLLECTION, userId, EXAMS_SUBCOLLECTION);
+
+const resolveClassIdFromCatalog = (userId, classes = []) => {
+  const normalizedClasses = sortClasses(classes)
+    .map(entry => toClassModel(entry.id, entry))
+    .filter(entry => entry.id);
+
+  if (!normalizedClasses.length) {
+    setCurrentClassContext('', userId);
+    return '';
+  }
+
+  const requestedClassId = normalizeClassId(currentClassId) || readPersistedClassSelection(userId);
+  const matchedClass = normalizedClasses.find(entry => entry.id === requestedClassId);
+  const nextClassId = matchedClass?.id || normalizedClasses[0].id;
+  setCurrentClassContext(nextClassId, userId);
+  return nextClassId;
+};
+
+const getClassCatalogCacheKeyForUser = (userId) => `${CACHE_KEY_PREFIX}:classes:${userId}`;
+
+const writeClassCatalogCache = (userId, classes = []) => {
+  if (!userId || typeof localStorage === 'undefined') return;
+  const payload = {
+    classes: sortClasses(classes)
+      .map(entry => toClassModel(entry.id, entry))
+      .filter(entry => entry.id),
+    lastUpdated: new Date().toISOString()
+  };
+  localStorage.setItem(getClassCatalogCacheKeyForUser(userId), JSON.stringify(payload));
+};
+
+const readClassCatalogCache = (userId) => {
+  if (!userId || typeof localStorage === 'undefined') return [];
+  const raw = localStorage.getItem(getClassCatalogCacheKeyForUser(userId));
+  if (!raw) return [];
+
+  try {
+    const parsed = JSON.parse(raw);
+    const classes = asArray(parsed?.classes)
+      .map(entry => toClassModel(entry?.id, entry))
+      .filter(entry => entry.id);
+    return sortClasses(classes);
+  } catch (_error) {
+    return [];
+  }
+};
+
+const resolveActiveClassModel = (userId, classes = []) => {
+  const normalized = sortClasses(classes)
+    .map(entry => toClassModel(entry.id, entry))
+    .filter(entry => entry.id);
+  const classId = resolveClassIdFromCatalog(userId, normalized);
+  const activeClass = normalized.find(entry => entry.id === classId) || null;
+  return {
+    classId,
+    className: activeClass?.name || DEFAULT_CLASS_NAME
+  };
+};
+
+const getCacheKeyForUser = (userId, classId = '') => `${CACHE_KEY_PREFIX}:${userId}:${normalizeClassId(classId) || 'default'}`;
 const getUserRootRef = (userId) => doc(db, USERS_COLLECTION, userId);
-const getStudentsCollectionRef = (userId) => collection(db, USERS_COLLECTION, userId, STUDENTS_SUBCOLLECTION);
-const getSubjectsCollectionRef = (userId) => collection(db, USERS_COLLECTION, userId, SUBJECTS_SUBCOLLECTION);
-const getExamsCollectionRef = (userId) => collection(db, USERS_COLLECTION, userId, EXAMS_SUBCOLLECTION);
-const getStudentDocRef = (userId, studentId) => doc(db, USERS_COLLECTION, userId, STUDENTS_SUBCOLLECTION, studentId);
+const getStudentsCollectionRef = (userId, classId = getCurrentClassContext()) => getClassStudentsCollectionRef(userId, normalizeClassId(classId));
+const getSubjectsCollectionRef = (userId, classId = getCurrentClassContext()) => getClassSubjectsCollectionRef(userId, normalizeClassId(classId));
+const getExamsCollectionRef = (userId, classId = getCurrentClassContext()) => getClassExamsCollectionRef(userId, normalizeClassId(classId));
+const getStudentDocRef = (userId, studentId, classId = getCurrentClassContext()) => getClassStudentDocRef(userId, normalizeClassId(classId), studentId);
 
 const mapStudentsToDocs = (students, userId, updatedAt) => {
   return asArray(students).map((student, index) => {
@@ -182,7 +337,12 @@ const syncCollectionDocuments = async (collectionRef, targetDocs) => {
   await Promise.all(operations);
 };
 
-const writeModularData = async (userId, rawData) => {
+const writeModularData = async (userId, classId, rawData) => {
+  const normalizedClassId = normalizeClassId(classId);
+  if (!normalizedClassId) {
+    throw new Error('Class id is required to write class data');
+  }
+
   const normalized = normalizeRawData(rawData);
   const updatedAt = new Date().toISOString();
 
@@ -191,24 +351,31 @@ const writeModularData = async (userId, rawData) => {
   const examDocs = mapExamsToDocs(normalized.exams, userId, updatedAt);
 
   await Promise.all([
-    syncCollectionDocuments(getStudentsCollectionRef(userId), studentDocs),
-    syncCollectionDocuments(getSubjectsCollectionRef(userId), subjectDocs),
-    syncCollectionDocuments(getExamsCollectionRef(userId), examDocs)
+    syncCollectionDocuments(getStudentsCollectionRef(userId, normalizedClassId), studentDocs),
+    syncCollectionDocuments(getSubjectsCollectionRef(userId, normalizedClassId), subjectDocs),
+    syncCollectionDocuments(getExamsCollectionRef(userId, normalizedClassId), examDocs)
   ]);
+
+  await setDoc(getClassDocRef(userId, normalizedClassId), {
+    id: normalizedClassId,
+    updatedAt,
+    userId
+  }, { merge: true });
 
   await setDoc(getUserRootRef(userId), {
     userId,
-    updatedAt
+    updatedAt,
+    activeClassId: normalizedClassId
   }, { merge: true });
 
   return normalized;
 };
 
-const readModularRawData = async (userId) => {
+const readRawDataFromCollectionRefs = async (studentsRef, subjectsRef, examsRef) => {
   const [studentsSnapshot, subjectsSnapshot, examsSnapshot] = await Promise.all([
-    getDocs(getStudentsCollectionRef(userId)),
-    getDocs(getSubjectsCollectionRef(userId)),
-    getDocs(getExamsCollectionRef(userId))
+    getDocs(studentsRef),
+    getDocs(subjectsRef),
+    getDocs(examsRef)
   ]);
 
   const students = [];
@@ -254,6 +421,112 @@ const readModularRawData = async (userId) => {
   return {
     data,
     hasData: hasAnyRawData(data)
+  };
+};
+
+const readModularRawData = async (userId, classId) => {
+  const normalizedClassId = normalizeClassId(classId);
+  if (!normalizedClassId) {
+    return {
+      data: createDefaultRawData(),
+      hasData: false
+    };
+  }
+
+  return readRawDataFromCollectionRefs(
+    getStudentsCollectionRef(userId, normalizedClassId),
+    getSubjectsCollectionRef(userId, normalizedClassId),
+    getExamsCollectionRef(userId, normalizedClassId)
+  );
+};
+
+const readLegacyRootRawData = async (userId) => {
+  return readRawDataFromCollectionRefs(
+    getLegacyStudentsCollectionRef(userId),
+    getLegacySubjectsCollectionRef(userId),
+    getLegacyExamsCollectionRef(userId)
+  );
+};
+
+const readClassCatalogFromFirestore = async (userId) => {
+  const classesSnapshot = await getDocs(getClassesCollectionRef(userId));
+  const classes = [];
+
+  classesSnapshot.forEach((entry) => {
+    const payload = entry.data() || {};
+    classes.push(toClassModel(entry.id, payload));
+  });
+
+  return sortClasses(classes.filter(entry => entry.id));
+};
+
+const ensureClassCatalog = async (userId) => {
+  let classes = await readClassCatalogFromFirestore(userId);
+  if (classes.length) {
+    writeClassCatalogCache(userId, classes);
+    return classes;
+  }
+
+  const createdAt = new Date().toISOString();
+  const defaultClassId = createClassDocId(DEFAULT_CLASS_NAME);
+  const defaultClass = {
+    id: defaultClassId,
+    name: DEFAULT_CLASS_NAME,
+    createdAt
+  };
+
+  await setDoc(getClassDocRef(userId, defaultClassId), {
+    ...defaultClass,
+    updatedAt: createdAt,
+    userId
+  }, { merge: false });
+
+  try {
+    const legacyData = await readLegacyRootRawData(userId);
+    if (legacyData?.hasData) {
+      await writeModularData(userId, defaultClassId, legacyData.data);
+    }
+  } catch (error) {
+    console.warn('Legacy migration skipped:', error);
+  }
+
+  classes = await readClassCatalogFromFirestore(userId);
+  if (!classes.length) {
+    classes = [defaultClass];
+  }
+
+  writeClassCatalogCache(userId, classes);
+  return classes;
+};
+
+const ensureActiveClassContext = async (userId) => {
+  if (!isFirebaseConfigured || !db) {
+    let classes = readClassCatalogCache(userId);
+    if (!classes.length) {
+      const fallbackId = normalizeClassId(getCurrentClassContext() || readPersistedClassSelection(userId) || 'class_local_default');
+      if (fallbackId) {
+        classes = [{
+          id: fallbackId,
+          name: DEFAULT_CLASS_NAME,
+          createdAt: null
+        }];
+      }
+    }
+
+    const { classId, className } = resolveActiveClassModel(userId, classes);
+    return {
+      classes,
+      classId,
+      className
+    };
+  }
+
+  const classes = await ensureClassCatalog(userId);
+  const { classId, className } = resolveActiveClassModel(userId, classes);
+  return {
+    classes,
+    classId,
+    className
   };
 };
 
@@ -406,18 +679,27 @@ const persistStudentUpdateById = async (studentId, studentData, nextData) => {
   for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
     try {
       const userId = await ensureAuthenticatedUserId('update student');
+      const { classId } = await ensureActiveClassContext(userId);
       const updatedAt = new Date().toISOString();
       console.log('Editing student:', normalizedStudentId);
       console.log('User:', userId);
 
-      await updateDoc(getStudentDocRef(userId, normalizedStudentId), {
+      await updateDoc(getStudentDocRef(userId, normalizedStudentId, classId), {
         ...patch,
         userId,
+        classId,
         updatedAt
       });
 
+      await setDoc(getClassDocRef(userId, classId), {
+        id: classId,
+        updatedAt,
+        userId
+      }, { merge: true });
+
       await setDoc(getUserRootRef(userId), {
         userId,
+        activeClassId: classId,
         updatedAt
       }, { merge: true });
 
@@ -478,13 +760,22 @@ const persistStudentDeleteById = async (studentId, nextData) => {
   for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
     try {
       const userId = await ensureAuthenticatedUserId('delete student');
+      const { classId } = await ensureActiveClassContext(userId);
       const updatedAt = new Date().toISOString();
       console.log('Deleting student:', normalizedStudentId);
       console.log('User:', userId);
 
-      await deleteDoc(getStudentDocRef(userId, normalizedStudentId));
+      await deleteDoc(getStudentDocRef(userId, normalizedStudentId, classId));
+
+      await setDoc(getClassDocRef(userId, classId), {
+        id: classId,
+        updatedAt,
+        userId
+      }, { merge: true });
+
       await setDoc(getUserRootRef(userId), {
         userId,
+        activeClassId: classId,
         updatedAt
       }, { merge: true });
 
@@ -525,12 +816,12 @@ const persistStudentDeleteById = async (studentId, nextData) => {
   };
 };
 
-const saveRemote = async (rawData, userId) => {
+const saveRemote = async (rawData, userId, classId) => {
   if (!isFirebaseConfigured || !db) {
     throw new Error('Firebase unavailable');
   }
 
-  const payload = await writeModularData(userId, rawData);
+  const payload = await writeModularData(userId, classId, rawData);
   console.log('Saved to Firebase');
   return payload;
 };
@@ -543,14 +834,16 @@ const persistRemoteFirst = async (rawData, operationLabel) => {
   for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
     try {
       const userId = await ensureAuthenticatedUserId(operationLabel);
+      const { classId } = await ensureActiveClassContext(userId);
       console.log('Active UID:', userId);
-      await saveRemote(nextData, userId);
+      await saveRemote(nextData, userId, classId);
       return {
         data: nextData,
         remoteSaved: true,
         error: null,
         errorType: null,
         operation: operationLabel,
+        classId,
         offline: false
       };
     } catch (error) {
@@ -582,28 +875,48 @@ const persistRemoteFirst = async (rawData, operationLabel) => {
   };
 };
 
-export const readCachedData = () => {
+const deleteCollectionDocuments = async (collectionRef) => {
+  const snapshot = await getDocs(collectionRef);
+  const operations = [];
+  snapshot.forEach((entry) => {
+    operations.push(deleteDoc(entry.ref));
+  });
+  await Promise.all(operations);
+};
+
+export const readCachedData = (classId = '') => {
   const userId = getCurrentUserId();
   if (!userId) {
     return null;
   }
 
-  const cached = parseCache(localStorage.getItem(getCacheKeyForUser(userId)));
+  const scopedClassId = normalizeClassId(classId) || getCurrentClassContext() || readPersistedClassSelection(userId);
+  const cached = parseCache(localStorage.getItem(getCacheKeyForUser(userId, scopedClassId)));
   if (cached?.data) {
     console.log('Loaded from cache');
   }
-  return cached;
+  if (!cached) {
+    return null;
+  }
+  return {
+    ...cached,
+    classId: scopedClassId
+  };
 };
 
-export const writeCacheCopy = (rawData) => {
+export const writeCacheCopy = (rawData, classId = '') => {
   const userId = getCurrentUserId();
   if (!userId) {
     return null;
   }
 
+  const scopedClassId = normalizeClassId(classId) || getCurrentClassContext() || readPersistedClassSelection(userId);
   const cacheEnvelope = withTimestamp(rawData);
-  localStorage.setItem(getCacheKeyForUser(userId), JSON.stringify(cacheEnvelope));
-  return cacheEnvelope;
+  localStorage.setItem(getCacheKeyForUser(userId, scopedClassId), JSON.stringify(cacheEnvelope));
+  return {
+    ...cacheEnvelope,
+    classId: scopedClassId
+  };
 };
 
 export const fetchAllData = async () => {
@@ -614,6 +927,9 @@ export const fetchAllData = async () => {
   } catch (error) {
     return {
       data: createDefaultRawData(),
+      classes: [],
+      currentClassId: '',
+      currentClassName: DEFAULT_CLASS_NAME,
       source: 'default',
       offline: false,
       error,
@@ -623,10 +939,15 @@ export const fetchAllData = async () => {
 
   if (!isFirebaseConfigured || !db) {
     console.warn('Firebase unavailable. Falling back to cache/default data.');
-    const cached = readCachedData();
+    const cachedClasses = readClassCatalogCache(userId);
+    const { classId, className } = resolveActiveClassModel(userId, cachedClasses);
+    const cached = readCachedData(classId);
     if (cached?.data) {
       return {
         data: cached.data,
+        classes: cachedClasses,
+        currentClassId: classId,
+        currentClassName: className,
         source: 'cache',
         offline: false,
         error: null,
@@ -635,9 +956,12 @@ export const fetchAllData = async () => {
     }
 
     const fallback = createDefaultRawData();
-    writeCacheCopy(fallback);
+    writeCacheCopy(fallback, classId);
     return {
       data: fallback,
+      classes: cachedClasses,
+      currentClassId: classId,
+      currentClassName: className,
       source: 'default',
       offline: false,
       error: null,
@@ -650,13 +974,21 @@ export const fetchAllData = async () => {
 
   for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
     try {
-      const modularResult = await readModularRawData(userId);
+      const classContext = await ensureActiveClassContext(userId);
+      const scopedClasses = classContext.classes || [];
+      const scopedClassId = classContext.classId;
+      const scopedClassName = classContext.className;
+      const modularResult = await readModularRawData(userId, scopedClassId);
+      writeClassCatalogCache(userId, scopedClasses);
 
       if (modularResult?.hasData) {
-        writeCacheCopy(modularResult.data);
+        writeCacheCopy(modularResult.data, scopedClassId);
         console.log('Synced from Firebase (modular)');
         return {
           data: modularResult.data,
+          classes: scopedClasses,
+          currentClassId: scopedClassId,
+          currentClassName: scopedClassName,
           source: 'firebase',
           offline: false,
           error: null,
@@ -665,9 +997,12 @@ export const fetchAllData = async () => {
       }
 
       const emptyData = createDefaultRawData();
-      writeCacheCopy(emptyData);
+      writeCacheCopy(emptyData, scopedClassId);
       return {
         data: emptyData,
+        classes: scopedClasses,
+        currentClassId: scopedClassId,
+        currentClassName: scopedClassName,
         source: 'firebase',
         offline: false,
         error: null,
@@ -693,11 +1028,16 @@ export const fetchAllData = async () => {
   }
 
   const offline = isOfflineError(lastErrorType);
-  const cached = readCachedData();
+  const cachedClasses = readClassCatalogCache(userId);
+  const { classId, className } = resolveActiveClassModel(userId, cachedClasses);
+  const cached = readCachedData(classId);
 
   if (cached?.data) {
     return {
       data: cached.data,
+      classes: cachedClasses,
+      currentClassId: classId,
+      currentClassName: className,
       source: 'cache',
       offline,
       error: lastError,
@@ -706,13 +1046,128 @@ export const fetchAllData = async () => {
   }
 
   const fallback = createDefaultRawData();
-  writeCacheCopy(fallback);
+  writeCacheCopy(fallback, classId);
   return {
     data: fallback,
+    classes: cachedClasses,
+    currentClassId: classId,
+    currentClassName: className,
     source: 'default',
     offline,
     error: lastError,
     errorType: lastErrorType
+  };
+};
+
+export const setCurrentClassId = (classId) => {
+  return setCurrentClassContext(classId);
+};
+
+export const getCurrentClassId = () => {
+  return getCurrentClassContext();
+};
+
+export const listClasses = async () => {
+  const userId = await ensureAuthenticatedUserId('list classes');
+
+  if (!isFirebaseConfigured || !db) {
+    const cachedClasses = readClassCatalogCache(userId);
+    const { classId, className } = resolveActiveClassModel(userId, cachedClasses);
+    return {
+      classes: cachedClasses,
+      currentClassId: classId,
+      currentClassName: className
+    };
+  }
+
+  const classes = await ensureClassCatalog(userId);
+  const { classId, className } = resolveActiveClassModel(userId, classes);
+  writeClassCatalogCache(userId, classes);
+
+  return {
+    classes,
+    currentClassId: classId,
+    currentClassName: className
+  };
+};
+
+export const createClass = async (className) => {
+  const userId = await ensureAuthenticatedUserId('create class');
+  const normalizedName = normalizeClassName(className, DEFAULT_CLASS_NAME);
+  const createdAt = new Date().toISOString();
+  const classId = createClassDocId(normalizedName);
+
+  await setDoc(getClassDocRef(userId, classId), {
+    id: classId,
+    name: normalizedName,
+    createdAt,
+    updatedAt: createdAt,
+    userId
+  }, { merge: false });
+
+  const classes = await ensureClassCatalog(userId);
+  const nextClasses = sortClasses([...classes.filter(entry => entry.id !== classId), {
+    id: classId,
+    name: normalizedName,
+    createdAt
+  }]);
+  writeClassCatalogCache(userId, nextClasses);
+  setCurrentClassContext(classId, userId);
+
+  await setDoc(getUserRootRef(userId), {
+    userId,
+    activeClassId: classId,
+    updatedAt: createdAt
+  }, { merge: true });
+
+  return {
+    class: toClassModel(classId, { name: normalizedName, createdAt }),
+    classes: nextClasses,
+    currentClassId: classId,
+    currentClassName: normalizedName
+  };
+};
+
+export const deleteClass = async (classId) => {
+  const userId = await ensureAuthenticatedUserId('delete class');
+  const normalizedClassId = normalizeClassId(classId);
+  if (!normalizedClassId) {
+    throw new Error('Class id is required');
+  }
+
+  const classes = await ensureClassCatalog(userId);
+  const classExists = classes.some(entry => entry.id === normalizedClassId);
+  if (!classExists) {
+    throw new Error('Class not found');
+  }
+
+  if (classes.length <= 1) {
+    throw new Error('At least one class is required');
+  }
+
+  await Promise.all([
+    deleteCollectionDocuments(getStudentsCollectionRef(userId, normalizedClassId)),
+    deleteCollectionDocuments(getSubjectsCollectionRef(userId, normalizedClassId)),
+    deleteCollectionDocuments(getExamsCollectionRef(userId, normalizedClassId))
+  ]);
+  await deleteDoc(getClassDocRef(userId, normalizedClassId));
+
+  const remainingClasses = sortClasses(classes.filter(entry => entry.id !== normalizedClassId));
+  writeClassCatalogCache(userId, remainingClasses);
+
+  const { classId: nextClassId, className: nextClassName } = resolveActiveClassModel(userId, remainingClasses);
+  const updatedAt = new Date().toISOString();
+
+  await setDoc(getUserRootRef(userId), {
+    userId,
+    activeClassId: nextClassId,
+    updatedAt
+  }, { merge: true });
+
+  return {
+    classes: remainingClasses,
+    currentClassId: nextClassId,
+    currentClassName: nextClassName
   };
 };
 

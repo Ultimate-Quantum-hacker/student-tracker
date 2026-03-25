@@ -1234,6 +1234,39 @@ table td{
   padding:1rem 1.1rem;
 }
 
+.class-switcher{
+  padding:.9rem 1rem;
+  margin-bottom:.8rem;
+  border:1px solid var(--border);
+}
+
+.class-switcher-main{
+  display:flex;
+  align-items:center;
+  gap:.55rem;
+  flex-wrap:wrap;
+}
+
+.class-switcher-main label{
+  font-size:.82rem;
+  font-weight:700;
+  color:var(--text-secondary);
+}
+
+.class-switcher-main select{
+  min-width:180px;
+  max-width:320px;
+  min-height:38px;
+  border-radius:10px;
+}
+
+.class-switcher-name{
+  margin:.45rem 0 0;
+  font-size:.85rem;
+  color:var(--text-secondary);
+  font-weight:600;
+}
+
 .student-roster-toolbar{
   display:flex;
   flex-direction:column;
@@ -1448,6 +1481,15 @@ body.dark-mode .student-chip-avatar.tone-f{background:#4c1d95;color:#ede9fe}
 
 body.dark-mode .student-roster-empty{
   background:color-mix(in srgb,var(--surface-secondary) 72%, #020617);
+}
+
+body.dark-mode .class-switcher{
+  border-color:#334155;
+}
+
+body.dark-mode .class-switcher-main label,
+body.dark-mode .class-switcher-name{
+  color:#cbd5e1;
 }
 
 .chart-grid{
@@ -1752,6 +1794,8 @@ body.dark-mode .risk-item.risk-at-risk .risk-count{color:#f8fafc}
   .student-roster-actions .btn{width:100%}
   .student-roster-meta{align-items:stretch}
   .student-roster-search-input{min-width:0;max-width:none;width:100%}
+  .class-switcher-main{flex-direction:column;align-items:stretch}
+  .class-switcher-main select{max-width:none;width:100%}
   .student-chip{width:100%;min-width:0}
 }
 

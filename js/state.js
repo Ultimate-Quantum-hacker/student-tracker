@@ -12,6 +12,9 @@ window.TrackerApp = window.TrackerApp || {};
 
   // State Variables
   app.state = {
+    classes: [],
+    currentClassId: '',
+    currentClassName: 'My Class',
     students: [],
     exams: [],
     subjects: [],
@@ -100,12 +103,12 @@ window.TrackerApp = window.TrackerApp || {};
     hasShownOfflineToast = false;
   };
 
-  app.readCachedData = function () {
-    return dataService.readCachedData();
+  app.readCachedData = function (classId = '') {
+    return dataService.readCachedData(classId || app.state.currentClassId || '');
   };
 
-  app.writeCachedData = function (rawData) {
-    return dataService.writeCacheCopy(rawData);
+  app.writeCachedData = function (rawData, classId = '') {
+    return dataService.writeCacheCopy(rawData, classId || app.state.currentClassId || '');
   };
 
   app.resetCachedData = function (rawData = createDefaultRawData()) {
@@ -329,10 +332,25 @@ window.TrackerApp = window.TrackerApp || {};
       app.state.isLoading = true;
       app.state.error = null;
 
+      if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
+        dataService.setCurrentClassId(app.state.currentClassId);
+      }
+
       const remoteResult = await dataService.fetchAllData();
+      const nextClasses = Array.isArray(remoteResult?.classes) ? remoteResult.classes : [];
+      const nextClassId = String(remoteResult?.currentClassId || '').trim();
+      const nextClassName = String(remoteResult?.currentClassName || '').trim() || 'My Class';
+      app.state.classes = nextClasses;
+      app.state.currentClassId = nextClassId;
+      app.state.currentClassName = nextClassName;
+
+      if (typeof dataService.setCurrentClassId === 'function' && nextClassId) {
+        dataService.setCurrentClassId(nextClassId);
+      }
+
       const remoteData = app.migrateToRawData(remoteResult?.data || createDefaultRawData());
       app.applyRawData(remoteData);
-      app.writeCachedData(remoteData);
+      app.writeCachedData(remoteData, nextClassId);
 
       if (remoteResult?.source === 'firebase') {
         firebaseDataLoaded = true;
@@ -362,6 +380,13 @@ window.TrackerApp = window.TrackerApp || {};
 
       const fallbackCache = app.readCachedData();
       if (fallbackCache?.data) {
+        const fallbackClassId = String(fallbackCache.classId || app.state.currentClassId || '').trim();
+        if (fallbackClassId) {
+          app.state.currentClassId = fallbackClassId;
+          if (typeof dataService.setCurrentClassId === 'function') {
+            dataService.setCurrentClassId(fallbackClassId);
+          }
+        }
         app.applyRawData(app.migrateToRawData(fallbackCache.data));
       } else {
         const fallback = createDefaultRawData();
@@ -382,8 +407,76 @@ window.TrackerApp = window.TrackerApp || {};
 
   const syncRuntimeAndCache = (students, subjects, exams, saveResult, operationLabel = 'save data') => {
     assertRemoteWriteSucceeded(saveResult, operationLabel);
+    if (saveResult?.classId) {
+      app.state.currentClassId = String(saveResult.classId || '').trim();
+      if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
+        dataService.setCurrentClassId(app.state.currentClassId);
+      }
+    }
     applyRuntimeCollections(students, subjects, exams);
     app.writeCachedData(composeRawData(students, subjects, exams));
+  };
+
+  app.createClass = async function (className) {
+    return enqueueStateWrite(async () => {
+      const nextName = normalizeLabel(className) || 'My Class';
+      const result = await dataService.createClass(nextName);
+      app.state.classes = Array.isArray(result?.classes) ? result.classes : app.state.classes;
+      app.state.currentClassId = String(result?.currentClassId || '').trim();
+      app.state.currentClassName = String(result?.currentClassName || nextName).trim() || nextName;
+
+      if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
+        dataService.setCurrentClassId(app.state.currentClassId);
+      }
+
+      await app.load();
+      return result?.class || null;
+    });
+  };
+
+  app.switchClass = async function (classId) {
+    return enqueueStateWrite(async () => {
+      const nextClassId = normalizeLabel(classId);
+      if (!nextClassId) {
+        throw new Error('Class id is required');
+      }
+
+      if (nextClassId === app.state.currentClassId) {
+        return true;
+      }
+
+      app.state.currentClassId = nextClassId;
+      const activeClass = (app.state.classes || []).find(entry => entry.id === nextClassId);
+      app.state.currentClassName = activeClass?.name || app.state.currentClassName || 'My Class';
+
+      if (typeof dataService.setCurrentClassId === 'function') {
+        dataService.setCurrentClassId(nextClassId);
+      }
+
+      await app.load();
+      return true;
+    });
+  };
+
+  app.deleteClass = async function (classId) {
+    return enqueueStateWrite(async () => {
+      const targetClassId = normalizeLabel(classId || app.state.currentClassId);
+      if (!targetClassId) {
+        throw new Error('Class id is required');
+      }
+
+      const result = await dataService.deleteClass(targetClassId);
+      app.state.classes = Array.isArray(result?.classes) ? result.classes : [];
+      app.state.currentClassId = String(result?.currentClassId || '').trim();
+      app.state.currentClassName = String(result?.currentClassName || '').trim() || 'My Class';
+
+      if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
+        dataService.setCurrentClassId(app.state.currentClassId);
+      }
+
+      await app.load();
+      return true;
+    });
   };
 
   // CRUD operations for students

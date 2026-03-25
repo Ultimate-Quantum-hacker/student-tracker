@@ -56,6 +56,9 @@ const setAuthUserState = (authUser) => {
 
 const clearLoadedDataForLogout = () => {
   const emptyData = { students: [], subjects: [], exams: [] };
+  app.state.classes = [];
+  app.state.currentClassId = '';
+  app.state.currentClassName = 'My Class';
   if (typeof app.applyRawData === 'function') {
     app.applyRawData(emptyData);
   } else {
