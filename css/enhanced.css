@@ -1240,6 +1240,18 @@ table td{
   border:1px solid var(--border);
 }
 
+.global-class-switcher{
+  margin-top:.55rem;
+  padding:.55rem .8rem .65rem;
+  border-top:1px solid var(--border);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:.65rem;
+  flex-wrap:wrap;
+  background:color-mix(in srgb,var(--surface) 92%, transparent);
+}
+
 .class-switcher-main{
   display:flex;
   align-items:center;
@@ -1247,10 +1259,19 @@ table td{
   flex-wrap:wrap;
 }
 
+.global-class-switcher .class-switcher-main{
+  flex:1 1 420px;
+}
+
 .class-switcher-main label{
   font-size:.82rem;
   font-weight:700;
   color:var(--text-secondary);
+}
+
+.class-nav-btn{
+  min-width:38px;
+  padding-inline:.58rem;
 }
 
 .class-switcher-main select{
@@ -1260,11 +1281,20 @@ table td{
   border-radius:10px;
 }
 
+.global-class-switcher .class-switcher-main select{
+  min-width:210px;
+}
+
 .class-switcher-name{
   margin:.45rem 0 0;
   font-size:.85rem;
   color:var(--text-secondary);
   font-weight:600;
+}
+
+.global-class-switcher .class-switcher-name{
+  margin:0;
+  white-space:nowrap;
 }
 
 .student-roster-toolbar{
@@ -1485,6 +1515,11 @@ body.dark-mode .student-roster-empty{
 
 body.dark-mode .class-switcher{
   border-color:#334155;
+}
+
+body.dark-mode .global-class-switcher{
+  border-top-color:#334155;
+  background:color-mix(in srgb,var(--surface) 82%, #020617);
 }
 
 body.dark-mode .class-switcher-main label,
@@ -1794,8 +1829,11 @@ body.dark-mode .risk-item.risk-at-risk .risk-count{color:#f8fafc}
   .student-roster-actions .btn{width:100%}
   .student-roster-meta{align-items:stretch}
   .student-roster-search-input{min-width:0;max-width:none;width:100%}
+  .global-class-switcher{padding:.55rem .65rem .65rem}
   .class-switcher-main{flex-direction:column;align-items:stretch}
   .class-switcher-main select{max-width:none;width:100%}
+  .global-class-switcher .class-switcher-name{width:100%;white-space:normal}
+  .class-nav-btn{width:100%}
   .student-chip{width:100%;min-width:0}
 }
 

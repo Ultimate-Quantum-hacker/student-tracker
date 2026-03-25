@@ -33,6 +33,8 @@ const domIds = {
   systemResetBtn: 'system-reset-btn',
   form: 'add-student-form',
   classSelector: 'class-selector',
+  classPrevBtn: 'class-prev-btn',
+  classNextBtn: 'class-next-btn',
   createClassBtn: 'create-class-btn',
   deleteClassBtn: 'delete-class-btn',
   classNameDisplay: 'class-name-display',
@@ -171,6 +173,51 @@ const ui = {
       return 'No Data';
     },
 
+    setClassControlsBusy: function (isBusy) {
+      const shouldDisable = Boolean(isBusy);
+      if (app.dom.classSelector) app.dom.classSelector.disabled = shouldDisable;
+      if (app.dom.classPrevBtn) app.dom.classPrevBtn.disabled = shouldDisable;
+      if (app.dom.classNextBtn) app.dom.classNextBtn.disabled = shouldDisable;
+      if (app.dom.createClassBtn) app.dom.createClassBtn.disabled = shouldDisable;
+      if (app.dom.deleteClassBtn) app.dom.deleteClassBtn.disabled = shouldDisable;
+    },
+
+    switchToClass: async function (classId) {
+      const nextClassId = String(classId || '').trim();
+      if (!nextClassId) return;
+
+      try {
+        this.setClassControlsBusy(true);
+        await app.switchClass(nextClassId);
+        this.refreshUI();
+        this.showToast('Class switched');
+      } catch (error) {
+        console.error('Failed to switch class:', error);
+        this.showToast('Failed to switch class');
+      } finally {
+        this.renderClassControls();
+      }
+    },
+
+    cycleClass: async function (step = 1) {
+      const classes = Array.isArray(app.state.classes) ? app.state.classes : [];
+      if (classes.length <= 1) {
+        return;
+      }
+
+      const currentClassId = String(app.state.currentClassId || '').trim();
+      const currentIndex = classes.findIndex(entry => String(entry?.id || '').trim() === currentClassId);
+      const startIndex = currentIndex >= 0 ? currentIndex : 0;
+      const delta = Number(step) < 0 ? -1 : 1;
+      const nextIndex = (startIndex + delta + classes.length) % classes.length;
+      const nextClassId = String(classes[nextIndex]?.id || '').trim();
+      if (!nextClassId) {
+        return;
+      }
+
+      await this.switchToClass(nextClassId);
+    },
+
     renderClassControls: function () {
       const classes = Array.isArray(app.state.classes) ? app.state.classes : [];
       const currentClassId = String(app.state.currentClassId || '').trim();
@@ -203,6 +250,14 @@ const ui = {
 
       if (app.dom.deleteClassBtn) {
         app.dom.deleteClassBtn.disabled = classes.length <= 1 || !resolvedClassId;
+      }
+
+      const disableArrows = classes.length <= 1 || !resolvedClassId;
+      if (app.dom.classPrevBtn) {
+        app.dom.classPrevBtn.disabled = disableArrows;
+      }
+      if (app.dom.classNextBtn) {
+        app.dom.classNextBtn.disabled = disableArrows;
       }
 
       if (app.dom.form) {
@@ -1459,20 +1514,17 @@ const ui = {
           app.dom.classSelector.onchange = async (e) => {
             const nextClassId = String(e.target.value || '').trim();
             if (!nextClassId) return;
-
-            try {
-              if (app.dom.classSelector) app.dom.classSelector.disabled = true;
-              if (app.dom.createClassBtn) app.dom.createClassBtn.disabled = true;
-              if (app.dom.deleteClassBtn) app.dom.deleteClassBtn.disabled = true;
-              await app.switchClass(nextClassId);
-              this.refreshUI();
-              this.showToast('Class switched');
-            } catch (error) {
-              console.error('Failed to switch class:', error);
-              this.showToast('Failed to switch class');
-            } finally {
-              this.renderClassControls();
-            }
+            await this.switchToClass(nextClassId);
+          };
+        }
+        if (app.dom.classPrevBtn) {
+          app.dom.classPrevBtn.onclick = async () => {
+            await this.cycleClass(-1);
+          };
+        }
+        if (app.dom.classNextBtn) {
+          app.dom.classNextBtn.onclick = async () => {
+            await this.cycleClass(1);
           };
         }
         if (app.dom.createClassBtn) {
