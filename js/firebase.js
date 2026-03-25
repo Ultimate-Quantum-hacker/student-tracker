@@ -8,20 +8,49 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebas
 import { getFirestore, collection, doc, addDoc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
 
 // Firebase configuration
-const firebaseConfig = {
+const PLACEHOLDER_FIREBASE_CONFIG = {
   apiKey: "your-api-key-here",
-  authDomain: "your-project-id.firebaseapp.com", 
+  authDomain: "your-project-id.firebaseapp.com",
   projectId: "your-project-id",
   storageBucket: "your-project-id.appspot.com",
   messagingSenderId: "your-sender-id",
   appId: "your-app-id"
 };
 
+const REQUIRED_CONFIG_KEYS = ['apiKey', 'authDomain', 'projectId', 'storageBucket', 'messagingSenderId', 'appId'];
+
+const getRuntimeFirebaseConfig = () => {
+  if (typeof window === 'undefined') return null;
+  const runtimeConfig = window.__FIREBASE_CONFIG__ || window.firebaseConfig || null;
+  return runtimeConfig && typeof runtimeConfig === 'object' ? runtimeConfig : null;
+};
+
+const runtimeFirebaseConfig = getRuntimeFirebaseConfig();
+const firebaseConfig = runtimeFirebaseConfig
+  ? { ...runtimeFirebaseConfig }
+  : null;
+
+console.log('Firebase config:', runtimeFirebaseConfig || null);
+
+const looksLikePlaceholder = (value) => {
+  const normalized = String(value || '').trim();
+  if (!normalized) return true;
+
+  const lower = normalized.toLowerCase();
+  if (lower.includes('your-') || lower.includes('your_project') || lower.includes('your project')) {
+    return true;
+  }
+
+  return Object.values(PLACEHOLDER_FIREBASE_CONFIG).includes(normalized);
+};
+
 // Check if Firebase is properly configured
-let isFirebaseConfigured = firebaseConfig.apiKey && 
-                          firebaseConfig.apiKey !== "your-api-key-here" && 
-                          firebaseConfig.projectId && 
-                          firebaseConfig.projectId !== "your-project-id";
+let isFirebaseConfigured = Boolean(firebaseConfig)
+  && REQUIRED_CONFIG_KEYS.every((key) => !looksLikePlaceholder(firebaseConfig[key]));
+
+if (!isFirebaseConfigured) {
+  console.error('Firebase config is missing or uses placeholder values. Provide real credentials in window.__FIREBASE_CONFIG__ (or window.firebaseConfig) before app bootstrap, or update js/firebase.js directly.');
+}
 
 let app, db;
 
@@ -31,6 +60,9 @@ if (isFirebaseConfigured) {
     app = initializeApp(firebaseConfig);
     // Initialize Firestore
     db = getFirestore(app);
+    if (!db) {
+      throw new Error('Firestore initialization returned null');
+    }
     console.log("Firebase initialized successfully with real configuration");
   } catch (error) {
     console.error("Firebase initialization failed:", error);
@@ -38,8 +70,10 @@ if (isFirebaseConfigured) {
   }
 }
 
+console.log('Firebase initialized:', !!db);
+
 if (!isFirebaseConfigured) {
-  console.warn("Firebase not configured - using fallback mode");
+  console.warn("Firebase not configured - Firestore sync disabled; fallback mode enabled");
   // Create mock Firebase objects for fallback
   app = { name: "mock-app" };
   db = null;
