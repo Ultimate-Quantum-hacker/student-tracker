@@ -15,6 +15,25 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    function requesterRole() {
+      return isAuthenticated()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+        : 'teacher';
+    }
+
+    function isAdminRole() {
+      return requesterRole() == 'admin';
+    }
+
+    function isDeveloperRole() {
+      return isDeveloperEmail() || requesterRole() == 'developer';
+    }
+
+    function isAdminOrDeveloperRole() {
+      return isAdminRole() || isDeveloperRole();
+    }
+
     function hasValidUserProfileShape(userId) {
       return request.resource.data.keys().hasOnly(['uid', 'role', 'name', 'email', 'createdAt'])
         && request.resource.data.uid is string
@@ -37,7 +56,7 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if isAuthenticated();
+      allow read: if isOwner(userId) || isAdminOrDeveloperRole();
 
       allow write: if isAuthenticated() && isDeveloperEmail();
 
@@ -54,7 +73,8 @@ service cloud.firestore {
     }
 
     match /users/{userId}/{document=**} {
-      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      allow read: if isOwner(userId) || isAdminOrDeveloperRole();
+      allow write: if isOwner(userId);
     }
 
     match /{document=**} {
