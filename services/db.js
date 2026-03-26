@@ -1429,7 +1429,7 @@ const readClassCatalogFromFirestore = async (userId) => {
 
   classesSnapshot.forEach((entry) => {
     const payload = entry.data() || {};
-    const classId = normalizeClassId(payload.id || entry.id);
+    const classId = normalizeClassId(entry.id);
     if (!classId) return;
     metadataPatchTasks.push(normalizeClassOwnerMetadata(userId, classId, payload, entry.ref));
 
@@ -1482,7 +1482,7 @@ const readGlobalClassCatalogFromFirestore = async (requesterUserId = '') => {
     const payload = entry.data() || {};
     if (payload.deleted === true) return;
 
-    const classId = normalizeClassId(payload.id || entry.id);
+    const classId = normalizeClassId(entry.id);
     const ownerId = normalizeUserId(payload.ownerId || payload.userId || getOwnerIdFromClassRefPath(entry.ref?.path));
     if (!classId || !ownerId) return;
 
@@ -2043,7 +2043,7 @@ export const fetchRoleScopedStudentCount = async (role = 'teacher') => {
   classesSnapshot.forEach((entry) => {
     const payload = entry.data() || {};
     if (payload.deleted === true) return;
-    const classId = normalizeClassId(payload.id || entry.id);
+    const classId = normalizeClassId(entry.id);
     if (classId) {
       classIds.push(classId);
     }
@@ -2128,7 +2128,7 @@ export const fetchUserScopedData = async (targetUserId = '') => {
   classesSnapshot.forEach((entry) => {
     const payload = entry.data() || {};
     if (payload.deleted === true) return;
-    const classId = normalizeClassId(payload.id || entry.id);
+    const classId = normalizeClassId(entry.id);
     if (!classId) return;
     classes.push({
       id: classId,
