@@ -111,7 +111,7 @@ window.TrackerApp = window.TrackerApp || {};
   };
 
   app.isReadOnlyRoleContext = function () {
-    return app.isAdminRole();
+    return Boolean(app.state.isRoleResolved) && app.isAdminRole();
   };
 
   app.clearCurrentUserRole = function () {
@@ -1355,14 +1355,14 @@ window.TrackerApp = window.TrackerApp || {};
 
     if (app.dom && app.dom.themeToggle) {
       app.dom.themeToggle.innerHTML = isDarkMode ? '☀' : '🌙';
-      app.dom.themeToggle.title = isDarkMode ? 'Dark Mode' : 'Light Mode';
+      app.dom.themeToggle.title = isDarkMode ? 'Light Mode' : 'Dark Mode';
     }
 
     const systemThemeButton = (app.dom && app.dom.systemThemeToggleBtn)
       || document.getElementById('system-theme-toggle-btn');
     if (systemThemeButton) {
       const labelNode = systemThemeButton.querySelector('.system-tools-label');
-      const nextLabel = isDarkMode ? 'Dark Mode' : 'Light Mode';
+      const nextLabel = isDarkMode ? 'Light Mode' : 'Dark Mode';
       if (labelNode) {
         labelNode.textContent = nextLabel;
       }

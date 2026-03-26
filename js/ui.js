@@ -2159,7 +2159,7 @@ const ui = {
     bindEvents: function () {
       console.log('Binding events...');
       try {
-        const tabs = document.querySelectorAll('.tab, .sidebar-item');
+        const tabs = document.querySelectorAll('.tab');
         tabs.forEach(tab => {
           tab.addEventListener('click', (event) => {
             if (this.isRoleRestrictedElement(tab)) {
@@ -2186,13 +2186,6 @@ const ui = {
 
             tabs.forEach(tabItem => tabItem.classList.remove('active'));
             tab.classList.add('active');
-          });
-        });
-
-        const buttons = document.querySelectorAll('button');
-        buttons.forEach(btn => {
-          btn.addEventListener('click', () => {
-            console.log('Button clicked:', btn);
           });
         });
 
