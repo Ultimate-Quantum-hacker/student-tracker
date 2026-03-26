@@ -131,23 +131,23 @@ const domIds = {
 };
 
 const FEATURE_ACCESS_RULES = {
-  developerTools: ['admin', 'developer'],
+  developerTools: ['developer'],
   exportData: ['admin', 'developer'],
   importData: ['developer'],
   bulkImport: ['developer'],
   restorePoints: ['developer'],
   resetSystem: ['developer'],
-  adminPanel: ['developer']
+  adminPanel: ['admin', 'developer']
 };
 
 const FEATURE_ACCESS_MESSAGES = {
-  developerTools: 'Access restricted: Admin or Developer only',
+  developerTools: 'Access restricted: Developer only',
   exportData: 'Access restricted: Admin or Developer only',
   importData: 'Access restricted: Developer only',
   bulkImport: 'Access restricted: Developer only',
   restorePoints: 'Access restricted: Developer only',
   resetSystem: 'Access restricted: Developer only',
-  adminPanel: 'Access restricted: Developer only'
+  adminPanel: 'Access restricted: Admin or Developer only'
 };
 
 const ui = {
@@ -242,51 +242,42 @@ const ui = {
       return String(element?.dataset?.accessMessage || '').trim() || 'You do not have permission for this action';
     },
 
+    removeElementsFromDom: function (elements = []) {
+      Array.from(elements || [])
+        .filter(Boolean)
+        .forEach((element) => {
+          if (!element?.parentNode) return;
+          element.parentNode.removeChild(element);
+        });
+    },
+
     applyFeatureAccessState: function (feature, elements = []) {
+      if (!app.state.isRoleResolved) {
+        return;
+      }
+
       const canAccessFeature = this.canAccess(feature);
-      const deniedMessage = this.getAccessDeniedMessage(feature);
       const normalizedElements = Array.from(elements || []).filter(Boolean);
+
+      if (!canAccessFeature) {
+        this.removeElementsFromDom(normalizedElements);
+        return;
+      }
 
       normalizedElements.forEach((element) => {
         if (!element) return;
         element.classList.add('role-gated');
 
-        if (element.tagName === 'INPUT') {
-          element.disabled = !canAccessFeature;
-          if (!canAccessFeature) {
-            element.dataset.accessFeature = feature;
-            element.dataset.accessMessage = deniedMessage;
-          } else {
-            delete element.dataset.accessFeature;
-            delete element.dataset.accessMessage;
-          }
-          return;
+        element.classList.remove('role-restricted');
+        element.removeAttribute('aria-disabled');
+        if (!element.dataset.originalTitle) {
+          element.removeAttribute('title');
+        } else {
+          element.title = element.dataset.originalTitle;
         }
-
-        if (canAccessFeature) {
-          element.classList.remove('role-restricted');
-          element.removeAttribute('aria-disabled');
-          if (!element.dataset.originalTitle) {
-            element.removeAttribute('title');
-          } else {
-            element.title = element.dataset.originalTitle;
-          }
-          delete element.dataset.roleRestricted;
-          delete element.dataset.accessFeature;
-          delete element.dataset.accessMessage;
-          return;
-        }
-
-        if (typeof element.title === 'string' && element.title && !element.dataset.originalTitle) {
-          element.dataset.originalTitle = element.title;
-        }
-
-        element.classList.add('role-restricted');
-        element.setAttribute('aria-disabled', 'true');
-        element.dataset.roleRestricted = 'true';
-        element.dataset.accessFeature = feature;
-        element.dataset.accessMessage = deniedMessage;
-        element.title = deniedMessage;
+        delete element.dataset.roleRestricted;
+        delete element.dataset.accessFeature;
+        delete element.dataset.accessMessage;
       });
     },
 
@@ -314,6 +305,7 @@ const ui = {
     updateRoleBasedUIAccess: function () {
       const roleResolved = Boolean(app.state.isRoleResolved);
       const currentRole = this.getCurrentRole();
+      const canManageClasses = currentRole === 'admin' || currentRole === 'developer';
 
       if (document.body) {
         document.body.dataset.userRole = currentRole;
@@ -321,6 +313,17 @@ const ui = {
       }
 
       this.updateRoleBadge();
+
+      if (!roleResolved) {
+        return;
+      }
+
+      if (!canManageClasses) {
+        this.removeElementsFromDom([
+          app.dom.createClassBtn,
+          app.dom.deleteClassBtn
+        ]);
+      }
 
       this.applyFeatureAccessState('importData', [
         app.dom.restoreBtn,
@@ -358,26 +361,6 @@ const ui = {
         ...document.querySelectorAll('[data-section="admin-dashboard"]'),
         app.dom.adminDashboardBtn || document.getElementById('admin-dashboard-btn')
       ]);
-
-      const canViewAdminPanel = this.canAccess('adminPanel');
-      [...document.querySelectorAll('[data-section="admin-dashboard"]'), app.dom.adminDashboardBtn]
-        .filter(Boolean)
-        .forEach((element) => {
-          element.hidden = !canViewAdminPanel;
-        });
-
-      const canViewExportTools = this.canAccess('exportData');
-      [
-        app.dom.systemExportDataBtn,
-        app.dom.exportCsvBtn,
-        app.dom.exportExcelBtn,
-        app.dom.reportExportPdfBtn,
-        app.dom.reportExportAllPdfBtn
-      ]
-        .filter(Boolean)
-        .forEach((element) => {
-          element.hidden = !canViewExportTools;
-        });
     },
 
     hideToast: function () {
@@ -723,7 +706,12 @@ const ui = {
         });
       }
 
-      if (!classes.length && !app.state.isLoading && !this.hasPromptedForMissingClass) {
+      const canManageClasses = this.getCurrentRole() === 'admin' || this.getCurrentRole() === 'developer';
+      if (!canManageClasses && app.dom.classDropdownValue && !classes.length) {
+        app.dom.classDropdownValue.textContent = 'No class assigned';
+      }
+
+      if (!classes.length && canManageClasses && !app.state.isLoading && !this.hasPromptedForMissingClass) {
         this.hasPromptedForMissingClass = true;
         setTimeout(async () => {
           const className = prompt('No class found. Enter a class name to get started:', 'My Class');
@@ -912,7 +900,10 @@ const ui = {
     },
 
     updateDashboardStats: function () {
-      const total = app.state.students.length;
+      const fallbackTotal = app.state.students.length;
+      const total = Number.isFinite(Number(app.state.dashboardStudentCount))
+        ? Number(app.state.dashboardStudentCount)
+        : fallbackTotal;
       this.animateDashboardStatValue(app.dom.statTotalStudents, total, 'int');
 
       const latestExam = app.analytics.getLatestExam();

@@ -14,6 +14,11 @@ import {
   formatAuthError,
   isDeveloperAccountEmail
 } from './auth.js';
+import {
+  fetchAdminGlobalStats,
+  fetchUserScopedData,
+  fetchActivityLogs
+} from '../services/db.js';
 
 const DASHBOARD_PATH = '/index.html';
 const LOGIN_PATH = '/login.html';
@@ -25,18 +30,44 @@ const UPDATABLE_ROLES = [ROLE_TEACHER, ROLE_ADMIN];
 const state = {
   authUser: null,
   currentRole: ROLE_TEACHER,
-  users: []
+  users: [],
+  viewingUserId: '',
+  activityLogs: [],
+  globalStats: {
+    totalUsers: 0,
+    totalStudents: 0,
+    totalExams: 0
+  }
 };
 
 const dom = {
   roleBadge: document.getElementById('panel-role-badge'),
   status: document.getElementById('panel-status'),
-  loading: document.getElementById('users-loading'),
+  usersLoading: document.getElementById('users-loading'),
   tableBody: document.getElementById('users-table-body'),
   searchInput: document.getElementById('users-search-input'),
   refreshBtn: document.getElementById('refresh-users-btn'),
   dashboardBtn: document.getElementById('go-dashboard-btn'),
-  logoutBtn: document.getElementById('panel-logout-btn')
+  logoutBtn: document.getElementById('panel-logout-btn'),
+  totalUsers: document.getElementById('admin-total-users'),
+  totalStudents: document.getElementById('admin-total-students'),
+  totalExams: document.getElementById('admin-total-exams'),
+  viewingIndicator: document.getElementById('viewing-context-indicator'),
+  viewingLabel: document.getElementById('viewing-context-label'),
+  clearViewingBtn: document.getElementById('clear-viewing-btn'),
+  viewingLoading: document.getElementById('viewing-user-loading'),
+  viewingSummary: document.getElementById('viewing-user-summary'),
+  viewingClasses: document.getElementById('viewing-user-classes'),
+  viewingStudents: document.getElementById('viewing-user-students'),
+  viewingSubjects: document.getElementById('viewing-user-subjects'),
+  viewingExams: document.getElementById('viewing-user-exams'),
+  activityStatus: document.getElementById('activity-status'),
+  activityLoading: document.getElementById('activity-loading'),
+  activityBody: document.getElementById('activity-table-body'),
+  activityUserFilter: document.getElementById('activity-user-filter'),
+  activityActionFilter: document.getElementById('activity-action-filter'),
+  activitySortFilter: document.getElementById('activity-sort-filter'),
+  refreshActivityBtn: document.getElementById('refresh-activity-btn')
 };
 
 const redirectToDashboard = () => {
@@ -49,14 +80,7 @@ const redirectToLogin = () => {
   window.location.replace(LOGIN_PATH);
 };
 
-const formatRoleLabel = (role) => {
-  const normalized = normalizeUserRole(role);
-  if (normalized === ROLE_DEVELOPER) return 'Developer';
-  if (normalized === ROLE_ADMIN) return 'Admin';
-  return 'Teacher';
-};
-
-const setStatus = (message, type = '') => {
+const setPanelStatus = (message, type = '') => {
   if (!dom.status) return;
   dom.status.textContent = String(message || '');
   dom.status.className = 'panel-status';
@@ -65,12 +89,35 @@ const setStatus = (message, type = '') => {
   }
 };
 
-const setLoading = (isLoading) => {
-  if (!dom.loading) return;
-  dom.loading.style.display = isLoading ? 'block' : 'none';
+const setActivityStatus = (message, type = '') => {
+  if (!dom.activityStatus) return;
+  dom.activityStatus.textContent = String(message || '');
+  dom.activityStatus.className = 'panel-status';
+  if (type) {
+    dom.activityStatus.classList.add(type);
+  }
 };
 
-const isPermissionDeniedError = (error) => String(error?.code || '').toLowerCase().includes('permission-denied');
+const setElementVisibility = (element, shouldShow) => {
+  if (!element) return;
+  element.style.display = shouldShow ? 'block' : 'none';
+};
+
+const escapeHtml = (value) => {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+};
+
+const formatRoleLabel = (role) => {
+  const normalized = normalizeUserRole(role);
+  if (normalized === ROLE_DEVELOPER) return 'Developer';
+  if (normalized === ROLE_ADMIN) return 'Admin';
+  return 'Teacher';
+};
 
 const formatCreatedAt = (value) => {
   if (!value) return '—';
@@ -85,12 +132,21 @@ const formatCreatedAt = (value) => {
   return parsed.toLocaleString();
 };
 
-const canEditRole = (record) => {
-  const normalizedRole = normalizeUserRole(record?.role);
-  if (!record?.uid) return false;
-  if (normalizedRole === ROLE_DEVELOPER) return false;
-  if (isDeveloperAccountEmail(record?.email)) return false;
-  return true;
+const formatLogAction = (action) => {
+  const normalized = String(action || '').trim().toLowerCase();
+  if (!normalized) return 'Unknown Action';
+
+  return normalized
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+};
+
+const isPermissionDeniedError = (error) => String(error?.code || '').toLowerCase().includes('permission-denied');
+const canManageRoles = () => state.currentRole === ROLE_DEVELOPER;
+
+const findUserRecord = (uid = '') => {
+  const normalizedUid = String(uid || '').trim();
+  return state.users.find((entry) => entry.uid === normalizedUid) || null;
 };
 
 const getFilteredUsers = () => {
@@ -104,6 +160,16 @@ const getFilteredUsers = () => {
     const email = String(record.email || '').toLowerCase();
     return name.includes(searchTerm) || email.includes(searchTerm);
   });
+};
+
+const canEditRole = (record) => {
+  if (!canManageRoles()) return false;
+
+  const normalizedRole = normalizeUserRole(record?.role);
+  if (!record?.uid) return false;
+  if (normalizedRole === ROLE_DEVELOPER) return false;
+  if (isDeveloperAccountEmail(record?.email)) return false;
+  return true;
 };
 
 const buildRoleSelect = (record) => {
@@ -134,6 +200,26 @@ const buildRoleSelect = (record) => {
   return select;
 };
 
+const renderViewingIndicator = () => {
+  const activeRecord = findUserRecord(state.viewingUserId);
+  const hasViewingContext = Boolean(activeRecord && state.viewingUserId);
+
+  if (dom.viewingIndicator) {
+    dom.viewingIndicator.hidden = !hasViewingContext;
+  }
+  if (!hasViewingContext) {
+    if (dom.viewingLabel) {
+      dom.viewingLabel.textContent = 'Viewing as yourself';
+    }
+    return;
+  }
+
+  const roleLabel = formatRoleLabel(activeRecord.role);
+  if (dom.viewingLabel) {
+    dom.viewingLabel.textContent = `Viewing as: ${activeRecord.name || activeRecord.email || activeRecord.uid} (${roleLabel})`;
+  }
+};
+
 const renderUsersTable = () => {
   if (!dom.tableBody) return;
 
@@ -147,6 +233,10 @@ const renderUsersTable = () => {
 
   filteredUsers.forEach((record) => {
     const row = document.createElement('tr');
+    const isViewingUser = String(record.uid || '').trim() === String(state.viewingUserId || '').trim();
+    if (isViewingUser) {
+      row.classList.add('row-active');
+    }
 
     const nameCell = document.createElement('td');
     nameCell.textContent = String(record.name || '—');
@@ -162,21 +252,35 @@ const renderUsersTable = () => {
     createdCell.textContent = formatCreatedAt(record.createdAt);
 
     const actionCell = document.createElement('td');
-    const updateBtn = document.createElement('button');
-    updateBtn.type = 'button';
-    updateBtn.className = 'btn btn-primary';
-    updateBtn.dataset.action = 'update-role';
-    updateBtn.dataset.userId = record.uid;
-    updateBtn.textContent = 'Update Role';
+    actionCell.className = 'table-actions-cell';
 
-    if (!canEditRole(record)) {
-      updateBtn.disabled = true;
-      updateBtn.title = normalizeUserRole(record?.role) === ROLE_DEVELOPER
-        ? 'Developer role cannot be changed here'
-        : 'Role update is not allowed for this account';
+    const viewBtn = document.createElement('button');
+    viewBtn.type = 'button';
+    viewBtn.className = 'btn btn-secondary';
+    viewBtn.dataset.action = 'view-user';
+    viewBtn.dataset.userId = record.uid;
+    viewBtn.textContent = isViewingUser ? 'Viewing' : 'View Data';
+    viewBtn.disabled = isViewingUser;
+
+    actionCell.appendChild(viewBtn);
+
+    if (canManageRoles()) {
+      const updateBtn = document.createElement('button');
+      updateBtn.type = 'button';
+      updateBtn.className = 'btn btn-primary';
+      updateBtn.dataset.action = 'update-role';
+      updateBtn.dataset.userId = record.uid;
+      updateBtn.textContent = 'Update Role';
+
+      if (!canEditRole(record)) {
+        updateBtn.disabled = true;
+        updateBtn.title = normalizeUserRole(record?.role) === ROLE_DEVELOPER
+          ? 'Developer role cannot be changed here'
+          : 'Role update is not allowed for this account';
+      }
+
+      actionCell.appendChild(updateBtn);
     }
-
-    actionCell.appendChild(updateBtn);
 
     row.appendChild(nameCell);
     row.appendChild(emailCell);
@@ -188,15 +292,119 @@ const renderUsersTable = () => {
   });
 };
 
-const fetchUsers = async () => {
-  if (!db || !isFirebaseConfigured) {
-    setStatus('Firebase is not configured. User management is unavailable.', 'error');
-    setLoading(false);
+const renderStats = () => {
+  if (dom.totalUsers) {
+    dom.totalUsers.textContent = String(state.globalStats.totalUsers || 0);
+  }
+  if (dom.totalStudents) {
+    dom.totalStudents.textContent = String(state.globalStats.totalStudents || 0);
+  }
+  if (dom.totalExams) {
+    dom.totalExams.textContent = String(state.globalStats.totalExams || 0);
+  }
+};
+
+const renderViewingUserData = (payload = null) => {
+  if (!dom.viewingSummary || !dom.viewingClasses || !dom.viewingStudents || !dom.viewingSubjects || !dom.viewingExams) {
     return;
   }
 
-  setLoading(true);
-  setStatus('Loading users...');
+  if (!payload) {
+    dom.viewingSummary.innerHTML = '<div class="empty-row">Select a user to preview their data context.</div>';
+    dom.viewingClasses.innerHTML = '<li class="empty-row">No data loaded.</li>';
+    dom.viewingStudents.innerHTML = '<li class="empty-row">No data loaded.</li>';
+    dom.viewingSubjects.innerHTML = '<li class="empty-row">No data loaded.</li>';
+    dom.viewingExams.innerHTML = '<li class="empty-row">No data loaded.</li>';
+    return;
+  }
+
+  const counts = payload.counts || {};
+  dom.viewingSummary.innerHTML = `
+    <div class="mini-stat-card"><span>Classes</span><strong>${Number(counts.classes || 0)}</strong></div>
+    <div class="mini-stat-card"><span>Students</span><strong>${Number(counts.students || 0)}</strong></div>
+    <div class="mini-stat-card"><span>Subjects</span><strong>${Number(counts.subjects || 0)}</strong></div>
+    <div class="mini-stat-card"><span>Exams</span><strong>${Number(counts.exams || 0)}</strong></div>
+  `;
+
+  const renderList = (container, entries, formatter, emptyMessage) => {
+    if (!container) return;
+    if (!Array.isArray(entries) || !entries.length) {
+      container.innerHTML = `<li class="empty-row">${emptyMessage}</li>`;
+      return;
+    }
+
+    container.innerHTML = entries.slice(0, 12).map((entry) => {
+      return `<li>${formatter(entry)}</li>`;
+    }).join('');
+  };
+
+  renderList(dom.viewingClasses, payload.classes, (entry) => {
+    return `${escapeHtml(entry.name || 'Class')} <small>${escapeHtml(entry.id || '')}</small>`;
+  }, 'No classes found.');
+
+  renderList(dom.viewingStudents, payload.students, (entry) => {
+    return `${escapeHtml(entry.name || 'Student')} <small>${escapeHtml(entry.classId || '')}</small>`;
+  }, 'No students found.');
+
+  renderList(dom.viewingSubjects, payload.subjects, (entry) => {
+    return `${escapeHtml(entry.name || 'Subject')} <small>${escapeHtml(entry.classId || '')}</small>`;
+  }, 'No subjects found.');
+
+  renderList(dom.viewingExams, payload.exams, (entry) => {
+    return `${escapeHtml(entry.title || 'Exam')} <small>${escapeHtml(entry.classId || '')}</small>`;
+  }, 'No exams found.');
+};
+
+const renderActivityLogTable = (entries = []) => {
+  if (!dom.activityBody) return;
+  if (!entries.length) {
+    dom.activityBody.innerHTML = '<tr><td colspan="6" class="empty-row">No activity logs found for the current filters.</td></tr>';
+    return;
+  }
+
+  dom.activityBody.innerHTML = entries.map((entry) => {
+    const actor = findUserRecord(entry.userId);
+    const owner = findUserRecord(entry.dataOwnerUserId);
+    const actorLabel = actor?.name || actor?.email || entry.userEmail || entry.userId || 'Unknown';
+    const ownerLabel = owner?.name || owner?.email || entry.dataOwnerUserId || 'Unknown';
+
+    return `
+      <tr>
+        <td>${escapeHtml(formatCreatedAt(entry.timestamp))}</td>
+        <td>${escapeHtml(actorLabel)}</td>
+        <td>${escapeHtml(formatLogAction(entry.action))}</td>
+        <td>${escapeHtml(entry.targetType || '—')}${entry.targetId ? ` (${escapeHtml(entry.targetId)})` : ''}</td>
+        <td>${escapeHtml(ownerLabel)}</td>
+        <td>${escapeHtml(entry.classId || '—')}</td>
+      </tr>
+    `;
+  }).join('');
+};
+
+const populateActivityUserFilter = () => {
+  if (!dom.activityUserFilter) return;
+  const selectedValue = String(dom.activityUserFilter.value || '').trim();
+
+  const options = ['<option value="">All users</option>'];
+  state.users.forEach((record) => {
+    const label = `${record.name || record.email || record.uid} (${formatRoleLabel(record.role)})`;
+    options.push(`<option value="${escapeHtml(record.uid)}">${escapeHtml(label)}</option>`);
+  });
+
+  dom.activityUserFilter.innerHTML = options.join('');
+  const stillExists = state.users.some((record) => record.uid === selectedValue);
+  dom.activityUserFilter.value = stillExists ? selectedValue : '';
+};
+
+const fetchUsers = async () => {
+  if (!db || !isFirebaseConfigured) {
+    setPanelStatus('Firebase is not configured. User management is unavailable.', 'error');
+    setElementVisibility(dom.usersLoading, false);
+    return;
+  }
+
+  setElementVisibility(dom.usersLoading, true);
+  setPanelStatus('Loading users...');
 
   try {
     const usersSnapshot = await getDocs(collection(db, 'users'));
@@ -222,23 +430,118 @@ const fetchUsers = async () => {
 
     state.users = records;
     renderUsersTable();
-    setStatus(`Loaded ${records.length} user${records.length === 1 ? '' : 's'}.`, 'success');
+    populateActivityUserFilter();
+    setPanelStatus(`Loaded ${records.length} user${records.length === 1 ? '' : 's'}.`, 'success');
   } catch (error) {
     console.error('Failed to fetch users:', error);
     if (isPermissionDeniedError(error)) {
-      setStatus('Access denied. You don\'t have permission.', 'error');
+      setPanelStatus('Access denied. You do not have permission.', 'error');
       return;
     }
-    setStatus(`Failed to load users: ${formatAuthError(error)}`, 'error');
+    setPanelStatus(`Failed to load users: ${formatAuthError(error)}`, 'error');
   } finally {
-    setLoading(false);
+    setElementVisibility(dom.usersLoading, false);
   }
 };
 
+const loadGlobalStats = async () => {
+  try {
+    const stats = await fetchAdminGlobalStats();
+    state.globalStats = {
+      totalUsers: Number(stats?.totalUsers || 0),
+      totalStudents: Number(stats?.totalStudents || 0),
+      totalExams: Number(stats?.totalExams || 0)
+    };
+  } catch (error) {
+    console.error('Failed to fetch admin stats:', error);
+    state.globalStats = {
+      totalUsers: state.users.length,
+      totalStudents: 0,
+      totalExams: 0
+    };
+  }
+  renderStats();
+};
+
+const loadViewingUserData = async () => {
+  if (!state.viewingUserId) {
+    renderViewingIndicator();
+    renderViewingUserData(null);
+    return;
+  }
+
+  setElementVisibility(dom.viewingLoading, true);
+  renderViewingIndicator();
+
+  try {
+    const payload = await fetchUserScopedData(state.viewingUserId);
+    renderViewingUserData(payload);
+  } catch (error) {
+    console.error('Failed to load selected user data:', error);
+    renderViewingUserData(null);
+    setPanelStatus(`Failed to load selected user data: ${formatAuthError(error)}`, 'error');
+  } finally {
+    setElementVisibility(dom.viewingLoading, false);
+  }
+};
+
+const loadActivityLogs = async () => {
+  const selectedUserId = String(dom.activityUserFilter?.value || '').trim();
+  const selectedAction = String(dom.activityActionFilter?.value || '').trim().toLowerCase();
+  const selectedSort = String(dom.activitySortFilter?.value || 'desc').trim().toLowerCase() === 'asc' ? 'asc' : 'desc';
+
+  setElementVisibility(dom.activityLoading, true);
+  setActivityStatus('Loading activity logs...');
+
+  try {
+    let entries = await fetchActivityLogs({
+      userId: selectedUserId,
+      sort: selectedSort,
+      maxEntries: 250
+    });
+
+    if (selectedAction) {
+      entries = entries.filter((entry) => String(entry.action || '').trim().toLowerCase() === selectedAction);
+    }
+
+    state.activityLogs = entries;
+    renderActivityLogTable(entries);
+    setActivityStatus(`Loaded ${entries.length} log entr${entries.length === 1 ? 'y' : 'ies'}.`, 'success');
+  } catch (error) {
+    console.error('Failed to load activity logs:', error);
+    state.activityLogs = [];
+    renderActivityLogTable([]);
+    if (isPermissionDeniedError(error)) {
+      setActivityStatus('Access denied. You do not have permission to read activity logs.', 'error');
+      return;
+    }
+    setActivityStatus(`Failed to load activity logs: ${formatAuthError(error)}`, 'error');
+  } finally {
+    setElementVisibility(dom.activityLoading, false);
+  }
+};
+
+const setViewingUser = async (uid = '') => {
+  state.viewingUserId = String(uid || '').trim();
+  renderUsersTable();
+  renderViewingIndicator();
+  await loadViewingUserData();
+
+  if (dom.activityUserFilter) {
+    dom.activityUserFilter.value = state.viewingUserId;
+  }
+  await loadActivityLogs();
+};
+
 const updateUserRole = async (uid, nextRole) => {
-  const record = state.users.find((entry) => entry.uid === uid);
+  const record = findUserRecord(uid);
   if (!record) {
-    setStatus('Unable to find selected user.', 'error');
+    setPanelStatus('Unable to find selected user.', 'error');
+    return;
+  }
+
+  if (!canManageRoles()) {
+    setPanelStatus('Only developers can update roles in this panel.', 'warning');
     return;
   }
 
@@ -246,27 +549,27 @@ const updateUserRole = async (uid, nextRole) => {
   const currentRole = normalizeUserRole(record.role);
 
   if (!UPDATABLE_ROLES.includes(normalizedNextRole)) {
-    setStatus('Only teacher and admin roles can be assigned in this panel.', 'warning');
+    setPanelStatus('Only teacher and admin roles can be assigned in this panel.', 'warning');
     return;
   }
 
   if (isDeveloperAccountEmail(record.email) && normalizedNextRole !== ROLE_DEVELOPER) {
-    setStatus('Developer account role cannot be downgraded.', 'error');
+    setPanelStatus('Developer account role cannot be downgraded.', 'error');
     return;
   }
 
   if (record.uid === state.authUser?.uid && currentRole === ROLE_DEVELOPER && normalizedNextRole !== ROLE_DEVELOPER) {
-    setStatus('You cannot remove your own developer role.', 'error');
+    setPanelStatus('You cannot remove your own developer role.', 'error');
     return;
   }
 
   if (currentRole === normalizedNextRole) {
-    setStatus('No role changes to apply.', 'warning');
+    setPanelStatus('No role changes to apply.', 'warning');
     return;
   }
 
   try {
-    setStatus('Updating role...');
+    setPanelStatus('Updating role...');
     await updateDoc(doc(db, 'users', uid), {
       uid,
       name: String(record.name || '').trim(),
@@ -276,14 +579,15 @@ const updateUserRole = async (uid, nextRole) => {
 
     record.role = normalizedNextRole;
     renderUsersTable();
-    setStatus('Role updated successfully.', 'success');
+    populateActivityUserFilter();
+    setPanelStatus('Role updated successfully.', 'success');
   } catch (error) {
     console.error('Failed to update role:', error);
     if (isPermissionDeniedError(error)) {
-      setStatus('Access denied. You don\'t have permission.', 'error');
+      setPanelStatus('Access denied. You do not have permission.', 'error');
       return;
     }
-    setStatus(`Failed to update role: ${formatAuthError(error)}`, 'error');
+    setPanelStatus(`Failed to update role: ${formatAuthError(error)}`, 'error');
   }
 };
 
@@ -294,6 +598,28 @@ const bindEvents = () => {
 
   dom.refreshBtn?.addEventListener('click', async () => {
     await fetchUsers();
+    await loadGlobalStats();
+    await loadActivityLogs();
+  });
+
+  dom.refreshActivityBtn?.addEventListener('click', async () => {
+    await loadActivityLogs();
+  });
+
+  dom.activityUserFilter?.addEventListener('change', async () => {
+    await loadActivityLogs();
+  });
+
+  dom.activityActionFilter?.addEventListener('change', async () => {
+    await loadActivityLogs();
+  });
+
+  dom.activitySortFilter?.addEventListener('change', async () => {
+    await loadActivityLogs();
+  });
+
+  dom.clearViewingBtn?.addEventListener('click', async () => {
+    await setViewingUser('');
   });
 
   dom.dashboardBtn?.addEventListener('click', () => {
@@ -309,18 +635,29 @@ const bindEvents = () => {
       await logoutUser();
       redirectToLogin();
     } catch (error) {
-      setStatus(`Logout failed: ${formatAuthError(error)}`, 'error');
+      setPanelStatus(`Logout failed: ${formatAuthError(error)}`, 'error');
       dom.logoutBtn.disabled = false;
       dom.logoutBtn.textContent = previousLabel;
     }
   });
 
   dom.tableBody?.addEventListener('click', async (event) => {
-    const trigger = event.target.closest('button[data-action="update-role"]');
+    const trigger = event.target.closest('button[data-action]');
     if (!trigger) return;
 
     const uid = String(trigger.dataset.userId || '').trim();
     if (!uid) return;
+
+    const action = String(trigger.dataset.action || '').trim();
+    if (action === 'view-user') {
+      trigger.disabled = true;
+      await setViewingUser(uid);
+      return;
+    }
+
+    if (action !== 'update-role') {
+      return;
+    }
 
     const roleSelect = trigger.closest('tr')?.querySelector('select.role-select');
     const nextRole = String(roleSelect?.value || '').trim();
@@ -333,11 +670,11 @@ const bindEvents = () => {
     await updateUserRole(uid, nextRole);
 
     trigger.textContent = previousLabel;
-    trigger.disabled = !canEditRole(state.users.find((entry) => entry.uid === uid));
+    trigger.disabled = !canEditRole(findUserRecord(uid));
   });
 };
 
-const ensureDeveloperAccess = async () => {
+const ensurePanelAccess = async () => {
   const authUser = await waitForInitialAuthState();
   if (!authUser) {
     redirectToLogin();
@@ -357,7 +694,7 @@ const ensureDeveloperAccess = async () => {
     dom.roleBadge.textContent = formatRoleLabel(state.currentRole);
   }
 
-  if (state.currentRole !== ROLE_DEVELOPER) {
+  if (state.currentRole !== ROLE_ADMIN && state.currentRole !== ROLE_DEVELOPER) {
     redirectToDashboard();
     return false;
   }
@@ -367,14 +704,19 @@ const ensureDeveloperAccess = async () => {
 
 const init = async () => {
   bindEvents();
+  renderViewingUserData(null);
+  renderViewingIndicator();
 
   try {
-    const canAccessPanel = await ensureDeveloperAccess();
+    const canAccessPanel = await ensurePanelAccess();
     if (!canAccessPanel) return;
+
     await fetchUsers();
+    await loadGlobalStats();
+    await loadActivityLogs();
   } catch (error) {
-    console.error('Failed to initialize developer panel:', error);
-    setStatus(`Failed to initialize panel: ${formatAuthError(error)}`, 'error');
+    console.error('Failed to initialize admin panel:', error);
+    setPanelStatus(`Failed to initialize panel: ${formatAuthError(error)}`, 'error');
   }
 };
 

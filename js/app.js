@@ -29,6 +29,18 @@ let authSubscriptionCleanup = null;
 
 const LOGIN_PAGE_PATH = '/login.html';
 
+const refreshDashboardStudentCount = async () => {
+  if (typeof app.refreshDashboardStudentCount !== 'function') {
+    return;
+  }
+
+  try {
+    await app.refreshDashboardStudentCount();
+  } catch (error) {
+    console.warn('Unable to refresh dashboard student count:', error);
+  }
+};
+
 const redirectToLogin = () => {
   if (window.location.pathname.endsWith(LOGIN_PAGE_PATH)) return;
   window.location.replace(LOGIN_PAGE_PATH);
@@ -104,6 +116,10 @@ const clearLoadedDataForLogout = () => {
 
   app.state.error = null;
   app.state.isLoading = false;
+  app.state.dashboardStudentCount = null;
+  if (typeof app.clearViewingUserId === 'function') {
+    app.clearViewingUserId();
+  }
   if (typeof app.clearCurrentUserRole === 'function') {
     app.clearCurrentUserRole();
   }
@@ -125,6 +141,7 @@ const ensureAuthenticatedSession = async () => {
 
     setAuthUserState(authUser);
     await setResolvedUserRole(authUser);
+    await refreshDashboardStudentCount();
     console.log('Active UID:', authUser.uid);
     return true;
   } catch (error) {
@@ -147,6 +164,7 @@ const handleAuthUserChange = async (authUser) => {
 
   setAuthUserState(authUser);
   await setResolvedUserRole(authUser);
+  await refreshDashboardStudentCount();
   console.log('Active UID:', authUser.uid);
 
   const nextUid = authUser.uid;
@@ -158,6 +176,7 @@ const handleAuthUserChange = async (authUser) => {
   clearLoadedDataForLogout();
   setAuthUserState(authUser);
   await setResolvedUserRole(authUser);
+  await refreshDashboardStudentCount();
 
   try {
     await app.load();

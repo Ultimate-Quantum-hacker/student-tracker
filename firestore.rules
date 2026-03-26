@@ -58,7 +58,7 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdminOrDeveloperRole();
 
-      allow write: if isAuthenticated() && isDeveloperEmail();
+      allow write: if isDeveloperRole();
 
       allow create: if isOwner(userId)
         && hasValidUserProfileShape(userId)
@@ -74,7 +74,13 @@ service cloud.firestore {
 
     match /users/{userId}/{document=**} {
       allow read: if isOwner(userId) || isAdminOrDeveloperRole();
-      allow write: if isOwner(userId);
+      allow write: if isOwner(userId) || isDeveloperRole();
+    }
+
+    match /activityLogs/{logId} {
+      allow create: if isAuthenticated();
+      allow read: if isAdminOrDeveloperRole();
+      allow update, delete: if isDeveloperRole();
     }
 
     match /{document=**} {

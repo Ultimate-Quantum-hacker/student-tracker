@@ -3,7 +3,26 @@
    Centralized Firestore-first data access with cache fallback.
    ═══════════════════════════════════════════════ */
 
-import { db, doc, collection, addDoc, getDocs, setDoc, updateDoc, deleteDoc, serverTimestamp, isFirebaseConfigured, auth, authReadyPromise, onAuthStateChanged } from '../js/firebase.js';
+import {
+  db,
+  doc,
+  collection,
+  collectionGroup,
+  addDoc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
+  orderBy,
+  limit,
+  serverTimestamp,
+  isFirebaseConfigured,
+  auth,
+  authReadyPromise,
+  onAuthStateChanged
+} from '../js/firebase.js';
 
 const CACHE_KEY_PREFIX = 'studentAppData';
 const USERS_COLLECTION = 'users';
@@ -11,8 +30,10 @@ const CLASSES_SUBCOLLECTION = 'classes';
 const STUDENTS_SUBCOLLECTION = 'students';
 const SUBJECTS_SUBCOLLECTION = 'subjects';
 const EXAMS_SUBCOLLECTION = 'exams';
+const ACTIVITY_LOGS_COLLECTION = 'activityLogs';
 const DEFAULT_CLASS_NAME = 'My Class';
 const TRASH_RETENTION_DAYS = 3;
+const ACTIVITY_LOG_FETCH_LIMIT = 300;
 
 let currentClassId = '';
 
@@ -28,6 +49,18 @@ const clone = (value) => JSON.parse(JSON.stringify(value));
 const asArray = (value) => Array.isArray(value) ? value : [];
 
 const normalizeDeletedAtValue = (value) => {
+  if (!value) return null;
+  if (typeof value?.toDate === 'function') {
+    return value.toDate().toISOString();
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return parsed.toISOString();
+};
+
+const toIsoDateString = (value) => {
   if (!value) return null;
   if (typeof value?.toDate === 'function') {
     return value.toDate().toISOString();
@@ -785,9 +818,13 @@ const toDocId = (prefix, label, index) => {
   return `${prefix}_${slug || index + 1}_${index + 1}`;
 };
 
-const getCurrentUserId = () => {
+const getAuthenticatedUserId = () => {
   const uid = auth?.currentUser?.uid;
   return uid ? String(uid).trim() : '';
+};
+
+const getCurrentUserId = () => {
+  return getAuthenticatedUserId();
 };
 
 const waitForAuthResolution = async () => {
@@ -1697,6 +1734,253 @@ const deleteCollectionDocuments = async (collectionRef) => {
     operations.push(deleteDoc(entry.ref));
   });
   await Promise.all(operations);
+};
+
+const buildActivityLogRow = (entry) => {
+  const payload = entry?.data() || {};
+  return {
+    id: String(entry?.id || '').trim(),
+    userId: String(payload.userId || '').trim(),
+    userEmail: String(payload.userEmail || '').trim().toLowerCase(),
+    action: String(payload.action || '').trim().toLowerCase(),
+    targetId: String(payload.targetId || '').trim(),
+    targetType: String(payload.targetType || '').trim().toLowerCase(),
+    dataOwnerUserId: String(payload.dataOwnerUserId || '').trim(),
+    classId: String(payload.classId || '').trim(),
+    timestamp: toIsoDateString(payload.timestamp),
+    timestampLabel: toIsoDateString(payload.timestamp) || ''
+  };
+};
+
+const sortActivityLogsByTimeDesc = (entries = []) => {
+  return [...entries].sort((a, b) => {
+    const aTime = new Date(a?.timestamp || 0).getTime() || 0;
+    const bTime = new Date(b?.timestamp || 0).getTime() || 0;
+    return bTime - aTime;
+  });
+};
+
+const countActiveCollectionEntries = (snapshot) => {
+  let count = 0;
+  snapshot.forEach((entry) => {
+    const payload = entry.data() || {};
+    if (payload.deleted === true) return;
+    count += 1;
+  });
+  return count;
+};
+
+export const logActivity = async (action, targetId, targetType, options = {}) => {
+  try {
+    if (!isFirebaseConfigured || !db) {
+      return false;
+    }
+
+    const actorUserId = getAuthenticatedUserId();
+    if (!actorUserId) {
+      return false;
+    }
+
+    const normalizedAction = String(action || '').trim().toLowerCase();
+    const normalizedTargetType = String(targetType || '').trim().toLowerCase();
+    if (!normalizedAction || !normalizedTargetType) {
+      return false;
+    }
+
+    await addDoc(collection(db, ACTIVITY_LOGS_COLLECTION), {
+      userId: actorUserId,
+      userEmail: String(auth?.currentUser?.email || '').trim().toLowerCase(),
+      action: normalizedAction,
+      targetId: String(targetId || '').trim(),
+      targetType: normalizedTargetType,
+      dataOwnerUserId: String(options?.dataOwnerUserId || actorUserId).trim(),
+      classId: String(options?.classId || '').trim(),
+      timestamp: serverTimestamp()
+    });
+
+    return true;
+  } catch (error) {
+    console.warn('Failed to write activity log entry:', error);
+    return false;
+  }
+};
+
+export const fetchRoleScopedStudentCount = async (role = 'teacher') => {
+  const userId = await ensureAuthenticatedUserId('read student totals');
+  if (!isFirebaseConfigured || !db) {
+    return 0;
+  }
+
+  const normalizedRole = String(role || '').trim().toLowerCase();
+  const studentsRef = collectionGroup(db, STUDENTS_SUBCOLLECTION);
+  const studentsQuery = normalizedRole === 'admin' || normalizedRole === 'developer'
+    ? studentsRef
+    : query(studentsRef, where('userId', '==', userId));
+
+  const studentsSnapshot = await getDocs(studentsQuery);
+  return countActiveCollectionEntries(studentsSnapshot);
+};
+
+export const fetchAdminGlobalStats = async () => {
+  await ensureAuthenticatedUserId('read admin statistics');
+  if (!isFirebaseConfigured || !db) {
+    return {
+      totalUsers: 0,
+      totalStudents: 0,
+      totalExams: 0
+    };
+  }
+
+  const [usersSnapshot, studentsSnapshot, examsSnapshot] = await Promise.all([
+    getDocs(collection(db, USERS_COLLECTION)),
+    getDocs(collectionGroup(db, STUDENTS_SUBCOLLECTION)),
+    getDocs(collectionGroup(db, EXAMS_SUBCOLLECTION))
+  ]);
+
+  return {
+    totalUsers: usersSnapshot.size,
+    totalStudents: countActiveCollectionEntries(studentsSnapshot),
+    totalExams: countActiveCollectionEntries(examsSnapshot)
+  };
+};
+
+export const fetchUserScopedData = async (targetUserId = '') => {
+  const requesterId = await ensureAuthenticatedUserId('view user data');
+  const selectedUserId = String(targetUserId || requesterId).trim();
+
+  if (!selectedUserId) {
+    return {
+      userId: '',
+      classes: [],
+      students: [],
+      subjects: [],
+      exams: [],
+      counts: {
+        classes: 0,
+        students: 0,
+        subjects: 0,
+        exams: 0
+      }
+    };
+  }
+
+  if (!isFirebaseConfigured || !db) {
+    return {
+      userId: selectedUserId,
+      classes: [],
+      students: [],
+      subjects: [],
+      exams: [],
+      counts: {
+        classes: 0,
+        students: 0,
+        subjects: 0,
+        exams: 0
+      }
+    };
+  }
+
+  const [classesSnapshot, studentsSnapshot, subjectsSnapshot, examsSnapshot] = await Promise.all([
+    getDocs(collection(db, USERS_COLLECTION, selectedUserId, CLASSES_SUBCOLLECTION)),
+    getDocs(query(collectionGroup(db, STUDENTS_SUBCOLLECTION), where('userId', '==', selectedUserId))),
+    getDocs(query(collectionGroup(db, SUBJECTS_SUBCOLLECTION), where('userId', '==', selectedUserId))),
+    getDocs(query(collectionGroup(db, EXAMS_SUBCOLLECTION), where('userId', '==', selectedUserId)))
+  ]);
+
+  const classes = [];
+  classesSnapshot.forEach((entry) => {
+    const payload = entry.data() || {};
+    if (payload.deleted === true) return;
+    classes.push({
+      id: String(payload.id || entry.id || '').trim(),
+      name: String(payload.name || DEFAULT_CLASS_NAME).trim() || DEFAULT_CLASS_NAME,
+      createdAt: toIsoDateString(payload.createdAt)
+    });
+  });
+
+  const students = [];
+  studentsSnapshot.forEach((entry) => {
+    const payload = entry.data() || {};
+    if (payload.deleted === true) return;
+    students.push({
+      id: String(payload.id || entry.id || '').trim(),
+      name: String(payload.name || '').trim() || 'Student',
+      classId: String(payload.classId || entry?.ref?.parent?.parent?.id || '').trim()
+    });
+  });
+
+  const subjects = [];
+  subjectsSnapshot.forEach((entry) => {
+    const payload = entry.data() || {};
+    if (payload.deleted === true) return;
+    subjects.push({
+      id: String(payload.id || entry.id || '').trim(),
+      name: String(payload.name || '').trim() || 'Subject',
+      classId: String(payload.classId || entry?.ref?.parent?.parent?.id || '').trim()
+    });
+  });
+
+  const exams = [];
+  examsSnapshot.forEach((entry) => {
+    const payload = entry.data() || {};
+    if (payload.deleted === true) return;
+    exams.push({
+      id: String(payload.id || entry.id || '').trim(),
+      title: String(payload.title || payload.name || '').trim() || 'Exam',
+      classId: String(payload.classId || entry?.ref?.parent?.parent?.id || '').trim()
+    });
+  });
+
+  return {
+    userId: selectedUserId,
+    classes,
+    students,
+    subjects,
+    exams,
+    counts: {
+      classes: classes.length,
+      students: students.length,
+      subjects: subjects.length,
+      exams: exams.length
+    }
+  };
+};
+
+export const fetchActivityLogs = async ({ userId = '', sort = 'desc', maxEntries = 200 } = {}) => {
+  await ensureAuthenticatedUserId('read activity logs');
+  if (!isFirebaseConfigured || !db) {
+    return [];
+  }
+
+  const normalizedUserId = String(userId || '').trim();
+  const normalizedSort = String(sort || '').trim().toLowerCase() === 'asc' ? 'asc' : 'desc';
+  const normalizedLimit = Math.max(10, Math.min(Number(maxEntries) || 200, ACTIVITY_LOG_FETCH_LIMIT));
+
+  const logsQuery = query(
+    collection(db, ACTIVITY_LOGS_COLLECTION),
+    orderBy('timestamp', 'desc'),
+    limit(normalizedLimit)
+  );
+  const logsSnapshot = await getDocs(logsQuery);
+
+  let logs = [];
+  logsSnapshot.forEach((entry) => {
+    logs.push(buildActivityLogRow(entry));
+  });
+
+  logs = sortActivityLogsByTimeDesc(logs);
+
+  if (normalizedUserId) {
+    logs = logs.filter((entry) => {
+      return entry.userId === normalizedUserId || entry.dataOwnerUserId === normalizedUserId;
+    });
+  }
+
+  if (normalizedSort === 'asc') {
+    logs.reverse();
+  }
+
+  return logs;
 };
 
 export const readCachedData = (classId = '') => {

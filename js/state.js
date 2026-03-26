@@ -16,7 +16,9 @@ window.TrackerApp = window.TrackerApp || {};
     currentClassId: '',
     currentClassName: 'My Class',
     currentUserRole: 'teacher',
+    viewingUserId: '',
     isRoleResolved: false,
+    dashboardStudentCount: null,
     students: [],
     studentTrash: [],
     classTrash: [],
@@ -69,6 +71,24 @@ window.TrackerApp = window.TrackerApp || {};
     app.state.isRoleResolved = Boolean(resolved);
   };
 
+  app.getViewingUserId = function () {
+    return String(app.state.viewingUserId || '').trim();
+  };
+
+  app.setViewingUserId = function (userId = '') {
+    app.state.viewingUserId = String(userId || '').trim();
+    return app.state.viewingUserId;
+  };
+
+  app.clearViewingUserId = function () {
+    app.state.viewingUserId = '';
+    return app.state.viewingUserId;
+  };
+
+  app.getEffectiveUserId = function () {
+    return app.getViewingUserId() || String(app.state.authUser?.uid || '').trim();
+  };
+
   app.clearCurrentUserRole = function () {
     app.state.currentUserRole = ROLE_TEACHER;
     app.state.isRoleResolved = false;
@@ -84,6 +104,28 @@ window.TrackerApp = window.TrackerApp || {};
 
   app.isDeveloperRole = function () {
     return app.getCurrentUserRole() === ROLE_DEVELOPER;
+  };
+
+  app.refreshDashboardStudentCount = async function () {
+    try {
+      app.state.dashboardStudentCount = await dataService.fetchRoleScopedStudentCount(app.getCurrentUserRole());
+    } catch (error) {
+      console.warn('Failed to refresh dashboard student count:', error);
+      app.state.dashboardStudentCount = null;
+    }
+    return app.state.dashboardStudentCount;
+  };
+
+  app.fetchAdminGlobalStats = function () {
+    return dataService.fetchAdminGlobalStats();
+  };
+
+  app.fetchUserScopedData = function (userId = '') {
+    return dataService.fetchUserScopedData(userId);
+  };
+
+  app.fetchActivityLogs = function (options = {}) {
+    return dataService.fetchActivityLogs(options);
   };
 
   const persistCurrentClassId = (classId) => {
@@ -164,6 +206,17 @@ window.TrackerApp = window.TrackerApp || {};
   };
 
   const deepClone = (value) => JSON.parse(JSON.stringify(value));
+
+  const logTrackedActivity = async (action, targetId, targetType, options = {}) => {
+    try {
+      await dataService.logActivity(action, targetId, targetType, {
+        ...options,
+        dataOwnerUserId: options?.dataOwnerUserId || app.getViewingUserId() || undefined
+      });
+    } catch (error) {
+      console.warn('Activity log hook failed:', error);
+    }
+  };
 
   const sortTrashEntriesNewestFirst = (entries = []) => {
     return deepClone(entries)
@@ -506,6 +559,7 @@ window.TrackerApp = window.TrackerApp || {};
         app.writeCachedData(fallback);
       }
     } finally {
+      await app.refreshDashboardStudentCount();
       app.state.isLoading = false;
     }
   };
@@ -692,6 +746,10 @@ window.TrackerApp = window.TrackerApp || {};
 
         const saveResult = await dataService.saveStudent(app.getRawData(), newStudent);
         syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult, 'save student');
+        await logTrackedActivity('student_added', newStudent.id, 'student', {
+          classId: app.state.currentClassId
+        });
+        await app.refreshDashboardStudentCount();
         return newStudent;
       } catch (error) {
         console.error('Failed to add student:', error);
@@ -838,6 +896,12 @@ window.TrackerApp = window.TrackerApp || {};
           ...deepClone(app.state.studentTrash || []).filter(entry => entry?.id !== studentId)
         ]);
 
+        await logTrackedActivity('student_deleted', studentId, 'student', {
+          classId: app.state.currentClassId
+        });
+
+        await app.refreshDashboardStudentCount();
+
         return deletedEntry;
       } catch (error) {
         console.error('Failed to delete student:', error);
@@ -943,6 +1007,9 @@ window.TrackerApp = window.TrackerApp || {};
 
         const saveResult = await dataService.saveAllData(composeRawData(nextStudents, nextSubjects, nextExams));
         syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult, 'save exam changes');
+        await logTrackedActivity('exam_updated', examId, 'exam', {
+          classId: app.state.currentClassId
+        });
         return nextExams[index];
       } catch (error) {
         console.error('Failed to update exam:', error);
@@ -1002,6 +1069,9 @@ window.TrackerApp = window.TrackerApp || {};
 
         const saveResult = await dataService.updateSubjects(app.getRawData(), nextSubjects);
         syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult, 'update subjects');
+        await logTrackedActivity('subject_created', newSubject.id, 'subject', {
+          classId: app.state.currentClassId
+        });
         return newSubject;
       } catch (error) {
         console.error('Failed to add subject:', error);
