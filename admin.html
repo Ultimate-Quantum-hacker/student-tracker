@@ -9,202 +9,215 @@
   <link rel="stylesheet" href="css/admin.css">
 </head>
 <body>
-  <main class="admin-shell">
-    <header class="panel-header">
-      <div class="panel-header-main">
-        <p class="panel-eyebrow">Administration</p>
-        <h1>Admin Panel</h1>
-        <p class="panel-subtitle">Manage users, inspect data context, and monitor system activity.</p>
-        <p id="panel-last-updated" class="panel-last-updated" aria-live="polite">Last updated: just now</p>
-      </div>
-      <div class="panel-header-actions">
-        <span id="panel-role-badge" class="role-badge" aria-live="polite">Role: Loading...</span>
-        <button id="refresh-users-btn" class="btn btn-secondary" type="button">Refresh</button>
-        <button id="go-dashboard-btn" class="btn btn-secondary" type="button">Dashboard</button>
-        <button id="panel-logout-btn" class="btn btn-danger" type="button">Logout</button>
-      </div>
-    </header>
+  <main class="admin-shell admin-layout">
+    <aside class="admin-sidebar" aria-label="Admin sections">
+      <div class="admin-sidebar-title">Admin</div>
+      <button class="admin-sidebar-btn active" type="button" data-target="overview" aria-current="true">Overview</button>
+      <button class="admin-sidebar-btn" type="button" data-target="users">Users</button>
+      <button class="admin-sidebar-btn" type="button" data-target="search">Global Search</button>
+      <button class="admin-sidebar-btn" type="button" data-target="logs">Activity Logs</button>
+    </aside>
 
-    <section class="panel-card" aria-labelledby="admin-overview-title">
-      <div class="panel-toolbar">
-        <h2 id="admin-overview-title">Overview</h2>
-      </div>
-      <div class="stats-grid">
-        <article class="stat-card">
-          <p>Total Users</p>
-          <strong id="admin-total-users">0</strong>
-        </article>
-        <article class="stat-card">
-          <p>Total Students</p>
-          <strong id="admin-total-students">0</strong>
-        </article>
-        <article class="stat-card">
-          <p>Total Exams</p>
-          <strong id="admin-total-exams">0</strong>
-        </article>
-      </div>
-    </section>
-
-    <section class="panel-card" aria-labelledby="global-search-title">
-      <div class="panel-toolbar panel-toolbar-stacked">
-        <div>
-          <h2 id="global-search-title">Global Student Search</h2>
-          <p class="panel-subtitle">Search students across all users and jump directly into the owner context.</p>
+    <div class="admin-content">
+      <header class="panel-header">
+        <div class="panel-header-main">
+          <p class="panel-eyebrow">Administration</p>
+          <h1>Admin Panel</h1>
+          <p class="panel-subtitle">Manage users, inspect data context, and monitor system activity.</p>
+          <p id="panel-last-updated" class="panel-last-updated" aria-live="polite">Last updated: just now</p>
         </div>
-        <div class="search-inline-actions">
+        <div class="panel-header-actions">
+          <span id="panel-role-badge" class="role-badge" aria-live="polite">Role: Loading...</span>
+          <button id="panel-theme-btn" class="btn btn-secondary" type="button" aria-label="Toggle theme" aria-pressed="false">
+            <span id="panel-theme-label">Light Mode</span>
+          </button>
+          <button id="refresh-users-btn" class="btn btn-secondary" type="button">Refresh</button>
+          <button id="go-dashboard-btn" class="btn btn-secondary" type="button">Dashboard</button>
+          <button id="panel-logout-btn" class="btn btn-danger" type="button">Logout</button>
+        </div>
+      </header>
+
+      <section id="admin-section-overview" class="panel-card admin-scroll-section" data-section="overview" aria-labelledby="admin-overview-title">
+        <div class="panel-toolbar">
+          <h2 id="admin-overview-title">Overview</h2>
+        </div>
+        <div class="stats-grid">
+          <article class="stat-card">
+            <p>Total Users</p>
+            <strong id="admin-total-users">0</strong>
+          </article>
+          <article class="stat-card">
+            <p>Total Students</p>
+            <strong id="admin-total-students">0</strong>
+          </article>
+          <article class="stat-card">
+            <p>Total Exams</p>
+            <strong id="admin-total-exams">0</strong>
+          </article>
+        </div>
+      </section>
+
+      <section id="admin-section-users" class="panel-card admin-scroll-section" data-section="users" aria-labelledby="users-panel-title">
+        <div class="panel-toolbar">
+          <h2 id="users-panel-title">Users</h2>
           <input
-            id="global-student-search-input"
+            id="users-search-input"
             class="search-input"
             type="search"
-            placeholder="Search student name..."
-            aria-label="Search student by name across all users"
+            placeholder="Search by name or email"
+            aria-label="Search users by name or email"
             autocomplete="off"
           >
-          <button id="global-search-clear-btn" class="btn btn-secondary" type="button">Clear</button>
         </div>
-      </div>
 
-      <p id="global-search-status" class="panel-status" aria-live="polite"></p>
-      <p id="global-search-loading" class="loading-state" style="display: none;" aria-live="polite">Loading global search index...</p>
+        <p id="panel-status" class="panel-status" aria-live="polite"></p>
+        <p id="users-loading" class="loading-state" aria-live="polite">Loading users...</p>
 
-      <div class="table-wrap">
-        <table class="users-table" aria-label="Global student search results">
-          <thead>
-            <tr>
-              <th>Student</th>
-              <th>Owner</th>
-              <th>Owner Role</th>
-              <th>Class</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody id="global-search-results-body">
-            <tr>
-              <td colspan="5" class="empty-row">Search by student name to see results.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <section class="panel-card" aria-labelledby="users-panel-title">
-      <div class="panel-toolbar">
-        <h2 id="users-panel-title">Users</h2>
-        <input
-          id="users-search-input"
-          class="search-input"
-          type="search"
-          placeholder="Search by name or email"
-          aria-label="Search users by name or email"
-          autocomplete="off"
-        >
-      </div>
-
-      <p id="panel-status" class="panel-status" aria-live="polite"></p>
-      <p id="users-loading" class="loading-state" aria-live="polite">Loading users...</p>
-
-      <div class="table-wrap">
-        <table class="users-table" aria-label="Application users">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Email</th>
-              <th>Role</th>
-              <th>Created</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="users-table-body">
-            <tr>
-              <td colspan="5" class="empty-row">No users loaded.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <section class="panel-card" aria-labelledby="viewing-user-title">
-      <div class="panel-toolbar panel-toolbar-stacked">
-        <div>
-          <h2 id="viewing-user-title">Viewing Context</h2>
-          <p class="panel-subtitle">Preview data loaded with <code>viewingUserId || auth.currentUser.uid</code>.</p>
+        <div class="table-wrap">
+          <table class="users-table" aria-label="Application users">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Created</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="users-table-body">
+              <tr>
+                <td colspan="5" class="empty-row">No users loaded.</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-        <div id="viewing-context-indicator" class="viewing-indicator" hidden>
-          <span id="viewing-context-label">Viewing as yourself</span>
-          <button id="clear-viewing-btn" class="btn btn-secondary" type="button">Return to My Context</button>
+      </section>
+
+      <section class="panel-card" aria-labelledby="viewing-user-title">
+        <div class="panel-toolbar panel-toolbar-stacked">
+          <div>
+            <h2 id="viewing-user-title">Viewing Context</h2>
+            <p class="panel-subtitle">Preview currently selected user data context.</p>
+          </div>
+          <div id="viewing-context-indicator" class="viewing-indicator" hidden>
+            <span id="viewing-context-label">Viewing as yourself</span>
+            <button id="clear-viewing-btn" class="btn btn-secondary" type="button">Return to My Context</button>
+          </div>
         </div>
-      </div>
 
-      <p id="viewing-user-loading" class="loading-state" style="display: none;" aria-live="polite">Loading selected user data...</p>
-      <div id="viewing-user-summary" class="mini-stats-grid">
-        <div class="empty-row">Select a user to preview their data context.</div>
-      </div>
-
-      <div class="preview-grid">
-        <article class="preview-card">
-          <h3>Classes</h3>
-          <ul id="viewing-user-classes"></ul>
-        </article>
-        <article class="preview-card">
-          <h3>Students</h3>
-          <ul id="viewing-user-students"></ul>
-        </article>
-        <article class="preview-card">
-          <h3>Subjects</h3>
-          <ul id="viewing-user-subjects"></ul>
-        </article>
-        <article class="preview-card">
-          <h3>Exams</h3>
-          <ul id="viewing-user-exams"></ul>
-        </article>
-      </div>
-    </section>
-
-    <section class="panel-card" aria-labelledby="activity-log-title">
-      <div class="panel-toolbar panel-toolbar-stacked">
-        <h2 id="activity-log-title">Activity Logs</h2>
-        <div class="activity-filters">
-          <select id="activity-user-filter" class="role-select" aria-label="Filter activity by user">
-            <option value="">All users</option>
-          </select>
-          <select id="activity-action-filter" class="role-select" aria-label="Filter activity by action">
-            <option value="">All actions</option>
-            <option value="student_added">Student Added</option>
-            <option value="student_deleted">Student Deleted</option>
-            <option value="exam_updated">Exam Updated</option>
-            <option value="subject_created">Subject Created</option>
-          </select>
-          <select id="activity-sort-filter" class="role-select" aria-label="Sort activity by time">
-            <option value="desc">Newest First</option>
-            <option value="asc">Oldest First</option>
-          </select>
-          <button id="refresh-activity-btn" class="btn btn-secondary" type="button">Refresh Logs</button>
+        <p id="viewing-user-loading" class="loading-state" style="display: none;" aria-live="polite">Loading selected user data...</p>
+        <div id="viewing-user-summary" class="mini-stats-grid">
+          <div class="empty-row">Select a user to preview their data context.</div>
         </div>
-      </div>
 
-      <p id="activity-status" class="panel-status" aria-live="polite"></p>
-      <p id="activity-loading" class="loading-state" style="display: none;" aria-live="polite">Loading activity logs...</p>
+        <div class="preview-grid">
+          <article class="preview-card">
+            <h3>Classes</h3>
+            <ul id="viewing-user-classes"></ul>
+          </article>
+          <article class="preview-card">
+            <h3>Students</h3>
+            <ul id="viewing-user-students"></ul>
+          </article>
+          <article class="preview-card">
+            <h3>Subjects</h3>
+            <ul id="viewing-user-subjects"></ul>
+          </article>
+          <article class="preview-card">
+            <h3>Exams</h3>
+            <ul id="viewing-user-exams"></ul>
+          </article>
+        </div>
+      </section>
 
-      <div class="table-wrap">
-        <table class="users-table" aria-label="Activity logs">
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>Event</th>
-              <th>Actor Role</th>
-              <th>Data Owner</th>
-              <th>Class</th>
-              <th>Jump</th>
-            </tr>
-          </thead>
-          <tbody id="activity-table-body">
-            <tr>
-              <td colspan="6" class="empty-row">No logs loaded.</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
+      <section id="admin-section-search" class="panel-card admin-scroll-section" data-section="search" aria-labelledby="global-search-title">
+        <div class="panel-toolbar panel-toolbar-stacked">
+          <div>
+            <h2 id="global-search-title">Global Student Search</h2>
+            <p class="panel-subtitle">Search students across all users and jump directly into the owner context.</p>
+          </div>
+          <div class="search-inline-actions">
+            <input
+              id="global-student-search-input"
+              class="search-input"
+              type="search"
+              placeholder="Search student name..."
+              aria-label="Search student by name across all users"
+              autocomplete="off"
+            >
+            <button id="global-search-clear-btn" class="btn btn-secondary" type="button">Clear</button>
+          </div>
+        </div>
+
+        <p id="global-search-status" class="panel-status" aria-live="polite"></p>
+        <p id="global-search-loading" class="loading-state" style="display: none;" aria-live="polite">Loading global search index...</p>
+
+        <div class="table-wrap">
+          <table class="users-table" aria-label="Global student search results">
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th>Owner</th>
+                <th>Owner Role</th>
+                <th>Class</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="global-search-results-body">
+              <tr>
+                <td colspan="5" class="empty-row">Search by student name to see results.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="admin-section-logs" class="panel-card admin-scroll-section" data-section="logs" aria-labelledby="activity-log-title">
+        <div class="panel-toolbar panel-toolbar-stacked">
+          <h2 id="activity-log-title">Activity Logs</h2>
+          <div class="activity-filters">
+            <select id="activity-user-filter" class="role-select" aria-label="Filter activity by user">
+              <option value="">All users</option>
+            </select>
+            <select id="activity-action-filter" class="role-select" aria-label="Filter activity by action">
+              <option value="">All actions</option>
+              <option value="student_added">Student Added</option>
+              <option value="student_deleted">Student Deleted</option>
+              <option value="exam_updated">Exam Updated</option>
+              <option value="subject_created">Subject Created</option>
+            </select>
+            <select id="activity-sort-filter" class="role-select" aria-label="Sort activity by time">
+              <option value="desc">Newest First</option>
+              <option value="asc">Oldest First</option>
+            </select>
+            <button id="refresh-activity-btn" class="btn btn-secondary" type="button">Refresh Logs</button>
+          </div>
+        </div>
+
+        <p id="activity-status" class="panel-status" aria-live="polite"></p>
+        <p id="activity-loading" class="loading-state" style="display: none;" aria-live="polite">Loading activity logs...</p>
+
+        <div class="table-wrap">
+          <table class="users-table" aria-label="Activity logs">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Event</th>
+                <th>Actor Role</th>
+                <th>Data Owner</th>
+                <th>Class</th>
+                <th>Jump</th>
+              </tr>
+            </thead>
+            <tbody id="activity-table-body">
+              <tr>
+                <td colspan="6" class="empty-row">No logs loaded.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
   </main>
 
   <div id="admin-confirm-modal" class="admin-modal" aria-hidden="true">

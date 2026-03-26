@@ -77,6 +77,14 @@ service cloud.firestore {
       allow write: if isOwner(userId) || isDeveloperRole();
     }
 
+    match /{path=**}/students/{docId} {
+      allow read: if isAuthenticated()
+        && (
+          request.auth.uid == resource.data.userId
+          || isAdminOrDeveloperRole()
+        );
+    }
+
     match /activityLogs/{logId} {
       allow create: if isAuthenticated();
       allow read: if isAdminOrDeveloperRole();

@@ -29,6 +29,7 @@ const ROLE_DEVELOPER = 'developer';
 const UPDATABLE_ROLES = [ROLE_TEACHER, ROLE_ADMIN];
 const VIEWING_USER_CONTEXT_KEY = 'viewingUserId';
 const VIEWING_USER_LABEL_KEY = 'viewingUserLabel';
+const THEME_STORAGE_KEY = 'theme';
 
 const state = {
   authUser: null,
@@ -60,6 +61,8 @@ const dom = {
   refreshBtn: document.getElementById('refresh-users-btn'),
   dashboardBtn: document.getElementById('go-dashboard-btn'),
   logoutBtn: document.getElementById('panel-logout-btn'),
+  themeBtn: document.getElementById('panel-theme-btn'),
+  themeLabel: document.getElementById('panel-theme-label'),
   lastUpdated: document.getElementById('panel-last-updated'),
   toast: document.getElementById('admin-toast'),
   confirmModal: document.getElementById('admin-confirm-modal'),
@@ -89,7 +92,9 @@ const dom = {
   activityUserFilter: document.getElementById('activity-user-filter'),
   activityActionFilter: document.getElementById('activity-action-filter'),
   activitySortFilter: document.getElementById('activity-sort-filter'),
-  refreshActivityBtn: document.getElementById('refresh-activity-btn')
+  refreshActivityBtn: document.getElementById('refresh-activity-btn'),
+  sidebarButtons: Array.from(document.querySelectorAll('.admin-sidebar-btn')),
+  scrollSections: Array.from(document.querySelectorAll('.admin-scroll-section'))
 };
 
 const redirectToDashboard = () => {
@@ -105,6 +110,102 @@ const redirectToLogin = () => {
 const setElementVisibility = (element, shouldShow) => {
   if (!element) return;
   element.style.display = shouldShow ? 'block' : 'none';
+};
+
+const getStoredTheme = () => {
+  if (typeof localStorage === 'undefined') return 'light';
+  return normalizeText(localStorage.getItem(THEME_STORAGE_KEY)).toLowerCase() === 'dark' ? 'dark' : 'light';
+};
+
+const applyPanelTheme = (theme) => {
+  const normalizedTheme = String(theme || 'light').trim().toLowerCase() === 'dark' ? 'dark' : 'light';
+  const isDarkMode = normalizedTheme === 'dark';
+
+  document.body.classList.toggle('dark', isDarkMode);
+  document.body.classList.toggle('dark-mode', isDarkMode);
+  document.body.classList.toggle('light-mode', !isDarkMode);
+
+  if (dom.themeLabel) {
+    dom.themeLabel.textContent = isDarkMode ? 'Dark Mode' : 'Light Mode';
+  }
+
+  if (dom.themeBtn) {
+    dom.themeBtn.setAttribute('aria-pressed', isDarkMode ? 'true' : 'false');
+    dom.themeBtn.title = isDarkMode ? 'Dark Mode' : 'Light Mode';
+  }
+
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(THEME_STORAGE_KEY, normalizedTheme);
+  }
+};
+
+const togglePanelTheme = () => {
+  const nextTheme = document.body.classList.contains('dark') || document.body.classList.contains('dark-mode')
+    ? 'light'
+    : 'dark';
+  applyPanelTheme(nextTheme);
+};
+
+const setActiveSidebarTarget = (target = '') => {
+  const normalizedTarget = normalizeText(target);
+  if (!normalizedTarget || !dom.sidebarButtons.length) return;
+  dom.sidebarButtons.forEach((button) => {
+    const isActive = normalizeText(button.dataset.target) === normalizedTarget;
+    button.classList.toggle('active', isActive);
+    if (isActive) {
+      button.setAttribute('aria-current', 'true');
+    } else {
+      button.removeAttribute('aria-current');
+    }
+  });
+};
+
+const scrollToSidebarSection = (target = '', { smooth = true } = {}) => {
+  const normalizedTarget = normalizeText(target);
+  if (!normalizedTarget || !dom.scrollSections.length) return;
+
+  const section = dom.scrollSections.find((entry) => normalizeText(entry.dataset.section) === normalizedTarget);
+  if (!section) return;
+
+  section.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
+  setActiveSidebarTarget(normalizedTarget);
+};
+
+const initSidebarNavigation = () => {
+  if (!dom.sidebarButtons.length || !dom.scrollSections.length) return;
+
+  dom.sidebarButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      const target = normalizeText(button.dataset.target);
+      scrollToSidebarSection(target, { smooth: true });
+    });
+  });
+
+  if ('IntersectionObserver' in window) {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        let bestSection = null;
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          if (!bestSection || entry.intersectionRatio > bestSection.intersectionRatio) {
+            bestSection = entry;
+          }
+        });
+        if (!bestSection?.target?.dataset?.section) return;
+        setActiveSidebarTarget(bestSection.target.dataset.section);
+      },
+      {
+        root: null,
+        threshold: [0.25, 0.5, 0.75],
+        rootMargin: '-20% 0px -55% 0px'
+      }
+    );
+
+    dom.scrollSections.forEach((section) => observer.observe(section));
+  }
+
+  const defaultTarget = normalizeText(dom.sidebarButtons[0]?.dataset.target || 'overview');
+  setActiveSidebarTarget(defaultTarget);
 };
 
 const escapeHtml = (value) => String(value ?? '')
@@ -455,7 +556,7 @@ const renderViewingIndicator = () => {
     return;
   }
 
-  const displayLabel = activeRecord?.name || activeRecord?.email || activeRecord?.uid || state.viewingUserLabel || state.viewingUserId;
+  const displayLabel = activeRecord?.name || activeRecord?.email || state.viewingUserLabel || 'selected user';
   state.viewingUserLabel = displayLabel;
   if (dom.viewingLabel) {
     dom.viewingLabel.textContent = `Viewing as ${displayLabel} (Read-only mode)`;
@@ -491,10 +592,10 @@ const renderViewingUserData = (payload = null) => {
     <div class="mini-stat-card"><span>Exams</span><strong>${Number(counts.exams || 0)}</strong></div>
   `;
 
-  renderListBlock(dom.viewingClasses, payload.classes, (entry) => `${escapeHtml(entry.name || 'Class')} <small>${escapeHtml(entry.id || '')}</small>`, 'No classes found for this user.');
-  renderListBlock(dom.viewingStudents, payload.students, (entry) => `${escapeHtml(entry.name || 'Student')} <small>${escapeHtml(entry.classId || '')}</small>`, 'This teacher hasn\'t added any students yet.');
-  renderListBlock(dom.viewingSubjects, payload.subjects, (entry) => `${escapeHtml(entry.name || 'Subject')} <small>${escapeHtml(entry.classId || '')}</small>`, 'No subjects found for this user.');
-  renderListBlock(dom.viewingExams, payload.exams, (entry) => `${escapeHtml(entry.title || 'Exam')} <small>${escapeHtml(entry.classId || '')}</small>`, 'No exams found for this user.');
+  renderListBlock(dom.viewingClasses, payload.classes, (entry) => `${escapeHtml(entry.name || 'Class')}`, 'No classes found for this user.');
+  renderListBlock(dom.viewingStudents, payload.students, (entry) => `${escapeHtml(entry.name || 'Student')}`, 'This teacher hasn\'t added any students yet.');
+  renderListBlock(dom.viewingSubjects, payload.subjects, (entry) => `${escapeHtml(entry.name || 'Subject')}`, 'No subjects found for this user.');
+  renderListBlock(dom.viewingExams, payload.exams, (entry) => `${escapeHtml(entry.title || 'Exam')}`, 'No exams found for this user.');
 };
 
 const getActionTone = (action = '') => {
@@ -568,8 +669,8 @@ const renderActivityLogTable = (entries = []) => {
   dom.activityBody.innerHTML = visibleEntries.map((entry) => {
     const actor = findUserRecord(entry.userId);
     const owner = findUserRecord(entry.dataOwnerUserId);
-    const actorLabel = actor?.name || actor?.email || entry.userEmail || entry.userId || 'Unknown user';
-    const ownerLabel = owner?.name || owner?.email || entry.dataOwnerUserId || 'Unknown owner';
+    const actorLabel = actor?.name || actor?.email || entry.userEmail || 'Unknown user';
+    const ownerLabel = owner?.name || owner?.email || 'Unknown owner';
     const actorRole = normalizeUserRole(actor?.role);
     const ownerRole = normalizeUserRole(owner?.role);
     const actionTone = getActionTone(entry.action);
@@ -601,7 +702,7 @@ const renderGlobalSearchResults = (entries = []) => {
 
   dom.globalSearchResultsBody.innerHTML = entries.map((entry) => {
     const owner = findUserRecord(entry.userId);
-    const ownerLabel = owner?.name || owner?.email || entry.userId;
+    const ownerLabel = owner?.name || owner?.email || 'Unknown owner';
     const ownerRole = normalizeUserRole(owner?.role);
     return `
       <tr>
@@ -621,7 +722,7 @@ const populateActivityUserFilter = () => {
   const options = ['<option value="">All users</option>'];
 
   getVisibleUsers().forEach((record) => {
-    const label = `${record.name || record.email || record.uid} (${formatRoleLabel(record.role)})`;
+    const label = `${record.name || record.email || 'Unknown user'} (${formatRoleLabel(record.role)})`;
     options.push(`<option value="${escapeHtml(record.uid)}">${escapeHtml(label)}</option>`);
   });
 
@@ -744,6 +845,11 @@ const buildGlobalSearchIndex = async () => {
     console.error('Failed to build global search index:', error);
     state.globalSearchIndex = [];
     renderGlobalSearchResults([]);
+    if (isPermissionDeniedError(error)) {
+      setGlobalSearchStatus('Search unavailable due to permissions.', 'error');
+      showToast('Search unavailable due to permissions', 'warning');
+      return;
+    }
     setGlobalSearchStatus(`Failed to build search index: ${formatAuthError(error)}`, 'error');
     showToast('Failed to load global search', 'error');
   } finally {
@@ -840,7 +946,7 @@ const setViewingUser = async (uid = '', { silent = false } = {}) => {
 
   setSwitchingState(true);
   state.viewingUserId = nextUid;
-  state.viewingUserLabel = record?.name || record?.email || nextUid;
+  state.viewingUserLabel = record?.name || record?.email || 'selected user';
   persistViewingContext(state.viewingUserId, state.viewingUserLabel);
 
   console.log('Auth UID:', normalizeText(state.authUser?.uid || '(none)'));
@@ -902,7 +1008,7 @@ const updateUserRole = async (uid, nextRole) => {
   }
 
   const shouldContinue = await requestConfirmation({
-    message: `Change role for ${record.name || record.email || record.uid} from ${formatRoleLabel(currentRole)} to ${formatRoleLabel(normalizedNextRole)}?`,
+    message: `Change role for ${record.name || record.email || 'this user'} from ${formatRoleLabel(currentRole)} to ${formatRoleLabel(normalizedNextRole)}?`,
     confirmLabel: 'Update Role',
     dangerous: true
   });
@@ -963,6 +1069,7 @@ const ensurePanelAccess = async () => {
 
 const bindEvents = () => {
   dom.searchInput?.addEventListener('input', () => renderUsersTable());
+  dom.themeBtn?.addEventListener('click', () => togglePanelTheme());
 
   dom.refreshBtn?.addEventListener('click', async () => {
     await fetchUsers();
@@ -1089,6 +1196,8 @@ const bindEvents = () => {
 };
 
 const init = async () => {
+  applyPanelTheme(getStoredTheme());
+  initSidebarNavigation();
   bindEvents();
   renderViewingUserData(null);
   renderViewingIndicator();
