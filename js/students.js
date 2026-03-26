@@ -8,23 +8,23 @@ import { auth } from './firebase.js';
 
 const resolveApp = (runtimeApp) => runtimeApp || app;
 const resolveUi = (runtimeUi, runtimeApp) => runtimeUi || runtimeApp?.ui;
-const isReadOnlyImpersonation = (appRef) => typeof appRef?.isImpersonating === 'function' && appRef.isImpersonating();
+const isReadOnlyRoleContext = (appRef) => typeof appRef?.isReadOnlyRoleContext === 'function' && appRef.isReadOnlyRoleContext();
 const getReadOnlyMessage = (appRef) => {
-  const label = typeof appRef?.getViewingUserLabel === 'function'
-    ? String(appRef.getViewingUserLabel() || '').trim()
+  const label = typeof appRef?.getCurrentClassOwnerName === 'function'
+    ? String(appRef.getCurrentClassOwnerName() || '').trim()
     : '';
-  const target = label || 'another user';
-  return `Read-only mode: viewing ${target}. This action is disabled.`;
+  const target = label || 'selected class';
+  return `Viewing class as admin (Read-only mode): ${target}. This action is disabled.`;
 };
 const ensureWritable = (appRef, uiRef) => {
-  if (!isReadOnlyImpersonation(appRef)) {
+  if (!isReadOnlyRoleContext(appRef)) {
     return true;
   }
 
   uiRef?.showToast?.(getReadOnlyMessage(appRef));
   return false;
 };
-const isReadOnlyError = (error) => String(error?.code || '').trim().toLowerCase() === 'app/read-only-impersonation';
+const isReadOnlyError = (error) => String(error?.code || '').trim().toLowerCase() === 'app/read-only-admin';
 
 const students = {
   addStudent: async function (name, runtimeApp, runtimeUi) {

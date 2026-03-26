@@ -17,7 +17,6 @@ import {
 } from './auth.js';
 import {
   fetchAdminGlobalStats,
-  fetchUserScopedData,
   fetchActivityLogs
 } from '../services/db.js';
 
@@ -27,16 +26,12 @@ const ROLE_TEACHER = 'teacher';
 const ROLE_ADMIN = 'admin';
 const ROLE_DEVELOPER = 'developer';
 const UPDATABLE_ROLES = [ROLE_TEACHER, ROLE_ADMIN];
-const VIEWING_USER_CONTEXT_KEY = 'viewingUserId';
-const VIEWING_USER_LABEL_KEY = 'viewingUserLabel';
 const THEME_STORAGE_KEY = 'theme';
 
 const state = {
   authUser: null,
   currentRole: ROLE_TEACHER,
   users: [],
-  viewingUserId: '',
-  viewingUserLabel: '',
   activityLogs: [],
   globalSearchIndex: [],
   globalSearchResults: [],
@@ -44,7 +39,6 @@ const state = {
   pendingConfirmResolver: null,
   pendingConfirmAction: null,
   lastUpdatedAt: null,
-  isSwitchingUser: false,
   globalStats: {
     totalUsers: 0,
     totalStudents: 0,
@@ -77,15 +71,6 @@ const dom = {
   globalSearchStatus: document.getElementById('global-search-status'),
   globalSearchLoading: document.getElementById('global-search-loading'),
   globalSearchResultsBody: document.getElementById('global-search-results-body'),
-  viewingIndicator: document.getElementById('viewing-context-indicator'),
-  viewingLabel: document.getElementById('viewing-context-label'),
-  clearViewingBtn: document.getElementById('clear-viewing-btn'),
-  viewingLoading: document.getElementById('viewing-user-loading'),
-  viewingSummary: document.getElementById('viewing-user-summary'),
-  viewingClasses: document.getElementById('viewing-user-classes'),
-  viewingStudents: document.getElementById('viewing-user-students'),
-  viewingSubjects: document.getElementById('viewing-user-subjects'),
-  viewingExams: document.getElementById('viewing-user-exams'),
   activityStatus: document.getElementById('activity-status'),
   activityLoading: document.getElementById('activity-loading'),
   activityBody: document.getElementById('activity-table-body'),
@@ -309,11 +294,6 @@ const setGlobalSearchStatus = (message, type = '') => {
   if (type) dom.globalSearchStatus.classList.add(type);
 };
 
-const setSwitchingState = (isSwitching) => {
-  state.isSwitchingUser = Boolean(isSwitching);
-  document.body.classList.toggle('admin-switching', state.isSwitchingUser);
-};
-
 const setConfirmModalVisibility = (isOpen) => {
   if (!dom.confirmModal) return;
   dom.confirmModal.classList.toggle('active', !!isOpen);
@@ -348,56 +328,6 @@ const requestConfirmation = ({ message = 'Are you sure?', confirmLabel = 'Confir
   return new Promise((resolve) => {
     state.pendingConfirmResolver = resolve;
   });
-};
-
-const persistViewingContext = (uid = '', label = '') => {
-  const normalizedUid = normalizeText(uid);
-  const normalizedLabel = normalizeText(label);
-
-  if (typeof sessionStorage !== 'undefined') {
-    if (normalizedUid) {
-      sessionStorage.setItem(VIEWING_USER_CONTEXT_KEY, normalizedUid);
-      if (normalizedLabel) {
-        sessionStorage.setItem(VIEWING_USER_LABEL_KEY, normalizedLabel);
-      } else {
-        sessionStorage.removeItem(VIEWING_USER_LABEL_KEY);
-      }
-    } else {
-      sessionStorage.removeItem(VIEWING_USER_CONTEXT_KEY);
-      sessionStorage.removeItem(VIEWING_USER_LABEL_KEY);
-    }
-  }
-
-  if (typeof localStorage !== 'undefined') {
-    if (normalizedUid) {
-      localStorage.setItem(VIEWING_USER_CONTEXT_KEY, normalizedUid);
-      if (normalizedLabel) {
-        localStorage.setItem(VIEWING_USER_LABEL_KEY, normalizedLabel);
-      } else {
-        localStorage.removeItem(VIEWING_USER_LABEL_KEY);
-      }
-    } else {
-      localStorage.removeItem(VIEWING_USER_CONTEXT_KEY);
-      localStorage.removeItem(VIEWING_USER_LABEL_KEY);
-    }
-  }
-};
-
-const readPersistedViewingContext = () => {
-  const fromSessionUid = typeof sessionStorage !== 'undefined'
-    ? normalizeText(sessionStorage.getItem(VIEWING_USER_CONTEXT_KEY))
-    : '';
-  const fromSessionLabel = typeof sessionStorage !== 'undefined'
-    ? normalizeText(sessionStorage.getItem(VIEWING_USER_LABEL_KEY))
-    : '';
-  if (fromSessionUid) {
-    return { uid: fromSessionUid, label: fromSessionLabel };
-  }
-
-  return {
-    uid: typeof localStorage !== 'undefined' ? normalizeText(localStorage.getItem(VIEWING_USER_CONTEXT_KEY)) : '',
-    label: typeof localStorage !== 'undefined' ? normalizeText(localStorage.getItem(VIEWING_USER_LABEL_KEY)) : ''
-  };
 };
 
 const findUserRecord = (uid = '') => {
@@ -475,8 +405,6 @@ const renderUsersTable = () => {
   dom.tableBody.innerHTML = '';
   filteredUsers.forEach((record) => {
     const row = document.createElement('tr');
-    const isViewingUser = normalizeText(record.uid) === normalizeText(state.viewingUserId);
-    if (isViewingUser) row.classList.add('row-active');
 
     const nameCell = document.createElement('td');
     nameCell.textContent = String(record.name || '—');
@@ -500,15 +428,6 @@ const renderUsersTable = () => {
 
     const actionCell = document.createElement('td');
     actionCell.className = 'table-actions-cell';
-
-    const viewBtn = document.createElement('button');
-    viewBtn.type = 'button';
-    viewBtn.className = 'btn btn-secondary';
-    viewBtn.dataset.action = 'view-user';
-    viewBtn.dataset.userId = record.uid;
-    viewBtn.textContent = isViewingUser ? 'Viewing' : 'View Context';
-    viewBtn.disabled = isViewingUser || state.isSwitchingUser;
-    actionCell.appendChild(viewBtn);
 
     if (canManageRoles()) {
       const updateBtn = document.createElement('button');
@@ -539,63 +458,6 @@ const renderStats = () => {
   if (dom.totalUsers) dom.totalUsers.textContent = String(state.globalStats.totalUsers || 0);
   if (dom.totalStudents) dom.totalStudents.textContent = String(state.globalStats.totalStudents || 0);
   if (dom.totalExams) dom.totalExams.textContent = String(state.globalStats.totalExams || 0);
-};
-
-const renderViewingIndicator = () => {
-  const activeRecord = findUserRecord(state.viewingUserId);
-  const hasViewingContext = Boolean(activeRecord && state.viewingUserId);
-  if (dom.viewingIndicator) {
-    dom.viewingIndicator.hidden = !hasViewingContext;
-  }
-
-  if (!hasViewingContext) {
-    state.viewingUserLabel = '';
-    if (dom.viewingLabel) {
-      dom.viewingLabel.textContent = 'Viewing as yourself';
-    }
-    return;
-  }
-
-  const displayLabel = activeRecord?.name || activeRecord?.email || state.viewingUserLabel || 'selected user';
-  state.viewingUserLabel = displayLabel;
-  if (dom.viewingLabel) {
-    dom.viewingLabel.textContent = `Viewing as ${displayLabel} (Read-only mode)`;
-  }
-};
-
-const renderListBlock = (container, entries, formatter, emptyMessage) => {
-  if (!container) return;
-  if (!Array.isArray(entries) || !entries.length) {
-    container.innerHTML = `<li class="empty-row">${emptyMessage}</li>`;
-    return;
-  }
-  container.innerHTML = entries.slice(0, 14).map((entry) => `<li>${formatter(entry)}</li>`).join('');
-};
-
-const renderViewingUserData = (payload = null) => {
-  if (!dom.viewingSummary || !dom.viewingClasses || !dom.viewingStudents || !dom.viewingSubjects || !dom.viewingExams) return;
-
-  if (!payload) {
-    dom.viewingSummary.innerHTML = '<div class="smart-empty"><span>🧭</span><p>Select a user to preview their data context.</p></div>';
-    dom.viewingClasses.innerHTML = '<li class="empty-row">No class data loaded.</li>';
-    dom.viewingStudents.innerHTML = '<li class="empty-row">This teacher hasn\'t added any students yet.</li>';
-    dom.viewingSubjects.innerHTML = '<li class="empty-row">No subjects recorded.</li>';
-    dom.viewingExams.innerHTML = '<li class="empty-row">No exams recorded.</li>';
-    return;
-  }
-
-  const counts = payload.counts || {};
-  dom.viewingSummary.innerHTML = `
-    <div class="mini-stat-card"><span>Classes</span><strong>${Number(counts.classes || 0)}</strong></div>
-    <div class="mini-stat-card"><span>Students</span><strong>${Number(counts.students || 0)}</strong></div>
-    <div class="mini-stat-card"><span>Subjects</span><strong>${Number(counts.subjects || 0)}</strong></div>
-    <div class="mini-stat-card"><span>Exams</span><strong>${Number(counts.exams || 0)}</strong></div>
-  `;
-
-  renderListBlock(dom.viewingClasses, payload.classes, (entry) => `${escapeHtml(entry.name || 'Class')}`, 'No classes found for this user.');
-  renderListBlock(dom.viewingStudents, payload.students, (entry) => `${escapeHtml(entry.name || 'Student')}`, 'This teacher hasn\'t added any students yet.');
-  renderListBlock(dom.viewingSubjects, payload.subjects, (entry) => `${escapeHtml(entry.name || 'Subject')}`, 'No subjects found for this user.');
-  renderListBlock(dom.viewingExams, payload.exams, (entry) => `${escapeHtml(entry.title || 'Exam')}`, 'No exams found for this user.');
 };
 
 const getActionTone = (action = '') => {
@@ -661,7 +523,7 @@ const renderActivityLogTable = (entries = []) => {
   if (!dom.activityBody) return;
   const visibleEntries = getVisibleActivityEntries(entries);
   if (!visibleEntries.length) {
-    dom.activityBody.innerHTML = '<tr><td colspan="6" class="empty-row"><div class="smart-empty"><span>🧾</span><p>No activity recorded for this user.</p></div></td></tr>';
+    dom.activityBody.innerHTML = '<tr><td colspan="5" class="empty-row"><div class="smart-empty"><span>🧾</span><p>No activity recorded.</p></div></td></tr>';
     return;
   }
 
@@ -680,14 +542,13 @@ const renderActivityLogTable = (entries = []) => {
     const sentence = `${actorLabel} ${actionTone.verb} ${formatTargetLabel(entry)} at ${formatTimeOfDay(entry.timestamp)}`;
 
     return `
-      ${shouldRenderGroup ? `<tr class="activity-group-row"><td colspan="6">${getDateGroupLabel(groupKey)}</td></tr>` : ''}
-      <tr class="activity-row ${actionTone.className}" data-owner-id="${escapeHtml(entry.dataOwnerUserId || '')}">
+      ${shouldRenderGroup ? `<tr class="activity-group-row"><td colspan="5">${getDateGroupLabel(groupKey)}</td></tr>` : ''}
+      <tr class="activity-row ${actionTone.className}">
         <td>${escapeHtml(formatTimeOfDay(entry.timestamp))}</td>
         <td><span class="activity-sentence">${escapeHtml(sentence)}</span></td>
         <td><span class="inline-role-badge ${getRoleBadgeClass(actorRole)}">${escapeHtml(formatRoleLabel(actorRole))}</span></td>
         <td>${escapeHtml(ownerLabel)} <span class="inline-role-badge ${getRoleBadgeClass(ownerRole)}">${escapeHtml(formatRoleLabel(ownerRole))}</span></td>
         <td>${escapeHtml(entry.classId || '—')}</td>
-        <td><button type="button" class="btn btn-secondary btn-sm" data-action="jump-log" data-user-id="${escapeHtml(entry.dataOwnerUserId || '')}">View Context</button></td>
       </tr>
     `;
   }).join('');
@@ -696,7 +557,7 @@ const renderActivityLogTable = (entries = []) => {
 const renderGlobalSearchResults = (entries = []) => {
   if (!dom.globalSearchResultsBody) return;
   if (!entries.length) {
-    dom.globalSearchResultsBody.innerHTML = '<tr><td colspan="5" class="empty-row"><div class="smart-empty"><span>🔎</span><p>No search results found.</p></div></td></tr>';
+    dom.globalSearchResultsBody.innerHTML = '<tr><td colspan="4" class="empty-row"><div class="smart-empty"><span>🔎</span><p>No search results found.</p></div></td></tr>';
     return;
   }
 
@@ -710,7 +571,6 @@ const renderGlobalSearchResults = (entries = []) => {
         <td>${escapeHtml(ownerLabel)}</td>
         <td><span class="inline-role-badge ${getRoleBadgeClass(ownerRole)}">${escapeHtml(formatRoleLabel(ownerRole))}</span></td>
         <td>${escapeHtml(entry.classId || '—')}</td>
-        <td><button type="button" class="btn btn-secondary btn-sm" data-action="view-search-context" data-user-id="${escapeHtml(entry.userId || '')}">View Context</button></td>
       </tr>
     `;
   }).join('');
@@ -872,29 +732,6 @@ const runGlobalSearch = () => {
   setGlobalSearchStatus(`Found ${results.length} result${results.length === 1 ? '' : 's'}.`, results.length ? 'success' : 'warning');
 };
 
-const loadViewingUserData = async () => {
-  if (!state.viewingUserId) {
-    renderViewingIndicator();
-    renderViewingUserData(null);
-    return;
-  }
-
-  setElementVisibility(dom.viewingLoading, true);
-  renderViewingIndicator();
-
-  try {
-    const payload = await fetchUserScopedData(state.viewingUserId);
-    renderViewingUserData(payload);
-  } catch (error) {
-    console.error('Failed to load selected user data:', error);
-    renderViewingUserData(null);
-    setPanelStatus(`Failed to load selected user data: ${formatAuthError(error)}`, 'error');
-    showToast('Failed to load selected context', 'error');
-  } finally {
-    setElementVisibility(dom.viewingLoading, false);
-  }
-};
-
 const loadActivityLogs = async () => {
   const selectedUserId = normalizeText(dom.activityUserFilter?.value || '');
   const selectedAction = normalizeText(dom.activityActionFilter?.value || '').toLowerCase();
@@ -932,44 +769,6 @@ const loadActivityLogs = async () => {
     showToast('Failed to load activity logs', 'error');
   } finally {
     setElementVisibility(dom.activityLoading, false);
-  }
-};
-
-const setViewingUser = async (uid = '', { silent = false } = {}) => {
-  const nextUid = normalizeText(uid);
-  const record = findUserRecord(nextUid);
-
-  if (nextUid && isAdminOnlyRole() && normalizeUserRole(record?.role) === ROLE_DEVELOPER) {
-    showToast('Admins cannot view developer context.', 'warning');
-    return;
-  }
-
-  setSwitchingState(true);
-  state.viewingUserId = nextUid;
-  state.viewingUserLabel = record?.name || record?.email || 'selected user';
-  persistViewingContext(state.viewingUserId, state.viewingUserLabel);
-
-  console.log('Auth UID:', normalizeText(state.authUser?.uid || '(none)'));
-  console.log('Viewing UID:', state.viewingUserId || '(none)');
-  console.log('Impersonating:', Boolean(state.viewingUserId && state.viewingUserId !== normalizeText(state.authUser?.uid || '')));
-
-  renderUsersTable();
-  renderViewingIndicator();
-
-  if (dom.activityUserFilter) {
-    dom.activityUserFilter.value = state.viewingUserId;
-  }
-
-  try {
-    await Promise.all([
-      loadViewingUserData(),
-      loadActivityLogs()
-    ]);
-    if (!silent) {
-      showToast(state.viewingUserId ? 'Read-only context loaded' : 'Returned to your context', 'success');
-    }
-  } finally {
-    setSwitchingState(false);
   }
 };
 
@@ -1105,10 +904,6 @@ const bindEvents = () => {
     runGlobalSearch();
   });
 
-  dom.clearViewingBtn?.addEventListener('click', async () => {
-    await setViewingUser('');
-  });
-
   dom.dashboardBtn?.addEventListener('click', () => {
     window.location.assign(DASHBOARD_PATH);
   });
@@ -1150,12 +945,6 @@ const bindEvents = () => {
     if (!uid) return;
 
     const action = normalizeText(trigger.dataset.action || '');
-    if (action === 'view-user') {
-      trigger.disabled = true;
-      await setViewingUser(uid);
-      return;
-    }
-
     if (action !== 'update-role') return;
     const roleSelect = trigger.closest('tr')?.querySelector('select.role-select');
     const nextRole = normalizeText(roleSelect?.value || '');
@@ -1168,39 +957,12 @@ const bindEvents = () => {
     trigger.textContent = previousLabel;
     trigger.disabled = !canEditRole(findUserRecord(uid));
   });
-
-  dom.globalSearchResultsBody?.addEventListener('click', async (event) => {
-    const trigger = event.target.closest('button[data-action="view-search-context"]');
-    if (!trigger) return;
-    const uid = normalizeText(trigger.dataset.userId || '');
-    if (!uid) return;
-    await setViewingUser(uid);
-  });
-
-  dom.activityBody?.addEventListener('click', async (event) => {
-    const trigger = event.target.closest('button[data-action="jump-log"]');
-    if (trigger) {
-      const uid = normalizeText(trigger.dataset.userId || '');
-      if (uid) {
-        await setViewingUser(uid);
-      }
-      return;
-    }
-
-    const row = event.target.closest('tr.activity-row[data-owner-id]');
-    if (!row) return;
-    const uid = normalizeText(row.dataset.ownerId || '');
-    if (!uid) return;
-    await setViewingUser(uid, { silent: true });
-  });
 };
 
 const init = async () => {
   applyPanelTheme(getStoredTheme());
   initSidebarNavigation();
   bindEvents();
-  renderViewingUserData(null);
-  renderViewingIndicator();
   updateLastUpdatedIndicator();
   setInterval(updateLastUpdatedIndicator, 60000);
 
@@ -1211,18 +973,7 @@ const init = async () => {
     await fetchUsers();
     await loadGlobalStats();
     await buildGlobalSearchIndex();
-
-    const persistedContext = readPersistedViewingContext();
-    const persistedViewingUserId = persistedContext.uid;
-
-    if (persistedViewingUserId && getVisibleUsers().some((entry) => entry.uid === persistedViewingUserId)) {
-      await setViewingUser(persistedViewingUserId, { silent: true });
-    } else {
-      if (persistedViewingUserId) {
-        persistViewingContext('', '');
-      }
-      await loadActivityLogs();
-    }
+    await loadActivityLogs();
 
     showToast('Admin panel ready', 'success');
   } catch (error) {

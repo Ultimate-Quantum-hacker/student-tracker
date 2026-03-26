@@ -893,7 +893,7 @@ body.dark-mode .auth-role-badge[data-role="developer"]{
   border-color:rgba(248,113,113,.42);
 }
 
-.impersonation-readonly-banner{
+.admin-readonly-banner{
   margin:.7rem 1rem 0;
   padding:.58rem .74rem;
   border:1px solid rgba(217,119,6,.34);
@@ -906,9 +906,9 @@ body.dark-mode .auth-role-badge[data-role="developer"]{
   font-weight:600;
 }
 
-.impersonation-readonly-icon{font-size:1rem}
+.admin-readonly-icon{font-size:1rem}
 
-body.dark-mode .impersonation-readonly-banner{
+body.dark-mode .admin-readonly-banner{
   border-color:rgba(251,191,36,.35);
   background:rgba(120,53,15,.34);
   color:#fcd34d;
@@ -2450,10 +2450,18 @@ body.dark-mode #class-chart-container {
   padding:.75rem .85rem
 }
 
-.trash-item-name{
-  margin:0;
-  font-weight:700;
-  color:var(--text)
+.class-item-name{
+  flex:1;
+  text-align:left;
+  font-weight:600;
+  color:var(--text);
+}
+
+.class-item-owner{
+  font-size:.72rem;
+  color:var(--text-secondary);
+  margin-right:.35rem;
+  white-space:nowrap;
 }
 
 .trash-item-date{

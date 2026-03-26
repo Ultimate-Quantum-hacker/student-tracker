@@ -34,10 +34,18 @@ const ACTIVITY_LOGS_COLLECTION = 'activityLogs';
 const DEFAULT_CLASS_NAME = 'My Class';
 const TRASH_RETENTION_DAYS = 3;
 const ACTIVITY_LOG_FETCH_LIMIT = 300;
-const VIEWING_USER_CONTEXT_KEY = 'viewingUserId';
 
 let currentClassId = '';
-let viewingUserIdContext = '';
+let currentClassOwnerId = '';
+let currentClassOwnerName = '';
+let currentUserRoleContext = 'teacher';
+let globalClassCatalogCache = {
+  ownerUserId: '',
+  classes: [],
+  trashClasses: [],
+  loadedAt: 0
+};
+const GLOBAL_CLASS_CACHE_TTL_MS = 60 * 1000;
 
 const createDefaultRawData = () => ({
   students: [],
@@ -49,6 +57,12 @@ let writeChain = Promise.resolve();
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const asArray = (value) => Array.isArray(value) ? value : [];
+const normalizeRole = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'admin') return 'admin';
+  if (normalized === 'developer') return 'developer';
+  return 'teacher';
+};
 
 const normalizeDeletedAtValue = (value) => {
   if (!value) return null;
@@ -822,61 +836,51 @@ const toDocId = (prefix, label, index) => {
 
 const normalizeUserId = (value) => String(value || '').trim();
 
-const readStoredViewingUserContext = () => {
-  const fromSession = typeof sessionStorage !== 'undefined'
-    ? normalizeUserId(sessionStorage.getItem(VIEWING_USER_CONTEXT_KEY))
-    : '';
-  if (fromSession) return fromSession;
-
-  return typeof localStorage !== 'undefined'
-    ? normalizeUserId(localStorage.getItem(VIEWING_USER_CONTEXT_KEY))
-    : '';
-};
-
-const persistViewingUserContext = (userId = '') => {
-  const normalized = normalizeUserId(userId);
-
-  if (typeof sessionStorage !== 'undefined') {
-    if (normalized) {
-      sessionStorage.setItem(VIEWING_USER_CONTEXT_KEY, normalized);
-    } else {
-      sessionStorage.removeItem(VIEWING_USER_CONTEXT_KEY);
-    }
-  }
-
-  if (typeof localStorage !== 'undefined') {
-    if (normalized) {
-      localStorage.setItem(VIEWING_USER_CONTEXT_KEY, normalized);
-    } else {
-      localStorage.removeItem(VIEWING_USER_CONTEXT_KEY);
-    }
-  }
-};
-
-const getViewingContextUserId = () => {
-  return normalizeUserId(viewingUserIdContext || readStoredViewingUserContext());
+const normalizeDisplayName = (value, fallback = 'Teacher') => {
+  const normalized = String(value || '').trim();
+  return normalized || fallback;
 };
 
 const getAuthenticatedUserId = () => {
   return normalizeUserId(auth?.currentUser?.uid);
 };
 
+const getAuthenticatedUserDisplayName = () => {
+  const authUser = auth?.currentUser;
+  return normalizeDisplayName(authUser?.displayName || authUser?.email || 'Teacher', 'Teacher');
+};
+
 const getActiveUserId = () => {
-  return getViewingContextUserId() || getAuthenticatedUserId();
+  return normalizeUserId(currentClassOwnerId || getAuthenticatedUserId());
 };
 
 const getCurrentUserId = () => {
   return getActiveUserId();
 };
 
-export const setViewingUserContext = (userId = '') => {
-  viewingUserIdContext = normalizeUserId(userId);
-  persistViewingUserContext(viewingUserIdContext);
-  return viewingUserIdContext;
+export const setCurrentUserRoleContext = (role = 'teacher') => {
+  currentUserRoleContext = normalizeRole(role);
+  return currentUserRoleContext;
 };
 
-export const getViewingUserContext = () => {
-  return getViewingContextUserId();
+export const getCurrentUserRoleContext = () => {
+  return normalizeRole(currentUserRoleContext);
+};
+
+export const setCurrentClassOwnerContext = (ownerId = '', ownerName = '') => {
+  currentClassOwnerId = normalizeUserId(ownerId);
+  currentClassOwnerName = normalizeDisplayName(ownerName, currentClassOwnerName || 'Teacher');
+  return {
+    ownerId: currentClassOwnerId,
+    ownerName: currentClassOwnerName
+  };
+};
+
+export const getCurrentClassOwnerContext = () => {
+  return {
+    ownerId: normalizeUserId(currentClassOwnerId),
+    ownerName: normalizeDisplayName(currentClassOwnerName, 'Teacher')
+  };
 };
 
 const waitForAuthResolution = async () => {
@@ -975,8 +979,22 @@ const readPersistedClassSelection = (userId) => {
     : '';
 };
 
-const setCurrentClassContext = (classId, userId = getCurrentUserId()) => {
+const setCurrentClassContext = (classId, userId = getAuthenticatedUserId(), ownerId = '', ownerName = '') => {
   currentClassId = normalizeClassId(classId);
+  const normalizedOwnerId = normalizeUserId(ownerId);
+
+  if (normalizedOwnerId) {
+    currentClassOwnerId = normalizedOwnerId;
+  } else if (!currentClassId) {
+    currentClassOwnerId = '';
+  }
+
+  if (ownerName) {
+    currentClassOwnerName = normalizeDisplayName(ownerName, currentClassOwnerName || 'Teacher');
+  } else if (!currentClassId) {
+    currentClassOwnerName = '';
+  }
+
   if (userId) {
     persistClassSelection(userId, currentClassId);
   }
@@ -987,20 +1005,28 @@ const getCurrentClassContext = () => normalizeClassId(currentClassId);
 
 const toClassModel = (classId, payload = {}) => {
   const id = normalizeClassId(classId);
+  const ownerId = normalizeUserId(payload.ownerId || payload.userId || payload.uid || '');
+  const ownerName = normalizeDisplayName(payload.ownerName || payload.userName || payload.teacherName || '', 'Teacher');
   return {
     id,
     name: normalizeClassName(payload.name || payload.title || DEFAULT_CLASS_NAME),
-    createdAt: payload.createdAt || null
+    createdAt: payload.createdAt || null,
+    ownerId,
+    ownerName
   };
 };
 
 const toClassTrashEntry = (classId, payload = {}) => {
   const id = normalizeClassId(classId);
+  const ownerId = normalizeUserId(payload.ownerId || payload.userId || payload.uid || '');
+  const ownerName = normalizeDisplayName(payload.ownerName || payload.userName || payload.teacherName || '', 'Teacher');
   return {
     id,
     name: normalizeClassName(payload.name || payload.title || DEFAULT_CLASS_NAME),
     createdAt: payload.createdAt || null,
-    deletedAt: normalizeDeletedAtValue(payload.deletedAt)
+    deletedAt: normalizeDeletedAtValue(payload.deletedAt),
+    ownerId,
+    ownerName
   };
 };
 
@@ -1034,6 +1060,13 @@ const getClassExamsCollectionRef = (userId, classId) => collection(db, USERS_COL
 const getClassStudentDocRef = (userId, classId, studentId) => doc(db, USERS_COLLECTION, userId, CLASSES_SUBCOLLECTION, classId, STUDENTS_SUBCOLLECTION, studentId);
 const getClassSubjectDocRef = (userId, classId, subjectId) => doc(db, USERS_COLLECTION, userId, CLASSES_SUBCOLLECTION, classId, SUBJECTS_SUBCOLLECTION, subjectId);
 const getClassExamDocRef = (userId, classId, examId) => doc(db, USERS_COLLECTION, userId, CLASSES_SUBCOLLECTION, classId, EXAMS_SUBCOLLECTION, examId);
+const getOwnerIdFromClassRefPath = (path = '') => {
+  const segments = String(path || '').split('/').filter(Boolean);
+  if (segments.length >= 2 && segments[0] === USERS_COLLECTION) {
+    return normalizeUserId(segments[1]);
+  }
+  return '';
+};
 
 const resolveClassIdFromCatalog = (userId, classes = []) => {
   const normalizedClasses = sortClasses(classes)
@@ -1041,14 +1074,15 @@ const resolveClassIdFromCatalog = (userId, classes = []) => {
     .filter(entry => entry.id);
 
   if (!normalizedClasses.length) {
-    setCurrentClassContext('', userId);
+    setCurrentClassContext('', userId, '', '');
     return '';
   }
 
   const requestedClassId = normalizeClassId(currentClassId) || readPersistedClassSelection(userId);
   const matchedClass = normalizedClasses.find(entry => entry.id === requestedClassId);
   const nextClassId = matchedClass?.id || normalizedClasses[0].id;
-  setCurrentClassContext(nextClassId, userId);
+  const nextClass = normalizedClasses.find(entry => entry.id === nextClassId) || null;
+  setCurrentClassContext(nextClassId, userId, nextClass?.ownerId || '', nextClass?.ownerName || '');
   return nextClassId;
 };
 
@@ -1367,13 +1401,38 @@ const readModularRawData = async (userId, classId) => {
   );
 };
 
+const normalizeClassOwnerMetadata = async (ownerId = '', classId = '', payload = {}, classRef = null) => {
+  if (!ownerId || !classId || !classRef || !isFirebaseConfigured || !db) {
+    return;
+  }
+
+  const hasOwnerId = normalizeUserId(payload?.ownerId || payload?.userId || '') === ownerId;
+  const hasOwnerName = String(payload?.ownerName || '').trim().length > 0;
+  if (hasOwnerId && hasOwnerName) {
+    return;
+  }
+
+  const ownerName = normalizeDisplayName(payload?.ownerName || payload?.userName || payload?.teacherName || currentClassOwnerName || 'Teacher', 'Teacher');
+  await setDoc(classRef, {
+    id: classId,
+    ownerId,
+    ownerName,
+    userId: ownerId
+  }, { merge: true });
+};
+
 const readClassCatalogFromFirestore = async (userId) => {
   const classesSnapshot = await getDocs(getClassesCollectionRef(userId));
   const classes = [];
   const trashClasses = [];
+  const metadataPatchTasks = [];
 
   classesSnapshot.forEach((entry) => {
     const payload = entry.data() || {};
+    const classId = normalizeClassId(payload.id || entry.id);
+    if (!classId) return;
+    metadataPatchTasks.push(normalizeClassOwnerMetadata(userId, classId, payload, entry.ref));
+
     if (payload.deleted === true) {
       trashClasses.push(toClassTrashEntry(entry.id, payload));
       return;
@@ -1381,55 +1440,150 @@ const readClassCatalogFromFirestore = async (userId) => {
     classes.push(toClassModel(entry.id, payload));
   });
 
+  if (metadataPatchTasks.length) {
+    await Promise.allSettled(metadataPatchTasks);
+  }
+
   return {
     classes: sortClasses(classes.filter(entry => entry.id)),
     trashClasses: sortClassTrashEntries(trashClasses.filter(entry => entry.id))
   };
 };
 
+const readGlobalClassCatalogFromFirestore = async (requesterUserId = '') => {
+  const now = Date.now();
+  if (
+    globalClassCatalogCache.ownerUserId === requesterUserId
+    && (now - Number(globalClassCatalogCache.loadedAt || 0)) < GLOBAL_CLASS_CACHE_TTL_MS
+    && Array.isArray(globalClassCatalogCache.classes)
+  ) {
+    return {
+      classes: sortClasses(globalClassCatalogCache.classes),
+      trashClasses: []
+    };
+  }
+
+  const [classesSnapshot, usersSnapshot] = await Promise.all([
+    getDocs(collectionGroup(db, CLASSES_SUBCOLLECTION)),
+    getDocs(collection(db, USERS_COLLECTION))
+  ]);
+
+  const ownerNameMap = new Map();
+  usersSnapshot.forEach((entry) => {
+    const payload = entry.data() || {};
+    const uid = normalizeUserId(payload.uid || entry.id);
+    if (!uid) return;
+    ownerNameMap.set(uid, normalizeDisplayName(payload.name || payload.email || 'Teacher', 'Teacher'));
+  });
+
+  const classes = [];
+  const metadataPatchTasks = [];
+  classesSnapshot.forEach((entry) => {
+    const payload = entry.data() || {};
+    if (payload.deleted === true) return;
+
+    const classId = normalizeClassId(payload.id || entry.id);
+    const ownerId = normalizeUserId(payload.ownerId || payload.userId || getOwnerIdFromClassRefPath(entry.ref?.path));
+    if (!classId || !ownerId) return;
+
+    const ownerName = normalizeDisplayName(payload.ownerName || ownerNameMap.get(ownerId) || 'Teacher', 'Teacher');
+    const normalizedClass = toClassModel(classId, {
+      ...payload,
+      ownerId,
+      ownerName
+    });
+    classes.push(normalizedClass);
+    metadataPatchTasks.push(normalizeClassOwnerMetadata(ownerId, classId, payload, entry.ref));
+  });
+
+  if (metadataPatchTasks.length) {
+    await Promise.allSettled(metadataPatchTasks);
+  }
+
+  const dedupedByOwnerAndClass = new Map();
+  classes.forEach((entry) => {
+    const key = `${normalizeUserId(entry.ownerId)}::${normalizeClassId(entry.id)}`;
+    if (!key) return;
+    dedupedByOwnerAndClass.set(key, entry);
+  });
+
+  const normalizedClasses = sortClasses(Array.from(dedupedByOwnerAndClass.values()));
+  globalClassCatalogCache = {
+    ownerUserId: requesterUserId,
+    classes: normalizedClasses,
+    trashClasses: [],
+    loadedAt: now
+  };
+
+  return {
+    classes: normalizedClasses,
+    trashClasses: []
+  };
+};
+
 const ensureClassCatalog = async (userId) => {
-  const catalog = await readClassCatalogFromFirestore(userId);
-  writeClassCatalogCache(userId, catalog.classes, catalog.trashClasses);
+  const role = getCurrentUserRoleContext();
+  const authUserId = getAuthenticatedUserId() || userId;
+  const scopeKey = role === 'admin' ? `${authUserId}:admin-global` : authUserId;
+  const catalog = role === 'admin'
+    ? await readGlobalClassCatalogFromFirestore(authUserId)
+    : await readClassCatalogFromFirestore(authUserId);
+  writeClassCatalogCache(scopeKey, catalog.classes, catalog.trashClasses);
   return catalog;
 };
 
 const ensureActiveClassContext = async (userId, options = {}) => {
   const requireClass = options?.requireClass !== false;
+  const role = getCurrentUserRoleContext();
+  const authUserId = getAuthenticatedUserId() || userId;
+  const scopeKey = role === 'admin' ? `${authUserId}:admin-global` : authUserId;
 
   if (!isFirebaseConfigured || !db) {
-    const classes = readClassCatalogCache(userId);
-    const trashClasses = readClassTrashCache(userId);
+    const classes = readClassCatalogCache(scopeKey);
+    const trashClasses = readClassTrashCache(scopeKey);
 
-    const { classId, className } = resolveActiveClassModel(userId, classes);
+    const { classId, className } = resolveActiveClassModel(authUserId, classes);
+    const activeClass = classes.find((entry) => normalizeClassId(entry?.id) === normalizeClassId(classId)) || null;
+    const classOwnerId = normalizeUserId(activeClass?.ownerId || authUserId);
+    const classOwnerName = normalizeDisplayName(activeClass?.ownerName || getAuthenticatedUserDisplayName(), 'Teacher');
+    setCurrentClassContext(classId, authUserId, classOwnerId, classOwnerName);
     if (requireClass && !classId) {
       throw createMissingClassError('save class data');
     }
 
     console.log('Current Class ID:', classId || '(none)');
-    console.log('User ID:', userId || '(none)');
+    console.log('User ID:', classOwnerId || '(none)');
     return {
       classes,
       trashClasses,
       classId,
-      className
+      className,
+      classOwnerId,
+      classOwnerName
     };
   }
 
-  const catalog = await ensureClassCatalog(userId);
+  const catalog = await ensureClassCatalog(authUserId);
   const classes = catalog.classes || [];
   const trashClasses = catalog.trashClasses || [];
-  const { classId, className } = resolveActiveClassModel(userId, classes);
+  const { classId, className } = resolveActiveClassModel(authUserId, classes);
+  const activeClass = classes.find((entry) => normalizeClassId(entry?.id) === normalizeClassId(classId)) || null;
+  const classOwnerId = normalizeUserId(activeClass?.ownerId || authUserId);
+  const classOwnerName = normalizeDisplayName(activeClass?.ownerName || getAuthenticatedUserDisplayName(), 'Teacher');
+  setCurrentClassContext(classId, authUserId, classOwnerId, classOwnerName);
   if (requireClass && !classId) {
     throw createMissingClassError('save class data');
   }
 
   console.log('Current Class ID:', classId || '(none)');
-  console.log('User ID:', userId || '(none)');
+  console.log('User ID:', classOwnerId || '(none)');
   return {
     classes,
     trashClasses,
     classId,
-    className
+    className,
+    classOwnerId,
+    classOwnerName
   };
 };
 
@@ -1933,7 +2087,7 @@ export const fetchAdminGlobalStats = async () => {
 
 export const fetchUserScopedData = async (targetUserId = '') => {
   const requesterId = await ensureAuthenticatedUserId('view user data');
-  const selectedUserId = normalizeUserId(targetUserId) || getViewingContextUserId() || requesterId;
+  const selectedUserId = normalizeUserId(targetUserId) || requesterId;
 
   if (!selectedUserId) {
     return {
@@ -2127,16 +2281,19 @@ export const writeCacheCopy = (rawData, classId = '') => {
   };
 };
 
-export const fetchAllData = async (targetUserId) => {
-  if (typeof targetUserId === 'string') {
-    setViewingUserContext(targetUserId);
-  }
-
+export const fetchAllData = async () => {
   let userId = '';
+  let authUserId = '';
+  const role = getCurrentUserRoleContext();
+  const getScopeKey = () => {
+    const scopedAuthId = authUserId || getAuthenticatedUserId() || userId;
+    return role === 'admin' ? `${scopedAuthId}:admin-global` : scopedAuthId;
+  };
   try {
     userId = await ensureActiveUserId('fetch data');
+    authUserId = getAuthenticatedUserId() || userId;
     console.log('Auth UID:', getAuthenticatedUserId() || '(none)');
-    console.log('Viewing UID:', getViewingContextUserId() || '(none)');
+    console.log('Role:', getCurrentUserRoleContext());
     console.log('Active UID:', userId || '(none)');
   } catch (error) {
     return {
@@ -2157,9 +2314,10 @@ export const fetchAllData = async (targetUserId) => {
 
   if (!isFirebaseConfigured || !db) {
     console.warn('Firebase unavailable. Falling back to cache/default data.');
-    const cachedClasses = readClassCatalogCache(userId);
-    const cachedTrashClasses = readClassTrashCache(userId);
-    const { classId, className } = resolveActiveClassModel(userId, cachedClasses);
+    const cacheScopeKey = getScopeKey();
+    const cachedClasses = readClassCatalogCache(cacheScopeKey);
+    const cachedTrashClasses = readClassTrashCache(cacheScopeKey);
+    const { classId, className } = resolveActiveClassModel(authUserId || userId, cachedClasses);
     const cached = readCachedData(classId);
     if (cached?.data) {
       return {
@@ -2206,6 +2364,8 @@ export const fetchAllData = async (targetUserId) => {
       const scopedTrashClasses = classContext.trashClasses || [];
       const scopedClassId = classContext.classId;
       const scopedClassName = classContext.className;
+      const scopedOwnerId = normalizeUserId(classContext.classOwnerId || getActiveUserId() || authUserId || userId);
+      const cacheScopeKey = getScopeKey();
 
       if (!scopedClassId) {
         return {
@@ -2224,8 +2384,8 @@ export const fetchAllData = async (targetUserId) => {
         };
       }
 
-      const modularResult = await readModularRawData(userId, scopedClassId);
-      writeClassCatalogCache(userId, scopedClasses, scopedTrashClasses);
+      const modularResult = await readModularRawData(scopedOwnerId, scopedClassId);
+      writeClassCatalogCache(cacheScopeKey, scopedClasses, scopedTrashClasses);
 
       const nextData = modularResult?.data || createDefaultRawData();
       writeCacheCopy(nextData, scopedClassId);
@@ -2264,9 +2424,10 @@ export const fetchAllData = async (targetUserId) => {
   }
 
   const offline = isOfflineError(lastErrorType);
-  const cachedClasses = readClassCatalogCache(userId);
-  const cachedTrashClasses = readClassTrashCache(userId);
-  const { classId, className } = resolveActiveClassModel(userId, cachedClasses);
+  const cacheScopeKey = getScopeKey();
+  const cachedClasses = readClassCatalogCache(cacheScopeKey);
+  const cachedTrashClasses = readClassTrashCache(cacheScopeKey);
+  const { classId, className } = resolveActiveClassModel(authUserId || userId, cachedClasses);
   const cached = readCachedData(classId);
 
   if (cached?.data) {
@@ -2312,13 +2473,17 @@ export const getCurrentClassId = () => {
   return getCurrentClassContext();
 };
 
-export const listClasses = async () => {
-  const userId = await ensureActiveUserId('list classes');
+export const fetchClassCatalog = async () => {
+  const userId = await ensureAuthenticatedUserId('fetch class catalog');
+  const role = getCurrentUserRoleContext();
+  const cacheScopeKey = role === 'admin' ? `${userId}:admin-global` : userId;
 
   if (!isFirebaseConfigured || !db) {
-    const cachedClasses = readClassCatalogCache(userId);
-    const cachedTrashClasses = readClassTrashCache(userId);
+    const cachedClasses = readClassCatalogCache(cacheScopeKey);
+    const cachedTrashClasses = readClassTrashCache(cacheScopeKey);
     const { classId, className } = resolveActiveClassModel(userId, cachedClasses);
+    const activeClass = cachedClasses.find((entry) => normalizeClassId(entry?.id) === normalizeClassId(classId)) || null;
+    setCurrentClassContext(classId, userId, activeClass?.ownerId || userId, activeClass?.ownerName || getAuthenticatedUserDisplayName());
     return {
       classes: cachedClasses,
       trashClasses: cachedTrashClasses,
@@ -2331,7 +2496,9 @@ export const listClasses = async () => {
   const classes = catalog.classes || [];
   const trashClasses = catalog.trashClasses || [];
   const { classId, className } = resolveActiveClassModel(userId, classes);
-  writeClassCatalogCache(userId, classes, trashClasses);
+  const activeClass = classes.find((entry) => normalizeClassId(entry?.id) === normalizeClassId(classId)) || null;
+  setCurrentClassContext(classId, userId, activeClass?.ownerId || userId, activeClass?.ownerName || getAuthenticatedUserDisplayName());
+  writeClassCatalogCache(cacheScopeKey, classes, trashClasses);
 
   return {
     classes,
@@ -2345,6 +2512,7 @@ export const createClass = async (className) => {
   const userId = await ensureAuthenticatedUserId('create class');
   const normalizedName = normalizeClassName(className, DEFAULT_CLASS_NAME);
   const createdAt = new Date().toISOString();
+  const ownerName = getAuthenticatedUserDisplayName();
 
   const classDocRef = await addDoc(getClassesCollectionRef(userId), {
     name: normalizedName,
@@ -2352,12 +2520,17 @@ export const createClass = async (className) => {
     updatedAt: createdAt,
     deleted: false,
     deletedAt: null,
-    userId
+    userId,
+    ownerId: userId,
+    ownerName
   });
   const classId = normalizeClassId(classDocRef.id);
 
   await setDoc(classDocRef, {
-    id: classId
+    id: classId,
+    ownerId: userId,
+    ownerName,
+    userId
   }, { merge: true });
 
   const catalog = await ensureClassCatalog(userId);
@@ -2366,10 +2539,13 @@ export const createClass = async (className) => {
   const nextClasses = sortClasses([...classes.filter(entry => entry.id !== classId), {
     id: classId,
     name: normalizedName,
-    createdAt
+    createdAt,
+    ownerId: userId,
+    ownerName
   }]);
   writeClassCatalogCache(userId, nextClasses, trashClasses);
-  setCurrentClassContext(classId, userId);
+  globalClassCatalogCache.loadedAt = 0;
+  setCurrentClassContext(classId, userId, userId, ownerName);
 
   await setDoc(getUserRootRef(userId), {
     userId,
@@ -2378,7 +2554,7 @@ export const createClass = async (className) => {
   }, { merge: true });
 
   return {
-    class: toClassModel(classId, { name: normalizedName, createdAt }),
+    class: toClassModel(classId, { name: normalizedName, createdAt, ownerId: userId, ownerName }),
     classes: nextClasses,
     currentClassId: classId,
     currentClassName: normalizedName
@@ -2413,7 +2589,9 @@ export const deleteClass = async (classId) => {
     deleted: true,
     deletedAt: serverTimestamp(),
     updatedAt,
-    userId
+    userId,
+    ownerId: classEntry.ownerId || userId,
+    ownerName: classEntry.ownerName || getAuthenticatedUserDisplayName()
   }, { merge: true });
 
   const remainingClasses = sortClasses(classes.filter(entry => entry.id !== normalizedClassId));
@@ -2421,13 +2599,16 @@ export const deleteClass = async (classId) => {
     id: normalizedClassId,
     name: classEntry.name,
     createdAt: classEntry.createdAt || null,
-    deletedAt: new Date().toISOString()
+    deletedAt: new Date().toISOString(),
+    ownerId: classEntry.ownerId || userId,
+    ownerName: classEntry.ownerName || getAuthenticatedUserDisplayName()
   };
   const nextTrashClasses = sortClassTrashEntries([
     deletedEntry,
     ...trashClasses.filter(entry => entry.id !== normalizedClassId)
   ]);
   writeClassCatalogCache(userId, remainingClasses, nextTrashClasses);
+  globalClassCatalogCache.loadedAt = 0;
 
   const { classId: nextClassId, className: nextClassName } = resolveActiveClassModel(userId, remainingClasses);
 
@@ -2470,7 +2651,9 @@ export const restoreClass = async (classId) => {
     deleted: false,
     deletedAt: null,
     updatedAt,
-    userId
+    userId,
+    ownerId: classEntry.ownerId || userId,
+    ownerName: classEntry.ownerName || getAuthenticatedUserDisplayName()
   }, { merge: true });
 
   const nextClasses = sortClasses([
@@ -2478,11 +2661,14 @@ export const restoreClass = async (classId) => {
     {
       id: normalizedClassId,
       name: classEntry.name,
-      createdAt: classEntry.createdAt || null
+      createdAt: classEntry.createdAt || null,
+      ownerId: classEntry.ownerId || userId,
+      ownerName: classEntry.ownerName || getAuthenticatedUserDisplayName()
     }
   ]);
   const nextTrashClasses = sortClassTrashEntries(trashClasses.filter(entry => entry.id !== normalizedClassId));
   writeClassCatalogCache(userId, nextClasses, nextTrashClasses);
+  globalClassCatalogCache.loadedAt = 0;
 
   const { classId: nextClassId, className: nextClassName } = resolveActiveClassModel(userId, nextClasses);
   await setDoc(getUserRootRef(userId), {
@@ -2524,6 +2710,7 @@ export const permanentlyDeleteClass = async (classId) => {
   const updatedAt = new Date().toISOString();
   const nextTrashClasses = sortClassTrashEntries(trashClasses.filter(entry => entry.id !== normalizedClassId));
   writeClassCatalogCache(userId, classes, nextTrashClasses);
+  globalClassCatalogCache.loadedAt = 0;
 
   const { classId: nextClassId, className: nextClassName } = resolveActiveClassModel(userId, classes);
   await setDoc(getUserRootRef(userId), {

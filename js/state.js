@@ -16,7 +16,6 @@ window.TrackerApp = window.TrackerApp || {};
     currentClassId: '',
     currentClassName: 'My Class',
     currentUserRole: 'teacher',
-    viewingUserId: '',
     isRoleResolved: false,
     dashboardStudentCount: null,
     students: [],
@@ -43,7 +42,6 @@ window.TrackerApp = window.TrackerApp || {};
   const OFFLINE_CACHE_MESSAGE = 'Offline mode: using cached data';
   const OFFLINE_GRACE_PERIOD_MS = 3000;
   const CURRENT_CLASS_STORAGE_KEY = 'currentClassId';
-  const VIEWING_USER_LABEL_KEY = 'viewingUserLabel';
   const ROLE_TEACHER = 'teacher';
   const ROLE_LEGACY_USER = 'user';
   const ROLE_ADMIN = 'admin';
@@ -70,57 +68,50 @@ window.TrackerApp = window.TrackerApp || {};
   app.setCurrentUserRole = function (role, { resolved = true } = {}) {
     app.state.currentUserRole = normalizeRole(role);
     app.state.isRoleResolved = Boolean(resolved);
+    if (typeof dataService.setCurrentUserRoleContext === 'function') {
+      dataService.setCurrentUserRoleContext(app.state.currentUserRole);
+    }
   };
 
-  app.getViewingUserId = function () {
-    return String(app.state.viewingUserId || '').trim();
+  app.getCurrentClassOwnerId = function () {
+    const currentClassId = String(app.state.currentClassId || '').trim();
+    const classEntry = (app.state.classes || []).find((entry) => String(entry?.id || '').trim() === currentClassId);
+    const ownerId = String(classEntry?.ownerId || '').trim();
+    return ownerId || String(app.state.authUser?.uid || '').trim();
   };
 
-  app.setViewingUserId = function (userId = '') {
-    const normalized = String(userId || '').trim();
-    const authUid = String(app.state.authUser?.uid || '').trim();
-    app.state.viewingUserId = normalized && normalized !== authUid ? normalized : '';
-    if (typeof dataService.setViewingUserContext === 'function') {
-      dataService.setViewingUserContext(app.state.viewingUserId);
-    }
-    return app.state.viewingUserId;
+  app.getCurrentClassOwnerName = function () {
+    const currentClassId = String(app.state.currentClassId || '').trim();
+    const classEntry = (app.state.classes || []).find((entry) => String(entry?.id || '').trim() === currentClassId);
+    const ownerName = String(classEntry?.ownerName || '').trim();
+    if (ownerName) return ownerName;
+
+    const fallback = String(app.state.authUser?.name || app.state.authUser?.email || '').trim();
+    return fallback || 'Teacher';
   };
 
-  app.clearViewingUserId = function () {
-    app.state.viewingUserId = '';
-    if (typeof dataService.setViewingUserContext === 'function') {
-      dataService.setViewingUserContext('');
+  app.setCurrentClassOwnerContext = function () {
+    const ownerId = app.getCurrentClassOwnerId();
+    const ownerName = app.getCurrentClassOwnerName();
+    if (typeof dataService.setCurrentClassOwnerContext === 'function') {
+      dataService.setCurrentClassOwnerContext(ownerId, ownerName);
     }
+    return { ownerId, ownerName };
+  };
 
-    if (typeof sessionStorage !== 'undefined') {
-      sessionStorage.removeItem(VIEWING_USER_LABEL_KEY);
+  app.syncDataContext = function () {
+    if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
+      dataService.setCurrentClassId(app.state.currentClassId);
     }
-    if (typeof localStorage !== 'undefined') {
-      localStorage.removeItem(VIEWING_USER_LABEL_KEY);
-    }
-
-    return app.state.viewingUserId;
+    app.setCurrentClassOwnerContext();
   };
 
   app.getEffectiveUserId = function () {
-    return app.getViewingUserId() || String(app.state.authUser?.uid || '').trim();
+    return app.getCurrentClassOwnerId() || String(app.state.authUser?.uid || '').trim();
   };
 
-  app.getViewingUserLabel = function () {
-    const fromSession = typeof sessionStorage !== 'undefined'
-      ? String(sessionStorage.getItem(VIEWING_USER_LABEL_KEY) || '').trim()
-      : '';
-    if (fromSession) return fromSession;
-
-    return typeof localStorage !== 'undefined'
-      ? String(localStorage.getItem(VIEWING_USER_LABEL_KEY) || '').trim()
-      : '';
-  };
-
-  app.isImpersonating = function () {
-    const authUid = String(app.state.authUser?.uid || '').trim();
-    const viewingUid = app.getViewingUserId();
-    return Boolean(viewingUid && authUid && viewingUid !== authUid);
+  app.isReadOnlyRoleContext = function () {
+    return app.isAdminRole();
   };
 
   app.clearCurrentUserRole = function () {
@@ -142,10 +133,10 @@ window.TrackerApp = window.TrackerApp || {};
 
   app.refreshDashboardStudentCount = async function () {
     const authUid = String(app.state.authUser?.uid || '').trim();
-    const viewingUid = app.getViewingUserId();
+    const ownerUid = app.getCurrentClassOwnerId();
     const activeUserId = app.getEffectiveUserId();
     console.log('Auth UID:', authUid || '(none)');
-    console.log('Viewing UID:', viewingUid || '(none)');
+    console.log('Class Owner UID:', ownerUid || '(none)');
     console.log('Active UID:', activeUserId || '(none)');
 
     try {
@@ -242,13 +233,13 @@ window.TrackerApp = window.TrackerApp || {};
   };
 
   const createReadOnlyContextError = (operationLabel = 'modify data') => {
-    const error = new Error(`Read-only mode: cannot ${operationLabel} while viewing another user`);
-    error.code = 'app/read-only-impersonation';
+    const error = new Error(`Read-only mode: admins cannot ${operationLabel}`);
+    error.code = 'app/read-only-admin';
     return error;
   };
 
   const ensureWritableDataContext = (operationLabel = 'modify data') => {
-    if (typeof app.isImpersonating === 'function' && app.isImpersonating()) {
+    if (typeof app.isReadOnlyRoleContext === 'function' && app.isReadOnlyRoleContext()) {
       throw createReadOnlyContextError(operationLabel);
     }
   };
@@ -271,7 +262,7 @@ window.TrackerApp = window.TrackerApp || {};
     try {
       await dataService.logActivity(action, targetId, targetType, {
         ...options,
-        dataOwnerUserId: options?.dataOwnerUserId || app.getViewingUserId() || undefined
+        dataOwnerUserId: options?.dataOwnerUserId || app.getCurrentClassOwnerId() || undefined
       });
     } catch (error) {
       console.warn('Activity log hook failed:', error);
@@ -544,17 +535,16 @@ window.TrackerApp = window.TrackerApp || {};
         dataService.setCurrentClassId(app.state.currentClassId);
       }
 
-      const viewingUserId = app.getViewingUserId();
-      if (typeof dataService.setViewingUserContext === 'function') {
-        dataService.setViewingUserContext(viewingUserId);
+      if (typeof dataService.setCurrentUserRoleContext === 'function') {
+        dataService.setCurrentUserRoleContext(app.getCurrentUserRole());
       }
 
       const authUid = String(app.state.authUser?.uid || '').trim();
       console.log('Auth UID:', authUid || '(none)');
-      console.log('Viewing UID:', viewingUserId || '(none)');
+      console.log('Role:', app.getCurrentUserRole());
       console.log('Active UID:', app.getEffectiveUserId() || '(none)');
 
-      const remoteResult = await dataService.fetchAllData(viewingUserId);
+      const remoteResult = await dataService.fetchAllData();
       const nextClasses = Array.isArray(remoteResult?.classes) ? remoteResult.classes : [];
       const nextClassId = String(remoteResult?.currentClassId || '').trim();
       const nextClassName = String(remoteResult?.currentClassName || '').trim() || 'My Class';
@@ -562,9 +552,10 @@ window.TrackerApp = window.TrackerApp || {};
       app.state.currentClassId = nextClassId;
       app.state.currentClassName = nextClassName;
       persistCurrentClassId(nextClassId);
+      app.syncDataContext();
 
       console.log('Current Class ID:', nextClassId || '(none)');
-      console.log('User ID:', app.state.authUser?.uid || '(none)');
+      console.log('User ID:', app.getCurrentClassOwnerId() || '(none)');
 
       if (typeof dataService.setCurrentClassId === 'function' && nextClassId) {
         dataService.setCurrentClassId(nextClassId);
@@ -613,6 +604,7 @@ window.TrackerApp = window.TrackerApp || {};
           if (typeof dataService.setCurrentClassId === 'function') {
             dataService.setCurrentClassId(fallbackClassId);
           }
+          app.syncDataContext();
         }
         app.applyRawData(app.migrateToRawData(fallbackCache.data));
         app.state.studentTrash = sortTrashEntriesNewestFirst([]);
@@ -649,6 +641,7 @@ window.TrackerApp = window.TrackerApp || {};
       if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
         dataService.setCurrentClassId(app.state.currentClassId);
       }
+      app.syncDataContext();
     }
     applyRuntimeCollections(students, subjects, exams);
     app.writeCachedData(composeRawData(students, subjects, exams));
@@ -662,9 +655,10 @@ window.TrackerApp = window.TrackerApp || {};
       app.state.currentClassId = String(result?.currentClassId || '').trim();
       app.state.currentClassName = String(result?.currentClassName || nextName).trim() || nextName;
       persistCurrentClassId(app.state.currentClassId);
+      app.syncDataContext();
 
       console.log('Current Class ID:', app.state.currentClassId || '(none)');
-      console.log('User ID:', app.state.authUser?.uid || '(none)');
+      console.log('User ID:', app.getCurrentClassOwnerId() || '(none)');
 
       if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
         dataService.setCurrentClassId(app.state.currentClassId);
@@ -690,9 +684,10 @@ window.TrackerApp = window.TrackerApp || {};
       const activeClass = (app.state.classes || []).find(entry => entry.id === nextClassId);
       app.state.currentClassName = activeClass?.name || app.state.currentClassName || 'My Class';
       persistCurrentClassId(nextClassId);
+      app.syncDataContext();
 
       console.log('Current Class ID:', nextClassId || '(none)');
-      console.log('User ID:', app.state.authUser?.uid || '(none)');
+      console.log('User ID:', app.getCurrentClassOwnerId() || '(none)');
 
       applyRuntimeCollections([], [], []);
       app.state.studentTrash = sortTrashEntriesNewestFirst([]);
@@ -706,7 +701,7 @@ window.TrackerApp = window.TrackerApp || {};
 
       await app.load();
       return true;
-    });
+    }, { allowInReadOnly: true });
   };
 
   app.deleteClass = async function (classId) {
@@ -724,9 +719,10 @@ window.TrackerApp = window.TrackerApp || {};
       app.state.currentClassName = String(result?.currentClassName || '').trim() || 'My Class';
       app.state.classTrash = sortTrashEntriesNewestFirst(Array.isArray(result?.trashClasses) ? result.trashClasses : app.state.classTrash || []);
       persistCurrentClassId(app.state.currentClassId);
+      app.syncDataContext();
 
       console.log('Current Class ID:', app.state.currentClassId || '(none)');
-      console.log('User ID:', app.state.authUser?.uid || '(none)');
+      console.log('User ID:', app.getCurrentClassOwnerId() || '(none)');
 
       if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
         dataService.setCurrentClassId(app.state.currentClassId);
@@ -759,6 +755,7 @@ window.TrackerApp = window.TrackerApp || {};
       app.state.currentClassId = String(result?.currentClassId || app.state.currentClassId || '').trim();
       app.state.currentClassName = String(result?.currentClassName || app.state.currentClassName || 'My Class').trim() || 'My Class';
       persistCurrentClassId(app.state.currentClassId);
+      app.syncDataContext();
 
       if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
         dataService.setCurrentClassId(app.state.currentClassId);
@@ -787,6 +784,7 @@ window.TrackerApp = window.TrackerApp || {};
       app.state.currentClassId = String(result?.currentClassId || app.state.currentClassId || '').trim();
       app.state.currentClassName = String(result?.currentClassName || app.state.currentClassName || 'My Class').trim() || 'My Class';
       persistCurrentClassId(app.state.currentClassId);
+      app.syncDataContext();
 
       if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
         dataService.setCurrentClassId(app.state.currentClassId);

@@ -23,7 +23,7 @@
         <div class="panel-header-main">
           <p class="panel-eyebrow">Administration</p>
           <h1>Admin Panel</h1>
-          <p class="panel-subtitle">Manage users, inspect data context, and monitor system activity.</p>
+          <p class="panel-subtitle">Manage users and monitor system activity.</p>
           <p id="panel-last-updated" class="panel-last-updated" aria-live="polite">Last updated: just now</p>
         </div>
         <div class="panel-header-actions">
@@ -93,48 +93,11 @@
         </div>
       </section>
 
-      <section class="panel-card" aria-labelledby="viewing-user-title">
-        <div class="panel-toolbar panel-toolbar-stacked">
-          <div>
-            <h2 id="viewing-user-title">Viewing Context</h2>
-            <p class="panel-subtitle">Preview currently selected user data context.</p>
-          </div>
-          <div id="viewing-context-indicator" class="viewing-indicator" hidden>
-            <span id="viewing-context-label">Viewing as yourself</span>
-            <button id="clear-viewing-btn" class="btn btn-secondary" type="button">Return to My Context</button>
-          </div>
-        </div>
-
-        <p id="viewing-user-loading" class="loading-state" style="display: none;" aria-live="polite">Loading selected user data...</p>
-        <div id="viewing-user-summary" class="mini-stats-grid">
-          <div class="empty-row">Select a user to preview their data context.</div>
-        </div>
-
-        <div class="preview-grid">
-          <article class="preview-card">
-            <h3>Classes</h3>
-            <ul id="viewing-user-classes"></ul>
-          </article>
-          <article class="preview-card">
-            <h3>Students</h3>
-            <ul id="viewing-user-students"></ul>
-          </article>
-          <article class="preview-card">
-            <h3>Subjects</h3>
-            <ul id="viewing-user-subjects"></ul>
-          </article>
-          <article class="preview-card">
-            <h3>Exams</h3>
-            <ul id="viewing-user-exams"></ul>
-          </article>
-        </div>
-      </section>
-
       <section id="admin-section-search" class="panel-card admin-scroll-section" data-section="search" aria-labelledby="global-search-title">
         <div class="panel-toolbar panel-toolbar-stacked">
           <div>
             <h2 id="global-search-title">Global Student Search</h2>
-            <p class="panel-subtitle">Search students across all users and jump directly into the owner context.</p>
+            <p class="panel-subtitle">Search students across all users.</p>
           </div>
           <div class="search-inline-actions">
             <input
@@ -160,12 +123,11 @@
                 <th>Owner</th>
                 <th>Owner Role</th>
                 <th>Class</th>
-                <th>Action</th>
               </tr>
             </thead>
             <tbody id="global-search-results-body">
               <tr>
-                <td colspan="5" class="empty-row">Search by student name to see results.</td>
+                <td colspan="4" class="empty-row">Search by student name to see results.</td>
               </tr>
             </tbody>
           </table>
@@ -206,12 +168,11 @@
                 <th>Actor Role</th>
                 <th>Data Owner</th>
                 <th>Class</th>
-                <th>Jump</th>
               </tr>
             </thead>
             <tbody id="activity-table-body">
               <tr>
-                <td colspan="6" class="empty-row">No logs loaded.</td>
+                <td colspan="5" class="empty-row">No logs loaded.</td>
               </tr>
             </tbody>
           </table>

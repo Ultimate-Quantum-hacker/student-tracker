@@ -32,7 +32,6 @@ const domIds = {
   systemImportDataBtn: 'system-import-data-btn',
   systemThemeToggleBtn: 'system-theme-toggle-btn',
   systemResetBtn: 'system-reset-btn',
-  returnMyDataBtn: 'return-my-data-btn',
   adminDashboardBtn: 'admin-dashboard-btn',
   form: 'add-student-form',
   classDropdown: 'class-dropdown',
@@ -84,8 +83,8 @@ const domIds = {
   dashboardPerformanceChart: 'dashboard-performance-chart',
   classChart: 'class-chart',
   classChartPlaceholder: 'class-chart-placeholder',
-  impersonationReadonlyBanner: 'impersonation-readonly-banner',
-  impersonationReadonlyLabel: 'impersonation-readonly-label',
+  adminReadonlyBanner: 'admin-readonly-banner',
+  adminReadonlyLabel: 'admin-readonly-label',
   canvas: 'progress-chart',
   chartPlaceholder: 'chart-placeholder',
   heatmapHead: 'heatmapHead',
@@ -228,33 +227,34 @@ const ui = {
       return false;
     },
 
-    isReadOnlyImpersonation: function () {
-      return typeof app.isImpersonating === 'function' && app.isImpersonating();
+    isReadOnlyRoleContext: function () {
+      return typeof app.isReadOnlyRoleContext === 'function' && app.isReadOnlyRoleContext();
     },
 
-    getReadOnlyImpersonationLabel: function () {
-      const viewingLabel = typeof app.getViewingUserLabel === 'function'
-        ? String(app.getViewingUserLabel() || '').trim()
+    getReadOnlyModeLabel: function () {
+      const ownerName = typeof app.getCurrentClassOwnerName === 'function'
+        ? String(app.getCurrentClassOwnerName() || '').trim()
         : '';
-      const viewingUserId = typeof app.getViewingUserId === 'function'
-        ? String(app.getViewingUserId() || '').trim()
-        : '';
-      const displayLabel = viewingLabel || viewingUserId || 'another user';
-      return `Read-only mode: viewing ${displayLabel}.`;
+      const className = String(app.state.currentClassName || '').trim();
+      const contextLabel = [className, ownerName].filter(Boolean).join(' - ');
+      if (contextLabel) {
+        return `Viewing class as admin (Read-only mode): ${contextLabel}.`;
+      }
+      return 'Viewing class as admin (Read-only mode).';
     },
 
     ensureWritableAction: function (actionLabel = 'modify data') {
-      if (!this.isReadOnlyImpersonation()) {
+      if (!this.isReadOnlyRoleContext()) {
         return true;
       }
 
-      const label = this.getReadOnlyImpersonationLabel();
+      const label = this.getReadOnlyModeLabel();
       this.showToast(`${label} ${actionLabel} is disabled.`);
       return false;
     },
 
     setReadOnlyControlState: function (elements = [], isReadOnly = false) {
-      const lockMessage = this.getReadOnlyImpersonationLabel();
+      const lockMessage = this.getReadOnlyModeLabel();
       Array.from(elements || []).filter(Boolean).forEach((element) => {
         if (!element) return;
 
@@ -296,11 +296,11 @@ const ui = {
       });
     },
 
-    applyReadOnlyImpersonationState: function () {
-      const isReadOnly = this.isReadOnlyImpersonation();
-      const banner = app.dom.impersonationReadonlyBanner || document.getElementById('impersonation-readonly-banner');
-      const bannerLabel = app.dom.impersonationReadonlyLabel || document.getElementById('impersonation-readonly-label');
-      const readOnlyLabel = this.getReadOnlyImpersonationLabel();
+    applyReadOnlyRoleState: function () {
+      const isReadOnly = this.isReadOnlyRoleContext();
+      const banner = app.dom.adminReadonlyBanner || document.getElementById('admin-readonly-banner');
+      const bannerLabel = app.dom.adminReadonlyLabel || document.getElementById('admin-readonly-label');
+      const readOnlyLabel = this.getReadOnlyModeLabel();
 
       if (banner) {
         banner.hidden = !isReadOnly;
@@ -324,9 +324,6 @@ const ui = {
         app.dom.notesSaveBtn,
         app.dom.trashRestoreAllBtn,
         app.dom.trashEmptyBtn,
-        app.dom.classPrevBtn,
-        app.dom.classNextBtn,
-        app.dom.classDropdownToggle,
         app.dom.editSaveBtn,
         app.dom.deleteConfirmBtn
       ];
@@ -342,7 +339,6 @@ const ui = {
         '#dynamicSubjectFields input',
         '.bulk-score-input',
         '.bulk-row-reset-btn',
-        '.class-dropdown-item[data-class-id]',
         '.notes-cell'
       ].join(','));
 
@@ -437,9 +433,7 @@ const ui = {
     updateRoleBasedUIAccess: function () {
       const roleResolved = Boolean(app.state.isRoleResolved);
       const currentRole = this.getCurrentRole();
-      const canManageClasses = currentRole === 'admin' || currentRole === 'developer';
-      const hasViewingContext = typeof app.getViewingUserId === 'function' && Boolean(app.getViewingUserId());
-      const canUseViewingContext = currentRole === 'admin' || currentRole === 'developer';
+      const canManageClasses = currentRole === 'teacher' || currentRole === 'developer';
 
       if (document.body) {
         document.body.dataset.userRole = currentRole;
@@ -457,14 +451,6 @@ const ui = {
           app.dom.createClassBtn,
           app.dom.deleteClassBtn
         ]);
-      }
-
-      if (app.dom.returnMyDataBtn) {
-        if (!canUseViewingContext) {
-          this.removeElementsFromDom([app.dom.returnMyDataBtn]);
-        } else {
-          app.dom.returnMyDataBtn.style.display = hasViewingContext ? '' : 'none';
-        }
       }
 
       this.applyFeatureAccessState('developerTools', [
@@ -726,6 +712,18 @@ const ui = {
       return 'No Data';
     },
 
+    formatClassOwnerLabel: function (entry) {
+      const ownerName = String(entry?.ownerName || '').trim();
+      return ownerName ? `Teacher: ${ownerName}` : '';
+    },
+
+    formatClassDisplayLabel: function (entry) {
+      const className = String(entry?.name || 'My Class').trim() || 'My Class';
+      const ownerName = String(entry?.ownerName || '').trim();
+      if (!ownerName) return className;
+      return `${className} - ${ownerName}`;
+    },
+
     getStatusToneClass: function (statusType) {
       if (statusType === 'strong') return 'total-tone-strong';
       if (statusType === 'good') return 'total-tone-good';
@@ -773,10 +771,6 @@ const ui = {
       const nextClassId = String(classId || '').trim();
       if (!nextClassId) return;
 
-      if (!this.ensureWritableAction('Class switching')) {
-        return;
-      }
-
       try {
         this.closeClassDropdown();
         this.setClassControlsBusy(true);
@@ -792,10 +786,6 @@ const ui = {
     },
 
     cycleClass: async function (step = 1) {
-      if (!this.ensureWritableAction('Class switching')) {
-        return;
-      }
-
       const classes = Array.isArray(app.state.classes) ? app.state.classes : [];
       if (classes.length <= 1) {
         return;
@@ -820,16 +810,17 @@ const ui = {
       const activeClass = classes.find(entry => String(entry?.id || '').trim() === currentClassId) || classes[0] || null;
       const resolvedClassId = String(activeClass?.id || currentClassId || '').trim();
       const activeClassName = activeClass?.name || app.state.currentClassName || 'My Class';
+      const activeClassDisplayLabel = this.formatClassDisplayLabel(activeClass);
 
       app.state.currentClassId = resolvedClassId;
       app.state.currentClassName = activeClassName;
 
       if (app.dom.classNameDisplay) {
-        app.dom.classNameDisplay.textContent = `Class: ${activeClassName}`;
+        app.dom.classNameDisplay.textContent = `Class: ${activeClassDisplayLabel}`;
       }
 
       if (app.dom.classDropdownValue) {
-        app.dom.classDropdownValue.textContent = classes.length ? activeClassName : 'Create Class';
+        app.dom.classDropdownValue.textContent = classes.length ? activeClassDisplayLabel : 'Create Class';
       }
 
       if (app.dom.classDropdownToggle) {
@@ -843,11 +834,13 @@ const ui = {
           app.dom.classDropdownMenu.innerHTML = classes.map((entry) => {
             const classId = String(entry?.id || '').trim();
             const className = String(entry?.name || 'My Class').trim() || 'My Class';
+            const ownerLabel = this.formatClassOwnerLabel(entry);
             const isActive = classId === resolvedClassId;
             return `
               <button type="button" class="class-dropdown-item${isActive ? ' active' : ''}" data-class-id="${app.utils.esc(classId)}" role="option" aria-selected="${isActive ? 'true' : 'false'}">
                 <span class="class-item-icon" aria-hidden="true">🏫</span>
                 <span class="class-item-name">${app.utils.esc(className)}</span>
+                ${ownerLabel ? `<span class="class-item-owner">${app.utils.esc(ownerLabel)}</span>` : ''}
                 ${isActive ? '<span class="class-item-badge">Active</span>' : ''}
               </button>`;
           }).join('');
@@ -876,7 +869,7 @@ const ui = {
         });
       }
 
-      const canManageClasses = this.getCurrentRole() === 'admin' || this.getCurrentRole() === 'developer';
+      const canManageClasses = this.getCurrentRole() === 'teacher' || this.getCurrentRole() === 'developer';
       if (!canManageClasses && app.dom.classDropdownValue && !classes.length) {
         app.dom.classDropdownValue.textContent = 'No class assigned';
       }
@@ -1196,8 +1189,8 @@ const ui = {
     renderStudentChips: function () {
       if (!app.dom.studentList) return;
 
-      const isReadOnly = this.isReadOnlyImpersonation();
-      const readOnlyTitle = this.getReadOnlyImpersonationLabel();
+      const isReadOnly = this.isReadOnlyRoleContext();
+      const readOnlyTitle = this.getReadOnlyModeLabel();
 
       const rosterSearchTerm = String(app.state.studentRosterSearchTerm || '').trim().toLowerCase();
       const students = Array.isArray(app.state.students) ? app.state.students : [];
@@ -1305,8 +1298,8 @@ const ui = {
     renderResultsTable: function () {
       if (!app.dom.resultsHeadRow1 || !app.dom.resultsHeadRow2 || !app.dom.resultsBody) return;
 
-      const isReadOnly = this.isReadOnlyImpersonation();
-      const notesTooltip = isReadOnly ? this.getReadOnlyImpersonationLabel() : 'Open notes';
+      const isReadOnly = this.isReadOnlyRoleContext();
+      const notesTooltip = isReadOnly ? this.getReadOnlyModeLabel() : 'Open notes';
 
       const { previousExam, latestExam } = app.analytics.getLastTwoExams();
       const canComputeImprovement = !!previousExam && !!latestExam;
@@ -1574,10 +1567,10 @@ const ui = {
       app.state.notesId = uid;
       if (app.dom.notesModalTitle) app.dom.notesModalTitle.textContent = s.name;
       if (app.dom.notesTextarea) app.dom.notesTextarea.value = s.notes || '';
-      if (app.dom.notesTextarea) app.dom.notesTextarea.readOnly = this.isReadOnlyImpersonation();
+      if (app.dom.notesTextarea) app.dom.notesTextarea.readOnly = this.isReadOnlyRoleContext();
       if (app.dom.notesSaveBtn) {
-        app.dom.notesSaveBtn.disabled = this.isReadOnlyImpersonation();
-        app.dom.notesSaveBtn.title = this.isReadOnlyImpersonation() ? this.getReadOnlyImpersonationLabel() : 'Save Notes';
+        app.dom.notesSaveBtn.disabled = this.isReadOnlyRoleContext();
+        app.dom.notesSaveBtn.title = this.isReadOnlyRoleContext() ? this.getReadOnlyModeLabel() : 'Save Notes';
       }
       if (app.dom.notesModal) app.dom.notesModal.classList.add('active');
     },
@@ -2052,7 +2045,7 @@ const ui = {
       console.log("Refreshing UI...");
       try {
         this.updateRoleBasedUIAccess();
-        this.applyReadOnlyImpersonationState();
+        this.applyReadOnlyRoleState();
 
         if (app.state.isLoading) {
           if (app.dom.emptyMsg) {
@@ -2075,7 +2068,7 @@ const ui = {
         this.renderResultsTable();
         this.renderBulkTable();
         this.updateBackupStatus();
-        this.applyReadOnlyImpersonationState();
+        this.applyReadOnlyRoleState();
         
         // Render heatmap
         app.heatmap.renderHeatmap(app);
@@ -2357,25 +2350,6 @@ const ui = {
           app.dom.restoreBtn?.click();
         };
         if (app.dom.systemThemeToggleBtn) app.dom.systemThemeToggleBtn.onclick = () => app.dom.themeToggle?.click();
-        if (app.dom.returnMyDataBtn) {
-          app.dom.returnMyDataBtn.onclick = async () => {
-            if (typeof app.clearViewingUserId !== 'function') return;
-
-            app.clearViewingUserId();
-            app.state.dashboardStudentCount = null;
-            app.state.isLoading = true;
-            this.refreshUI();
-
-            try {
-              await app.load();
-              this.refreshUI();
-              this.showToast('Returned to your data context');
-            } catch (error) {
-              console.error('Failed to reload your data context:', error);
-              this.showToast('Failed to return to your data');
-            }
-          };
-        }
         if (app.dom.adminDashboardBtn) {
           app.dom.adminDashboardBtn.onclick = (event) => {
             event.preventDefault();
