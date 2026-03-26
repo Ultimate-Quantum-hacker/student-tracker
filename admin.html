@@ -15,6 +15,7 @@
         <p class="panel-eyebrow">Administration</p>
         <h1>Admin Panel</h1>
         <p class="panel-subtitle">Manage users, inspect data context, and monitor system activity.</p>
+        <p id="panel-last-updated" class="panel-last-updated" aria-live="polite">Last updated: just now</p>
       </div>
       <div class="panel-header-actions">
         <span id="panel-role-badge" class="role-badge" aria-live="polite">Role: Loading...</span>
@@ -41,6 +42,48 @@
           <p>Total Exams</p>
           <strong id="admin-total-exams">0</strong>
         </article>
+      </div>
+    </section>
+
+    <section class="panel-card" aria-labelledby="global-search-title">
+      <div class="panel-toolbar panel-toolbar-stacked">
+        <div>
+          <h2 id="global-search-title">Global Student Search</h2>
+          <p class="panel-subtitle">Search students across all users and jump directly into the owner context.</p>
+        </div>
+        <div class="search-inline-actions">
+          <input
+            id="global-student-search-input"
+            class="search-input"
+            type="search"
+            placeholder="Search student name..."
+            aria-label="Search student by name across all users"
+            autocomplete="off"
+          >
+          <button id="global-search-clear-btn" class="btn btn-secondary" type="button">Clear</button>
+        </div>
+      </div>
+
+      <p id="global-search-status" class="panel-status" aria-live="polite"></p>
+      <p id="global-search-loading" class="loading-state" style="display: none;" aria-live="polite">Loading global search index...</p>
+
+      <div class="table-wrap">
+        <table class="users-table" aria-label="Global student search results">
+          <thead>
+            <tr>
+              <th>Student</th>
+              <th>Owner</th>
+              <th>Owner Role</th>
+              <th>Class</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="global-search-results-body">
+            <tr>
+              <td colspan="5" class="empty-row">Search by student name to see results.</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </section>
 
@@ -146,12 +189,12 @@
         <table class="users-table" aria-label="Activity logs">
           <thead>
             <tr>
-              <th>Timestamp</th>
-              <th>Actor</th>
-              <th>Action</th>
-              <th>Target</th>
+              <th>Time</th>
+              <th>Event</th>
+              <th>Actor Role</th>
               <th>Data Owner</th>
               <th>Class</th>
+              <th>Jump</th>
             </tr>
           </thead>
           <tbody id="activity-table-body">
@@ -163,6 +206,19 @@
       </div>
     </section>
   </main>
+
+  <div id="admin-confirm-modal" class="admin-modal" aria-hidden="true">
+    <div class="admin-modal-card" role="dialog" aria-modal="true" aria-labelledby="admin-confirm-title">
+      <h3 id="admin-confirm-title">Confirm Action</h3>
+      <p id="admin-confirm-message">Are you sure you want to continue?</p>
+      <div class="admin-modal-actions">
+        <button id="admin-confirm-cancel-btn" class="btn btn-secondary" type="button">Cancel</button>
+        <button id="admin-confirm-ok-btn" class="btn btn-danger" type="button">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="admin-toast" class="admin-toast" aria-live="polite"></div>
 
   <script src="js/firebase-config.js"></script>
   <script type="module" src="js/admin.js"></script>

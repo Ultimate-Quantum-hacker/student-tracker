@@ -8,11 +8,30 @@ import { auth } from './firebase.js';
 
 const resolveApp = (runtimeApp) => runtimeApp || app;
 const resolveUi = (runtimeUi, runtimeApp) => runtimeUi || runtimeApp?.ui;
+const isReadOnlyImpersonation = (appRef) => typeof appRef?.isImpersonating === 'function' && appRef.isImpersonating();
+const getReadOnlyMessage = (appRef) => {
+  const label = typeof appRef?.getViewingUserLabel === 'function'
+    ? String(appRef.getViewingUserLabel() || '').trim()
+    : '';
+  const target = label || 'another user';
+  return `Read-only mode: viewing ${target}. This action is disabled.`;
+};
+const ensureWritable = (appRef, uiRef) => {
+  if (!isReadOnlyImpersonation(appRef)) {
+    return true;
+  }
+
+  uiRef?.showToast?.(getReadOnlyMessage(appRef));
+  return false;
+};
+const isReadOnlyError = (error) => String(error?.code || '').trim().toLowerCase() === 'app/read-only-impersonation';
 
 const students = {
   addStudent: async function (name, runtimeApp, runtimeUi) {
     const appRef = resolveApp(runtimeApp);
     const uiRef = resolveUi(runtimeUi, appRef);
+    if (!ensureWritable(appRef, uiRef)) return false;
+
     const n = name.trim();
     if (!n) {
       uiRef?.showToast?.('Enter a student name first');
@@ -33,13 +52,15 @@ const students = {
 
   deleteStudent: function (uid, runtimeApp) {
     const appRef = resolveApp(runtimeApp);
+    if (!ensureWritable(appRef, appRef?.ui)) return;
+
     const s = appRef.state.students.find(x => x.id === uid);
     if (!s) return;
     console.log('Deleting student:', uid);
     console.log('User:', auth?.currentUser?.uid || 'unknown');
     appRef.state.deletingId = uid;
     if (appRef.dom.deleteConfirmMsg) {
-      appRef.dom.deleteConfirmMsg.textContent = `Are you sure you want to delete this student? (${s.name})`;
+      appRef.dom.deleteConfirmMsg.textContent = `Delete ${s.name}? This will move the student to Trash and remove active score entry from the current class.`;
     }
     appRef.dom.deleteModal?.classList.add('active');
   },
@@ -47,6 +68,8 @@ const students = {
   confirmDelete: async function (runtimeApp, runtimeUi) {
     const appRef = resolveApp(runtimeApp);
     const uiRef = resolveUi(runtimeUi, appRef);
+    if (!ensureWritable(appRef, uiRef)) return;
+
     const uid = appRef.state.deletingId;
     if (!uid) return;
     const student = appRef.state.students.find(x => x.id === uid);
@@ -62,13 +85,15 @@ const students = {
       uiRef?.showUndoDeleteToast?.(deletedEntry?.id || uid, deletedEntry?.name || studentName);
     } catch (error) {
       console.error('Failed to delete student:', error);
-      uiRef?.showToast?.('Failed to delete student');
+      uiRef?.showToast?.(isReadOnlyError(error) ? getReadOnlyMessage(appRef) : 'Failed to delete student');
     }
   },
 
   restoreStudent: async function (uid, runtimeApp, runtimeUi) {
     const appRef = resolveApp(runtimeApp);
     const uiRef = resolveUi(runtimeUi, appRef);
+    if (!ensureWritable(appRef, uiRef)) return false;
+
     const normalizedId = String(uid || '').trim();
     if (!normalizedId) return false;
 
@@ -79,7 +104,7 @@ const students = {
       return true;
     } catch (error) {
       console.error('Failed to restore student:', error);
-      uiRef?.showToast?.('Failed to restore student');
+      uiRef?.showToast?.(isReadOnlyError(error) ? getReadOnlyMessage(appRef) : 'Failed to restore student');
       return false;
     }
   },
@@ -87,6 +112,8 @@ const students = {
   permanentlyDeleteStudent: async function (uid, runtimeApp, runtimeUi) {
     const appRef = resolveApp(runtimeApp);
     const uiRef = resolveUi(runtimeUi, appRef);
+    if (!ensureWritable(appRef, uiRef)) return false;
+
     const normalizedId = String(uid || '').trim();
     if (!normalizedId) return false;
 
@@ -97,13 +124,15 @@ const students = {
       return true;
     } catch (error) {
       console.error('Failed to permanently delete student:', error);
-      uiRef?.showToast?.('Failed to delete student');
+      uiRef?.showToast?.(isReadOnlyError(error) ? getReadOnlyMessage(appRef) : 'Failed to delete student');
       return false;
     }
   },
 
   startEdit: function (uid, runtimeApp) {
     const appRef = resolveApp(runtimeApp);
+    if (!ensureWritable(appRef, appRef?.ui)) return;
+
     const s = appRef.state.students.find(x => x.id === uid);
     if (!s) return;
     console.log('Editing student:', uid);
@@ -120,6 +149,8 @@ const students = {
   saveEdit: async function (runtimeApp, runtimeUi) {
     const appRef = resolveApp(runtimeApp);
     const uiRef = resolveUi(runtimeUi, appRef);
+    if (!ensureWritable(appRef, uiRef)) return;
+
     const uid = appRef.state.editingId;
     if (!uid) return;
     
@@ -139,11 +170,13 @@ const students = {
       uiRef?.showToast?.('Student updated');
     } catch (error) {
       console.error('Failed to update student:', error);
-      uiRef?.showToast?.('Failed to update student');
+      uiRef?.showToast?.(isReadOnlyError(error) ? getReadOnlyMessage(appRef) : 'Failed to update student');
     }
   },
 
   bulkImport: function (csv, app, ui) {
+    if (!ensureWritable(app, ui)) return;
+
     const lines = csv.trim().split('\n');
     const newStudents = [];
     
@@ -163,10 +196,16 @@ const students = {
       return;
     }
     
+    if (!window.confirm(`Import ${newStudents.length} students into the active class?`)) {
+      return;
+    }
+
     this.importStudents(newStudents, app, ui);
   },
 
   importStudents: async function (studentsData, app, ui) {
+    if (!ensureWritable(app, ui)) return;
+
     try {
       if (app.snapshots && typeof app.snapshots.saveSnapshot === 'function') {
         app.snapshots.saveSnapshot('Auto Backup Before Bulk Student Import');
@@ -178,11 +217,13 @@ const students = {
       ui.showToast(`${studentsData.length} students imported`);
     } catch (error) {
       console.error('Failed to import students:', error);
-      ui.showToast('Failed to import students');
+      ui.showToast(isReadOnlyError(error) ? getReadOnlyMessage(app) : 'Failed to import students');
     }
   },
 
   saveScores: async function (studentId, examId, scores, app, ui) {
+    if (!ensureWritable(app, ui)) return;
+
     try {
       const exam = app.state.exams.find(e => e.id === examId);
       const examLabel = exam?.title || exam?.name || '';
@@ -207,11 +248,13 @@ const students = {
       ui.showToast('Scores saved');
     } catch (error) {
       console.error('Failed to save scores:', error);
-      ui.showToast('Failed to save scores');
+      ui.showToast(isReadOnlyError(error) ? getReadOnlyMessage(app) : 'Failed to save scores');
     }
   },
 
   saveBulkScores: async function (examId, inputs, app, ui) {
+    if (!ensureWritable(app, ui)) return;
+
     try {
       const exam = app.state.exams.find(e => e.id === examId);
       const examLabel = exam?.title || exam?.name || '';
@@ -255,7 +298,7 @@ const students = {
       ui.showToast("Class scores saved");
     } catch (error) {
       console.error('Failed to save bulk scores:', error);
-      ui.showToast('Failed to save some scores');
+      ui.showToast(isReadOnlyError(error) ? getReadOnlyMessage(app) : 'Failed to save some scores');
     }
   }
 };

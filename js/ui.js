@@ -84,6 +84,8 @@ const domIds = {
   dashboardPerformanceChart: 'dashboard-performance-chart',
   classChart: 'class-chart',
   classChartPlaceholder: 'class-chart-placeholder',
+  impersonationReadonlyBanner: 'impersonation-readonly-banner',
+  impersonationReadonlyLabel: 'impersonation-readonly-label',
   canvas: 'progress-chart',
   chartPlaceholder: 'chart-placeholder',
   heatmapHead: 'heatmapHead',
@@ -157,6 +159,7 @@ const ui = {
     hasBoundClassDropdownEvents: false,
     hasBoundAccessGuardEvents: false,
     toastTimer: null,
+    readOnlyToastTimer: null,
     trashRetentionDays: 3,
 
     init: function () {
@@ -223,6 +226,134 @@ const ui = {
       const reason = this.getAccessDeniedMessage(feature);
       this.showToast(`Access denied: ${reason}`);
       return false;
+    },
+
+    isReadOnlyImpersonation: function () {
+      return typeof app.isImpersonating === 'function' && app.isImpersonating();
+    },
+
+    getReadOnlyImpersonationLabel: function () {
+      const viewingLabel = typeof app.getViewingUserLabel === 'function'
+        ? String(app.getViewingUserLabel() || '').trim()
+        : '';
+      const viewingUserId = typeof app.getViewingUserId === 'function'
+        ? String(app.getViewingUserId() || '').trim()
+        : '';
+      const displayLabel = viewingLabel || viewingUserId || 'another user';
+      return `Read-only mode: viewing ${displayLabel}.`;
+    },
+
+    ensureWritableAction: function (actionLabel = 'modify data') {
+      if (!this.isReadOnlyImpersonation()) {
+        return true;
+      }
+
+      const label = this.getReadOnlyImpersonationLabel();
+      this.showToast(`${label} ${actionLabel} is disabled.`);
+      return false;
+    },
+
+    setReadOnlyControlState: function (elements = [], isReadOnly = false) {
+      const lockMessage = this.getReadOnlyImpersonationLabel();
+      Array.from(elements || []).filter(Boolean).forEach((element) => {
+        if (!element) return;
+
+        if (isReadOnly) {
+          if (element.dataset.readonlyLocked !== 'true') {
+            element.dataset.readonlyPrevDisabled = element.disabled ? 'true' : 'false';
+            element.dataset.readonlyOriginalTitle = element.getAttribute('title') || '';
+          }
+
+          if ('disabled' in element) {
+            element.disabled = true;
+          }
+          element.classList.add('readonly-locked-control');
+          element.dataset.readonlyLocked = 'true';
+          element.setAttribute('aria-disabled', 'true');
+          element.setAttribute('title', lockMessage);
+          return;
+        }
+
+        if (element.dataset.readonlyLocked === 'true') {
+          const previousDisabled = element.dataset.readonlyPrevDisabled === 'true';
+          if ('disabled' in element) {
+            element.disabled = previousDisabled;
+          }
+          element.classList.remove('readonly-locked-control');
+          element.removeAttribute('aria-disabled');
+
+          const originalTitle = element.dataset.readonlyOriginalTitle || '';
+          if (originalTitle) {
+            element.setAttribute('title', originalTitle);
+          } else {
+            element.removeAttribute('title');
+          }
+
+          delete element.dataset.readonlyLocked;
+          delete element.dataset.readonlyPrevDisabled;
+          delete element.dataset.readonlyOriginalTitle;
+        }
+      });
+    },
+
+    applyReadOnlyImpersonationState: function () {
+      const isReadOnly = this.isReadOnlyImpersonation();
+      const banner = app.dom.impersonationReadonlyBanner || document.getElementById('impersonation-readonly-banner');
+      const bannerLabel = app.dom.impersonationReadonlyLabel || document.getElementById('impersonation-readonly-label');
+      const readOnlyLabel = this.getReadOnlyImpersonationLabel();
+
+      if (banner) {
+        banner.hidden = !isReadOnly;
+      }
+      if (bannerLabel) {
+        bannerLabel.textContent = readOnlyLabel;
+      }
+
+      const directControls = [
+        app.dom.nameInput,
+        app.dom.bulkImportBtn,
+        app.dom.bulkImportConfirmBtn,
+        app.dom.bulkImportTextarea,
+        app.dom.createClassBtn,
+        app.dom.deleteClassBtn,
+        app.dom.mockNameInput,
+        app.dom.subjectNameInput,
+        app.dom.saveScoresBtn,
+        app.dom.bulkScoreBtn,
+        app.dom.bulkScoreSaveBtn,
+        app.dom.notesSaveBtn,
+        app.dom.trashRestoreAllBtn,
+        app.dom.trashEmptyBtn,
+        app.dom.classPrevBtn,
+        app.dom.classNextBtn,
+        app.dom.classDropdownToggle,
+        app.dom.editSaveBtn,
+        app.dom.deleteConfirmBtn
+      ];
+
+      const dynamicControls = document.querySelectorAll([
+        '#add-student-form button[type="submit"]',
+        '#addMockForm button[type="submit"]',
+        '#addSubjectForm button[type="submit"]',
+        '.student-chip-action',
+        '.mock-item input',
+        '.mock-item button',
+        '.trash-item-actions button',
+        '#dynamicSubjectFields input',
+        '.bulk-score-input',
+        '.bulk-row-reset-btn',
+        '.class-dropdown-item[data-class-id]',
+        '.notes-cell'
+      ].join(','));
+
+      this.setReadOnlyControlState(directControls, isReadOnly);
+      this.setReadOnlyControlState(dynamicControls, isReadOnly);
+
+      if (app.dom.notesTextarea) {
+        app.dom.notesTextarea.readOnly = isReadOnly;
+      }
+
+      document.body.classList.toggle('readonly-lock', isReadOnly);
     },
 
     canUseDeveloperTools: function () {
@@ -642,6 +773,10 @@ const ui = {
       const nextClassId = String(classId || '').trim();
       if (!nextClassId) return;
 
+      if (!this.ensureWritableAction('Class switching')) {
+        return;
+      }
+
       try {
         this.closeClassDropdown();
         this.setClassControlsBusy(true);
@@ -657,6 +792,10 @@ const ui = {
     },
 
     cycleClass: async function (step = 1) {
+      if (!this.ensureWritableAction('Class switching')) {
+        return;
+      }
+
       const classes = Array.isArray(app.state.classes) ? app.state.classes : [];
       if (classes.length <= 1) {
         return;
@@ -745,6 +884,10 @@ const ui = {
       if (!classes.length && canManageClasses && !app.state.isLoading && !this.hasPromptedForMissingClass) {
         this.hasPromptedForMissingClass = true;
         setTimeout(async () => {
+          if (!this.ensureWritableAction('Class creation')) {
+            return;
+          }
+
           const className = prompt('No class found. Enter a class name to get started:', 'My Class');
           const normalizedName = String(className || '').trim();
           if (!normalizedName) {
@@ -768,6 +911,9 @@ const ui = {
 
     clearAllData: async function () {
       if (!this.requireAccess('resetSystem')) {
+        return;
+      }
+      if (!this.ensureWritableAction('Data reset')) {
         return;
       }
       try {
@@ -1050,6 +1196,9 @@ const ui = {
     renderStudentChips: function () {
       if (!app.dom.studentList) return;
 
+      const isReadOnly = this.isReadOnlyImpersonation();
+      const readOnlyTitle = this.getReadOnlyImpersonationLabel();
+
       const rosterSearchTerm = String(app.state.studentRosterSearchTerm || '').trim().toLowerCase();
       const students = Array.isArray(app.state.students) ? app.state.students : [];
       const filteredStudents = rosterSearchTerm
@@ -1095,16 +1244,18 @@ const ui = {
                 class="student-chip-action"
                 data-student-action="edit"
                 data-student-id="${app.utils.esc(id)}"
-                title="Edit student"
+                title="${isReadOnly ? app.utils.esc(readOnlyTitle) : 'Edit student'}"
                 aria-label="Edit ${app.utils.esc(name)}"
+                ${isReadOnly ? 'disabled' : ''}
               >✏️</button>
               <button
                 type="button"
                 class="student-chip-action danger"
                 data-student-action="delete"
                 data-student-id="${app.utils.esc(id)}"
-                title="Delete student"
+                title="${isReadOnly ? app.utils.esc(readOnlyTitle) : 'Delete student'}"
                 aria-label="Delete ${app.utils.esc(name)}"
+                ${isReadOnly ? 'disabled' : ''}
               >🗑</button>
             </div>
           </div>
@@ -1153,6 +1304,9 @@ const ui = {
 
     renderResultsTable: function () {
       if (!app.dom.resultsHeadRow1 || !app.dom.resultsHeadRow2 || !app.dom.resultsBody) return;
+
+      const isReadOnly = this.isReadOnlyImpersonation();
+      const notesTooltip = isReadOnly ? this.getReadOnlyImpersonationLabel() : 'Open notes';
 
       const { previousExam, latestExam } = app.analytics.getLastTwoExams();
       const canComputeImprovement = !!previousExam && !!latestExam;
@@ -1216,7 +1370,7 @@ const ui = {
           <td>${canComputeImprovement ? (previousTotal !== null ? previousTotal.toFixed(1) : 'N/A') : '&#8212;'}</td>
           <td class="${improvData.className}">${improvData.text}</td>
           <td><span class="risk-pill status-pill ${statusClass}">${this.formatStatusLabel(status)}</span></td>
-          <td class="notes-cell" onclick="window.TrackerApp.ui.openNotes('${s.id}')">${s.notes ? '&#128221; View' : '+ Add'}</td>
+          <td class="notes-cell${isReadOnly ? ' readonly-locked-control' : ''}" title="${app.utils.esc(notesTooltip)}" onclick="window.TrackerApp.ui.openNotes('${s.id}')">${s.notes ? '&#128221; View' : '+ Add'}</td>
           <td class="report-cell" data-report-id="${s.id}">&#128196; Report</td>
         </tr>`;
       }).join('');
@@ -1420,10 +1574,19 @@ const ui = {
       app.state.notesId = uid;
       if (app.dom.notesModalTitle) app.dom.notesModalTitle.textContent = s.name;
       if (app.dom.notesTextarea) app.dom.notesTextarea.value = s.notes || '';
+      if (app.dom.notesTextarea) app.dom.notesTextarea.readOnly = this.isReadOnlyImpersonation();
+      if (app.dom.notesSaveBtn) {
+        app.dom.notesSaveBtn.disabled = this.isReadOnlyImpersonation();
+        app.dom.notesSaveBtn.title = this.isReadOnlyImpersonation() ? this.getReadOnlyImpersonationLabel() : 'Save Notes';
+      }
       if (app.dom.notesModal) app.dom.notesModal.classList.add('active');
     },
 
     saveNotes: async function () {
+      if (!this.ensureWritableAction('Notes saving')) {
+        return;
+      }
+
       try {
         const s = app.state.students.find(x => x.id === app.state.notesId);
         if (s) {
@@ -1889,6 +2052,7 @@ const ui = {
       console.log("Refreshing UI...");
       try {
         this.updateRoleBasedUIAccess();
+        this.applyReadOnlyImpersonationState();
 
         if (app.state.isLoading) {
           if (app.dom.emptyMsg) {
@@ -1911,6 +2075,7 @@ const ui = {
         this.renderResultsTable();
         this.renderBulkTable();
         this.updateBackupStatus();
+        this.applyReadOnlyImpersonationState();
         
         // Render heatmap
         app.heatmap.renderHeatmap(app);
@@ -1936,6 +2101,10 @@ const ui = {
     },
 
     renameExam: async function (id, name) { 
+      if (!this.ensureWritableAction('Exam updates')) {
+        return;
+      }
+
       try {
         await app.updateExam(id, { title: name.trim() });
         this.refreshUI(); 
@@ -1945,6 +2114,10 @@ const ui = {
       }
     },
     deleteExam: async function (id) { 
+      if (!this.ensureWritableAction('Exam deletion')) {
+        return;
+      }
+
       if (confirm("Delete exam?")) { 
         try {
           const examName = app.state.exams.find(item => item.id === id)?.title
@@ -1960,6 +2133,10 @@ const ui = {
       } 
     },
     renameSubject: async function (id, n) {
+      if (!this.ensureWritableAction('Subject updates')) {
+        return;
+      }
+
       try {
         await app.updateSubject(id, { name: n.trim() });
         this.refreshUI();
@@ -1969,6 +2146,10 @@ const ui = {
       }
     },
     deleteSubject: async function (id) {
+      if (!this.ensureWritableAction('Subject deletion')) {
+        return;
+      }
+
       if (confirm("Delete subject?")) {
         try {
           const subjectName = app.state.subjects.find(item => item.id === id)?.name || 'Subject';
@@ -2053,6 +2234,7 @@ const ui = {
         if (app.dom.form) {
           app.dom.form.onsubmit = async (e) => {
             e.preventDefault();
+            if (!this.ensureWritableAction('Student creation')) return;
             const didAddStudent = await app.students.addStudent(app.dom.nameInput.value, app, this);
             if (didAddStudent && app.dom.nameInput) {
               app.dom.nameInput.value = '';
@@ -2101,6 +2283,8 @@ const ui = {
         }
         if (app.dom.createClassBtn) {
           app.dom.createClassBtn.onclick = async () => {
+            if (!this.ensureWritableAction('Class creation')) return;
+
             const className = prompt('Enter class name', 'My Class');
             const normalizedName = String(className || '').trim();
             if (!normalizedName) return;
@@ -2117,6 +2301,8 @@ const ui = {
         }
         if (app.dom.deleteClassBtn) {
           app.dom.deleteClassBtn.onclick = async () => {
+            if (!this.ensureWritableAction('Class deletion')) return;
+
             const activeClassName = app.state.currentClassName || 'this class';
             const shouldDelete = confirm(`Move ${activeClassName} to Trash? You can restore it later from Trash.`);
             if (!shouldDelete) return;
@@ -2223,18 +2409,26 @@ const ui = {
         };
         if (app.dom.bulkImportConfirmBtn) app.dom.bulkImportConfirmBtn.onclick = () => {
           if (!this.requireAccess('bulkImport')) return;
+          if (!this.ensureWritableAction('Bulk add')) return;
+          if (!confirm('Import all listed students into the active class?')) return;
           app.students.bulkImport(app.dom.bulkImportTextarea.value, app, this);
           app.dom.bulkImportModal.classList.remove('active');
         };
         if (app.dom.bulkImportCancelBtn) app.dom.bulkImportCancelBtn.onclick = () => app.dom.bulkImportModal.classList.remove('active');
-        if (app.dom.editSaveBtn) app.dom.editSaveBtn.onclick = () => app.students.saveEdit(app, this);
+        if (app.dom.editSaveBtn) app.dom.editSaveBtn.onclick = () => {
+          if (!this.ensureWritableAction('Student updates')) return;
+          app.students.saveEdit(app, this);
+        };
         if (app.dom.editCancelBtn) {
           app.dom.editCancelBtn.onclick = () => {
             app.state.editingId = null;
             app.dom.editModal.classList.remove('active');
           };
         }
-        if (app.dom.deleteConfirmBtn) app.dom.deleteConfirmBtn.onclick = () => app.students.confirmDelete(app, this);
+        if (app.dom.deleteConfirmBtn) app.dom.deleteConfirmBtn.onclick = () => {
+          if (!this.ensureWritableAction('Student deletion')) return;
+          app.students.confirmDelete(app, this);
+        };
         if (app.dom.deleteCancelBtn) {
           app.dom.deleteCancelBtn.onclick = () => {
             app.state.deletingId = null;
@@ -2253,9 +2447,14 @@ const ui = {
         if (app.dom.notesCancelBtn) app.dom.notesCancelBtn.onclick = () => app.dom.notesModal.classList.remove('active');
         if (app.dom.bulkScoreBtn) app.dom.bulkScoreBtn.onclick = () => { app.dom.bulkScoreModal.classList.add('active'); this.renderBulkTable(); };
         if (app.dom.bulkScoreCancelBtn) app.dom.bulkScoreCancelBtn.onclick = () => app.dom.bulkScoreModal.classList.remove('active');
-        if (app.dom.bulkScoreSaveBtn) app.dom.bulkScoreSaveBtn.onclick = () => app.students.saveBulkScores(app.dom.bulkMockSelect.value, app.dom.bulkScoreBody.querySelectorAll('.bulk-score-input'), app, this);
+        if (app.dom.bulkScoreSaveBtn) app.dom.bulkScoreSaveBtn.onclick = () => {
+          if (!this.ensureWritableAction('Bulk score save')) return;
+          if (!confirm('Save all entered scores for this exam?')) return;
+          app.students.saveBulkScores(app.dom.bulkMockSelect.value, app.dom.bulkScoreBody.querySelectorAll('.bulk-score-input'), app, this);
+        };
         if (app.dom.addMockForm) app.dom.addMockForm.onsubmit = async (e) => { 
           e.preventDefault(); 
+          if (!this.ensureWritableAction('Exam creation')) return;
           if (app.dom.mockNameInput.value.trim()) { 
             try {
               await app.addExam({ title: app.dom.mockNameInput.value.trim(), date: new Date().toISOString() });
@@ -2270,6 +2469,7 @@ const ui = {
         };
         if (app.dom.addSubjectForm) app.dom.addSubjectForm.onsubmit = async (e) => { 
           e.preventDefault(); 
+          if (!this.ensureWritableAction('Subject creation')) return;
           if (app.dom.subjectNameInput.value.trim()) { 
             try {
               await app.addSubject({ name: app.dom.subjectNameInput.value.trim() });
@@ -2282,6 +2482,7 @@ const ui = {
           app.dom.subjectNameInput.value = ''; 
         };
         if (app.dom.saveScoresBtn) app.dom.saveScoresBtn.onclick = () => {
+          if (!this.ensureWritableAction('Score save')) return;
           const sid = app.dom.scoreStudentSelect.value, mid = app.dom.scoreMockSelect.value;
           const scores = {};
           app.dom.dynamicSubjectFields.querySelectorAll('input').forEach(f => {
@@ -2316,11 +2517,13 @@ const ui = {
 
             const action = actionButton.dataset.studentAction;
             if (action === 'edit') {
+              if (!this.ensureWritableAction('Student updates')) return;
               app.students.startEdit(studentId, app, this);
               return;
             }
 
             if (action === 'delete') {
+              if (!this.ensureWritableAction('Student deletion')) return;
               app.students.deleteStudent(studentId, app, this);
             }
           });
@@ -2340,6 +2543,7 @@ const ui = {
 
             try {
               if (action === 'restore') {
+                if (!this.ensureWritableAction('Trash restore')) return;
                 if (itemType === 'class') {
                   await app.restoreClass(itemId);
                 } else if (itemType === 'exam') {
@@ -2355,6 +2559,7 @@ const ui = {
               }
 
               if (action === 'permanent-delete') {
+                if (!this.ensureWritableAction('Permanent delete')) return;
                 if (!confirm(`Permanently delete this ${typeLabel} from Trash? This cannot be undone.`)) {
                   return;
                 }
@@ -2381,6 +2586,8 @@ const ui = {
         }
         if (app.dom.trashRestoreAllBtn) {
           app.dom.trashRestoreAllBtn.addEventListener('click', async () => {
+            if (!this.ensureWritableAction('Trash restore')) return;
+            if (!confirm('Restore all items from Trash?')) return;
             try {
               app.dom.trashRestoreAllBtn.disabled = true;
               const restoredCount = await app.restoreAllStudentsFromTrash();
@@ -2396,6 +2603,7 @@ const ui = {
         }
         if (app.dom.trashEmptyBtn) {
           app.dom.trashEmptyBtn.addEventListener('click', async () => {
+            if (!this.ensureWritableAction('Trash empty')) return;
             if (!confirm('Empty Trash and permanently delete all entries? This cannot be undone.')) {
               return;
             }

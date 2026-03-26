@@ -43,6 +43,7 @@ window.TrackerApp = window.TrackerApp || {};
   const OFFLINE_CACHE_MESSAGE = 'Offline mode: using cached data';
   const OFFLINE_GRACE_PERIOD_MS = 3000;
   const CURRENT_CLASS_STORAGE_KEY = 'currentClassId';
+  const VIEWING_USER_LABEL_KEY = 'viewingUserLabel';
   const ROLE_TEACHER = 'teacher';
   const ROLE_LEGACY_USER = 'user';
   const ROLE_ADMIN = 'admin';
@@ -90,11 +91,36 @@ window.TrackerApp = window.TrackerApp || {};
     if (typeof dataService.setViewingUserContext === 'function') {
       dataService.setViewingUserContext('');
     }
+
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.removeItem(VIEWING_USER_LABEL_KEY);
+    }
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(VIEWING_USER_LABEL_KEY);
+    }
+
     return app.state.viewingUserId;
   };
 
   app.getEffectiveUserId = function () {
     return app.getViewingUserId() || String(app.state.authUser?.uid || '').trim();
+  };
+
+  app.getViewingUserLabel = function () {
+    const fromSession = typeof sessionStorage !== 'undefined'
+      ? String(sessionStorage.getItem(VIEWING_USER_LABEL_KEY) || '').trim()
+      : '';
+    if (fromSession) return fromSession;
+
+    return typeof localStorage !== 'undefined'
+      ? String(localStorage.getItem(VIEWING_USER_LABEL_KEY) || '').trim()
+      : '';
+  };
+
+  app.isImpersonating = function () {
+    const authUid = String(app.state.authUser?.uid || '').trim();
+    const viewingUid = app.getViewingUserId();
+    return Boolean(viewingUid && authUid && viewingUid !== authUid);
   };
 
   app.clearCurrentUserRole = function () {
@@ -215,8 +241,27 @@ window.TrackerApp = window.TrackerApp || {};
       : Math.max(0, Math.min(100, isNaN(Number(value)) ? 0 : Number(value)));
   };
 
-  const enqueueStateWrite = (task) => {
-    stateWriteChain = stateWriteChain.then(task, task);
+  const createReadOnlyContextError = (operationLabel = 'modify data') => {
+    const error = new Error(`Read-only mode: cannot ${operationLabel} while viewing another user`);
+    error.code = 'app/read-only-impersonation';
+    return error;
+  };
+
+  const ensureWritableDataContext = (operationLabel = 'modify data') => {
+    if (typeof app.isImpersonating === 'function' && app.isImpersonating()) {
+      throw createReadOnlyContextError(operationLabel);
+    }
+  };
+
+  const enqueueStateWrite = (task, { allowInReadOnly = false, operationLabel = 'modify data' } = {}) => {
+    const runTask = async () => {
+      if (!allowInReadOnly) {
+        ensureWritableDataContext(operationLabel);
+      }
+      return task();
+    };
+
+    stateWriteChain = stateWriteChain.then(runTask, runTask);
     return stateWriteChain;
   };
 
