@@ -32,6 +32,7 @@ const domIds = {
   systemImportDataBtn: 'system-import-data-btn',
   systemThemeToggleBtn: 'system-theme-toggle-btn',
   systemResetBtn: 'system-reset-btn',
+  returnMyDataBtn: 'return-my-data-btn',
   adminDashboardBtn: 'admin-dashboard-btn',
   form: 'add-student-form',
   classDropdown: 'class-dropdown',
@@ -132,9 +133,9 @@ const domIds = {
 
 const FEATURE_ACCESS_RULES = {
   developerTools: ['developer'],
-  exportData: ['admin', 'developer'],
+  exportData: ['developer'],
   importData: ['developer'],
-  bulkImport: ['developer'],
+  bulkImport: ['teacher', 'admin', 'developer'],
   restorePoints: ['developer'],
   resetSystem: ['developer'],
   adminPanel: ['admin', 'developer']
@@ -142,9 +143,9 @@ const FEATURE_ACCESS_RULES = {
 
 const FEATURE_ACCESS_MESSAGES = {
   developerTools: 'Access restricted: Developer only',
-  exportData: 'Access restricted: Admin or Developer only',
+  exportData: 'Access restricted: Developer only',
   importData: 'Access restricted: Developer only',
-  bulkImport: 'Access restricted: Developer only',
+  bulkImport: 'Access restricted: Teacher, Admin, or Developer only',
   restorePoints: 'Access restricted: Developer only',
   resetSystem: 'Access restricted: Developer only',
   adminPanel: 'Access restricted: Admin or Developer only'
@@ -306,6 +307,8 @@ const ui = {
       const roleResolved = Boolean(app.state.isRoleResolved);
       const currentRole = this.getCurrentRole();
       const canManageClasses = currentRole === 'admin' || currentRole === 'developer';
+      const hasViewingContext = typeof app.getViewingUserId === 'function' && Boolean(app.getViewingUserId());
+      const canUseViewingContext = currentRole === 'admin' || currentRole === 'developer';
 
       if (document.body) {
         document.body.dataset.userRole = currentRole;
@@ -324,6 +327,34 @@ const ui = {
           app.dom.deleteClassBtn
         ]);
       }
+
+      if (app.dom.returnMyDataBtn) {
+        if (!canUseViewingContext) {
+          this.removeElementsFromDom([app.dom.returnMyDataBtn]);
+        } else {
+          app.dom.returnMyDataBtn.style.display = hasViewingContext ? '' : 'none';
+        }
+      }
+
+      this.applyFeatureAccessState('developerTools', [
+        app.dom.systemToolsBackupStatus,
+        app.dom.backupStatus,
+        app.dom.backupBtn,
+        app.dom.restoreBtn,
+        app.dom.restoreInput,
+        app.dom.createSnapshotBtn,
+        app.dom.snapshotManagerBtn,
+        app.dom.resetBtn,
+        app.dom.systemCreateRestorePointBtn,
+        app.dom.systemRestorePointsBtn,
+        app.dom.systemExportDataBtn,
+        app.dom.systemImportDataBtn,
+        app.dom.systemResetBtn,
+        app.dom.exportCsvBtn,
+        app.dom.exportExcelBtn,
+        app.dom.reportExportPdfBtn,
+        app.dom.reportExportAllPdfBtn
+      ]);
 
       this.applyFeatureAccessState('importData', [
         app.dom.restoreBtn,
@@ -901,10 +932,19 @@ const ui = {
 
     updateDashboardStats: function () {
       const fallbackTotal = app.state.students.length;
-      const total = Number.isFinite(Number(app.state.dashboardStudentCount))
+      const hasScopedTotal = Number.isFinite(Number(app.state.dashboardStudentCount));
+      const shouldShowLoading = app.state.isLoading && !hasScopedTotal && fallbackTotal <= 0;
+
+      if (shouldShowLoading && app.dom.statTotalStudents) {
+        app.dom.statTotalStudents.textContent = 'Loading...';
+      }
+
+      const total = hasScopedTotal
         ? Number(app.state.dashboardStudentCount)
         : fallbackTotal;
-      this.animateDashboardStatValue(app.dom.statTotalStudents, total, 'int');
+      if (!shouldShowLoading) {
+        this.animateDashboardStatValue(app.dom.statTotalStudents, total, 'int');
+      }
 
       const latestExam = app.analytics.getLatestExam();
       const { groups: statusGroups } = app.analytics.groupStudentsByStatus(latestExam);
@@ -1849,6 +1889,15 @@ const ui = {
       console.log("Refreshing UI...");
       try {
         this.updateRoleBasedUIAccess();
+
+        if (app.state.isLoading) {
+          if (app.dom.emptyMsg) {
+            app.dom.emptyMsg.style.display = 'block';
+          }
+          this.updateDashboardStats();
+          return;
+        }
+
         if (app.dom.emptyMsg) app.dom.emptyMsg.style.display = app.state.students.length ? 'none' : 'block';
         this.renderClassControls();
         this.renderManagement();
@@ -2122,6 +2171,25 @@ const ui = {
           app.dom.restoreBtn?.click();
         };
         if (app.dom.systemThemeToggleBtn) app.dom.systemThemeToggleBtn.onclick = () => app.dom.themeToggle?.click();
+        if (app.dom.returnMyDataBtn) {
+          app.dom.returnMyDataBtn.onclick = async () => {
+            if (typeof app.clearViewingUserId !== 'function') return;
+
+            app.clearViewingUserId();
+            app.state.dashboardStudentCount = null;
+            app.state.isLoading = true;
+            this.refreshUI();
+
+            try {
+              await app.load();
+              this.refreshUI();
+              this.showToast('Returned to your data context');
+            } catch (error) {
+              console.error('Failed to reload your data context:', error);
+              this.showToast('Failed to return to your data');
+            }
+          };
+        }
         if (app.dom.adminDashboardBtn) {
           app.dom.adminDashboardBtn.onclick = (event) => {
             event.preventDefault();

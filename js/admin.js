@@ -26,6 +26,7 @@ const ROLE_TEACHER = 'teacher';
 const ROLE_ADMIN = 'admin';
 const ROLE_DEVELOPER = 'developer';
 const UPDATABLE_ROLES = [ROLE_TEACHER, ROLE_ADMIN];
+const VIEWING_USER_CONTEXT_KEY = 'viewingUserId';
 
 const state = {
   authUser: null,
@@ -143,6 +144,37 @@ const formatLogAction = (action) => {
 
 const isPermissionDeniedError = (error) => String(error?.code || '').toLowerCase().includes('permission-denied');
 const canManageRoles = () => state.currentRole === ROLE_DEVELOPER;
+
+const persistViewingUserContext = (uid = '') => {
+  const normalized = String(uid || '').trim();
+
+  if (typeof sessionStorage !== 'undefined') {
+    if (normalized) {
+      sessionStorage.setItem(VIEWING_USER_CONTEXT_KEY, normalized);
+    } else {
+      sessionStorage.removeItem(VIEWING_USER_CONTEXT_KEY);
+    }
+  }
+
+  if (typeof localStorage !== 'undefined') {
+    if (normalized) {
+      localStorage.setItem(VIEWING_USER_CONTEXT_KEY, normalized);
+    } else {
+      localStorage.removeItem(VIEWING_USER_CONTEXT_KEY);
+    }
+  }
+};
+
+const readPersistedViewingUserContext = () => {
+  const fromSession = typeof sessionStorage !== 'undefined'
+    ? String(sessionStorage.getItem(VIEWING_USER_CONTEXT_KEY) || '').trim()
+    : '';
+  if (fromSession) return fromSession;
+
+  return typeof localStorage !== 'undefined'
+    ? String(localStorage.getItem(VIEWING_USER_CONTEXT_KEY) || '').trim()
+    : '';
+};
 
 const findUserRecord = (uid = '') => {
   const normalizedUid = String(uid || '').trim();
@@ -523,6 +555,7 @@ const loadActivityLogs = async () => {
 
 const setViewingUser = async (uid = '') => {
   state.viewingUserId = String(uid || '').trim();
+  persistViewingUserContext(state.viewingUserId);
   renderUsersTable();
   renderViewingIndicator();
   await loadViewingUserData();
@@ -713,7 +746,16 @@ const init = async () => {
 
     await fetchUsers();
     await loadGlobalStats();
-    await loadActivityLogs();
+
+    const persistedViewingUserId = readPersistedViewingUserContext();
+    if (persistedViewingUserId && state.users.some((entry) => entry.uid === persistedViewingUserId)) {
+      await setViewingUser(persistedViewingUserId);
+    } else {
+      if (persistedViewingUserId) {
+        persistViewingUserContext('');
+      }
+      await loadActivityLogs();
+    }
   } catch (error) {
     console.error('Failed to initialize admin panel:', error);
     setPanelStatus(`Failed to initialize panel: ${formatAuthError(error)}`, 'error');

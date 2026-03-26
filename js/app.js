@@ -28,6 +28,36 @@ app._initialized = app._initialized || false;
 let authSubscriptionCleanup = null;
 
 const LOGIN_PAGE_PATH = '/login.html';
+const VIEWING_USER_CONTEXT_KEY = 'viewingUserId';
+
+const readPersistedViewingUserId = () => {
+  const fromSession = typeof sessionStorage !== 'undefined'
+    ? String(sessionStorage.getItem(VIEWING_USER_CONTEXT_KEY) || '').trim()
+    : '';
+  if (fromSession) return fromSession;
+
+  return typeof localStorage !== 'undefined'
+    ? String(localStorage.getItem(VIEWING_USER_CONTEXT_KEY) || '').trim()
+    : '';
+};
+
+const syncViewingContextForRole = (authUser) => {
+  const authUid = String(authUser?.uid || '').trim();
+  const currentRole = normalizeUserRole(app.getCurrentUserRole());
+  const canUseViewingContext = currentRole === 'admin' || currentRole === 'developer';
+  const storedViewingUserId = readPersistedViewingUserId();
+  const nextViewingUserId = canUseViewingContext && storedViewingUserId && storedViewingUserId !== authUid
+    ? storedViewingUserId
+    : '';
+
+  if (nextViewingUserId) {
+    app.setViewingUserId(nextViewingUserId);
+    return nextViewingUserId;
+  }
+
+  app.clearViewingUserId();
+  return '';
+};
 
 const refreshDashboardStudentCount = async () => {
   if (typeof app.refreshDashboardStudentCount !== 'function') {
@@ -141,8 +171,11 @@ const ensureAuthenticatedSession = async () => {
 
     setAuthUserState(authUser);
     await setResolvedUserRole(authUser);
+    syncViewingContextForRole(authUser);
     await refreshDashboardStudentCount();
-    console.log('Active UID:', authUser.uid);
+    console.log('Auth UID:', String(authUser.uid || '').trim() || '(none)');
+    console.log('Viewing UID:', app.getViewingUserId() || '(none)');
+    console.log('Active UID:', app.getEffectiveUserId() || '(none)');
     return true;
   } catch (error) {
     console.error('Failed to resolve authentication state:', error);
@@ -164,8 +197,11 @@ const handleAuthUserChange = async (authUser) => {
 
   setAuthUserState(authUser);
   await setResolvedUserRole(authUser);
+  syncViewingContextForRole(authUser);
   await refreshDashboardStudentCount();
-  console.log('Active UID:', authUser.uid);
+  console.log('Auth UID:', String(authUser.uid || '').trim() || '(none)');
+  console.log('Viewing UID:', app.getViewingUserId() || '(none)');
+  console.log('Active UID:', app.getEffectiveUserId() || '(none)');
 
   const nextUid = authUser.uid;
   const hasUserChanged = Boolean(previousUid) && previousUid !== nextUid;
@@ -176,6 +212,7 @@ const handleAuthUserChange = async (authUser) => {
   clearLoadedDataForLogout();
   setAuthUserState(authUser);
   await setResolvedUserRole(authUser);
+  syncViewingContextForRole(authUser);
   await refreshDashboardStudentCount();
 
   try {

@@ -34,8 +34,10 @@ const ACTIVITY_LOGS_COLLECTION = 'activityLogs';
 const DEFAULT_CLASS_NAME = 'My Class';
 const TRASH_RETENTION_DAYS = 3;
 const ACTIVITY_LOG_FETCH_LIMIT = 300;
+const VIEWING_USER_CONTEXT_KEY = 'viewingUserId';
 
 let currentClassId = '';
+let viewingUserIdContext = '';
 
 const createDefaultRawData = () => ({
   students: [],
@@ -818,13 +820,63 @@ const toDocId = (prefix, label, index) => {
   return `${prefix}_${slug || index + 1}_${index + 1}`;
 };
 
+const normalizeUserId = (value) => String(value || '').trim();
+
+const readStoredViewingUserContext = () => {
+  const fromSession = typeof sessionStorage !== 'undefined'
+    ? normalizeUserId(sessionStorage.getItem(VIEWING_USER_CONTEXT_KEY))
+    : '';
+  if (fromSession) return fromSession;
+
+  return typeof localStorage !== 'undefined'
+    ? normalizeUserId(localStorage.getItem(VIEWING_USER_CONTEXT_KEY))
+    : '';
+};
+
+const persistViewingUserContext = (userId = '') => {
+  const normalized = normalizeUserId(userId);
+
+  if (typeof sessionStorage !== 'undefined') {
+    if (normalized) {
+      sessionStorage.setItem(VIEWING_USER_CONTEXT_KEY, normalized);
+    } else {
+      sessionStorage.removeItem(VIEWING_USER_CONTEXT_KEY);
+    }
+  }
+
+  if (typeof localStorage !== 'undefined') {
+    if (normalized) {
+      localStorage.setItem(VIEWING_USER_CONTEXT_KEY, normalized);
+    } else {
+      localStorage.removeItem(VIEWING_USER_CONTEXT_KEY);
+    }
+  }
+};
+
+const getViewingContextUserId = () => {
+  return normalizeUserId(viewingUserIdContext || readStoredViewingUserContext());
+};
+
 const getAuthenticatedUserId = () => {
-  const uid = auth?.currentUser?.uid;
-  return uid ? String(uid).trim() : '';
+  return normalizeUserId(auth?.currentUser?.uid);
+};
+
+const getActiveUserId = () => {
+  return getViewingContextUserId() || getAuthenticatedUserId();
 };
 
 const getCurrentUserId = () => {
-  return getAuthenticatedUserId();
+  return getActiveUserId();
+};
+
+export const setViewingUserContext = (userId = '') => {
+  viewingUserIdContext = normalizeUserId(userId);
+  persistViewingUserContext(viewingUserIdContext);
+  return viewingUserIdContext;
+};
+
+export const getViewingUserContext = () => {
+  return getViewingContextUserId();
 };
 
 const waitForAuthResolution = async () => {
@@ -862,11 +914,22 @@ const createUnauthenticatedError = (operationLabel = 'access data') => {
 const ensureAuthenticatedUserId = async (operationLabel = 'access data') => {
   await waitForAuthResolution();
 
-  const userId = getCurrentUserId();
+  const userId = getAuthenticatedUserId();
   if (!userId) {
     throw createUnauthenticatedError(operationLabel);
   }
   return userId;
+};
+
+const ensureActiveUserId = async (operationLabel = 'access data') => {
+  await waitForAuthResolution();
+
+  const authUserId = getAuthenticatedUserId();
+  if (!authUserId) {
+    throw createUnauthenticatedError(operationLabel);
+  }
+
+  return getActiveUserId() || authUserId;
 };
 
 const normalizeClassId = (value) => String(value || '').trim();
@@ -1806,19 +1869,43 @@ export const logActivity = async (action, targetId, targetType, options = {}) =>
 };
 
 export const fetchRoleScopedStudentCount = async (role = 'teacher') => {
-  const userId = await ensureAuthenticatedUserId('read student totals');
+  const activeUserId = await ensureActiveUserId('read student totals');
   if (!isFirebaseConfigured || !db) {
     return 0;
   }
 
   const normalizedRole = String(role || '').trim().toLowerCase();
-  const studentsRef = collectionGroup(db, STUDENTS_SUBCOLLECTION);
-  const studentsQuery = normalizedRole === 'admin' || normalizedRole === 'developer'
-    ? studentsRef
-    : query(studentsRef, where('userId', '==', userId));
+  if (normalizedRole === 'admin' || normalizedRole === 'developer') {
+    const studentsSnapshot = await getDocs(collectionGroup(db, STUDENTS_SUBCOLLECTION));
+    return countActiveCollectionEntries(studentsSnapshot);
+  }
 
-  const studentsSnapshot = await getDocs(studentsQuery);
-  return countActiveCollectionEntries(studentsSnapshot);
+  if (!activeUserId) {
+    return 0;
+  }
+
+  const classesSnapshot = await getDocs(collection(db, USERS_COLLECTION, activeUserId, CLASSES_SUBCOLLECTION));
+  const classIds = [];
+  classesSnapshot.forEach((entry) => {
+    const payload = entry.data() || {};
+    if (payload.deleted === true) return;
+    const classId = normalizeClassId(payload.id || entry.id);
+    if (classId) {
+      classIds.push(classId);
+    }
+  });
+
+  if (!classIds.length) {
+    return 0;
+  }
+
+  const studentSnapshots = await Promise.all(
+    classIds.map((classId) => getDocs(getClassStudentsCollectionRef(activeUserId, classId)))
+  );
+
+  return studentSnapshots.reduce((total, snapshot) => {
+    return total + countActiveCollectionEntries(snapshot);
+  }, 0);
 };
 
 export const fetchAdminGlobalStats = async () => {
@@ -1846,7 +1933,7 @@ export const fetchAdminGlobalStats = async () => {
 
 export const fetchUserScopedData = async (targetUserId = '') => {
   const requesterId = await ensureAuthenticatedUserId('view user data');
-  const selectedUserId = String(targetUserId || requesterId).trim();
+  const selectedUserId = normalizeUserId(targetUserId) || getViewingContextUserId() || requesterId;
 
   if (!selectedUserId) {
     return {
@@ -1880,54 +1967,76 @@ export const fetchUserScopedData = async (targetUserId = '') => {
     };
   }
 
-  const [classesSnapshot, studentsSnapshot, subjectsSnapshot, examsSnapshot] = await Promise.all([
-    getDocs(collection(db, USERS_COLLECTION, selectedUserId, CLASSES_SUBCOLLECTION)),
-    getDocs(query(collectionGroup(db, STUDENTS_SUBCOLLECTION), where('userId', '==', selectedUserId))),
-    getDocs(query(collectionGroup(db, SUBJECTS_SUBCOLLECTION), where('userId', '==', selectedUserId))),
-    getDocs(query(collectionGroup(db, EXAMS_SUBCOLLECTION), where('userId', '==', selectedUserId)))
-  ]);
+  const classesSnapshot = await getDocs(collection(db, USERS_COLLECTION, selectedUserId, CLASSES_SUBCOLLECTION));
 
   const classes = [];
+  const classIds = [];
   classesSnapshot.forEach((entry) => {
     const payload = entry.data() || {};
     if (payload.deleted === true) return;
+    const classId = normalizeClassId(payload.id || entry.id);
+    if (!classId) return;
     classes.push({
-      id: String(payload.id || entry.id || '').trim(),
+      id: classId,
       name: String(payload.name || DEFAULT_CLASS_NAME).trim() || DEFAULT_CLASS_NAME,
       createdAt: toIsoDateString(payload.createdAt)
     });
+    classIds.push(classId);
   });
 
+  const scopedSnapshots = await Promise.all(
+    classIds.map(async (classId) => {
+      const [studentsSnapshot, subjectsSnapshot, examsSnapshot] = await Promise.all([
+        getDocs(getClassStudentsCollectionRef(selectedUserId, classId)),
+        getDocs(getClassSubjectsCollectionRef(selectedUserId, classId)),
+        getDocs(getClassExamsCollectionRef(selectedUserId, classId))
+      ]);
+
+      return {
+        classId,
+        studentsSnapshot,
+        subjectsSnapshot,
+        examsSnapshot
+      };
+    })
+  );
+
   const students = [];
-  studentsSnapshot.forEach((entry) => {
-    const payload = entry.data() || {};
-    if (payload.deleted === true) return;
-    students.push({
-      id: String(payload.id || entry.id || '').trim(),
-      name: String(payload.name || '').trim() || 'Student',
-      classId: String(payload.classId || entry?.ref?.parent?.parent?.id || '').trim()
+  scopedSnapshots.forEach(({ classId, studentsSnapshot }) => {
+    studentsSnapshot.forEach((entry) => {
+      const payload = entry.data() || {};
+      if (payload.deleted === true) return;
+      students.push({
+        id: String(payload.id || entry.id || '').trim(),
+        name: String(payload.name || '').trim() || 'Student',
+        classId: String(payload.classId || classId || '').trim()
+      });
     });
   });
 
   const subjects = [];
-  subjectsSnapshot.forEach((entry) => {
-    const payload = entry.data() || {};
-    if (payload.deleted === true) return;
-    subjects.push({
-      id: String(payload.id || entry.id || '').trim(),
-      name: String(payload.name || '').trim() || 'Subject',
-      classId: String(payload.classId || entry?.ref?.parent?.parent?.id || '').trim()
+  scopedSnapshots.forEach(({ classId, subjectsSnapshot }) => {
+    subjectsSnapshot.forEach((entry) => {
+      const payload = entry.data() || {};
+      if (payload.deleted === true) return;
+      subjects.push({
+        id: String(payload.id || entry.id || '').trim(),
+        name: String(payload.name || '').trim() || 'Subject',
+        classId: String(payload.classId || classId || '').trim()
+      });
     });
   });
 
   const exams = [];
-  examsSnapshot.forEach((entry) => {
-    const payload = entry.data() || {};
-    if (payload.deleted === true) return;
-    exams.push({
-      id: String(payload.id || entry.id || '').trim(),
-      title: String(payload.title || payload.name || '').trim() || 'Exam',
-      classId: String(payload.classId || entry?.ref?.parent?.parent?.id || '').trim()
+  scopedSnapshots.forEach(({ classId, examsSnapshot }) => {
+    examsSnapshot.forEach((entry) => {
+      const payload = entry.data() || {};
+      if (payload.deleted === true) return;
+      exams.push({
+        id: String(payload.id || entry.id || '').trim(),
+        title: String(payload.title || payload.name || '').trim() || 'Exam',
+        classId: String(payload.classId || classId || '').trim()
+      });
     });
   });
 
@@ -2018,11 +2127,17 @@ export const writeCacheCopy = (rawData, classId = '') => {
   };
 };
 
-export const fetchAllData = async () => {
+export const fetchAllData = async (targetUserId) => {
+  if (typeof targetUserId === 'string') {
+    setViewingUserContext(targetUserId);
+  }
+
   let userId = '';
   try {
-    userId = await ensureAuthenticatedUserId('fetch data');
-    console.log('Active UID:', userId);
+    userId = await ensureActiveUserId('fetch data');
+    console.log('Auth UID:', getAuthenticatedUserId() || '(none)');
+    console.log('Viewing UID:', getViewingContextUserId() || '(none)');
+    console.log('Active UID:', userId || '(none)');
   } catch (error) {
     return {
       data: createDefaultRawData(),
@@ -2198,7 +2313,7 @@ export const getCurrentClassId = () => {
 };
 
 export const listClasses = async () => {
-  const userId = await ensureAuthenticatedUserId('list classes');
+  const userId = await ensureActiveUserId('list classes');
 
   if (!isFirebaseConfigured || !db) {
     const cachedClasses = readClassCatalogCache(userId);

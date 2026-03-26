@@ -76,12 +76,20 @@ window.TrackerApp = window.TrackerApp || {};
   };
 
   app.setViewingUserId = function (userId = '') {
-    app.state.viewingUserId = String(userId || '').trim();
+    const normalized = String(userId || '').trim();
+    const authUid = String(app.state.authUser?.uid || '').trim();
+    app.state.viewingUserId = normalized && normalized !== authUid ? normalized : '';
+    if (typeof dataService.setViewingUserContext === 'function') {
+      dataService.setViewingUserContext(app.state.viewingUserId);
+    }
     return app.state.viewingUserId;
   };
 
   app.clearViewingUserId = function () {
     app.state.viewingUserId = '';
+    if (typeof dataService.setViewingUserContext === 'function') {
+      dataService.setViewingUserContext('');
+    }
     return app.state.viewingUserId;
   };
 
@@ -107,6 +115,13 @@ window.TrackerApp = window.TrackerApp || {};
   };
 
   app.refreshDashboardStudentCount = async function () {
+    const authUid = String(app.state.authUser?.uid || '').trim();
+    const viewingUid = app.getViewingUserId();
+    const activeUserId = app.getEffectiveUserId();
+    console.log('Auth UID:', authUid || '(none)');
+    console.log('Viewing UID:', viewingUid || '(none)');
+    console.log('Active UID:', activeUserId || '(none)');
+
     try {
       app.state.dashboardStudentCount = await dataService.fetchRoleScopedStudentCount(app.getCurrentUserRole());
     } catch (error) {
@@ -484,7 +499,17 @@ window.TrackerApp = window.TrackerApp || {};
         dataService.setCurrentClassId(app.state.currentClassId);
       }
 
-      const remoteResult = await dataService.fetchAllData();
+      const viewingUserId = app.getViewingUserId();
+      if (typeof dataService.setViewingUserContext === 'function') {
+        dataService.setViewingUserContext(viewingUserId);
+      }
+
+      const authUid = String(app.state.authUser?.uid || '').trim();
+      console.log('Auth UID:', authUid || '(none)');
+      console.log('Viewing UID:', viewingUserId || '(none)');
+      console.log('Active UID:', app.getEffectiveUserId() || '(none)');
+
+      const remoteResult = await dataService.fetchAllData(viewingUserId);
       const nextClasses = Array.isArray(remoteResult?.classes) ? remoteResult.classes : [];
       const nextClassId = String(remoteResult?.currentClassId || '').trim();
       const nextClassName = String(remoteResult?.currentClassName || '').trim() || 'My Class';
@@ -1278,11 +1303,29 @@ window.TrackerApp = window.TrackerApp || {};
 
   // Theme management (still uses localStorage for UI preferences)
   app.applyTheme = function (t) {
-    app.state.theme = t || app.state.theme;
-    document.body.className = app.state.theme === 'dark' ? 'dark-mode' : 'light-mode';
+    app.state.theme = String(t || app.state.theme || 'light').trim().toLowerCase() === 'dark' ? 'dark' : 'light';
+    const isDarkMode = app.state.theme === 'dark';
+
+    document.body.classList.toggle('dark', isDarkMode);
+    document.body.classList.toggle('dark-mode', isDarkMode);
+    document.body.classList.toggle('light-mode', !isDarkMode);
+
     if (app.dom && app.dom.themeToggle) {
-      app.dom.themeToggle.innerHTML = app.state.theme === 'dark' ? '☀' : '🌙';
+      app.dom.themeToggle.innerHTML = isDarkMode ? '☀' : '🌙';
+      app.dom.themeToggle.title = isDarkMode ? 'Dark Mode' : 'Light Mode';
     }
+
+    const systemThemeButton = (app.dom && app.dom.systemThemeToggleBtn)
+      || document.getElementById('system-theme-toggle-btn');
+    if (systemThemeButton) {
+      const labelNode = systemThemeButton.querySelector('.system-tools-label');
+      const nextLabel = isDarkMode ? 'Dark Mode' : 'Light Mode';
+      if (labelNode) {
+        labelNode.textContent = nextLabel;
+      }
+      systemThemeButton.title = nextLabel;
+    }
+
     // Save theme preference to localStorage (UI preference, not data)
     localStorage.setItem('theme', app.state.theme);
   };
