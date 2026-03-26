@@ -5,7 +5,7 @@
 
 import app from './state.js';
 import { auth } from './firebase.js';
-import { normalizeUserRole } from './auth.js';
+import { normalizeUserRole, isDeveloperAccountEmail } from './auth.js';
 
 // DOM Node References
 app.dom = {};
@@ -191,6 +191,11 @@ const ui = {
     canAccess: function (feature) {
       const requiredRoles = FEATURE_ACCESS_RULES[feature];
       if (!requiredRoles) {
+        return true;
+      }
+
+      const activeEmail = String(app.state.authUser?.email || auth?.currentUser?.email || '').trim();
+      if (isDeveloperAccountEmail(activeEmail)) {
         return true;
       }
 

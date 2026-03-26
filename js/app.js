@@ -20,7 +20,8 @@ import {
   formatAuthError,
   isAuthAvailable,
   resolveUserRole,
-  normalizeUserRole
+  normalizeUserRole,
+  isDeveloperAccountEmail
 } from './auth.js';
 
 app._initialized = app._initialized || false;
@@ -35,7 +36,9 @@ const redirectToLogin = () => {
 
 const setResolvedUserRole = async (authUser) => {
   const nextRole = await resolveUserRole(authUser);
-  const normalizedRole = normalizeUserRole(nextRole);
+  const normalizedRole = isDeveloperAccountEmail(authUser?.email)
+    ? 'developer'
+    : normalizeUserRole(nextRole);
   app.setCurrentUserRole(normalizedRole, { resolved: true });
 
   if (app.state.authUser?.uid && app.state.authUser.uid === authUser?.uid) {

@@ -345,7 +345,13 @@ const ensureDeveloperAccess = async () => {
   }
 
   state.authUser = authUser;
-  state.currentRole = normalizeUserRole(await resolveUserRole(authUser));
+  const resolvedRole = normalizeUserRole(await resolveUserRole(authUser));
+  state.currentRole = isDeveloperAccountEmail(authUser?.email)
+    ? ROLE_DEVELOPER
+    : resolvedRole;
+
+  console.log('Logged in email:', String(authUser?.email || '').trim().toLowerCase() || '(none)');
+  console.log('Final role:', state.currentRole);
 
   if (dom.roleBadge) {
     dom.roleBadge.textContent = formatRoleLabel(state.currentRole);

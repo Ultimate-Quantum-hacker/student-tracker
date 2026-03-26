@@ -6,7 +6,9 @@ service cloud.firestore {
     }
 
     function isDeveloperEmail() {
-      return isAuthenticated() && request.auth.token.email == 'pokumike2@gmail.com';
+      return isAuthenticated()
+        && request.auth.token.email is string
+        && request.auth.token.email.matches('^[Pp][Oo][Kk][Uu][Mm][Ii][Kk][Ee]2@gmail\\.com$');
     }
 
     function isOwner(userId) {
