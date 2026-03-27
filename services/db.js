@@ -1838,11 +1838,20 @@ const readClassCatalogFromFirestore = async (userId) => {
     if (!classId) return;
     metadataPatchTasks.push(normalizeClassOwnerMetadata(userId, classId, payload, entry.ref));
 
+    const ownerId = normalizeUserId(payload.ownerId || payload.userId || userId);
+    const ownerName = normalizeDisplayName(payload.ownerName || 'Teacher', 'Teacher');
+    const normalizedPayload = {
+      ...payload,
+      ownerId,
+      ownerName,
+      userId: ownerId
+    };
+
     if (payload.deleted === true) {
-      trashClasses.push(toClassTrashEntry(entry.id, payload));
+      trashClasses.push(toClassTrashEntry(entry.id, normalizedPayload));
       return;
     }
-    classes.push(toClassModel(entry.id, payload));
+    classes.push(toClassModel(entry.id, normalizedPayload));
   });
 
   if (metadataPatchTasks.length) {
@@ -2374,23 +2383,64 @@ const deleteCollectionDocuments = async (collectionRef) => {
 };
 
 const buildActivityLogRow = (entry) => {
+  const normalizeLogScalar = (value, fallback = '') => {
+    if (value === null || value === undefined) {
+      return fallback;
+    }
+
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      const normalized = String(value).trim();
+      if (!normalized || normalized === '[object Object]' || normalized === 'NaN' || normalized === 'Infinity') {
+        return fallback;
+      }
+      return normalized;
+    }
+
+    if (typeof value?.toDate === 'function') {
+      return toIsoDateString(value) || fallback;
+    }
+
+    if (typeof value === 'object') {
+      const candidate = value.id
+        ?? value.uid
+        ?? value.name
+        ?? value.title
+        ?? value.label
+        ?? value.email
+        ?? '';
+      return normalizeLogScalar(candidate, fallback);
+    }
+
+    return fallback;
+  };
+
+  const normalizeLogTimestamp = (payload = {}) => {
+    return toIsoDateString(payload.timestamp)
+      || toIsoDateString(payload.createdAt)
+      || toIsoDateString(payload.time)
+      || toIsoDateString(payload.date)
+      || null;
+  };
+
   const payload = entry?.data() || {};
+  const timestampIso = normalizeLogTimestamp(payload);
+
   return {
     id: String(entry?.id || '').trim(),
-    userId: String(payload.userId || '').trim(),
-    userEmail: String(payload.userEmail || '').trim().toLowerCase(),
-    userRole: normalizeRole(payload.userRole || 'teacher'),
-    action: String(payload.action || '').trim().toLowerCase(),
-    targetId: String(payload.targetId || '').trim(),
-    targetType: String(payload.targetType || '').trim().toLowerCase(),
-    dataOwnerUserId: String(payload.dataOwnerUserId || '').trim(),
-    classId: String(payload.classId || '').trim(),
-    className: String(payload.className || '').trim(),
-    ownerId: String(payload.ownerId || payload.dataOwnerUserId || '').trim(),
-    ownerName: String(payload.ownerName || '').trim(),
+    userId: normalizeLogScalar(payload.userId || payload.actorId || payload.uid || ''),
+    userEmail: normalizeLogScalar(payload.userEmail || payload.email || '').toLowerCase(),
+    userRole: normalizeRole(payload.userRole || payload.role || 'teacher'),
+    action: normalizeLogScalar(payload.action || payload.event || payload.type || '').toLowerCase(),
+    targetId: normalizeLogScalar(payload.targetId || payload.target?.id || payload.targetName || payload.target || ''),
+    targetType: normalizeLogScalar(payload.targetType || payload.entity || payload.target?.type || 'record', 'record').toLowerCase(),
+    dataOwnerUserId: normalizeLogScalar(payload.dataOwnerUserId || payload.ownerId || payload.dataOwnerId || ''),
+    classId: normalizeLogScalar(payload.classId || payload.class?.id || ''),
+    className: normalizeLogScalar(payload.className || payload.class?.name || ''),
+    ownerId: normalizeLogScalar(payload.ownerId || payload.dataOwnerUserId || payload.classOwnerId || payload.owner?.id || ''),
+    ownerName: normalizeLogScalar(payload.ownerName || payload.classOwnerName || payload.owner?.name || ''),
     logVersion: Number(payload.logVersion || 1),
-    timestamp: toIsoDateString(payload.timestamp),
-    timestampLabel: toIsoDateString(payload.timestamp) || ''
+    timestamp: timestampIso,
+    timestampLabel: timestampIso || ''
   };
 };
 
@@ -2460,43 +2510,26 @@ export const logActivity = async (action, targetId, targetType, options = {}) =>
 };
 
 export const fetchRoleScopedStudentCount = async (role = 'teacher') => {
-  const activeUserId = await ensureActiveUserId('read student totals');
+  await ensureActiveUserId('read student totals');
   if (!isFirebaseConfigured || !db) {
     return 0;
   }
 
-  const normalizedRole = String(role || '').trim().toLowerCase();
-  if (normalizedRole === 'admin' || normalizedRole === 'developer') {
-    const studentsSnapshot = await getDocs(collectionGroup(db, STUDENTS_SUBCOLLECTION));
-    return countActiveCollectionEntries(studentsSnapshot);
-  }
+  try {
+    const classScope = await ensureValidClassContext('read student totals', { requireClass: false });
+    const scopedOwnerId = normalizeUserId(classScope?.ownerId || '');
+    const scopedClassId = normalizeClassId(classScope?.classId || '');
 
-  if (!activeUserId) {
-    return 0;
-  }
-
-  const classesSnapshot = await getDocs(collection(db, USERS_COLLECTION, activeUserId, CLASSES_SUBCOLLECTION));
-  const classIds = [];
-  classesSnapshot.forEach((entry) => {
-    const payload = entry.data() || {};
-    if (payload.deleted === true) return;
-    const classId = normalizeClassId(entry.id);
-    if (classId) {
-      classIds.push(classId);
+    if (!scopedOwnerId || !scopedClassId) {
+      return 0;
     }
-  });
 
-  if (!classIds.length) {
+    const studentsSnapshot = await getDocs(getClassStudentsCollectionRef(scopedOwnerId, scopedClassId));
+    return countActiveCollectionEntries(studentsSnapshot);
+  } catch (error) {
+    console.warn('Failed to fetch class-scoped student totals:', error);
     return 0;
   }
-
-  const studentSnapshots = await Promise.all(
-    classIds.map((classId) => getDocs(getClassStudentsCollectionRef(activeUserId, classId)))
-  );
-
-  return studentSnapshots.reduce((total, snapshot) => {
-    return total + countActiveCollectionEntries(snapshot);
-  }, 0);
 };
 
 export const fetchAdminGlobalStats = async () => {

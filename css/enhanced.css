@@ -222,6 +222,90 @@ body.dark-mode .system-tools-btn:hover{background:#1e293b;border-color:#475569;b
 body.dark-mode .system-tools-btn-danger{background:rgba(127,29,29,.3);color:#fecaca;border-color:rgba(248,113,113,.45)}
 body.dark-mode .system-tools-btn-danger:hover{background:rgba(153,27,27,.42);border-color:rgba(248,113,113,.62)}
 
+body.dark-mode .class-dropdown-toggle,
+body.dark-mode .class-dropdown-menu,
+body.dark-mode .class-dropdown-item,
+body.dark-mode .student-roster-name-input,
+body.dark-mode #mockNameInput,
+body.dark-mode #subjectNameInput,
+body.dark-mode #score-student-select,
+body.dark-mode #scoreMockSelect,
+body.dark-mode #bulkMockSelect,
+body.dark-mode .bulk-score-input,
+body.dark-mode #student-roster-search-input,
+body.dark-mode .search-input,
+body.dark-mode .notes-textarea {
+  background:#0b1220;
+  color:#e2e8f0;
+  border-color:#334155;
+}
+
+body.dark-mode .class-dropdown-item:hover,
+body.dark-mode .class-dropdown-item.active,
+body.dark-mode .mock-item:hover,
+body.dark-mode #results-table tbody tr:hover {
+  background:rgba(30,64,175,.18);
+}
+
+body.dark-mode .class-item-owner,
+body.dark-mode .student-count,
+body.dark-mode .trash-item-date,
+body.dark-mode .trash-item-retention,
+body.dark-mode .performance-analysis-meta,
+body.dark-mode .panel-status,
+body.dark-mode .snapshot-empty,
+body.dark-mode .empty-row,
+body.dark-mode .smart-empty {
+  color:#cbd5e1;
+}
+
+body.dark-mode .risk-pill,
+body.dark-mode .status-pill {
+  border:1px solid rgba(148,163,184,.35);
+  box-shadow:none;
+}
+
+body.dark-mode .total-score-badge {
+  background:linear-gradient(145deg,#111827,#0b1220);
+  border-color:#334155;
+}
+
+body.dark-mode .total-score-label {
+  color:#94a3b8;
+}
+
+body.dark-mode .total-score-value,
+body.dark-mode .activity-sentence,
+body.dark-mode .mock-item input,
+body.dark-mode .mock-item button,
+body.dark-mode .student-chip-name,
+body.dark-mode .trash-item-name,
+body.dark-mode .performance-analysis-name {
+  color:#e2e8f0;
+}
+
+body.dark-mode .card,
+body.dark-mode .mock-item,
+body.dark-mode .student-chip,
+body.dark-mode .trash-item,
+body.dark-mode .performance-analysis-item,
+body.dark-mode .bulk-score-table,
+body.dark-mode #results-table,
+body.dark-mode .modal-content,
+body.dark-mode .report-card {
+  background:#0b1220;
+  border-color:#334155;
+}
+
+body.dark-mode .class-dropdown-item:disabled,
+body.dark-mode .btn:disabled,
+body.dark-mode .bulk-score-input:disabled,
+body.dark-mode input:disabled,
+body.dark-mode select:disabled,
+body.dark-mode textarea:disabled {
+  opacity:.5;
+}
+
 /* Theme variables */
 :root{--intervention-bg:#fff5f5;--intervention-border:#fecaca;--intervention-meta:#7f1d1d}
 body.dark-mode{--intervention-bg:rgba(220,38,38,.18);--intervention-border:rgba(248,113,113,.4);--intervention-meta:#fecaca}

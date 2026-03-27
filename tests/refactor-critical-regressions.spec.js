@@ -74,6 +74,113 @@ test.describe('Class refactor critical regressions', () => {
     expect(result.message.toLowerCase()).toContain('read-only');
   });
 
+  test('teacher write flows retain writable class-scoped context', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const [stateModule, studentsModule] = await Promise.all([
+        import('/js/state.js'),
+        import('/js/students.js')
+      ]);
+
+      const app = stateModule.default || window.TrackerApp;
+      const students = studentsModule.default || app.students;
+      const calls = [];
+
+      app.setCurrentUserRole('teacher', { resolved: true });
+      app.state.classes = [
+        { id: 'class_teacher_scope', name: 'Teacher Class', ownerId: 'owner_teacher_scope', ownerName: 'Teacher Scope' }
+      ];
+      app.state.currentClassId = 'class_teacher_scope';
+      app.syncDataContext();
+
+      app.addStudent = async () => {
+        calls.push('addStudent');
+        return { id: 'student_1' };
+      };
+      app.addSubject = async () => {
+        calls.push('addSubject');
+        return { id: 'subject_1' };
+      };
+      app.addExam = async () => {
+        calls.push('addExam');
+        return { id: 'exam_1' };
+      };
+      app.updateStudent = async () => {
+        calls.push('saveMarks');
+        return { id: 'student_1' };
+      };
+
+      app.state.students = [{ id: 'student_1', name: 'Student One', scores: {} }];
+      app.state.subjects = [{ id: 'subject_1', name: 'Math' }];
+      app.state.exams = [{ id: 'exam_1', title: 'Mock 1', name: 'Mock 1' }];
+      app.analytics = {
+        ...(app.analytics || {}),
+        normalizeScore(value) {
+          return Number(value);
+        }
+      };
+
+      const uiStub = {
+        refreshUI() {},
+        showToast() {}
+      };
+
+      await students.addStudent('Student One', app, uiStub);
+      await app.addSubject({ name: 'Science' });
+      await app.addExam({ title: 'Mock 2', date: new Date().toISOString() });
+      await students.saveScores('student_1', 'exam_1', { Math: 78 }, app, uiStub);
+
+      return {
+        calls,
+        classId: app.state.currentClassId,
+        ownerId: app.getCurrentClassOwnerId(),
+        readOnly: app.isReadOnlyRoleContext()
+      };
+    });
+
+    expect(result.readOnly).toBe(false);
+    expect(result.classId).toBe('class_teacher_scope');
+    expect(result.ownerId).toBe('owner_teacher_scope');
+    expect(result.calls).toEqual(['addStudent', 'addSubject', 'addExam', 'saveMarks']);
+  });
+
+  test('admin class switch keeps owner-aware read context', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const stateModule = await import('/js/state.js');
+      const app = stateModule.default || window.TrackerApp;
+
+      app.setCurrentUserRole('admin', { resolved: true });
+      app.state.classes = [
+        { id: 'class_owner_a', name: 'Class A', ownerId: 'owner_a', ownerName: 'Teacher A' },
+        { id: 'class_owner_b', name: 'Class B', ownerId: 'owner_b', ownerName: 'Teacher B' }
+      ];
+      app.state.currentClassId = 'class_owner_a';
+      app.syncDataContext();
+
+      const loadCalls = [];
+      app.load = async () => {
+        loadCalls.push({
+          classId: app.state.currentClassId,
+          ownerId: app.getCurrentClassOwnerId()
+        });
+      };
+
+      await app.switchClass('class_owner_b');
+
+      return {
+        classId: app.state.currentClassId,
+        ownerId: app.getCurrentClassOwnerId(),
+        readOnly: app.isReadOnlyRoleContext(),
+        loadCalls
+      };
+    });
+
+    expect(result.readOnly).toBe(true);
+    expect(result.classId).toBe('class_owner_b');
+    expect(result.ownerId).toBe('owner_b');
+    expect(result.loadCalls).toHaveLength(1);
+    expect(result.loadCalls[0]).toEqual({ classId: 'class_owner_b', ownerId: 'owner_b' });
+  });
+
   test('migration path verifies count mismatch and fails safely', async () => {
     const dbSource = readWorkspaceFile('services/db.js');
 
@@ -92,6 +199,33 @@ test.describe('Class refactor critical regressions', () => {
     expect(stateSource).toContain('const resolveValidatedClassContext = (classes = [], classId = \'\', ownerId = \'\') => {');
     expect(stateSource).toContain('isFallback: Boolean(!selectedClass && (normalizedClassId || normalizedOwnerId))');
     expect(stateSource).toContain('Persisted class selection was stale/invalid; selection has been reset to a valid class context.');
+    expect(stateSource).toContain('app.state.dashboardStudentCount = null;');
+  });
+
+  test('audit log and number rendering sanitize malformed values', async () => {
+    const adminSource = readWorkspaceFile('js/admin.js');
+    const uiSource = readWorkspaceFile('js/ui.js');
+    const dbSource = readWorkspaceFile('services/db.js');
+
+    expect(adminSource).toContain("normalized === '[object Object]'");
+    expect(adminSource).toContain("lower === 'nan'");
+    expect(adminSource).toContain('const normalizeCount = (value) => {');
+    expect(uiSource).toContain('toFiniteNumber: function (value) {');
+    expect(uiSource).toContain("formatFixedOrFallback: function (value, decimals = 1, fallback = '—') {");
+    expect(dbSource).toContain('const normalizeLogScalar = (value, fallback = \'\') => {');
+    expect(dbSource).toContain('const normalizeLogTimestamp = (payload = {}) => {');
+  });
+
+  test('dark mode readability overrides cover key admin and dashboard surfaces', async () => {
+    const adminCss = readWorkspaceFile('css/admin.css');
+    const enhancedCss = readWorkspaceFile('css/enhanced.css');
+
+    expect(adminCss).toContain('body.dark .activity-group-row td');
+    expect(adminCss).toContain('body.dark .admin-modal-card');
+    expect(adminCss).toContain('body.dark .admin-toast.error');
+    expect(enhancedCss).toContain('body.dark-mode .class-dropdown-toggle');
+    expect(enhancedCss).toContain('body.dark-mode .risk-pill');
+    expect(enhancedCss).toContain('body.dark-mode .modal-content');
   });
 
   test('scoring classification boundaries remain unchanged', async ({ page }) => {

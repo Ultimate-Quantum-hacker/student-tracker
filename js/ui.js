@@ -690,14 +690,31 @@ const ui = {
     },
 
     formatImprovement: function (current, previous) {
-      if (previous === null || previous === undefined || isNaN(previous) || current === null || current === undefined || isNaN(current)) {
+      const previousValue = Number(previous);
+      const currentValue = Number(current);
+      if (!Number.isFinite(previousValue) || !Number.isFinite(currentValue)) {
         return { text: 'N/A', className: 'improv-neutral' };
       }
-      const diff = Number(current) - Number(previous);
-      if (isNaN(diff)) return { text: 'N/A', className: 'improv-neutral' };
+      const diff = currentValue - previousValue;
+      if (!Number.isFinite(diff)) return { text: 'N/A', className: 'improv-neutral' };
       if (diff > 0) return { text: '+' + diff.toFixed(1), className: 'improv-up' };
       if (diff < 0) return { text: diff.toFixed(1), className: 'improv-down' };
       return { text: '0', className: 'improv-neutral' };
+    },
+
+    toFiniteNumber: function (value) {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    },
+
+    formatFixedOrFallback: function (value, decimals = 1, fallback = '—') {
+      const numeric = this.toFiniteNumber(value);
+      if (numeric === null) {
+        return fallback;
+      }
+      return String(numeric.toFixed(decimals))
+        .replace(/\.0+$/g, '')
+        .replace(/(\.\d*[1-9])0+$/g, '$1');
     },
 
     formatStatusLabel: function (statusType) {
@@ -809,11 +826,13 @@ const ui = {
       const currentClassId = String(app.state.currentClassId || '').trim();
       const activeClass = classes.find(entry => String(entry?.id || '').trim() === currentClassId) || classes[0] || null;
       const resolvedClassId = String(activeClass?.id || currentClassId || '').trim();
+      const resolvedOwnerId = String(activeClass?.ownerId || app.state.currentClassOwnerId || '').trim();
       const activeClassName = activeClass?.name || app.state.currentClassName || 'My Class';
       const activeClassDisplayLabel = this.formatClassDisplayLabel(activeClass);
 
       app.state.currentClassId = resolvedClassId;
       app.state.currentClassName = activeClassName;
+      app.state.currentClassOwnerId = resolvedOwnerId;
 
       if (app.dom.classNameDisplay) {
         app.dom.classNameDisplay.textContent = `Class: ${activeClassDisplayLabel}`;
@@ -864,8 +883,9 @@ const ui = {
       }
 
       if (app.dom.form) {
+        const hasWritableClassContext = classes.length > 0 && Boolean(resolvedClassId) && Boolean(resolvedOwnerId);
         app.dom.form.querySelectorAll('input, button').forEach((entry) => {
-          entry.disabled = !classes.length;
+          entry.disabled = !hasWritableClassContext;
         });
       }
 
@@ -1024,9 +1044,11 @@ const ui = {
     },
 
     formatDashboardStatValue: function (value, format) {
-      if (format === 'percent') return `${Math.round(value)}%`;
-      if (format === 'decimal') return `${Number(value).toFixed(1)}%`;
-      return Math.round(value).toLocaleString();
+      const numeric = this.toFiniteNumber(value);
+      const safeValue = numeric === null ? 0 : numeric;
+      if (format === 'percent') return `${Math.round(safeValue)}%`;
+      if (format === 'decimal') return `${safeValue.toFixed(1)}%`;
+      return Math.round(safeValue).toLocaleString();
     },
 
     animateDashboardStatValue: function (node, targetValue, format = 'int') {
@@ -1090,9 +1112,10 @@ const ui = {
       const categories = app.analytics.getPerformanceCategories();
       const measured = (app.state.students || [])
         .map(student => app.analytics.getStudentAverageForExam(student, latestExam))
-        .filter(avg => avg !== null && avg !== undefined && !isNaN(avg));
+        .map(avg => Number(avg))
+        .filter(avg => Number.isFinite(avg));
 
-      const sum = measured.reduce((acc, value) => acc + Number(value), 0);
+      const sum = measured.reduce((acc, value) => acc + value, 0);
       const count = measured.length;
       const pass = measured.filter(avg => avg >= 50).length;
       const atRisk = (statusGroups['at-risk'] || []).length;
@@ -1340,12 +1363,11 @@ const ui = {
           const examGroupClass = examIdx % 2 === 1 ? ' exam-group-alt' : '';
           let subCells = app.state.subjects.map(sub => {
             const score = app.analytics.getScore(s, sub, m);
-            return `<td class="exam-cell${examGroupClass}">${score === '' ? '—' : score}</td>`;
+            const scoreDisplay = this.formatFixedOrFallback(score, 1, '—');
+            return `<td class="exam-cell${examGroupClass}">${app.utils.esc(scoreDisplay)}</td>`;
           }).join('');
           const total = this.getStudentExamTotal(s.id, m.id);
-          const totalDisplay = total !== null && total !== undefined
-            ? app.utils.esc(String(Number(total).toFixed(1)).replace(/\.0$/, ''))
-            : '&#8212;';
+          const totalDisplay = app.utils.esc(this.formatFixedOrFallback(total, 1, '—'));
           return subCells + `
             <td class="exam-total-col exam-group-end${examGroupClass}">
               <div class="total-score-badge ${totalToneClass}">
@@ -1356,11 +1378,15 @@ const ui = {
         }).join('');
         const avgVal = s._overallAvg;
         const avgCls = avgVal !== null ? (avgVal >= 70 ? 'avg-green' : (avgVal >= 50 ? 'avg-yellow' : 'avg-red')) : '';
+        const avgDisplay = app.utils.esc(this.formatFixedOrFallback(avgVal, 1, '—'));
+        const previousDisplay = canComputeImprovement
+          ? app.utils.esc(this.formatFixedOrFallback(previousTotal, 1, 'N/A'))
+          : '—';
         return `<tr>
           <td><strong class="rank-num rank-highlight">${i + 1}</strong></td><td class="sticky-col">${app.utils.esc(s.name)}</td>
           ${examCells}
-          <td><strong class="${avgCls} avg-emphasis">${avgVal?.toFixed(1) ?? '&#8212;'}</strong></td>
-          <td>${canComputeImprovement ? (previousTotal !== null ? previousTotal.toFixed(1) : 'N/A') : '&#8212;'}</td>
+          <td><strong class="${avgCls} avg-emphasis">${avgDisplay}</strong></td>
+          <td>${previousDisplay}</td>
           <td class="${improvData.className}">${improvData.text}</td>
           <td><span class="risk-pill status-pill ${statusClass}">${this.formatStatusLabel(status)}</span></td>
           <td class="notes-cell${isReadOnly ? ' readonly-locked-control' : ''}" title="${app.utils.esc(notesTooltip)}" onclick="window.TrackerApp.ui.openNotes('${s.id}')">${s.notes ? '&#128221; View' : '+ Add'}</td>
@@ -1517,7 +1543,7 @@ const ui = {
             }
           }
 
-          const avgDisplay = hasCurrent ? `${Number(exam.overall).toFixed(1)}%` : '—';
+          const avgDisplay = hasCurrent ? `${this.formatFixedOrFallback(exam.overall, 1, '—')}%` : '—';
 
           cardsHtml += `
             <div class="trend-card">
@@ -1536,9 +1562,11 @@ const ui = {
       if (app.dom.classInsightBox && avgs.length >= 2) {
         const current = avgs[avgs.length - 1];
         const previous = avgs[avgs.length - 2];
+        const currentOverall = this.toFiniteNumber(current?.overall);
+        const previousOverall = this.toFiniteNumber(previous?.overall);
         
-        if (current.overall !== null && previous.overall !== null) {
-          const diff = current.overall - previous.overall;
+        if (currentOverall !== null && previousOverall !== null) {
+          const diff = currentOverall - previousOverall;
           const trendClass = diff >= 0 ? 'trend-up' : 'trend-down';
           const icon = diff >= 0 ? '↑' : '↓';
           const statusText = diff >= 0 ? 'improved overall' : 'declined slightly';
@@ -1887,12 +1915,17 @@ const ui = {
           return `<tr>
             <td class="rc-subject">${app.utils.esc(subject.name)}</td>
             ${examCellsHtml}
-            <td class="rc-avg-cell ${subjectAvgClass}">${subjectAverage !== null && subjectAverage !== undefined ? Number(subjectAverage).toFixed(1) : '&#8212;'}</td>
+            <td class="rc-avg-cell ${subjectAvgClass}">${app.utils.esc(this.formatFixedOrFallback(subjectAverage, 1, '—'))}</td>
           </tr>`;
         }).join('')
         : `<tr><td colspan="${Math.max(3, exams.length + 2)}">No subjects added yet.</td></tr>`;
 
       const notesText = s.notes ? app.utils.esc(s.notes) : 'Teacher feedback will appear here.';
+      const overallAverageDisplay = (() => {
+        const numericAverage = this.toFiniteNumber(avgValue);
+        if (numericAverage === null) return 'N/A';
+        return `${this.formatFixedOrFallback(numericAverage, 1, 'N/A')}%`;
+      })();
 
       let autoSummary = '';
       if (!s.notes) {
@@ -1926,12 +1959,12 @@ const ui = {
             <div><span>Student</span><strong>${app.utils.esc(s.name)}</strong></div>
             <div class="rc-rank"><span>Rank</span><strong class="rc-rank-value">${app.utils.esc(rankDisplay)}</strong></div>
             <div><span>Status</span><strong class="${statusClass} rc-status">${statusLabel}</strong></div>
-            <div class="rc-overall"><span>Overall Average</span><strong class="rc-overall-value ${overallClass}">${avgValue !== null && avgValue !== undefined ? Number(avgValue).toFixed(1) + '%' : 'N/A'}</strong></div>
+            <div class="rc-overall"><span>Overall Average</span><strong class="rc-overall-value ${overallClass}">${app.utils.esc(overallAverageDisplay)}</strong></div>
           </div>
 
           <div class="rc-summary">
-            <div class="rc-summary-item"><span>Latest Total</span><strong>${currentScore !== null && currentScore !== undefined ? Number(currentScore).toFixed(1) : 'N/A'}</strong></div>
-            <div class="rc-summary-item"><span>Previous Total</span><strong>${previousScore !== null && previousScore !== undefined ? Number(previousScore).toFixed(1) : 'N/A'}</strong></div>
+            <div class="rc-summary-item"><span>Latest Total</span><strong>${app.utils.esc(this.formatFixedOrFallback(currentScore, 1, 'N/A'))}</strong></div>
+            <div class="rc-summary-item"><span>Previous Total</span><strong>${app.utils.esc(this.formatFixedOrFallback(previousScore, 1, 'N/A'))}</strong></div>
             <div class="rc-summary-item"><span>Improvement</span><strong class="${app.utils.esc(improvement.className || 'improv-neutral')}">${app.utils.esc(improvement.text || 'N/A')}</strong></div>
             <div class="rc-summary-item"><span>Exams Taken</span><strong>${examCount}</strong></div>
           </div>

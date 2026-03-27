@@ -621,6 +621,7 @@ window.TrackerApp = window.TrackerApp || {};
     try {
       app.state.isLoading = true;
       app.state.error = null;
+      app.state.dashboardStudentCount = null;
 
       if (!app.state.currentClassId) {
         const persistedContext = readPersistedCurrentClassContext();
@@ -816,6 +817,7 @@ window.TrackerApp = window.TrackerApp || {};
       console.log('User ID:', app.getCurrentClassOwnerId() || '(none)');
 
       applyRuntimeCollections([], [], []);
+      app.state.dashboardStudentCount = null;
       app.state.studentTrash = sortTrashEntriesNewestFirst([]);
       app.state.classTrash = sortTrashEntriesNewestFirst([]);
       app.state.subjectTrash = sortTrashEntriesNewestFirst([]);

@@ -745,6 +745,98 @@ body.dark-mode .stat-card strong {
   color: #bfdbfe;
 }
 
+body.dark .panel-last-updated,
+body.dark-mode .panel-last-updated,
+body.dark .activity-group-row td,
+body.dark-mode .activity-group-row td,
+body.dark .activity-sentence,
+body.dark-mode .activity-sentence,
+body.dark .smart-empty,
+body.dark-mode .smart-empty {
+  color: #cbd5e1;
+}
+
+body.dark .activity-group-row td,
+body.dark-mode .activity-group-row td {
+  background: #111827;
+  border-top: 1px solid #1e293b;
+  border-bottom: 1px solid #1e293b;
+}
+
+body.dark .users-table tbody tr.row-active,
+body.dark-mode .users-table tbody tr.row-active {
+  background: rgba(30, 64, 175, 0.18);
+}
+
+body.dark .search-input::placeholder,
+body.dark-mode .search-input::placeholder {
+  color: #94a3b8;
+}
+
+body.dark .role-select,
+body.dark-mode .role-select {
+  background: #020617;
+  border-color: #334155;
+  color: #e2e8f0;
+}
+
+body.dark .role-select:focus-visible,
+body.dark-mode .role-select:focus-visible,
+body.dark .search-input:focus-visible,
+body.dark-mode .search-input:focus-visible {
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.22);
+}
+
+body.dark .btn[disabled],
+body.dark-mode .btn[disabled],
+body.dark .role-select:disabled,
+body.dark-mode .role-select:disabled {
+  opacity: 0.45;
+}
+
+body.dark .inline-role-badge,
+body.dark-mode .inline-role-badge {
+  border-color: #334155;
+}
+
+body.dark .admin-modal-card,
+body.dark-mode .admin-modal-card {
+  background: #0b1220;
+  border-color: #334155;
+  color: #e2e8f0;
+}
+
+body.dark .admin-modal-card p,
+body.dark-mode .admin-modal-card p {
+  color: #cbd5e1;
+}
+
+body.dark .admin-toast,
+body.dark-mode .admin-toast {
+  background: #0b1220;
+  color: #e2e8f0;
+  border-color: #334155;
+}
+
+body.dark .admin-toast.success,
+body.dark-mode .admin-toast.success {
+  background: rgba(6, 78, 59, 0.35);
+  color: #a7f3d0;
+}
+
+body.dark .admin-toast.warning,
+body.dark-mode .admin-toast.warning {
+  background: rgba(120, 53, 15, 0.34);
+  color: #fde68a;
+}
+
+body.dark .admin-toast.error,
+body.dark-mode .admin-toast.error {
+  background: rgba(127, 29, 29, 0.36);
+  color: #fecaca;
+}
+
 @media (max-width: 900px) {
   .admin-layout {
     grid-template-columns: 1fr;

@@ -200,6 +200,25 @@ const escapeHtml = (value) => String(value ?? '')
   .replace(/'/g, '&#39;');
 
 const normalizeText = (value) => String(value || '').trim();
+const normalizeDisplayText = (value, fallback = '') => {
+  const normalized = normalizeText(value);
+  if (!normalized) return fallback;
+
+  const lower = normalized.toLowerCase();
+  if (lower === 'undefined' || lower === 'null' || lower === 'nan' || lower === 'infinity' || normalized === '[object Object]') {
+    return fallback;
+  }
+
+  return normalized;
+};
+const normalizeCount = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return 0;
+  }
+  return Math.floor(parsed);
+};
+
 const formatRoleLabel = (role) => {
   const normalized = normalizeUserRole(role);
   if (normalized === ROLE_DEVELOPER) return 'Developer';
@@ -231,7 +250,7 @@ const formatTimeOfDay = (value) => {
 };
 
 const formatTargetIdentifier = (value = '') => {
-  const target = normalizeText(value);
+  const target = normalizeDisplayText(value, '');
   if (!target) return '';
 
   if (/^\d{12,}$/.test(target)) {
@@ -252,7 +271,7 @@ const formatTargetIdentifier = (value = '') => {
 };
 
 const formatActionLabel = (action = '') => {
-  const normalized = normalizeText(action).toLowerCase();
+  const normalized = normalizeDisplayText(action, '').toLowerCase();
   if (!normalized) return 'updated';
   return normalized
     .replace(/[_-]+/g, ' ')
@@ -501,7 +520,7 @@ const getActionTone = (action = '') => {
 };
 
 const formatTargetLabel = (entry = {}) => {
-  const targetType = normalizeText(entry.targetType || 'record').toLowerCase();
+  const targetType = normalizeDisplayText(entry.targetType || 'record', 'record').toLowerCase();
   const targetId = formatTargetIdentifier(entry.targetId || '');
   const readableType = targetType
     .replace(/[_-]+/g, ' ')
@@ -521,9 +540,9 @@ const getEntryClassFilterKey = (entry = {}) => {
 };
 
 const formatClassDisplayLabel = (entry = {}) => {
-  const className = normalizeText(entry.className || '');
-  const classId = normalizeText(entry.classId || '');
-  const ownerName = normalizeText(entry.ownerName || '');
+  const className = normalizeDisplayText(entry.className || '', '');
+  const classId = normalizeDisplayText(entry.classId || '', '');
+  const ownerName = normalizeDisplayText(entry.ownerName || '', '');
   const baseClassLabel = className || classId || 'Unknown class';
 
   if (ownerName) {
@@ -609,26 +628,27 @@ const renderActivityLogTable = (entries = []) => {
   dom.activityBody.innerHTML = visibleEntries.map((entry) => {
     const actor = findUserRecord(entry.userId);
     const owner = findUserRecord(entry.dataOwnerUserId);
-    const actorLabel = actor?.name || actor?.email || entry.userEmail || 'Unknown user';
-    const ownerLabel = owner?.name || owner?.email || 'Unknown owner';
-    const actorRole = normalizeUserRole(actor?.role);
-    const ownerRole = normalizeUserRole(owner?.role);
+    const actorLabel = normalizeDisplayText(actor?.name || actor?.email || entry.userEmail || entry.userId || '', 'Unknown user');
+    const ownerLabel = normalizeDisplayText(owner?.name || owner?.email || entry.ownerName || entry.dataOwnerUserId || '', 'Unknown owner');
+    const actorRole = normalizeUserRole(actor?.role || entry.userRole);
+    const ownerRole = normalizeUserRole(owner?.role || entry.ownerRole || 'teacher');
     const actionTone = getActionTone(entry.action);
     const groupKey = getDateGroupKey(entry.timestamp);
     const shouldRenderGroup = groupKey !== lastGroup;
     lastGroup = groupKey;
     const actionLabel = formatActionLabel(entry.action);
-    const sentence = `${actorLabel} ${actionLabel} ${formatTargetLabel(entry)} at ${formatTimeOfDay(entry.timestamp)}`;
+    const timeLabel = formatTimeOfDay(entry.timestamp);
+    const sentence = `${actorLabel} ${actionLabel} ${formatTargetLabel(entry)} at ${timeLabel}`;
     const classCellLabel = formatClassDisplayLabel(entry);
 
     return `
       ${shouldRenderGroup ? `<tr class="activity-group-row"><td colspan="5">${getDateGroupLabel(groupKey)}</td></tr>` : ''}
       <tr class="activity-row ${actionTone.className}">
-        <td>${escapeHtml(formatTimeOfDay(entry.timestamp))}</td>
+        <td>${escapeHtml(timeLabel)}</td>
         <td><span class="activity-sentence">${escapeHtml(sentence)}</span></td>
         <td><span class="inline-role-badge ${getRoleBadgeClass(actorRole)}">${escapeHtml(formatRoleLabel(actorRole))}</span></td>
         <td>${escapeHtml(ownerLabel)} <span class="inline-role-badge ${getRoleBadgeClass(ownerRole)}">${escapeHtml(formatRoleLabel(ownerRole))}</span></td>
-        <td title="${escapeHtml(normalizeText(entry.classId || ''))}">${escapeHtml(classCellLabel || '—')}</td>
+        <td title="${escapeHtml(normalizeDisplayText(entry.classId || '', ''))}">${escapeHtml(classCellLabel || '—')}</td>
       </tr>
     `;
   }).join('');
@@ -706,9 +726,9 @@ const loadGlobalStats = async () => {
   try {
     const stats = await fetchAdminGlobalStats();
     state.globalStats = {
-      totalUsers: Number(stats?.totalUsers || 0),
-      totalStudents: Number(stats?.totalStudents || 0),
-      totalExams: Number(stats?.totalExams || 0)
+      totalUsers: normalizeCount(stats?.totalUsers),
+      totalStudents: normalizeCount(stats?.totalStudents),
+      totalExams: normalizeCount(stats?.totalExams)
     };
   } catch (error) {
     console.error('Failed to fetch admin stats:', error);
