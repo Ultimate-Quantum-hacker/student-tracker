@@ -1425,7 +1425,11 @@ const ensureDefaultClassDocument = async (userId) => {
 
   const createdAt = new Date().toISOString();
   const ownerName = getAuthenticatedUserDisplayName();
-  const classDocRef = await addDoc(getClassesCollectionRef(userId), {
+  const classDocRef = doc(getClassesCollectionRef(userId));
+  const classId = normalizeClassId(classDocRef.id);
+
+  await setDoc(classDocRef, {
+    id: classId,
     name: DEFAULT_CLASS_NAME,
     createdAt,
     updatedAt: createdAt,
@@ -1435,14 +1439,6 @@ const ensureDefaultClassDocument = async (userId) => {
     ownerId: userId,
     ownerName
   });
-  const classId = normalizeClassId(classDocRef.id);
-
-  await setDoc(classDocRef, {
-    id: classId,
-    userId,
-    ownerId: userId,
-    ownerName
-  }, { merge: true });
 
   await setDoc(getUserRootRef(userId), {
     uid: userId,
@@ -1872,13 +1868,16 @@ const readGlobalClassCatalogFromFirestore = async (requesterUserId = '') => {
     };
   }
 
-  const [classesSnapshot, usersSnapshot] = await Promise.all([
-    getDocs(collectionGroup(db, CLASSES_SUBCOLLECTION)),
-    getDocs(collection(db, USERS_COLLECTION))
-  ]);
+  const classesSnapshot = await getDocs(collectionGroup(db, CLASSES_SUBCOLLECTION));
+  let usersSnapshot = null;
+  try {
+    usersSnapshot = await getDocs(collection(db, USERS_COLLECTION));
+  } catch (error) {
+    console.warn('Falling back to class metadata only for global class catalog:', error);
+  }
 
   const ownerNameMap = new Map();
-  usersSnapshot.forEach((entry) => {
+  usersSnapshot?.forEach((entry) => {
     const payload = entry.data() || {};
     const uid = normalizeUserId(payload.uid || entry.id);
     if (!uid) return;
@@ -3043,7 +3042,11 @@ export const createClass = async (className) => {
   const createdAt = new Date().toISOString();
   const ownerName = getAuthenticatedUserDisplayName();
 
-  const classDocRef = await addDoc(getClassesCollectionRef(userId), {
+  const classDocRef = doc(getClassesCollectionRef(userId));
+  const classId = normalizeClassId(classDocRef.id);
+
+  await setDoc(classDocRef, {
+    id: classId,
     name: normalizedName,
     createdAt,
     updatedAt: createdAt,
@@ -3053,14 +3056,6 @@ export const createClass = async (className) => {
     ownerId: userId,
     ownerName
   });
-  const classId = normalizeClassId(classDocRef.id);
-
-  await setDoc(classDocRef, {
-    id: classId,
-    ownerId: userId,
-    ownerName,
-    userId
-  }, { merge: true });
 
   const catalog = await ensureClassCatalog(userId);
   const classes = catalog.classes || [];

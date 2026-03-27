@@ -73,6 +73,7 @@ const dom = {
   activityLoading: document.getElementById('activity-loading'),
   activityBody: document.getElementById('activity-table-body'),
   activityUserFilter: document.getElementById('activity-user-filter'),
+  activityClassFilter: document.getElementById('activity-class-filter'),
   activityActionFilter: document.getElementById('activity-action-filter'),
   activitySortFilter: document.getElementById('activity-sort-filter'),
   refreshActivityBtn: document.getElementById('refresh-activity-btn'),
@@ -227,6 +228,36 @@ const formatTimeOfDay = (value) => {
   const parsed = typeof value?.toDate === 'function' ? value.toDate() : new Date(value);
   if (Number.isNaN(parsed.getTime())) return '—';
   return parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
+const formatTargetIdentifier = (value = '') => {
+  const target = normalizeText(value);
+  if (!target) return '';
+
+  if (/^\d{12,}$/.test(target)) {
+    const asNumber = Number(target);
+    if (Number.isFinite(asNumber) && asNumber > 946684800000) {
+      const asDate = new Date(asNumber);
+      if (!Number.isNaN(asDate.getTime())) {
+        return asDate.toLocaleString();
+      }
+    }
+  }
+
+  if (target.length > 28) {
+    return `${target.slice(0, 10)}…${target.slice(-6)}`;
+  }
+
+  return target;
+};
+
+const formatActionLabel = (action = '') => {
+  const normalized = normalizeText(action).toLowerCase();
+  if (!normalized) return 'updated';
+  return normalized
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 };
 
 const isPermissionDeniedError = (error) => String(error?.code || '').toLowerCase().includes('permission-denied');
@@ -471,9 +502,34 @@ const getActionTone = (action = '') => {
 
 const formatTargetLabel = (entry = {}) => {
   const targetType = normalizeText(entry.targetType || 'record').toLowerCase();
-  const targetId = normalizeText(entry.targetId || '');
-  if (!targetId) return targetType || 'record';
-  return `${targetType} '${targetId}'`;
+  const targetId = formatTargetIdentifier(entry.targetId || '');
+  const readableType = targetType
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim() || 'record';
+  if (!targetId) return readableType;
+  return `${readableType}: ${targetId}`;
+};
+
+const getEntryClassFilterKey = (entry = {}) => {
+  const classId = normalizeText(entry.classId || '');
+  const ownerId = normalizeText(entry.ownerId || entry.dataOwnerUserId || '');
+  if (!classId) {
+    return '';
+  }
+  return `${ownerId}::${classId}`;
+};
+
+const formatClassDisplayLabel = (entry = {}) => {
+  const className = normalizeText(entry.className || '');
+  const classId = normalizeText(entry.classId || '');
+  const ownerName = normalizeText(entry.ownerName || '');
+  const baseClassLabel = className || classId || 'Unknown class';
+
+  if (ownerName) {
+    return `${baseClassLabel} — ${ownerName}`;
+  }
+  return baseClassLabel;
 };
 
 const toDateValue = (value) => {
@@ -517,6 +573,30 @@ const getVisibleActivityEntries = (entries = []) => {
   });
 };
 
+const populateActivityClassFilter = (entries = []) => {
+  if (!dom.activityClassFilter) return;
+
+  const previousSelection = normalizeText(dom.activityClassFilter.value || '');
+  const classOptions = new Map();
+  getVisibleActivityEntries(entries).forEach((entry) => {
+    const classKey = getEntryClassFilterKey(entry);
+    if (!classKey) return;
+    if (classOptions.has(classKey)) return;
+    classOptions.set(classKey, formatClassDisplayLabel(entry));
+  });
+
+  const sortedOptions = Array.from(classOptions.entries())
+    .sort((a, b) => String(a[1] || '').localeCompare(String(b[1] || '')));
+
+  const optionMarkup = ['<option value="">All classes</option>'];
+  sortedOptions.forEach(([key, label]) => {
+    optionMarkup.push(`<option value="${escapeHtml(key)}">${escapeHtml(label)}</option>`);
+  });
+
+  dom.activityClassFilter.innerHTML = optionMarkup.join('');
+  dom.activityClassFilter.value = classOptions.has(previousSelection) ? previousSelection : '';
+};
+
 const renderActivityLogTable = (entries = []) => {
   if (!dom.activityBody) return;
   const visibleEntries = getVisibleActivityEntries(entries);
@@ -537,7 +617,9 @@ const renderActivityLogTable = (entries = []) => {
     const groupKey = getDateGroupKey(entry.timestamp);
     const shouldRenderGroup = groupKey !== lastGroup;
     lastGroup = groupKey;
-    const sentence = `${actorLabel} ${actionTone.verb} ${formatTargetLabel(entry)} at ${formatTimeOfDay(entry.timestamp)}`;
+    const actionLabel = formatActionLabel(entry.action);
+    const sentence = `${actorLabel} ${actionLabel} ${formatTargetLabel(entry)} at ${formatTimeOfDay(entry.timestamp)}`;
+    const classCellLabel = formatClassDisplayLabel(entry);
 
     return `
       ${shouldRenderGroup ? `<tr class="activity-group-row"><td colspan="5">${getDateGroupLabel(groupKey)}</td></tr>` : ''}
@@ -546,7 +628,7 @@ const renderActivityLogTable = (entries = []) => {
         <td><span class="activity-sentence">${escapeHtml(sentence)}</span></td>
         <td><span class="inline-role-badge ${getRoleBadgeClass(actorRole)}">${escapeHtml(formatRoleLabel(actorRole))}</span></td>
         <td>${escapeHtml(ownerLabel)} <span class="inline-role-badge ${getRoleBadgeClass(ownerRole)}">${escapeHtml(formatRoleLabel(ownerRole))}</span></td>
-        <td>${escapeHtml(entry.classId || '—')}</td>
+        <td title="${escapeHtml(normalizeText(entry.classId || ''))}">${escapeHtml(classCellLabel || '—')}</td>
       </tr>
     `;
   }).join('');
@@ -709,6 +791,7 @@ const runGlobalSearch = () => {
 
 const loadActivityLogs = async () => {
   const selectedUserId = normalizeText(dom.activityUserFilter?.value || '');
+  const selectedClassKey = normalizeText(dom.activityClassFilter?.value || '');
   const selectedAction = normalizeText(dom.activityActionFilter?.value || '').toLowerCase();
   const selectedSort = normalizeText(dom.activitySortFilter?.value || 'desc').toLowerCase() === 'asc' ? 'asc' : 'desc';
 
@@ -724,6 +807,12 @@ const loadActivityLogs = async () => {
 
     if (selectedAction) {
       entries = entries.filter((entry) => String(entry.action || '').trim().toLowerCase() === selectedAction);
+    }
+
+    populateActivityClassFilter(entries);
+
+    if (selectedClassKey) {
+      entries = entries.filter((entry) => getEntryClassFilterKey(entry) === selectedClassKey);
     }
 
     state.activityLogs = entries;
@@ -861,6 +950,10 @@ const bindEvents = () => {
   });
 
   dom.activityUserFilter?.addEventListener('change', async () => {
+    await loadActivityLogs();
+  });
+
+  dom.activityClassFilter?.addEventListener('change', async () => {
     await loadActivityLogs();
   });
 

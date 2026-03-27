@@ -642,8 +642,21 @@ window.TrackerApp = window.TrackerApp || {};
       console.log('Active UID:', app.getEffectiveUserId() || '(none)');
 
       const remoteResult = await dataService.fetchAllData();
-      const nextClasses = Array.isArray(remoteResult?.classes) ? remoteResult.classes : [];
-      const requestedClassId = String(remoteResult?.currentClassId || app.state.currentClassId || '').trim();
+      let nextClasses = Array.isArray(remoteResult?.classes) ? remoteResult.classes : [];
+      let requestedClassId = String(remoteResult?.currentClassId || app.state.currentClassId || '').trim();
+
+      if (!nextClasses.length && app.isAdminRole() && typeof dataService.fetchClassCatalog === 'function') {
+        try {
+          const adminCatalog = await dataService.fetchClassCatalog();
+          nextClasses = Array.isArray(adminCatalog?.classes) ? adminCatalog.classes : [];
+          if (!requestedClassId) {
+            requestedClassId = String(adminCatalog?.currentClassId || '').trim();
+          }
+        } catch (catalogError) {
+          console.warn('Failed to load admin class catalog fallback:', catalogError);
+        }
+      }
+
       const requestedOwnerId = String(app.state.currentClassOwnerId || '').trim();
       const validatedClassContext = resolveValidatedClassContext(nextClasses, requestedClassId, requestedOwnerId);
       app.state.classes = nextClasses;
