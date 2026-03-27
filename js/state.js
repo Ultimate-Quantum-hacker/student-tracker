@@ -15,6 +15,8 @@ window.TrackerApp = window.TrackerApp || {};
     classes: [],
     currentClassId: '',
     currentClassName: 'My Class',
+    currentClassOwnerId: '',
+    currentClassOwnerName: 'Teacher',
     currentUserRole: 'teacher',
     isRoleResolved: false,
     dashboardStudentCount: null,
@@ -42,6 +44,7 @@ window.TrackerApp = window.TrackerApp || {};
   const OFFLINE_CACHE_MESSAGE = 'Offline mode: using cached data';
   const OFFLINE_GRACE_PERIOD_MS = 3000;
   const CURRENT_CLASS_STORAGE_KEY = 'currentClassId';
+  const CURRENT_CLASS_OWNER_STORAGE_KEY = 'currentClassOwnerId';
   const ROLE_TEACHER = 'teacher';
   const ROLE_LEGACY_USER = 'user';
   const ROLE_ADMIN = 'admin';
@@ -77,17 +80,23 @@ window.TrackerApp = window.TrackerApp || {};
     const currentClassId = String(app.state.currentClassId || '').trim();
     const classEntry = (app.state.classes || []).find((entry) => String(entry?.id || '').trim() === currentClassId);
     const ownerId = String(classEntry?.ownerId || '').trim();
-    return ownerId || String(app.state.authUser?.uid || '').trim();
+    if (ownerId) {
+      app.state.currentClassOwnerId = ownerId;
+      return ownerId;
+    }
+    return String(app.state.currentClassOwnerId || '').trim();
   };
 
   app.getCurrentClassOwnerName = function () {
     const currentClassId = String(app.state.currentClassId || '').trim();
     const classEntry = (app.state.classes || []).find((entry) => String(entry?.id || '').trim() === currentClassId);
     const ownerName = String(classEntry?.ownerName || '').trim();
-    if (ownerName) return ownerName;
+    if (ownerName) {
+      app.state.currentClassOwnerName = ownerName;
+      return ownerName;
+    }
 
-    const fallback = String(app.state.authUser?.name || app.state.authUser?.email || '').trim();
-    return fallback || 'Teacher';
+    return String(app.state.currentClassOwnerName || '').trim() || 'Teacher';
   };
 
   app.setCurrentClassOwnerContext = function () {
@@ -100,14 +109,20 @@ window.TrackerApp = window.TrackerApp || {};
   };
 
   app.syncDataContext = function () {
+    const currentClassId = String(app.state.currentClassId || '').trim();
+    const classEntry = (app.state.classes || []).find((entry) => String(entry?.id || '').trim() === currentClassId) || null;
+    app.state.currentClassOwnerId = String(classEntry?.ownerId || app.state.currentClassOwnerId || '').trim();
+    app.state.currentClassOwnerName = String(classEntry?.ownerName || app.state.currentClassOwnerName || '').trim() || 'Teacher';
+
     if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
       dataService.setCurrentClassId(app.state.currentClassId);
     }
     app.setCurrentClassOwnerContext();
+    persistCurrentClassContext(app.state.currentClassId, app.state.currentClassOwnerId);
   };
 
   app.getEffectiveUserId = function () {
-    return app.getCurrentClassOwnerId() || String(app.state.authUser?.uid || '').trim();
+    return app.getCurrentClassOwnerId();
   };
 
   app.isReadOnlyRoleContext = function () {
@@ -160,13 +175,20 @@ window.TrackerApp = window.TrackerApp || {};
     return dataService.fetchActivityLogs(options);
   };
 
-  const persistCurrentClassId = (classId) => {
+  const persistCurrentClassContext = (classId, ownerId = '') => {
     const normalizedClassId = normalizeClassStorageId(classId);
+    const normalizedOwnerId = normalizeClassStorageId(ownerId);
     if (typeof localStorage !== 'undefined') {
       if (normalizedClassId) {
         localStorage.setItem(CURRENT_CLASS_STORAGE_KEY, normalizedClassId);
       } else {
         localStorage.removeItem(CURRENT_CLASS_STORAGE_KEY);
+      }
+
+      if (normalizedOwnerId) {
+        localStorage.setItem(CURRENT_CLASS_OWNER_STORAGE_KEY, normalizedOwnerId);
+      } else {
+        localStorage.removeItem(CURRENT_CLASS_OWNER_STORAGE_KEY);
       }
     }
 
@@ -176,23 +198,86 @@ window.TrackerApp = window.TrackerApp || {};
       } else {
         sessionStorage.removeItem(CURRENT_CLASS_STORAGE_KEY);
       }
+
+      if (normalizedOwnerId) {
+        sessionStorage.setItem(CURRENT_CLASS_OWNER_STORAGE_KEY, normalizedOwnerId);
+      } else {
+        sessionStorage.removeItem(CURRENT_CLASS_OWNER_STORAGE_KEY);
+      }
     }
   };
 
-  const readPersistedCurrentClassId = () => {
+  const readPersistedCurrentClassContext = () => {
     const localValue = typeof localStorage !== 'undefined'
       ? normalizeClassStorageId(localStorage.getItem(CURRENT_CLASS_STORAGE_KEY))
       : '';
+    const localOwner = typeof localStorage !== 'undefined'
+      ? normalizeClassStorageId(localStorage.getItem(CURRENT_CLASS_OWNER_STORAGE_KEY))
+      : '';
     if (localValue) {
-      return localValue;
+      return {
+        classId: localValue,
+        ownerId: localOwner
+      };
     }
 
-    return typeof sessionStorage !== 'undefined'
+    const sessionClassId = typeof sessionStorage !== 'undefined'
       ? normalizeClassStorageId(sessionStorage.getItem(CURRENT_CLASS_STORAGE_KEY))
       : '';
+    const sessionOwnerId = typeof sessionStorage !== 'undefined'
+      ? normalizeClassStorageId(sessionStorage.getItem(CURRENT_CLASS_OWNER_STORAGE_KEY))
+      : '';
+
+    return {
+      classId: sessionClassId,
+      ownerId: sessionOwnerId
+    };
   };
 
-  app.state.currentClassId = readPersistedCurrentClassId();
+  const persistedClassContext = readPersistedCurrentClassContext();
+  app.state.currentClassId = persistedClassContext.classId;
+  app.state.currentClassOwnerId = persistedClassContext.ownerId;
+
+  const resolveValidatedClassContext = (classes = [], classId = '', ownerId = '') => {
+    const normalizedClassId = normalizeClassStorageId(classId);
+    const normalizedOwnerId = normalizeClassStorageId(ownerId);
+    const normalizedClasses = Array.isArray(classes)
+      ? classes.filter((entry) => normalizeClassStorageId(entry?.id))
+      : [];
+
+    if (!normalizedClasses.length) {
+      return {
+        classId: '',
+        className: 'My Class',
+        ownerId: '',
+        ownerName: 'Teacher',
+        isFallback: Boolean(normalizedClassId || normalizedOwnerId)
+      };
+    }
+
+    const selectedClass = normalizedClasses.find((entry) => {
+      const entryClassId = normalizeClassStorageId(entry?.id);
+      const entryOwnerId = normalizeClassStorageId(entry?.ownerId);
+      if (!entryClassId || entryClassId !== normalizedClassId) {
+        return false;
+      }
+      if (!normalizedOwnerId) {
+        return true;
+      }
+      return entryOwnerId === normalizedOwnerId;
+    });
+
+    const fallbackClass = normalizedClasses[0] || null;
+    const activeClass = selectedClass || fallbackClass;
+
+    return {
+      classId: normalizeClassStorageId(activeClass?.id),
+      className: String(activeClass?.name || '').trim() || 'My Class',
+      ownerId: normalizeClassStorageId(activeClass?.ownerId),
+      ownerName: String(activeClass?.ownerName || '').trim() || 'Teacher',
+      isFallback: Boolean(!selectedClass && (normalizedClassId || normalizedOwnerId))
+    };
+  };
 
   const createDefaultRawData = () => ({
     students: [],
@@ -260,9 +345,19 @@ window.TrackerApp = window.TrackerApp || {};
 
   const logTrackedActivity = async (action, targetId, targetType, options = {}) => {
     try {
+      const classId = String(options?.classId || app.state.currentClassId || '').trim();
+      const ownerId = String(options?.ownerId || app.getCurrentClassOwnerId() || '').trim();
+      const className = String(options?.className || app.state.currentClassName || '').trim();
+      const ownerName = String(options?.ownerName || app.getCurrentClassOwnerName() || '').trim();
+
       await dataService.logActivity(action, targetId, targetType, {
         ...options,
-        dataOwnerUserId: options?.dataOwnerUserId || app.getCurrentClassOwnerId() || undefined
+        classId,
+        className,
+        ownerId,
+        ownerName,
+        userRole: app.getCurrentUserRole(),
+        dataOwnerUserId: options?.dataOwnerUserId || ownerId || undefined
       });
     } catch (error) {
       console.warn('Activity log hook failed:', error);
@@ -528,7 +623,9 @@ window.TrackerApp = window.TrackerApp || {};
       app.state.error = null;
 
       if (!app.state.currentClassId) {
-        app.state.currentClassId = readPersistedCurrentClassId();
+        const persistedContext = readPersistedCurrentClassContext();
+        app.state.currentClassId = persistedContext.classId;
+        app.state.currentClassOwnerId = persistedContext.ownerId;
       }
 
       if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
@@ -546,19 +643,26 @@ window.TrackerApp = window.TrackerApp || {};
 
       const remoteResult = await dataService.fetchAllData();
       const nextClasses = Array.isArray(remoteResult?.classes) ? remoteResult.classes : [];
-      const nextClassId = String(remoteResult?.currentClassId || '').trim();
-      const nextClassName = String(remoteResult?.currentClassName || '').trim() || 'My Class';
+      const requestedClassId = String(remoteResult?.currentClassId || app.state.currentClassId || '').trim();
+      const requestedOwnerId = String(app.state.currentClassOwnerId || '').trim();
+      const validatedClassContext = resolveValidatedClassContext(nextClasses, requestedClassId, requestedOwnerId);
       app.state.classes = nextClasses;
-      app.state.currentClassId = nextClassId;
-      app.state.currentClassName = nextClassName;
-      persistCurrentClassId(nextClassId);
+      app.state.currentClassId = validatedClassContext.classId;
+      app.state.currentClassName = validatedClassContext.className;
+      app.state.currentClassOwnerId = validatedClassContext.ownerId;
+      app.state.currentClassOwnerName = validatedClassContext.ownerName;
+      persistCurrentClassContext(app.state.currentClassId, app.state.currentClassOwnerId);
       app.syncDataContext();
 
-      console.log('Current Class ID:', nextClassId || '(none)');
+      if (validatedClassContext.isFallback) {
+        console.warn('Persisted class selection was stale/invalid; selection has been reset to a valid class context.');
+      }
+
+      console.log('Current Class ID:', app.state.currentClassId || '(none)');
       console.log('User ID:', app.getCurrentClassOwnerId() || '(none)');
 
-      if (typeof dataService.setCurrentClassId === 'function' && nextClassId) {
-        dataService.setCurrentClassId(nextClassId);
+      if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
+        dataService.setCurrentClassId(app.state.currentClassId);
       }
 
       const remoteData = app.migrateToRawData(remoteResult?.data || createDefaultRawData());
@@ -567,7 +671,7 @@ window.TrackerApp = window.TrackerApp || {};
       app.state.classTrash = sortTrashEntriesNewestFirst(Array.isArray(remoteResult?.trashClasses) ? remoteResult.trashClasses : []);
       app.state.subjectTrash = sortTrashEntriesNewestFirst(Array.isArray(remoteResult?.trashSubjects) ? remoteResult.trashSubjects : []);
       app.state.examTrash = sortTrashEntriesNewestFirst(Array.isArray(remoteResult?.trashExams) ? remoteResult.trashExams : []);
-      app.writeCachedData(remoteData, nextClassId);
+      app.writeCachedData(remoteData, app.state.currentClassId);
 
       if (remoteResult?.source === 'firebase') {
         firebaseDataLoaded = true;
@@ -600,7 +704,9 @@ window.TrackerApp = window.TrackerApp || {};
         const fallbackClassId = String(fallbackCache.classId || app.state.currentClassId || '').trim();
         if (fallbackClassId) {
           app.state.currentClassId = fallbackClassId;
-          persistCurrentClassId(fallbackClassId);
+          const fallbackClassEntry = (app.state.classes || []).find((entry) => String(entry?.id || '').trim() === fallbackClassId) || null;
+          app.state.currentClassOwnerId = String(fallbackClassEntry?.ownerId || app.state.currentClassOwnerId || '').trim();
+          persistCurrentClassContext(fallbackClassId, app.state.currentClassOwnerId);
           if (typeof dataService.setCurrentClassId === 'function') {
             dataService.setCurrentClassId(fallbackClassId);
           }
@@ -637,7 +743,9 @@ window.TrackerApp = window.TrackerApp || {};
     assertRemoteWriteSucceeded(saveResult, operationLabel);
     if (saveResult?.classId) {
       app.state.currentClassId = String(saveResult.classId || '').trim();
-      persistCurrentClassId(app.state.currentClassId);
+      const currentClassEntry = (app.state.classes || []).find((entry) => String(entry?.id || '').trim() === app.state.currentClassId) || null;
+      app.state.currentClassOwnerId = String(currentClassEntry?.ownerId || app.state.currentClassOwnerId || '').trim();
+      persistCurrentClassContext(app.state.currentClassId, app.state.currentClassOwnerId);
       if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
         dataService.setCurrentClassId(app.state.currentClassId);
       }
@@ -654,7 +762,10 @@ window.TrackerApp = window.TrackerApp || {};
       app.state.classes = Array.isArray(result?.classes) ? result.classes : app.state.classes;
       app.state.currentClassId = String(result?.currentClassId || '').trim();
       app.state.currentClassName = String(result?.currentClassName || nextName).trim() || nextName;
-      persistCurrentClassId(app.state.currentClassId);
+      const currentClassEntry = (app.state.classes || []).find((entry) => String(entry?.id || '').trim() === app.state.currentClassId) || null;
+      app.state.currentClassOwnerId = String(currentClassEntry?.ownerId || '').trim();
+      app.state.currentClassOwnerName = String(currentClassEntry?.ownerName || '').trim() || 'Teacher';
+      persistCurrentClassContext(app.state.currentClassId, app.state.currentClassOwnerId);
       app.syncDataContext();
 
       console.log('Current Class ID:', app.state.currentClassId || '(none)');
@@ -683,7 +794,9 @@ window.TrackerApp = window.TrackerApp || {};
       app.state.currentClassId = nextClassId;
       const activeClass = (app.state.classes || []).find(entry => entry.id === nextClassId);
       app.state.currentClassName = activeClass?.name || app.state.currentClassName || 'My Class';
-      persistCurrentClassId(nextClassId);
+      app.state.currentClassOwnerId = String(activeClass?.ownerId || '').trim();
+      app.state.currentClassOwnerName = String(activeClass?.ownerName || '').trim() || 'Teacher';
+      persistCurrentClassContext(nextClassId, app.state.currentClassOwnerId);
       app.syncDataContext();
 
       console.log('Current Class ID:', nextClassId || '(none)');
@@ -718,7 +831,10 @@ window.TrackerApp = window.TrackerApp || {};
       app.state.currentClassId = String(result?.currentClassId || '').trim();
       app.state.currentClassName = String(result?.currentClassName || '').trim() || 'My Class';
       app.state.classTrash = sortTrashEntriesNewestFirst(Array.isArray(result?.trashClasses) ? result.trashClasses : app.state.classTrash || []);
-      persistCurrentClassId(app.state.currentClassId);
+      const currentClassEntry = (app.state.classes || []).find((entry) => String(entry?.id || '').trim() === app.state.currentClassId) || null;
+      app.state.currentClassOwnerId = String(currentClassEntry?.ownerId || '').trim();
+      app.state.currentClassOwnerName = String(currentClassEntry?.ownerName || '').trim() || 'Teacher';
+      persistCurrentClassContext(app.state.currentClassId, app.state.currentClassOwnerId);
       app.syncDataContext();
 
       console.log('Current Class ID:', app.state.currentClassId || '(none)');
@@ -754,7 +870,10 @@ window.TrackerApp = window.TrackerApp || {};
       app.state.classTrash = sortTrashEntriesNewestFirst(Array.isArray(result?.trashClasses) ? result.trashClasses : app.state.classTrash || []);
       app.state.currentClassId = String(result?.currentClassId || app.state.currentClassId || '').trim();
       app.state.currentClassName = String(result?.currentClassName || app.state.currentClassName || 'My Class').trim() || 'My Class';
-      persistCurrentClassId(app.state.currentClassId);
+      const currentClassEntry = (app.state.classes || []).find((entry) => String(entry?.id || '').trim() === app.state.currentClassId) || null;
+      app.state.currentClassOwnerId = String(currentClassEntry?.ownerId || '').trim();
+      app.state.currentClassOwnerName = String(currentClassEntry?.ownerName || '').trim() || 'Teacher';
+      persistCurrentClassContext(app.state.currentClassId, app.state.currentClassOwnerId);
       app.syncDataContext();
 
       if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
@@ -783,7 +902,10 @@ window.TrackerApp = window.TrackerApp || {};
       app.state.classTrash = sortTrashEntriesNewestFirst(Array.isArray(result?.trashClasses) ? result.trashClasses : app.state.classTrash || []);
       app.state.currentClassId = String(result?.currentClassId || app.state.currentClassId || '').trim();
       app.state.currentClassName = String(result?.currentClassName || app.state.currentClassName || 'My Class').trim() || 'My Class';
-      persistCurrentClassId(app.state.currentClassId);
+      const currentClassEntry = (app.state.classes || []).find((entry) => String(entry?.id || '').trim() === app.state.currentClassId) || null;
+      app.state.currentClassOwnerId = String(currentClassEntry?.ownerId || '').trim();
+      app.state.currentClassOwnerName = String(currentClassEntry?.ownerName || '').trim() || 'Teacher';
+      persistCurrentClassContext(app.state.currentClassId, app.state.currentClassOwnerId);
       app.syncDataContext();
 
       if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {

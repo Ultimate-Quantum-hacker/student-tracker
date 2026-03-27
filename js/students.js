@@ -4,7 +4,6 @@
    ═══════════════════════════════════════════════ */
 
 import app from './state.js';
-import { auth } from './firebase.js';
 
 const resolveApp = (runtimeApp) => runtimeApp || app;
 const resolveUi = (runtimeUi, runtimeApp) => runtimeUi || runtimeApp?.ui;
@@ -57,7 +56,7 @@ const students = {
     const s = appRef.state.students.find(x => x.id === uid);
     if (!s) return;
     console.log('Deleting student:', uid);
-    console.log('User:', auth?.currentUser?.uid || 'unknown');
+    console.log('Class Owner:', appRef.getCurrentClassOwnerId?.() || 'unknown');
     appRef.state.deletingId = uid;
     if (appRef.dom.deleteConfirmMsg) {
       appRef.dom.deleteConfirmMsg.textContent = `Delete ${s.name}? This will move the student to Trash and remove active score entry from the current class.`;
@@ -77,7 +76,7 @@ const students = {
     
     try {
       console.log('Deleting student:', uid);
-      console.log('User:', auth?.currentUser?.uid || 'unknown');
+      console.log('Class Owner:', appRef.getCurrentClassOwnerId?.() || 'unknown');
       const deletedEntry = await appRef.deleteStudent(uid);
       appRef.state.deletingId = null;
       appRef.dom.deleteModal?.classList.remove('active');

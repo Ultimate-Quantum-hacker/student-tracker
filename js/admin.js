@@ -1,10 +1,4 @@
 import {
-  db,
-  collection,
-  collectionGroup,
-  getDocs,
-  doc,
-  updateDoc,
   isFirebaseConfigured
 } from './firebase.js';
 import {
@@ -17,7 +11,11 @@ import {
 } from './auth.js';
 import {
   fetchAdminGlobalStats,
-  fetchActivityLogs
+  fetchActivityLogs,
+  fetchAdminUsers,
+  updateAdminUserRole,
+  fetchGlobalStudentSearchIndex,
+  setCurrentUserRoleContext
 } from '../services/db.js';
 
 const DASHBOARD_PATH = '/index.html';
@@ -592,7 +590,7 @@ const populateActivityUserFilter = () => {
 };
 
 const fetchUsers = async () => {
-  if (!db || !isFirebaseConfigured) {
+  if (!isFirebaseConfigured) {
     setPanelStatus('Firebase is not configured. User management is unavailable.', 'error');
     setElementVisibility(dom.usersLoading, false);
     return;
@@ -602,22 +600,8 @@ const fetchUsers = async () => {
   setPanelStatus('Loading users...');
 
   try {
-    const usersSnapshot = await getDocs(collection(db, 'users'));
-    const records = [];
-    usersSnapshot.forEach((snapshot) => {
-      const data = snapshot.data() || {};
-      records.push({
-        docId: snapshot.id,
-        uid: normalizeText(data.uid || snapshot.id),
-        email: normalizeText(data.email || '').toLowerCase(),
-        name: normalizeText(data.name || ''),
-        role: normalizeUserRole(data.role),
-        createdAt: data.createdAt || null
-      });
-    });
-
-    records.sort((a, b) => String(a.email || '').localeCompare(String(b.email || '')));
-    state.users = records;
+    const records = await fetchAdminUsers();
+    state.users = Array.isArray(records) ? records : [];
     renderUsersTable();
     populateActivityUserFilter();
     setPanelStatus(`Loaded ${getVisibleUsers().length} user${getVisibleUsers().length === 1 ? '' : 's'}.`, 'success');
@@ -670,116 +654,8 @@ const shouldIncludeGlobalSearchOwner = (userId = '') => {
   return normalizeUserRole(owner?.role) !== ROLE_DEVELOPER;
 };
 
-const buildGlobalSearchRowsFromSnapshot = (snapshot) => {
-  const rows = [];
-  snapshot.forEach((entry) => {
-    const payload = entry.data() || {};
-    if (payload.deleted === true) return;
-
-    const refPath = String(entry.ref?.path || '');
-    const segments = refPath.split('/');
-    const ownerFromPath = segments.length >= 2 ? segments[1] : '';
-    const userId = normalizeText(payload.userId || ownerFromPath);
-    if (!shouldIncludeGlobalSearchOwner(userId)) {
-      return;
-    }
-
-    rows.push({
-      id: normalizeText(payload.id || entry.id),
-      name: normalizeText(payload.name || 'Student'),
-      classId: normalizeText(payload.classId || ''),
-      userId
-    });
-  });
-  return rows;
-};
-
-const buildGlobalSearchRowsFromScopedCollections = async () => {
-  const rows = [];
-  const seen = new Set();
-  let deniedReads = 0;
-  let readablePathFound = false;
-
-  const pushUniqueRow = (row) => {
-    const userId = normalizeText(row?.userId || '');
-    const classId = normalizeText(row?.classId || '');
-    const id = normalizeText(row?.id || '');
-    const key = `${userId}::${classId}::${id}`;
-    if (seen.has(key)) {
-      return;
-    }
-    seen.add(key);
-    rows.push({
-      id,
-      name: normalizeText(row?.name || 'Student') || 'Student',
-      classId,
-      userId
-    });
-  };
-
-  const visibleUsers = getVisibleUsers();
-  for (const user of visibleUsers) {
-    const userId = normalizeText(user?.uid || '');
-    if (!shouldIncludeGlobalSearchOwner(userId)) {
-      continue;
-    }
-
-    let classesSnapshot = null;
-    try {
-      classesSnapshot = await getDocs(collection(db, 'users', userId, 'classes'));
-      readablePathFound = true;
-    } catch (error) {
-      if (isPermissionDeniedError(error)) {
-        deniedReads += 1;
-        continue;
-      }
-      throw error;
-    }
-
-    const classIds = [];
-    classesSnapshot.forEach((classEntry) => {
-      const classData = classEntry.data() || {};
-      const classId = normalizeText(classData.id || classEntry.id);
-      if (classId) {
-        classIds.push(classId);
-      }
-    });
-
-    for (const classId of classIds) {
-      try {
-        const studentsSnapshot = await getDocs(collection(db, 'users', userId, 'classes', classId, 'students'));
-        readablePathFound = true;
-        studentsSnapshot.forEach((entry) => {
-          const payload = entry.data() || {};
-          if (payload.deleted === true) return;
-          pushUniqueRow({
-            id: normalizeText(payload.id || entry.id),
-            name: normalizeText(payload.name || 'Student'),
-            classId: normalizeText(payload.classId || classId),
-            userId: normalizeText(payload.userId || userId)
-          });
-        });
-      } catch (error) {
-        if (isPermissionDeniedError(error)) {
-          deniedReads += 1;
-          continue;
-        }
-        throw error;
-      }
-    }
-  }
-
-  if (!readablePathFound && deniedReads > 0) {
-    const permissionError = new Error('Search unavailable due to permissions.');
-    permissionError.code = 'permission-denied';
-    throw permissionError;
-  }
-
-  return rows;
-};
-
 const buildGlobalSearchIndex = async () => {
-  if (!db || !isFirebaseConfigured) {
+  if (!isFirebaseConfigured) {
     state.globalSearchIndex = [];
     renderGlobalSearchResults([]);
     setGlobalSearchStatus('Global search unavailable: Firebase is not configured.', 'error');
@@ -790,25 +666,14 @@ const buildGlobalSearchIndex = async () => {
   setGlobalSearchStatus('Building global search index...');
 
   try {
-    let rows = [];
-    let usedScopedFallback = false;
-
-    try {
-      const snapshot = await getDocs(collectionGroup(db, 'students'));
-      rows = buildGlobalSearchRowsFromSnapshot(snapshot);
-    } catch (error) {
-      if (!isPermissionDeniedError(error)) {
-        throw error;
-      }
-      usedScopedFallback = true;
-      rows = await buildGlobalSearchRowsFromScopedCollections();
-    }
-
+    let rows = await fetchGlobalStudentSearchIndex();
+    rows = Array.isArray(rows)
+      ? rows.filter((entry) => shouldIncludeGlobalSearchOwner(entry?.userId))
+      : [];
     rows.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
     state.globalSearchIndex = rows;
     state.globalSearchResults = [];
-    const modeSuffix = usedScopedFallback ? ' (fallback mode)' : '';
-    setGlobalSearchStatus(`Indexed ${rows.length} student${rows.length === 1 ? '' : 's'} for global search${modeSuffix}.`, 'success');
+    setGlobalSearchStatus(`Indexed ${rows.length} student${rows.length === 1 ? '' : 's'} for global search.`, 'success');
     renderGlobalSearchResults([]);
     markUpdatedNow();
   } catch (error) {
@@ -929,7 +794,7 @@ const updateUserRole = async (uid, nextRole) => {
 
   try {
     setPanelStatus('Updating role...');
-    await updateDoc(doc(db, 'users', uid), {
+    await updateAdminUserRole({
       uid,
       name: normalizeText(record.name || ''),
       email: normalizeText(record.email || '').toLowerCase(),
@@ -964,6 +829,9 @@ const ensurePanelAccess = async () => {
   state.authUser = authUser;
   const resolvedRole = normalizeUserRole(await resolveUserRole(authUser));
   state.currentRole = isDeveloperAccountEmail(authUser?.email) ? ROLE_DEVELOPER : resolvedRole;
+  if (typeof setCurrentUserRoleContext === 'function') {
+    setCurrentUserRoleContext(state.currentRole);
+  }
 
   console.log('Logged in email:', normalizeText(authUser?.email || '(none)').toLowerCase());
   console.log('Final role:', state.currentRole);

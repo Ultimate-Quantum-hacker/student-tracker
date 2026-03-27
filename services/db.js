@@ -9,6 +9,7 @@ import {
   collection,
   collectionGroup,
   addDoc,
+  getDoc,
   getDocs,
   setDoc,
   updateDoc,
@@ -34,6 +35,17 @@ const ACTIVITY_LOGS_COLLECTION = 'activityLogs';
 const DEFAULT_CLASS_NAME = 'My Class';
 const TRASH_RETENTION_DAYS = 3;
 const ACTIVITY_LOG_FETCH_LIMIT = 300;
+const CLASS_MIGRATION_VERSION = 2;
+
+const ERROR_CODES = {
+  READ_ONLY_MODE: 'READ_ONLY_MODE',
+  CLASS_NOT_FOUND: 'CLASS_NOT_FOUND',
+  INVALID_OWNER: 'INVALID_OWNER',
+  MIGRATION_FAILED: 'MIGRATION_FAILED',
+  INVALID_CLASS_CONTEXT: 'INVALID_CLASS_CONTEXT',
+  MISSING_CLASS_ID: 'MISSING_CLASS_ID',
+  MISSING_OWNER_ID: 'MISSING_OWNER_ID'
+};
 
 let currentClassId = '';
 let currentClassOwnerId = '';
@@ -128,8 +140,9 @@ const persistStudentRestoreById = async (studentId, nextData) => {
 
   for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
     try {
-      const userId = await ensureAuthenticatedUserId('restore student');
-      const { classId } = await ensureActiveClassContext(userId);
+      const classScope = await ensureValidClassContext('restore student', { requireWritable: true });
+      const userId = classScope.ownerId;
+      const classId = classScope.classId;
       const updatedAt = new Date().toISOString();
 
       await updateDoc(getStudentDocRef(userId, normalizedStudentId, classId), {
@@ -137,13 +150,15 @@ const persistStudentRestoreById = async (studentId, nextData) => {
         deletedAt: null,
         updatedAt,
         userId,
+        ownerId: userId,
         classId
       });
 
       await setDoc(getClassDocRef(userId, classId), {
         id: classId,
         updatedAt,
-        userId
+        userId,
+        ownerId: userId
       }, { merge: true });
 
       await setDoc(getUserRootRef(userId), {
@@ -188,6 +203,94 @@ const persistStudentRestoreById = async (studentId, nextData) => {
   };
 };
 
+const createContextError = (code, message) => {
+  const error = new Error(message || code);
+  error.code = code;
+  return error;
+};
+
+const assertWritableRole = (operationLabel = 'modify data') => {
+  const role = getCurrentUserRoleContext();
+  if (role === 'admin') {
+    throw createContextError(ERROR_CODES.READ_ONLY_MODE, `Admin read-only mode: cannot ${operationLabel}`);
+  }
+};
+
+const ensureValidClassContext = async (operationLabel = 'access class data', options = {}) => {
+  const requireClass = options?.requireClass !== false;
+  const requireWritable = options?.requireWritable === true;
+  const actorUserId = await ensureAuthenticatedUserId(operationLabel);
+
+  if (requireWritable) {
+    assertWritableRole(operationLabel);
+  }
+
+  const classContext = await ensureActiveClassContext(actorUserId, { requireClass: false });
+  const classId = normalizeClassId(classContext?.classId || '');
+  const ownerId = normalizeUserId(classContext?.classOwnerId || '');
+
+  if (!classId) {
+    if (requireClass) {
+      throw createContextError(ERROR_CODES.MISSING_CLASS_ID, `Missing class context for ${operationLabel}`);
+    }
+    return {
+      actorUserId,
+      classId: '',
+      ownerId: '',
+      className: DEFAULT_CLASS_NAME,
+      ownerName: 'Teacher',
+      role: getCurrentUserRoleContext()
+    };
+  }
+
+  if (!ownerId) {
+    throw createContextError(ERROR_CODES.MISSING_OWNER_ID, `Missing class owner context for ${operationLabel}`);
+  }
+
+  let classPayload = null;
+  if (!isFirebaseConfigured || !db) {
+    const classes = Array.isArray(classContext?.classes) ? classContext.classes : [];
+    classPayload = classes.find((entry) => normalizeClassId(entry?.id) === classId) || null;
+  } else {
+    const classSnapshot = await getDoc(getClassDocRef(ownerId, classId));
+    if (!classSnapshot.exists()) {
+      throw createContextError(ERROR_CODES.CLASS_NOT_FOUND, `Class not found for ${operationLabel}`);
+    }
+    classPayload = classSnapshot.data() || {};
+  }
+
+  if (!classPayload || classPayload.deleted === true) {
+    throw createContextError(ERROR_CODES.CLASS_NOT_FOUND, `Class not found for ${operationLabel}`);
+  }
+
+  const persistedClassId = normalizeClassId(classPayload?.id || classId);
+  if (persistedClassId && persistedClassId !== classId) {
+    throw createContextError(ERROR_CODES.INVALID_CLASS_CONTEXT, 'Selected class context is stale or invalid');
+  }
+
+  const persistedOwnerId = normalizeUserId(classPayload?.ownerId || classPayload?.userId || ownerId);
+  if (!persistedOwnerId) {
+    throw createContextError(ERROR_CODES.MISSING_OWNER_ID, 'Class owner metadata is missing');
+  }
+
+  if (persistedOwnerId !== ownerId) {
+    throw createContextError(ERROR_CODES.INVALID_OWNER, 'Selected class owner does not match class metadata');
+  }
+
+  const className = normalizeClassName(classPayload?.name || classContext?.className || DEFAULT_CLASS_NAME);
+  const ownerName = normalizeDisplayName(classPayload?.ownerName || classContext?.classOwnerName || 'Teacher', 'Teacher');
+  setCurrentClassContext(classId, actorUserId, ownerId, ownerName);
+
+  return {
+    actorUserId,
+    classId,
+    ownerId,
+    className,
+    ownerName,
+    role: getCurrentUserRoleContext()
+  };
+};
+
 const resolveCollectionDocRef = async (collectionRef, identity = {}, labelFields = []) => {
   const normalizedId = String(identity?.id || '').trim();
   const normalizedLabel = String(identity?.name || identity?.title || identity?.label || '').trim().toLowerCase();
@@ -229,8 +332,9 @@ const persistSubjectDeleteByIdentity = async (subjectIdentity, nextData) => {
 
   for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
     try {
-      const userId = await ensureAuthenticatedUserId('delete subject');
-      const { classId } = await ensureActiveClassContext(userId);
+      const classScope = await ensureValidClassContext('delete subject', { requireWritable: true });
+      const userId = classScope.ownerId;
+      const classId = classScope.classId;
       const updatedAt = new Date().toISOString();
 
       const subjectDocRef = await resolveCollectionDocRef(
@@ -247,13 +351,15 @@ const persistSubjectDeleteByIdentity = async (subjectIdentity, nextData) => {
         deletedAt: serverTimestamp(),
         updatedAt,
         userId,
+        ownerId: userId,
         classId
       });
 
       await setDoc(getClassDocRef(userId, classId), {
         id: classId,
         updatedAt,
-        userId
+        userId,
+        ownerId: userId
       }, { merge: true });
 
       await setDoc(getUserRootRef(userId), {
@@ -312,8 +418,9 @@ const persistExamDeleteByIdentity = async (examIdentity, nextData) => {
 
   for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
     try {
-      const userId = await ensureAuthenticatedUserId('delete exam');
-      const { classId } = await ensureActiveClassContext(userId);
+      const classScope = await ensureValidClassContext('delete exam', { requireWritable: true });
+      const userId = classScope.ownerId;
+      const classId = classScope.classId;
       const updatedAt = new Date().toISOString();
 
       const examDocRef = await resolveCollectionDocRef(
@@ -330,13 +437,15 @@ const persistExamDeleteByIdentity = async (examIdentity, nextData) => {
         deletedAt: serverTimestamp(),
         updatedAt,
         userId,
+        ownerId: userId,
         classId
       });
 
       await setDoc(getClassDocRef(userId, classId), {
         id: classId,
         updatedAt,
-        userId
+        userId,
+        ownerId: userId
       }, { merge: true });
 
       await setDoc(getUserRootRef(userId), {
@@ -407,8 +516,9 @@ const persistSubjectRestoreById = async (subjectId, nextData) => {
 
   for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
     try {
-      const userId = await ensureAuthenticatedUserId('restore subject');
-      const { classId } = await ensureActiveClassContext(userId);
+      const classScope = await ensureValidClassContext('restore subject', { requireWritable: true });
+      const userId = classScope.ownerId;
+      const classId = classScope.classId;
       const updatedAt = new Date().toISOString();
 
       await updateDoc(getSubjectDocRef(userId, normalizedSubjectId, classId), {
@@ -416,13 +526,15 @@ const persistSubjectRestoreById = async (subjectId, nextData) => {
         deletedAt: null,
         updatedAt,
         userId,
+        ownerId: userId,
         classId
       });
 
       await setDoc(getClassDocRef(userId, classId), {
         id: classId,
         updatedAt,
-        userId
+        userId,
+        ownerId: userId
       }, { merge: true });
 
       await setDoc(getUserRootRef(userId), {
@@ -485,8 +597,9 @@ const persistExamRestoreById = async (examId, nextData) => {
 
   for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
     try {
-      const userId = await ensureAuthenticatedUserId('restore exam');
-      const { classId } = await ensureActiveClassContext(userId);
+      const classScope = await ensureValidClassContext('restore exam', { requireWritable: true });
+      const userId = classScope.ownerId;
+      const classId = classScope.classId;
       const updatedAt = new Date().toISOString();
 
       await updateDoc(getExamDocRef(userId, normalizedExamId, classId), {
@@ -494,13 +607,15 @@ const persistExamRestoreById = async (examId, nextData) => {
         deletedAt: null,
         updatedAt,
         userId,
+        ownerId: userId,
         classId
       });
 
       await setDoc(getClassDocRef(userId, classId), {
         id: classId,
         updatedAt,
-        userId
+        userId,
+        ownerId: userId
       }, { merge: true });
 
       await setDoc(getUserRootRef(userId), {
@@ -563,8 +678,9 @@ const persistSubjectHardDeleteById = async (subjectId, nextData) => {
 
   for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
     try {
-      const userId = await ensureAuthenticatedUserId('permanently delete subject');
-      const { classId } = await ensureActiveClassContext(userId);
+      const classScope = await ensureValidClassContext('permanently delete subject', { requireWritable: true });
+      const userId = classScope.ownerId;
+      const classId = classScope.classId;
       const updatedAt = new Date().toISOString();
 
       await deleteDoc(getSubjectDocRef(userId, normalizedSubjectId, classId));
@@ -572,7 +688,8 @@ const persistSubjectHardDeleteById = async (subjectId, nextData) => {
       await setDoc(getClassDocRef(userId, classId), {
         id: classId,
         updatedAt,
-        userId
+        userId,
+        ownerId: userId
       }, { merge: true });
 
       await setDoc(getUserRootRef(userId), {
@@ -635,8 +752,9 @@ const persistExamHardDeleteById = async (examId, nextData) => {
 
   for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
     try {
-      const userId = await ensureAuthenticatedUserId('permanently delete exam');
-      const { classId } = await ensureActiveClassContext(userId);
+      const classScope = await ensureValidClassContext('permanently delete exam', { requireWritable: true });
+      const userId = classScope.ownerId;
+      const classId = classScope.classId;
       const updatedAt = new Date().toISOString();
 
       await deleteDoc(getExamDocRef(userId, normalizedExamId, classId));
@@ -644,7 +762,8 @@ const persistExamHardDeleteById = async (examId, nextData) => {
       await setDoc(getClassDocRef(userId, classId), {
         id: classId,
         updatedAt,
-        userId
+        userId,
+        ownerId: userId
       }, { merge: true });
 
       await setDoc(getUserRootRef(userId), {
@@ -708,8 +827,9 @@ const persistStudentHardDeleteById = async (studentId, nextData) => {
 
   for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
     try {
-      const userId = await ensureAuthenticatedUserId('permanently delete student');
-      const { classId } = await ensureActiveClassContext(userId);
+      const classScope = await ensureValidClassContext('permanently delete student', { requireWritable: true });
+      const userId = classScope.ownerId;
+      const classId = classScope.classId;
       const updatedAt = new Date().toISOString();
 
       await deleteDoc(getStudentDocRef(userId, normalizedStudentId, classId));
@@ -717,7 +837,8 @@ const persistStudentHardDeleteById = async (studentId, nextData) => {
       await setDoc(getClassDocRef(userId, classId), {
         id: classId,
         updatedAt,
-        userId
+        userId,
+        ownerId: userId
       }, { merge: true });
 
       await setDoc(getUserRootRef(userId), {
@@ -763,8 +884,9 @@ const persistStudentHardDeleteById = async (studentId, nextData) => {
 };
 
 const fetchStudentTrashList = async () => {
-  const userId = await ensureAuthenticatedUserId('list student trash');
-  const { classId } = await ensureActiveClassContext(userId, { requireClass: false });
+  const classScope = await ensureValidClassContext('list student trash', { requireClass: false });
+  const userId = classScope.ownerId;
+  const classId = classScope.classId;
   if (!classId) {
     return [];
   }
@@ -825,6 +947,25 @@ const hasAnyRawData = (rawData) => {
   return normalized.students.length > 0 || normalized.subjects.length > 0 || normalized.exams.length > 0;
 };
 
+const getRawDataCounts = (rawData) => {
+  const normalized = normalizeRawData(rawData);
+  return {
+    students: normalized.students.length,
+    subjects: normalized.subjects.length,
+    exams: normalized.exams.length
+  };
+};
+
+const hasMatchingRawDataCounts = (leftCounts = {}, rightCounts = {}) => {
+  return Number(leftCounts.students || 0) === Number(rightCounts.students || 0)
+    && Number(leftCounts.subjects || 0) === Number(rightCounts.subjects || 0)
+    && Number(leftCounts.exams || 0) === Number(rightCounts.exams || 0);
+};
+
+const formatRawDataCounts = (counts = {}) => {
+  return `students=${Number(counts.students || 0)}, subjects=${Number(counts.subjects || 0)}, exams=${Number(counts.exams || 0)}`;
+};
+
 const toDocId = (prefix, label, index) => {
   const slug = String(label || '')
     .trim()
@@ -851,7 +992,7 @@ const getAuthenticatedUserDisplayName = () => {
 };
 
 const getActiveUserId = () => {
-  return normalizeUserId(currentClassOwnerId || getAuthenticatedUserId());
+  return normalizeUserId(currentClassOwnerId);
 };
 
 const getCurrentUserId = () => {
@@ -943,17 +1084,26 @@ const normalizeClassName = (value, fallback = DEFAULT_CLASS_NAME) => {
 };
 
 const getClassSelectionKeyForUser = (userId) => `${CACHE_KEY_PREFIX}:activeClass:${userId}`;
+const getClassSelectionOwnerKeyForUser = (userId) => `${CACHE_KEY_PREFIX}:activeClassOwner:${userId}`;
 
-const persistClassSelection = (userId, classId) => {
+const persistClassSelection = (userId, classId, ownerId = '') => {
   if (!userId) return;
   const selectionKey = getClassSelectionKeyForUser(userId);
+  const ownerSelectionKey = getClassSelectionOwnerKeyForUser(userId);
   const normalizedClassId = normalizeClassId(classId);
+  const normalizedOwnerId = normalizeUserId(ownerId);
 
   if (typeof sessionStorage !== 'undefined') {
     if (normalizedClassId) {
       sessionStorage.setItem(selectionKey, normalizedClassId);
     } else {
       sessionStorage.removeItem(selectionKey);
+    }
+
+    if (normalizedOwnerId) {
+      sessionStorage.setItem(ownerSelectionKey, normalizedOwnerId);
+    } else {
+      sessionStorage.removeItem(ownerSelectionKey);
     }
   }
 
@@ -963,20 +1113,49 @@ const persistClassSelection = (userId, classId) => {
     } else {
       localStorage.removeItem(selectionKey);
     }
+
+    if (normalizedOwnerId) {
+      localStorage.setItem(ownerSelectionKey, normalizedOwnerId);
+    } else {
+      localStorage.removeItem(ownerSelectionKey);
+    }
   }
 };
 
 const readPersistedClassSelection = (userId) => {
-  if (!userId) return '';
+  if (!userId) {
+    return {
+      classId: '',
+      ownerId: ''
+    };
+  }
+
   const selectionKey = getClassSelectionKeyForUser(userId);
+  const ownerSelectionKey = getClassSelectionOwnerKeyForUser(userId);
   const sessionClassId = typeof sessionStorage !== 'undefined'
     ? normalizeClassId(sessionStorage.getItem(selectionKey))
     : '';
-  if (sessionClassId) return sessionClassId;
+  const sessionOwnerId = typeof sessionStorage !== 'undefined'
+    ? normalizeUserId(sessionStorage.getItem(ownerSelectionKey))
+    : '';
+  if (sessionClassId) {
+    return {
+      classId: sessionClassId,
+      ownerId: sessionOwnerId
+    };
+  }
 
-  return typeof localStorage !== 'undefined'
+  const localClassId = typeof localStorage !== 'undefined'
     ? normalizeClassId(localStorage.getItem(selectionKey))
     : '';
+  const localOwnerId = typeof localStorage !== 'undefined'
+    ? normalizeUserId(localStorage.getItem(ownerSelectionKey))
+    : '';
+
+  return {
+    classId: localClassId,
+    ownerId: localOwnerId
+  };
 };
 
 const setCurrentClassContext = (classId, userId = getAuthenticatedUserId(), ownerId = '', ownerName = '') => {
@@ -985,18 +1164,18 @@ const setCurrentClassContext = (classId, userId = getAuthenticatedUserId(), owne
 
   if (normalizedOwnerId) {
     currentClassOwnerId = normalizedOwnerId;
-  } else if (!currentClassId) {
+  } else {
     currentClassOwnerId = '';
   }
 
   if (ownerName) {
     currentClassOwnerName = normalizeDisplayName(ownerName, currentClassOwnerName || 'Teacher');
-  } else if (!currentClassId) {
+  } else {
     currentClassOwnerName = '';
   }
 
   if (userId) {
-    persistClassSelection(userId, currentClassId);
+    persistClassSelection(userId, currentClassId, currentClassOwnerId);
   }
   return currentClassId;
 };
@@ -1078,8 +1257,15 @@ const resolveClassIdFromCatalog = (userId, classes = []) => {
     return '';
   }
 
-  const requestedClassId = normalizeClassId(currentClassId) || readPersistedClassSelection(userId);
-  const matchedClass = normalizedClasses.find(entry => entry.id === requestedClassId);
+  const persistedSelection = readPersistedClassSelection(userId);
+  const requestedClassId = normalizeClassId(currentClassId) || normalizeClassId(persistedSelection.classId || '');
+  const requestedOwnerId = normalizeUserId(persistedSelection.ownerId || '');
+
+  const matchedClass = normalizedClasses.find((entry) => {
+    if (entry.id !== requestedClassId) return false;
+    if (!requestedOwnerId) return true;
+    return normalizeUserId(entry.ownerId || '') === requestedOwnerId;
+  });
   const nextClassId = matchedClass?.id || normalizedClasses[0].id;
   const nextClass = normalizedClasses.find(entry => entry.id === nextClassId) || null;
   setCurrentClassContext(nextClassId, userId, nextClass?.ownerId || '', nextClass?.ownerName || '');
@@ -1160,8 +1346,192 @@ const getExamsCollectionRef = (userId, classId = getCurrentClassContext()) => ge
 const getStudentDocRef = (userId, studentId, classId = getCurrentClassContext()) => getClassStudentDocRef(userId, normalizeClassId(classId), studentId);
 const getSubjectDocRef = (userId, subjectId, classId = getCurrentClassContext()) => getClassSubjectDocRef(userId, normalizeClassId(classId), subjectId);
 const getExamDocRef = (userId, examId, classId = getCurrentClassContext()) => getClassExamDocRef(userId, normalizeClassId(classId), examId);
+const getLegacyStudentsCollectionRef = (userId) => collection(db, USERS_COLLECTION, userId, STUDENTS_SUBCOLLECTION);
+const getLegacySubjectsCollectionRef = (userId) => collection(db, USERS_COLLECTION, userId, SUBJECTS_SUBCOLLECTION);
+const getLegacyExamsCollectionRef = (userId) => collection(db, USERS_COLLECTION, userId, EXAMS_SUBCOLLECTION);
 
-const mapStudentsToDocs = (students, userId, updatedAt) => {
+const readLegacyRawData = async (userId) => {
+  if (!isFirebaseConfigured || !db || !userId) {
+    return createDefaultRawData();
+  }
+
+  const [studentsSnapshot, subjectsSnapshot, examsSnapshot] = await Promise.all([
+    getDocs(getLegacyStudentsCollectionRef(userId)),
+    getDocs(getLegacySubjectsCollectionRef(userId)),
+    getDocs(getLegacyExamsCollectionRef(userId))
+  ]);
+
+  const students = [];
+  studentsSnapshot.forEach((entry) => {
+    const payload = entry.data() || {};
+    if (payload.deleted === true) return;
+    students.push({
+      id: String(payload.id || entry.id || '').trim(),
+      name: String(payload.name || '').trim(),
+      notes: payload.notes || '',
+      class: payload.class || '',
+      scores: payload.scores && typeof payload.scores === 'object' ? clone(payload.scores) : {}
+    });
+  });
+
+  const subjects = [];
+  subjectsSnapshot.forEach((entry) => {
+    const payload = entry.data() || {};
+    if (payload.deleted === true) return;
+    const name = String(payload.name || entry.id || '').trim();
+    if (name) {
+      subjects.push(name);
+    }
+  });
+
+  const exams = [];
+  examsSnapshot.forEach((entry) => {
+    const payload = entry.data() || {};
+    if (payload.deleted === true) return;
+    const title = String(payload.title || payload.name || entry.id || '').trim();
+    if (title) {
+      exams.push(title);
+    }
+  });
+
+  return normalizeRawData({
+    students,
+    subjects,
+    exams
+  });
+};
+
+const updateMigrationState = async (userId, status, extra = {}) => {
+  if (!isFirebaseConfigured || !db || !userId) {
+    return;
+  }
+
+  await setDoc(getUserRootRef(userId), {
+    uid: userId,
+    classMigrationStatus: String(status || '').trim() || 'unknown',
+    classMigrationVersion: CLASS_MIGRATION_VERSION,
+    classMigrationComplete: status === 'completed',
+    classMigrationUpdatedAt: new Date().toISOString(),
+    ...extra
+  }, { merge: true });
+};
+
+const ensureDefaultClassDocument = async (userId) => {
+  const existingCatalog = await readClassCatalogFromFirestore(userId);
+  const activeClasses = existingCatalog.classes || [];
+  if (activeClasses.length > 0) {
+    return activeClasses[0];
+  }
+
+  const createdAt = new Date().toISOString();
+  const ownerName = getAuthenticatedUserDisplayName();
+  const classDocRef = await addDoc(getClassesCollectionRef(userId), {
+    name: DEFAULT_CLASS_NAME,
+    createdAt,
+    updatedAt: createdAt,
+    deleted: false,
+    deletedAt: null,
+    userId,
+    ownerId: userId,
+    ownerName
+  });
+  const classId = normalizeClassId(classDocRef.id);
+
+  await setDoc(classDocRef, {
+    id: classId,
+    userId,
+    ownerId: userId,
+    ownerName
+  }, { merge: true });
+
+  await setDoc(getUserRootRef(userId), {
+    uid: userId,
+    activeClassId: classId,
+    updatedAt: createdAt
+  }, { merge: true });
+
+  return toClassModel(classId, {
+    id: classId,
+    name: DEFAULT_CLASS_NAME,
+    createdAt,
+    ownerId: userId,
+    ownerName
+  });
+};
+
+const ensureClassMigration = async (userId) => {
+  if (!isFirebaseConfigured || !db || !userId) {
+    return;
+  }
+
+  const userSnapshot = await getDoc(getUserRootRef(userId));
+  const migrationPayload = userSnapshot.exists() ? (userSnapshot.data() || {}) : {};
+  const migrationComplete = migrationPayload.classMigrationComplete === true
+    && Number(migrationPayload.classMigrationVersion || 0) >= CLASS_MIGRATION_VERSION;
+  if (migrationComplete) {
+    return;
+  }
+
+  await updateMigrationState(userId, 'running', {
+    classMigrationStartedAt: migrationPayload.classMigrationStartedAt || new Date().toISOString(),
+    classMigrationError: null
+  });
+
+  try {
+    let classEntry = await ensureDefaultClassDocument(userId);
+    if (!classEntry?.id) {
+      throw createContextError(ERROR_CODES.CLASS_NOT_FOUND, 'Failed to resolve class for migration');
+    }
+
+    const classOwnerId = normalizeUserId(classEntry.ownerId || '');
+    const classId = normalizeClassId(classEntry.id || '');
+    if (!classOwnerId || !classId) {
+      throw createContextError(ERROR_CODES.INVALID_CLASS_CONTEXT, 'Invalid migration class context');
+    }
+
+    const [legacyRawData, modularRawData] = await Promise.all([
+      readLegacyRawData(userId),
+      readModularRawData(classOwnerId, classId)
+    ]);
+
+    const hasLegacyData = hasAnyRawData(legacyRawData);
+    const legacyCounts = getRawDataCounts(legacyRawData);
+    const classCountsBeforeSync = getRawDataCounts(modularRawData?.data || createDefaultRawData());
+    const countsMismatchBeforeSync = !hasMatchingRawDataCounts(legacyCounts, classCountsBeforeSync);
+
+    if (hasLegacyData && countsMismatchBeforeSync) {
+      await writeModularData(classOwnerId, classId, legacyRawData);
+    }
+
+    const modularAfterSync = await readModularRawData(classOwnerId, classId);
+    const classCountsAfterSync = getRawDataCounts(modularAfterSync?.data || createDefaultRawData());
+
+    if (hasLegacyData && !hasMatchingRawDataCounts(legacyCounts, classCountsAfterSync)) {
+      throw createContextError(
+        ERROR_CODES.MIGRATION_FAILED,
+        `Migration verification mismatch (${formatRawDataCounts(legacyCounts)} vs ${formatRawDataCounts(classCountsAfterSync)})`
+      );
+    }
+
+    await updateMigrationState(userId, 'completed', {
+      classMigrationError: null,
+      classMigrationCompletedAt: new Date().toISOString(),
+      classMigrationCountsLegacy: legacyCounts,
+      classMigrationCountsClass: classCountsAfterSync,
+      activeClassId: classId,
+      updatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    await updateMigrationState(userId, 'failed', {
+      classMigrationError: String(error?.message || 'Migration failed').slice(0, 500)
+    });
+    const migrationError = createContextError(ERROR_CODES.MIGRATION_FAILED, 'Class migration failed');
+    migrationError.cause = error;
+    throw migrationError;
+  }
+};
+
+const mapStudentsToDocs = (students, ownerId, classId, updatedAt) => {
   return asArray(students).map((student, index) => {
     const id = String(student?.id || '').trim() || toDocId('student', student?.name || 'student', index);
     return {
@@ -1175,14 +1545,16 @@ const mapStudentsToDocs = (students, userId, updatedAt) => {
         deleted: false,
         deletedAt: null,
         order: index,
-        userId,
+        userId: ownerId,
+        ownerId,
+        classId,
         updatedAt
       }
     };
   });
 };
 
-const mapSubjectsToDocs = (subjects, userId, updatedAt) => {
+const mapSubjectsToDocs = (subjects, ownerId, classId, updatedAt) => {
   return asArray(subjects).map((subject, index) => {
     const name = String(subject || '').trim();
     const docId = toDocId('sub', name, index);
@@ -1194,14 +1566,16 @@ const mapSubjectsToDocs = (subjects, userId, updatedAt) => {
         deleted: false,
         deletedAt: null,
         order: index,
-        userId,
+        userId: ownerId,
+        ownerId,
+        classId,
         updatedAt
       }
     };
   });
 };
 
-const mapExamsToDocs = (exams, userId, updatedAt) => {
+const mapExamsToDocs = (exams, ownerId, classId, updatedAt) => {
   return asArray(exams).map((exam, index) => {
     const title = String(exam || '').trim();
     const docId = toDocId('exam', title, index);
@@ -1214,7 +1588,9 @@ const mapExamsToDocs = (exams, userId, updatedAt) => {
         deleted: false,
         deletedAt: null,
         order: index,
-        userId,
+        userId: ownerId,
+        ownerId,
+        classId,
         updatedAt
       }
     };
@@ -1244,33 +1620,38 @@ const syncCollectionDocuments = async (collectionRef, targetDocs, options = {}) 
   await Promise.all(operations);
 };
 
-const writeModularData = async (userId, classId, rawData) => {
+const writeModularData = async (ownerId, classId, rawData) => {
+  const normalizedOwnerId = normalizeUserId(ownerId);
   const normalizedClassId = normalizeClassId(classId);
+  if (!normalizedOwnerId) {
+    throw createContextError(ERROR_CODES.MISSING_OWNER_ID, 'Owner id is required to write class data');
+  }
   if (!normalizedClassId) {
-    throw new Error('Class id is required to write class data');
+    throw createContextError(ERROR_CODES.MISSING_CLASS_ID, 'Class id is required to write class data');
   }
 
   const normalized = normalizeRawData(rawData);
   const updatedAt = new Date().toISOString();
 
-  const studentDocs = mapStudentsToDocs(normalized.students, userId, updatedAt);
-  const subjectDocs = mapSubjectsToDocs(normalized.subjects, userId, updatedAt);
-  const examDocs = mapExamsToDocs(normalized.exams, userId, updatedAt);
+  const studentDocs = mapStudentsToDocs(normalized.students, normalizedOwnerId, normalizedClassId, updatedAt);
+  const subjectDocs = mapSubjectsToDocs(normalized.subjects, normalizedOwnerId, normalizedClassId, updatedAt);
+  const examDocs = mapExamsToDocs(normalized.exams, normalizedOwnerId, normalizedClassId, updatedAt);
 
   await Promise.all([
-    syncCollectionDocuments(getStudentsCollectionRef(userId, normalizedClassId), studentDocs, { preserveDeleted: true }),
-    syncCollectionDocuments(getSubjectsCollectionRef(userId, normalizedClassId), subjectDocs, { preserveDeleted: true }),
-    syncCollectionDocuments(getExamsCollectionRef(userId, normalizedClassId), examDocs, { preserveDeleted: true })
+    syncCollectionDocuments(getStudentsCollectionRef(normalizedOwnerId, normalizedClassId), studentDocs, { preserveDeleted: true }),
+    syncCollectionDocuments(getSubjectsCollectionRef(normalizedOwnerId, normalizedClassId), subjectDocs, { preserveDeleted: true }),
+    syncCollectionDocuments(getExamsCollectionRef(normalizedOwnerId, normalizedClassId), examDocs, { preserveDeleted: true })
   ]);
 
-  await setDoc(getClassDocRef(userId, normalizedClassId), {
+  await setDoc(getClassDocRef(normalizedOwnerId, normalizedClassId), {
     id: normalizedClassId,
     updatedAt,
-    userId
+    userId: normalizedOwnerId,
+    ownerId: normalizedOwnerId
   }, { merge: true });
 
-  await setDoc(getUserRootRef(userId), {
-    userId,
+  await setDoc(getUserRootRef(normalizedOwnerId), {
+    userId: normalizedOwnerId,
     updatedAt,
     activeClassId: normalizedClassId
   }, { merge: true });
@@ -1278,7 +1659,9 @@ const writeModularData = async (userId, classId, rawData) => {
   return normalized;
 };
 
-const readRawDataFromCollectionRefs = async (studentsRef, subjectsRef, examsRef) => {
+const readRawDataFromCollectionRefs = async (studentsRef, subjectsRef, examsRef, expectedOwnerId = '', expectedClassId = '') => {
+  const scopedOwnerId = normalizeUserId(expectedOwnerId);
+  const scopedClassId = normalizeClassId(expectedClassId);
   const [studentsSnapshot, subjectsSnapshot, examsSnapshot] = await Promise.all([
     getDocs(studentsRef),
     getDocs(subjectsRef),
@@ -1289,8 +1672,26 @@ const readRawDataFromCollectionRefs = async (studentsRef, subjectsRef, examsRef)
   const trashStudents = [];
   const trashSubjects = [];
   const trashExams = [];
+
+  const assertScopedPayload = (payload = {}, fallbackId = '') => {
+    if (!scopedClassId || !scopedOwnerId) {
+      throw createContextError(ERROR_CODES.INVALID_CLASS_CONTEXT, 'Invalid class scope');
+    }
+
+    const payloadClassId = normalizeClassId(payload.classId || fallbackId || '');
+    if (payloadClassId && payloadClassId !== scopedClassId) {
+      throw createContextError(ERROR_CODES.INVALID_CLASS_CONTEXT, 'Child document classId mismatch detected');
+    }
+
+    const payloadOwnerId = normalizeUserId(payload.ownerId || payload.userId || '');
+    if (payloadOwnerId && payloadOwnerId !== scopedOwnerId) {
+      throw createContextError(ERROR_CODES.INVALID_OWNER, 'Child document ownerId mismatch detected');
+    }
+  };
+
   studentsSnapshot.forEach((entry) => {
     const payload = entry.data() || {};
+    assertScopedPayload(payload, scopedClassId);
     const deletedAtIso = normalizeDeletedAtValue(payload.deletedAt);
     if (payload.deleted === true) {
       trashStudents.push({
@@ -1314,6 +1715,7 @@ const readRawDataFromCollectionRefs = async (studentsRef, subjectsRef, examsRef)
   const subjects = [];
   subjectsSnapshot.forEach((entry) => {
     const payload = entry.data() || {};
+    assertScopedPayload(payload, scopedClassId);
     const deletedAtIso = normalizeDeletedAtValue(payload.deletedAt);
     if (payload.deleted === true) {
       trashSubjects.push({
@@ -1333,6 +1735,7 @@ const readRawDataFromCollectionRefs = async (studentsRef, subjectsRef, examsRef)
   const exams = [];
   examsSnapshot.forEach((entry) => {
     const payload = entry.data() || {};
+    assertScopedPayload(payload, scopedClassId);
     const deletedAtIso = normalizeDeletedAtValue(payload.deletedAt);
     if (payload.deleted === true) {
       trashExams.push({
@@ -1382,8 +1785,12 @@ const readRawDataFromCollectionRefs = async (studentsRef, subjectsRef, examsRef)
   };
 };
 
-const readModularRawData = async (userId, classId) => {
+const readModularRawData = async (ownerId, classId) => {
+  const normalizedOwnerId = normalizeUserId(ownerId);
   const normalizedClassId = normalizeClassId(classId);
+  if (!normalizedOwnerId) {
+    throw createContextError(ERROR_CODES.MISSING_OWNER_ID, 'Owner id is required to read class data');
+  }
   if (!normalizedClassId) {
     return {
       data: createDefaultRawData(),
@@ -1395,9 +1802,11 @@ const readModularRawData = async (userId, classId) => {
   }
 
   return readRawDataFromCollectionRefs(
-    getStudentsCollectionRef(userId, normalizedClassId),
-    getSubjectsCollectionRef(userId, normalizedClassId),
-    getExamsCollectionRef(userId, normalizedClassId)
+    getStudentsCollectionRef(normalizedOwnerId, normalizedClassId),
+    getSubjectsCollectionRef(normalizedOwnerId, normalizedClassId),
+    getExamsCollectionRef(normalizedOwnerId, normalizedClassId),
+    normalizedOwnerId,
+    normalizedClassId
   );
 };
 
@@ -1525,6 +1934,11 @@ const ensureClassCatalog = async (userId) => {
   const role = getCurrentUserRoleContext();
   const authUserId = getAuthenticatedUserId() || userId;
   const scopeKey = role === 'admin' ? `${authUserId}:admin-global` : authUserId;
+
+  if (role !== 'admin') {
+    await ensureClassMigration(authUserId);
+  }
+
   const catalog = role === 'admin'
     ? await readGlobalClassCatalogFromFirestore(authUserId)
     : await readClassCatalogFromFirestore(authUserId);
@@ -1544,8 +1958,8 @@ const ensureActiveClassContext = async (userId, options = {}) => {
 
     const { classId, className } = resolveActiveClassModel(authUserId, classes);
     const activeClass = classes.find((entry) => normalizeClassId(entry?.id) === normalizeClassId(classId)) || null;
-    const classOwnerId = normalizeUserId(activeClass?.ownerId || authUserId);
-    const classOwnerName = normalizeDisplayName(activeClass?.ownerName || getAuthenticatedUserDisplayName(), 'Teacher');
+    const classOwnerId = normalizeUserId(activeClass?.ownerId || '');
+    const classOwnerName = normalizeDisplayName(activeClass?.ownerName || '', 'Teacher');
     setCurrentClassContext(classId, authUserId, classOwnerId, classOwnerName);
     if (requireClass && !classId) {
       throw createMissingClassError('save class data');
@@ -1568,8 +1982,8 @@ const ensureActiveClassContext = async (userId, options = {}) => {
   const trashClasses = catalog.trashClasses || [];
   const { classId, className } = resolveActiveClassModel(authUserId, classes);
   const activeClass = classes.find((entry) => normalizeClassId(entry?.id) === normalizeClassId(classId)) || null;
-  const classOwnerId = normalizeUserId(activeClass?.ownerId || authUserId);
-  const classOwnerName = normalizeDisplayName(activeClass?.ownerName || getAuthenticatedUserDisplayName(), 'Teacher');
+  const classOwnerId = normalizeUserId(activeClass?.ownerId || '');
+  const classOwnerName = normalizeDisplayName(activeClass?.ownerName || '', 'Teacher');
   setCurrentClassContext(classId, authUserId, classOwnerId, classOwnerName);
   if (requireClass && !classId) {
     throw createMissingClassError('save class data');
@@ -1735,8 +2149,9 @@ const persistStudentUpdateById = async (studentId, studentData, nextData) => {
 
   for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
     try {
-      const userId = await ensureAuthenticatedUserId('update student');
-      const { classId } = await ensureActiveClassContext(userId);
+      const classScope = await ensureValidClassContext('update student', { requireWritable: true });
+      const userId = classScope.ownerId;
+      const classId = classScope.classId;
       const updatedAt = new Date().toISOString();
       console.log('Editing student:', normalizedStudentId);
       console.log('User:', userId);
@@ -1744,6 +2159,7 @@ const persistStudentUpdateById = async (studentId, studentData, nextData) => {
       await updateDoc(getStudentDocRef(userId, normalizedStudentId, classId), {
         ...patch,
         userId,
+        ownerId: userId,
         classId,
         updatedAt
       });
@@ -1751,7 +2167,8 @@ const persistStudentUpdateById = async (studentId, studentData, nextData) => {
       await setDoc(getClassDocRef(userId, classId), {
         id: classId,
         updatedAt,
-        userId
+        userId,
+        ownerId: userId
       }, { merge: true });
 
       await setDoc(getUserRootRef(userId), {
@@ -1817,8 +2234,9 @@ const persistStudentDeleteById = async (studentId, nextData, studentMeta = {}) =
 
   for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
     try {
-      const userId = await ensureAuthenticatedUserId('delete student');
-      const { classId } = await ensureActiveClassContext(userId);
+      const classScope = await ensureValidClassContext('delete student', { requireWritable: true });
+      const userId = classScope.ownerId;
+      const classId = classScope.classId;
       const updatedAt = new Date().toISOString();
       console.log('Deleting student:', normalizedStudentId);
       console.log('User:', userId);
@@ -1828,13 +2246,15 @@ const persistStudentDeleteById = async (studentId, nextData, studentMeta = {}) =
         deletedAt: serverTimestamp(),
         updatedAt,
         userId,
+        ownerId: userId,
         classId
       });
 
       await setDoc(getClassDocRef(userId, classId), {
         id: classId,
         updatedAt,
-        userId
+        userId,
+        ownerId: userId
       }, { merge: true });
 
       await setDoc(getUserRootRef(userId), {
@@ -1885,12 +2305,12 @@ const persistStudentDeleteById = async (studentId, nextData, studentMeta = {}) =
   };
 };
 
-const saveRemote = async (rawData, userId, classId) => {
+const saveRemote = async (rawData, ownerId, classId) => {
   if (!isFirebaseConfigured || !db) {
     throw new Error('Firebase unavailable');
   }
 
-  const payload = await writeModularData(userId, classId, rawData);
+  const payload = await writeModularData(ownerId, classId, rawData);
   console.log('Saved to Firebase');
   return payload;
 };
@@ -1902,10 +2322,11 @@ const persistRemoteFirst = async (rawData, operationLabel) => {
 
   for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
     try {
-      const userId = await ensureAuthenticatedUserId(operationLabel);
-      const { classId } = await ensureActiveClassContext(userId);
-      console.log('Active UID:', userId);
-      await saveRemote(nextData, userId, classId);
+      const classScope = await ensureValidClassContext(operationLabel, { requireWritable: true });
+      const ownerId = classScope.ownerId;
+      const classId = classScope.classId;
+      console.log('Active UID:', ownerId);
+      await saveRemote(nextData, ownerId, classId);
       return {
         data: nextData,
         remoteSaved: true,
@@ -1959,11 +2380,16 @@ const buildActivityLogRow = (entry) => {
     id: String(entry?.id || '').trim(),
     userId: String(payload.userId || '').trim(),
     userEmail: String(payload.userEmail || '').trim().toLowerCase(),
+    userRole: normalizeRole(payload.userRole || 'teacher'),
     action: String(payload.action || '').trim().toLowerCase(),
     targetId: String(payload.targetId || '').trim(),
     targetType: String(payload.targetType || '').trim().toLowerCase(),
     dataOwnerUserId: String(payload.dataOwnerUserId || '').trim(),
     classId: String(payload.classId || '').trim(),
+    className: String(payload.className || '').trim(),
+    ownerId: String(payload.ownerId || payload.dataOwnerUserId || '').trim(),
+    ownerName: String(payload.ownerName || '').trim(),
+    logVersion: Number(payload.logVersion || 1),
     timestamp: toIsoDateString(payload.timestamp),
     timestampLabel: toIsoDateString(payload.timestamp) || ''
   };
@@ -2004,15 +2430,27 @@ export const logActivity = async (action, targetId, targetType, options = {}) =>
       return false;
     }
 
+    const classId = normalizeClassId(options?.classId || currentClassId || '');
+    const ownerId = normalizeUserId(options?.ownerId || currentClassOwnerId || '');
+    const className = normalizeClassName(options?.className || '', '');
+    const ownerName = normalizeDisplayName(options?.ownerName || currentClassOwnerName || 'Teacher', 'Teacher');
+    const userRole = normalizeRole(options?.userRole || getCurrentUserRoleContext());
+
     await addDoc(collection(db, ACTIVITY_LOGS_COLLECTION), {
       userId: actorUserId,
       userEmail: String(auth?.currentUser?.email || '').trim().toLowerCase(),
+      userRole,
       action: normalizedAction,
       targetId: String(targetId || '').trim(),
       targetType: normalizedTargetType,
-      dataOwnerUserId: String(options?.dataOwnerUserId || actorUserId).trim(),
-      classId: String(options?.classId || '').trim(),
-      timestamp: serverTimestamp()
+      dataOwnerUserId: String(options?.dataOwnerUserId || ownerId || '').trim(),
+      classId,
+      className,
+      ownerId,
+      ownerName,
+      logVersion: 2,
+      timestamp: serverTimestamp(),
+      createdAt: serverTimestamp()
     });
 
     return true;
@@ -2083,6 +2521,90 @@ export const fetchAdminGlobalStats = async () => {
     totalStudents: countActiveCollectionEntries(studentsSnapshot),
     totalExams: countActiveCollectionEntries(examsSnapshot)
   };
+};
+
+export const fetchAdminUsers = async () => {
+  await ensureAuthenticatedUserId('read admin users');
+  if (!isFirebaseConfigured || !db) {
+    return [];
+  }
+
+  const usersSnapshot = await getDocs(collection(db, USERS_COLLECTION));
+  const records = [];
+  usersSnapshot.forEach((snapshot) => {
+    const data = snapshot.data() || {};
+    records.push({
+      docId: snapshot.id,
+      uid: normalizeUserId(data.uid || snapshot.id),
+      email: String(data.email || '').trim().toLowerCase(),
+      name: String(data.name || '').trim(),
+      role: normalizeRole(data.role),
+      createdAt: data.createdAt || null
+    });
+  });
+
+  records.sort((a, b) => String(a.email || '').localeCompare(String(b.email || '')));
+  return records;
+};
+
+export const updateAdminUserRole = async ({ uid = '', name = '', email = '', role = 'teacher' } = {}) => {
+  await ensureAuthenticatedUserId('update user role');
+  if (getCurrentUserRoleContext() !== 'developer') {
+    throw createContextError(ERROR_CODES.READ_ONLY_MODE, 'Only developers can update user roles');
+  }
+  if (!isFirebaseConfigured || !db) {
+    throw new Error('Firebase unavailable');
+  }
+
+  const normalizedUid = normalizeUserId(uid);
+  if (!normalizedUid) {
+    throw new Error('User id is required');
+  }
+
+  await updateDoc(doc(db, USERS_COLLECTION, normalizedUid), {
+    uid: normalizedUid,
+    name: String(name || '').trim(),
+    email: String(email || '').trim().toLowerCase(),
+    role: normalizeRole(role)
+  });
+
+  return true;
+};
+
+export const fetchGlobalStudentSearchIndex = async () => {
+  await ensureAuthenticatedUserId('read global student search index');
+  if (!isFirebaseConfigured || !db) {
+    return [];
+  }
+
+  const snapshot = await getDocs(collectionGroup(db, STUDENTS_SUBCOLLECTION));
+  const rows = [];
+  const seen = new Set();
+
+  snapshot.forEach((entry) => {
+    const payload = entry.data() || {};
+    if (payload.deleted === true) return;
+
+    const userId = normalizeUserId(payload.ownerId || payload.userId || getOwnerIdFromClassRefPath(entry.ref?.path));
+    const classId = normalizeClassId(payload.classId || '');
+    const id = String(payload.id || entry.id || '').trim();
+    const name = String(payload.name || '').trim() || 'Student';
+    if (!userId || !classId || !id) return;
+
+    const key = `${userId}::${classId}::${id}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+
+    rows.push({
+      id,
+      name,
+      classId,
+      userId
+    });
+  });
+
+  rows.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+  return rows;
 };
 
 export const fetchUserScopedData = async (targetUserId = '') => {
@@ -2252,7 +2774,8 @@ export const readCachedData = (classId = '') => {
     return null;
   }
 
-  const scopedClassId = normalizeClassId(classId) || getCurrentClassContext() || readPersistedClassSelection(userId);
+  const persistedSelection = readPersistedClassSelection(userId);
+  const scopedClassId = normalizeClassId(classId) || getCurrentClassContext() || normalizeClassId(persistedSelection.classId || '');
   const cached = parseCache(localStorage.getItem(getCacheKeyForUser(userId, scopedClassId)));
   if (cached?.data) {
     console.log('Loaded from cache');
@@ -2272,7 +2795,8 @@ export const writeCacheCopy = (rawData, classId = '') => {
     return null;
   }
 
-  const scopedClassId = normalizeClassId(classId) || getCurrentClassContext() || readPersistedClassSelection(userId);
+  const persistedSelection = readPersistedClassSelection(userId);
+  const scopedClassId = normalizeClassId(classId) || getCurrentClassContext() || normalizeClassId(persistedSelection.classId || '');
   const cacheEnvelope = withTimestamp(rawData);
   localStorage.setItem(getCacheKeyForUser(userId, scopedClassId), JSON.stringify(cacheEnvelope));
   return {
@@ -2364,7 +2888,7 @@ export const fetchAllData = async () => {
       const scopedTrashClasses = classContext.trashClasses || [];
       const scopedClassId = classContext.classId;
       const scopedClassName = classContext.className;
-      const scopedOwnerId = normalizeUserId(classContext.classOwnerId || getActiveUserId() || authUserId || userId);
+      const scopedOwnerId = normalizeUserId(classContext.classOwnerId || '');
       const cacheScopeKey = getScopeKey();
 
       if (!scopedClassId) {
@@ -2382,6 +2906,10 @@ export const fetchAllData = async () => {
           error: null,
           errorType: null
         };
+      }
+
+      if (!scopedOwnerId) {
+        throw createContextError(ERROR_CODES.MISSING_OWNER_ID, 'Missing class owner context for fetch data');
       }
 
       const modularResult = await readModularRawData(scopedOwnerId, scopedClassId);
@@ -2483,7 +3011,7 @@ export const fetchClassCatalog = async () => {
     const cachedTrashClasses = readClassTrashCache(cacheScopeKey);
     const { classId, className } = resolveActiveClassModel(userId, cachedClasses);
     const activeClass = cachedClasses.find((entry) => normalizeClassId(entry?.id) === normalizeClassId(classId)) || null;
-    setCurrentClassContext(classId, userId, activeClass?.ownerId || userId, activeClass?.ownerName || getAuthenticatedUserDisplayName());
+    setCurrentClassContext(classId, userId, activeClass?.ownerId || '', activeClass?.ownerName || '');
     return {
       classes: cachedClasses,
       trashClasses: cachedTrashClasses,
@@ -2497,7 +3025,7 @@ export const fetchClassCatalog = async () => {
   const trashClasses = catalog.trashClasses || [];
   const { classId, className } = resolveActiveClassModel(userId, classes);
   const activeClass = classes.find((entry) => normalizeClassId(entry?.id) === normalizeClassId(classId)) || null;
-  setCurrentClassContext(classId, userId, activeClass?.ownerId || userId, activeClass?.ownerName || getAuthenticatedUserDisplayName());
+  setCurrentClassContext(classId, userId, activeClass?.ownerId || '', activeClass?.ownerName || '');
   writeClassCatalogCache(cacheScopeKey, classes, trashClasses);
 
   return {
@@ -2509,6 +3037,7 @@ export const fetchClassCatalog = async () => {
 };
 
 export const createClass = async (className) => {
+  assertWritableRole('create class');
   const userId = await ensureAuthenticatedUserId('create class');
   const normalizedName = normalizeClassName(className, DEFAULT_CLASS_NAME);
   const createdAt = new Date().toISOString();
@@ -2562,6 +3091,7 @@ export const createClass = async (className) => {
 };
 
 export const deleteClass = async (classId) => {
+  assertWritableRole('delete class');
   const userId = await ensureAuthenticatedUserId('delete class');
   const normalizedClassId = normalizeClassId(classId);
   if (!normalizedClassId) {
@@ -2581,16 +3111,20 @@ export const deleteClass = async (classId) => {
   }
 
   const updatedAt = new Date().toISOString();
+  const classOwnerId = normalizeUserId(classEntry.ownerId || '');
+  if (!classOwnerId) {
+    throw createContextError(ERROR_CODES.MISSING_OWNER_ID, 'Class owner metadata is missing');
+  }
 
-  await setDoc(getClassDocRef(userId, normalizedClassId), {
+  await setDoc(getClassDocRef(classOwnerId, normalizedClassId), {
     id: normalizedClassId,
     name: classEntry.name,
     createdAt: classEntry.createdAt || null,
     deleted: true,
     deletedAt: serverTimestamp(),
     updatedAt,
-    userId,
-    ownerId: classEntry.ownerId || userId,
+    userId: classOwnerId,
+    ownerId: classOwnerId,
     ownerName: classEntry.ownerName || getAuthenticatedUserDisplayName()
   }, { merge: true });
 
@@ -2600,7 +3134,7 @@ export const deleteClass = async (classId) => {
     name: classEntry.name,
     createdAt: classEntry.createdAt || null,
     deletedAt: new Date().toISOString(),
-    ownerId: classEntry.ownerId || userId,
+    ownerId: classOwnerId,
     ownerName: classEntry.ownerName || getAuthenticatedUserDisplayName()
   };
   const nextTrashClasses = sortClassTrashEntries([
@@ -2628,6 +3162,7 @@ export const deleteClass = async (classId) => {
 };
 
 export const restoreClass = async (classId) => {
+  assertWritableRole('restore class');
   const userId = await ensureAuthenticatedUserId('restore class');
   const normalizedClassId = normalizeClassId(classId);
   if (!normalizedClassId) {
@@ -2643,16 +3178,20 @@ export const restoreClass = async (classId) => {
   }
 
   const updatedAt = new Date().toISOString();
+  const classOwnerId = normalizeUserId(classEntry.ownerId || '');
+  if (!classOwnerId) {
+    throw createContextError(ERROR_CODES.MISSING_OWNER_ID, 'Class owner metadata is missing');
+  }
 
-  await setDoc(getClassDocRef(userId, normalizedClassId), {
+  await setDoc(getClassDocRef(classOwnerId, normalizedClassId), {
     id: normalizedClassId,
     name: classEntry.name,
     createdAt: classEntry.createdAt || null,
     deleted: false,
     deletedAt: null,
     updatedAt,
-    userId,
-    ownerId: classEntry.ownerId || userId,
+    userId: classOwnerId,
+    ownerId: classOwnerId,
     ownerName: classEntry.ownerName || getAuthenticatedUserDisplayName()
   }, { merge: true });
 
@@ -2662,7 +3201,7 @@ export const restoreClass = async (classId) => {
       id: normalizedClassId,
       name: classEntry.name,
       createdAt: classEntry.createdAt || null,
-      ownerId: classEntry.ownerId || userId,
+      ownerId: classOwnerId,
       ownerName: classEntry.ownerName || getAuthenticatedUserDisplayName()
     }
   ]);
@@ -2686,6 +3225,7 @@ export const restoreClass = async (classId) => {
 };
 
 export const permanentlyDeleteClass = async (classId) => {
+  assertWritableRole('permanently delete class');
   const userId = await ensureAuthenticatedUserId('permanently delete class');
   const normalizedClassId = normalizeClassId(classId);
   if (!normalizedClassId) {
@@ -2699,13 +3239,17 @@ export const permanentlyDeleteClass = async (classId) => {
   if (!classEntry) {
     throw new Error('Class must be in trash before permanent deletion');
   }
+  const classOwnerId = normalizeUserId(classEntry.ownerId || '');
+  if (!classOwnerId) {
+    throw createContextError(ERROR_CODES.MISSING_OWNER_ID, 'Class owner metadata is missing');
+  }
 
   await Promise.all([
-    deleteCollectionDocuments(getStudentsCollectionRef(userId, normalizedClassId)),
-    deleteCollectionDocuments(getSubjectsCollectionRef(userId, normalizedClassId)),
-    deleteCollectionDocuments(getExamsCollectionRef(userId, normalizedClassId))
+    deleteCollectionDocuments(getStudentsCollectionRef(classOwnerId, normalizedClassId)),
+    deleteCollectionDocuments(getSubjectsCollectionRef(classOwnerId, normalizedClassId)),
+    deleteCollectionDocuments(getExamsCollectionRef(classOwnerId, normalizedClassId))
   ]);
-  await deleteDoc(getClassDocRef(userId, normalizedClassId));
+  await deleteDoc(getClassDocRef(classOwnerId, normalizedClassId));
 
   const updatedAt = new Date().toISOString();
   const nextTrashClasses = sortClassTrashEntries(trashClasses.filter(entry => entry.id !== normalizedClassId));
