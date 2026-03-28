@@ -1924,7 +1924,14 @@ const readGlobalClassCatalogFromFirestore = async (requesterUserId = '') => {
     dedupedByOwnerAndClass.set(key, entry);
   });
 
-  const normalizedClasses = sortClasses(Array.from(dedupedByOwnerAndClass.values()));
+  const normalizedClasses = sortClasses(Array.from(dedupedByOwnerAndClass.values()))
+    .filter((entry) => {
+      const ownerId = normalizeUserId(entry?.ownerId || '');
+      const className = normalizeClassName(entry?.name || '', '');
+      return Boolean(ownerId && className);
+    });
+
+  console.log('Classes loaded:', normalizedClasses.length);
   globalClassCatalogCache = {
     ownerUserId: requesterUserId,
     classes: normalizedClasses,

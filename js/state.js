@@ -303,6 +303,32 @@ window.TrackerApp = window.TrackerApp || {};
     };
   };
 
+  const normalizeClassCatalogEntries = (classes = []) => {
+    if (!Array.isArray(classes)) {
+      return [];
+    }
+
+    return classes
+      .map((entry) => {
+        const id = normalizeClassStorageId(entry?.id);
+        const ownerId = normalizeClassStorageId(entry?.ownerId);
+        const name = String(entry?.name || '').trim() || 'My Class';
+        const ownerName = String(entry?.ownerName || '').trim() || 'Teacher';
+        if (!id || !ownerId || !name) {
+          return null;
+        }
+
+        return {
+          ...(entry || {}),
+          id,
+          ownerId,
+          name,
+          ownerName
+        };
+      })
+      .filter(Boolean);
+  };
+
   const createDefaultRawData = () => ({
     students: [],
     subjects: [],
@@ -709,13 +735,13 @@ window.TrackerApp = window.TrackerApp || {};
       console.log('Active UID:', app.getEffectiveUserId() || '(none)');
 
       const remoteResult = await dataService.fetchAllData();
-      let nextClasses = Array.isArray(remoteResult?.classes) ? remoteResult.classes : [];
+      let nextClasses = normalizeClassCatalogEntries(remoteResult?.classes || []);
       let requestedClassId = String(remoteResult?.currentClassId || app.state.currentClassId || '').trim();
 
       if (!nextClasses.length && app.isAdminRole() && typeof dataService.fetchClassCatalog === 'function') {
         try {
           const adminCatalog = await dataService.fetchClassCatalog();
-          nextClasses = Array.isArray(adminCatalog?.classes) ? adminCatalog.classes : [];
+          nextClasses = normalizeClassCatalogEntries(adminCatalog?.classes || []);
           if (!requestedClassId) {
             requestedClassId = String(adminCatalog?.currentClassId || '').trim();
           }
@@ -733,6 +759,9 @@ window.TrackerApp = window.TrackerApp || {};
       app.state.currentClassOwnerName = validatedClassContext.ownerName;
       persistCurrentClassContext(app.state.currentClassId, app.state.currentClassOwnerId);
       app.syncDataContext();
+
+      console.log('Classes loaded:', nextClasses.length);
+      console.log('Selected class:', app.state.currentClassId || '(none)');
 
       if (validatedClassContext.isFallback) {
         console.warn('Persisted class selection was stale/invalid; selection has been reset to a valid class context.');
@@ -840,6 +869,7 @@ window.TrackerApp = window.TrackerApp || {};
       const nextName = normalizeLabel(className) || 'My Class';
       const result = await dataService.createClass(nextName);
       app.state.classes = Array.isArray(result?.classes) ? result.classes : app.state.classes;
+      app.state.classes = normalizeClassCatalogEntries(app.state.classes);
       app.state.currentClassId = String(result?.currentClassId || '').trim();
       app.state.currentClassName = String(result?.currentClassName || nextName).trim() || nextName;
       const currentClassEntry = (app.state.classes || []).find((entry) => String(entry?.id || '').trim() === app.state.currentClassId) || null;

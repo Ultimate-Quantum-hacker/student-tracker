@@ -391,15 +391,25 @@ test.describe('Class refactor critical regressions', () => {
       app.syncDataContext();
 
       ui.refreshUI();
+      ui.applyReadOnlyRoleState();
 
       const switcher = document.querySelector('.global-class-switcher');
       const menuItems = document.querySelectorAll('#class-dropdown-menu .class-dropdown-item[data-class-id]');
+      const createClassBtn = document.getElementById('create-class-btn');
+      const deleteClassBtn = document.getElementById('delete-class-btn');
 
       return {
         switcherHidden: Boolean(switcher?.hidden),
         switcherDisplay: switcher?.style?.display || '',
         toggleDisabled: Boolean(document.getElementById('class-dropdown-toggle')?.disabled),
-        menuCount: menuItems.length
+        menuCount: menuItems.length,
+        createBtnVisible: createClassBtn?.hidden === false,
+        deleteBtnVisible: deleteClassBtn?.hidden === false,
+        createBtnDisabled: Boolean(createClassBtn?.disabled),
+        deleteBtnDisabled: Boolean(deleteClassBtn?.disabled),
+        createBtnTitle: createClassBtn?.getAttribute('title') || '',
+        deleteBtnTitle: deleteClassBtn?.getAttribute('title') || '',
+        dropdownLabel: document.getElementById('class-dropdown-value')?.textContent || ''
       };
     });
 
@@ -407,6 +417,13 @@ test.describe('Class refactor critical regressions', () => {
     expect(result.switcherDisplay).toBe('');
     expect(result.toggleDisabled).toBe(false);
     expect(result.menuCount).toBe(2);
+    expect(result.createBtnVisible).toBe(true);
+    expect(result.deleteBtnVisible).toBe(true);
+    expect(result.createBtnDisabled).toBe(true);
+    expect(result.deleteBtnDisabled).toBe(true);
+    expect(result.createBtnTitle).toContain('Admin cannot modify data');
+    expect(result.deleteBtnTitle).toContain('Admin cannot modify data');
+    expect(result.dropdownLabel).toContain('Teacher:');
   });
 
   test('admin can change class and load corresponding data', async ({ page }) => {

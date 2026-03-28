@@ -320,6 +320,10 @@ window.TrackerApp = app;
 document.addEventListener('DOMContentLoaded', async () => {
   console.log('App starting...');
 
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem('viewingUserId');
+  }
+
   try {
     const isAuthenticated = await ensureAuthenticatedSession();
     if (!isAuthenticated) {

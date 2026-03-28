@@ -238,9 +238,9 @@ const ui = {
       const className = String(app.state.currentClassName || '').trim();
       const contextLabel = [className, ownerName].filter(Boolean).join(' - ');
       if (contextLabel) {
-        return `Viewing class as admin (Read-only mode): ${contextLabel}.`;
+        return `Admin cannot modify data (Read-only mode): ${contextLabel}.`;
       }
-      return 'Viewing class as admin (Read-only mode).';
+      return 'Admin cannot modify data (Read-only mode).';
     },
 
     ensureWritableAction: function (actionLabel = 'modify data') {
@@ -485,11 +485,11 @@ const ui = {
         return;
       }
 
-      if (!canManageClasses) {
-        this.removeElementsFromDom([
-          app.dom.createClassBtn,
-          app.dom.deleteClassBtn
-        ]);
+      if (app.dom.createClassBtn) {
+        app.dom.createClassBtn.hidden = false;
+      }
+      if (app.dom.deleteClassBtn) {
+        app.dom.deleteClassBtn.hidden = false;
       }
 
       const classSwitcher = document.querySelector('.global-class-switcher');
@@ -783,7 +783,7 @@ const ui = {
       const className = String(entry?.name || 'My Class').trim() || 'My Class';
       const ownerName = String(entry?.ownerName || '').trim();
       if (!ownerName) return className;
-      return `${className} - ${ownerName}`;
+      return `${className} (Teacher: ${ownerName})`;
     },
 
     getStatusToneClass: function (statusType) {
@@ -855,7 +855,18 @@ const ui = {
       }
 
       const currentClassId = String(app.state.currentClassId || '').trim();
-      const currentIndex = classes.findIndex(entry => String(entry?.id || '').trim() === currentClassId);
+      const currentOwnerId = String(app.state.currentClassOwnerId || '').trim();
+      const currentIndex = classes.findIndex((entry) => {
+        const entryClassId = String(entry?.id || '').trim();
+        const entryOwnerId = String(entry?.ownerId || '').trim();
+        if (entryClassId !== currentClassId) {
+          return false;
+        }
+        if (!currentOwnerId) {
+          return true;
+        }
+        return entryOwnerId === currentOwnerId;
+      });
       const startIndex = currentIndex >= 0 ? currentIndex : 0;
       const delta = Number(step) < 0 ? -1 : 1;
       const nextIndex = (startIndex + delta + classes.length) % classes.length;
@@ -887,7 +898,9 @@ const ui = {
       const resolvedClassId = String(activeClass?.id || currentClassId || '').trim();
       const resolvedOwnerId = String(activeClass?.ownerId || app.state.currentClassOwnerId || '').trim();
       const activeClassName = activeClass?.name || app.state.currentClassName || 'My Class';
-      const activeClassDisplayLabel = this.formatClassDisplayLabel(activeClass);
+      const activeClassDisplayLabel = classes.length
+        ? this.formatClassDisplayLabel(activeClass)
+        : 'No classes available';
 
       app.state.currentClassId = resolvedClassId;
       app.state.currentClassName = activeClassName;
@@ -898,7 +911,7 @@ const ui = {
       }
 
       if (app.dom.classDropdownValue) {
-        app.dom.classDropdownValue.textContent = classes.length ? activeClassDisplayLabel : 'Create Class';
+        app.dom.classDropdownValue.textContent = classes.length ? activeClassDisplayLabel : 'No classes available';
       }
 
       if (app.dom.classDropdownToggle) {
@@ -913,8 +926,8 @@ const ui = {
             const classId = String(entry?.id || '').trim();
             const className = String(entry?.name || 'My Class').trim() || 'My Class';
             const ownerLabel = this.formatClassOwnerLabel(entry);
-            const isActive = classId === resolvedClassId;
             const ownerId = String(entry?.ownerId || '').trim();
+            const isActive = classId === resolvedClassId && (!resolvedOwnerId || ownerId === resolvedOwnerId);
             return `
               <button type="button" class="class-dropdown-item${isActive ? ' active' : ''}" data-class-id="${app.utils.esc(classId)}" data-owner-id="${app.utils.esc(ownerId)}" role="option" aria-selected="${isActive ? 'true' : 'false'}">
                 <span class="class-item-icon" aria-hidden="true">🏫</span>
@@ -961,7 +974,7 @@ const ui = {
 
       const canManageClasses = this.getCurrentRole() === 'teacher' || this.getCurrentRole() === 'developer';
       if (!canManageClasses && app.dom.classDropdownValue && !classes.length) {
-        app.dom.classDropdownValue.textContent = 'No class assigned';
+        app.dom.classDropdownValue.textContent = 'No classes available';
       }
 
       if (!classes.length && canManageClasses && !app.state.isLoading && !this.hasPromptedForMissingClass) {
