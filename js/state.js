@@ -76,9 +76,35 @@ window.TrackerApp = window.TrackerApp || {};
     }
   };
 
-  app.getCurrentClassOwnerId = function () {
+  const resolveCurrentClassEntry = () => {
     const currentClassId = String(app.state.currentClassId || '').trim();
-    const classEntry = (app.state.classes || []).find((entry) => String(entry?.id || '').trim() === currentClassId);
+    const currentOwnerId = String(app.state.currentClassOwnerId || '').trim();
+    const classes = Array.isArray(app.state.classes) ? app.state.classes : [];
+    if (!currentClassId || !classes.length) {
+      return null;
+    }
+
+    const ownerAwareMatch = classes.find((entry) => {
+      const entryClassId = String(entry?.id || '').trim();
+      const entryOwnerId = String(entry?.ownerId || '').trim();
+      if (entryClassId !== currentClassId) {
+        return false;
+      }
+      if (!currentOwnerId) {
+        return true;
+      }
+      return entryOwnerId === currentOwnerId;
+    });
+
+    if (ownerAwareMatch) {
+      return ownerAwareMatch;
+    }
+
+    return classes.find((entry) => String(entry?.id || '').trim() === currentClassId) || null;
+  };
+
+  app.getCurrentClassOwnerId = function () {
+    const classEntry = resolveCurrentClassEntry();
     const ownerId = String(classEntry?.ownerId || '').trim();
     if (ownerId) {
       app.state.currentClassOwnerId = ownerId;
@@ -88,8 +114,7 @@ window.TrackerApp = window.TrackerApp || {};
   };
 
   app.getCurrentClassOwnerName = function () {
-    const currentClassId = String(app.state.currentClassId || '').trim();
-    const classEntry = (app.state.classes || []).find((entry) => String(entry?.id || '').trim() === currentClassId);
+    const classEntry = resolveCurrentClassEntry();
     const ownerName = String(classEntry?.ownerName || '').trim();
     if (ownerName) {
       app.state.currentClassOwnerName = ownerName;
@@ -109,8 +134,7 @@ window.TrackerApp = window.TrackerApp || {};
   };
 
   app.syncDataContext = function () {
-    const currentClassId = String(app.state.currentClassId || '').trim();
-    const classEntry = (app.state.classes || []).find((entry) => String(entry?.id || '').trim() === currentClassId) || null;
+    const classEntry = resolveCurrentClassEntry();
     app.state.currentClassOwnerId = String(classEntry?.ownerId || app.state.currentClassOwnerId || '').trim();
     app.state.currentClassOwnerName = String(classEntry?.ownerName || app.state.currentClassOwnerName || '').trim() || 'Teacher';
 
@@ -794,21 +818,39 @@ window.TrackerApp = window.TrackerApp || {};
     });
   };
 
-  app.switchClass = async function (classId) {
+  app.switchClass = async function (classId, ownerId = '') {
     return enqueueStateWrite(async () => {
       const nextClassId = normalizeLabel(classId);
+      const requestedOwnerId = normalizeLabel(ownerId);
       if (!nextClassId) {
         throw new Error('Class id is required');
       }
 
-      if (nextClassId === app.state.currentClassId) {
+      const currentOwnerId = String(app.state.currentClassOwnerId || '').trim();
+      const isSameClassSelection = nextClassId === app.state.currentClassId
+        && (!requestedOwnerId || requestedOwnerId === currentOwnerId);
+      if (isSameClassSelection) {
         return true;
       }
 
+      const activeClass = (app.state.classes || []).find((entry) => {
+        const entryClassId = String(entry?.id || '').trim();
+        const entryOwnerId = String(entry?.ownerId || '').trim();
+        if (entryClassId !== nextClassId) {
+          return false;
+        }
+        if (!requestedOwnerId) {
+          return true;
+        }
+        return entryOwnerId === requestedOwnerId;
+      });
+      if (!activeClass) {
+        throw new Error('Selected class is not available');
+      }
+
       app.state.currentClassId = nextClassId;
-      const activeClass = (app.state.classes || []).find(entry => entry.id === nextClassId);
       app.state.currentClassName = activeClass?.name || app.state.currentClassName || 'My Class';
-      app.state.currentClassOwnerId = String(activeClass?.ownerId || '').trim();
+      app.state.currentClassOwnerId = String(activeClass?.ownerId || requestedOwnerId || '').trim();
       app.state.currentClassOwnerName = String(activeClass?.ownerName || '').trim() || 'Teacher';
       persistCurrentClassContext(nextClassId, app.state.currentClassOwnerId);
       app.syncDataContext();

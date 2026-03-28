@@ -150,10 +150,11 @@ test.describe('Class refactor critical regressions', () => {
 
       app.setCurrentUserRole('admin', { resolved: true });
       app.state.classes = [
-        { id: 'class_owner_a', name: 'Class A', ownerId: 'owner_a', ownerName: 'Teacher A' },
-        { id: 'class_owner_b', name: 'Class B', ownerId: 'owner_b', ownerName: 'Teacher B' }
+        { id: 'shared_class_id', name: 'Class A', ownerId: 'owner_a', ownerName: 'Teacher A' },
+        { id: 'shared_class_id', name: 'Class B', ownerId: 'owner_b', ownerName: 'Teacher B' }
       ];
-      app.state.currentClassId = 'class_owner_a';
+      app.state.currentClassId = 'shared_class_id';
+      app.state.currentClassOwnerId = 'owner_a';
       app.syncDataContext();
 
       const loadCalls = [];
@@ -164,7 +165,7 @@ test.describe('Class refactor critical regressions', () => {
         });
       };
 
-      await app.switchClass('class_owner_b');
+      await app.switchClass('shared_class_id', 'owner_b');
 
       return {
         classId: app.state.currentClassId,
@@ -175,10 +176,10 @@ test.describe('Class refactor critical regressions', () => {
     });
 
     expect(result.readOnly).toBe(true);
-    expect(result.classId).toBe('class_owner_b');
+    expect(result.classId).toBe('shared_class_id');
     expect(result.ownerId).toBe('owner_b');
     expect(result.loadCalls).toHaveLength(1);
-    expect(result.loadCalls[0]).toEqual({ classId: 'class_owner_b', ownerId: 'owner_b' });
+    expect(result.loadCalls[0]).toEqual({ classId: 'shared_class_id', ownerId: 'owner_b' });
   });
 
   test('migration path verifies count mismatch and fails safely', async () => {
@@ -195,11 +196,14 @@ test.describe('Class refactor critical regressions', () => {
 
   test('stale deleted class selection has validated fallback path', async () => {
     const stateSource = readWorkspaceFile('js/state.js');
+    const uiSource = readWorkspaceFile('js/ui.js');
 
     expect(stateSource).toContain('const resolveValidatedClassContext = (classes = [], classId = \'\', ownerId = \'\') => {');
     expect(stateSource).toContain('isFallback: Boolean(!selectedClass && (normalizedClassId || normalizedOwnerId))');
     expect(stateSource).toContain('Persisted class selection was stale/invalid; selection has been reset to a valid class context.');
     expect(stateSource).toContain('app.state.dashboardStudentCount = null;');
+    expect(uiSource).toContain('data-owner-id="${app.utils.esc(ownerId)}"');
+    expect(uiSource).toContain('await this.switchToClass(nextClassId, nextOwnerId);');
   });
 
   test('audit log and number rendering sanitize malformed values', async () => {

@@ -784,14 +784,15 @@ const ui = {
       }
     },
 
-    switchToClass: async function (classId) {
+    switchToClass: async function (classId, ownerId = '') {
       const nextClassId = String(classId || '').trim();
+      const nextOwnerId = String(ownerId || '').trim();
       if (!nextClassId) return;
 
       try {
         this.closeClassDropdown();
         this.setClassControlsBusy(true);
-        await app.switchClass(nextClassId);
+        await app.switchClass(nextClassId, nextOwnerId);
         this.refreshUI();
         this.showToast('Class switched');
       } catch (error) {
@@ -813,18 +814,31 @@ const ui = {
       const startIndex = currentIndex >= 0 ? currentIndex : 0;
       const delta = Number(step) < 0 ? -1 : 1;
       const nextIndex = (startIndex + delta + classes.length) % classes.length;
-      const nextClassId = String(classes[nextIndex]?.id || '').trim();
+      const nextClass = classes[nextIndex] || null;
+      const nextClassId = String(nextClass?.id || '').trim();
+      const nextOwnerId = String(nextClass?.ownerId || '').trim();
       if (!nextClassId) {
         return;
       }
 
-      await this.switchToClass(nextClassId);
+      await this.switchToClass(nextClassId, nextOwnerId);
     },
 
     renderClassControls: function () {
       const classes = Array.isArray(app.state.classes) ? app.state.classes : [];
       const currentClassId = String(app.state.currentClassId || '').trim();
-      const activeClass = classes.find(entry => String(entry?.id || '').trim() === currentClassId) || classes[0] || null;
+      const currentOwnerId = String(app.state.currentClassOwnerId || '').trim();
+      const activeClass = classes.find((entry) => {
+        const entryClassId = String(entry?.id || '').trim();
+        const entryOwnerId = String(entry?.ownerId || '').trim();
+        if (entryClassId !== currentClassId) {
+          return false;
+        }
+        if (!currentOwnerId) {
+          return true;
+        }
+        return entryOwnerId === currentOwnerId;
+      }) || classes.find(entry => String(entry?.id || '').trim() === currentClassId) || classes[0] || null;
       const resolvedClassId = String(activeClass?.id || currentClassId || '').trim();
       const resolvedOwnerId = String(activeClass?.ownerId || app.state.currentClassOwnerId || '').trim();
       const activeClassName = activeClass?.name || app.state.currentClassName || 'My Class';
@@ -855,8 +869,9 @@ const ui = {
             const className = String(entry?.name || 'My Class').trim() || 'My Class';
             const ownerLabel = this.formatClassOwnerLabel(entry);
             const isActive = classId === resolvedClassId;
+            const ownerId = String(entry?.ownerId || '').trim();
             return `
-              <button type="button" class="class-dropdown-item${isActive ? ' active' : ''}" data-class-id="${app.utils.esc(classId)}" role="option" aria-selected="${isActive ? 'true' : 'false'}">
+              <button type="button" class="class-dropdown-item${isActive ? ' active' : ''}" data-class-id="${app.utils.esc(classId)}" data-owner-id="${app.utils.esc(ownerId)}" role="option" aria-selected="${isActive ? 'true' : 'false'}">
                 <span class="class-item-icon" aria-hidden="true">🏫</span>
                 <span class="class-item-name">${app.utils.esc(className)}</span>
                 ${ownerLabel ? `<span class="class-item-owner">${app.utils.esc(ownerLabel)}</span>` : ''}
@@ -887,6 +902,16 @@ const ui = {
         app.dom.form.querySelectorAll('input, button').forEach((entry) => {
           entry.disabled = !hasWritableClassContext;
         });
+        if (app.dom.addMockForm) {
+          app.dom.addMockForm.querySelectorAll('input, button').forEach((entry) => {
+            entry.disabled = !hasWritableClassContext;
+          });
+        }
+        if (app.dom.addSubjectForm) {
+          app.dom.addSubjectForm.querySelectorAll('input, button').forEach((entry) => {
+            entry.disabled = !hasWritableClassContext;
+          });
+        }
       }
 
       const canManageClasses = this.getCurrentRole() === 'teacher' || this.getCurrentRole() === 'developer';
@@ -2273,8 +2298,9 @@ const ui = {
             const target = e.target.closest('.class-dropdown-item[data-class-id]');
             if (!target || target.disabled) return;
             const nextClassId = String(target.dataset.classId || '').trim();
+            const nextOwnerId = String(target.dataset.ownerId || '').trim();
             if (!nextClassId) return;
-            await this.switchToClass(nextClassId);
+            await this.switchToClass(nextClassId, nextOwnerId);
           };
         }
         if (!this.hasBoundClassDropdownEvents) {
