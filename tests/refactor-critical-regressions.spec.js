@@ -776,10 +776,16 @@ test.describe('Class refactor critical regressions', () => {
     expect(stateSource).toContain('app.canCurrentRoleWrite = function () {');
     expect(stateSource).toContain("console.log('CAN WRITE:', app.state.currentUserRole !== ROLE_ADMIN);");
     expect(stateSource).toContain("const getAuthenticatedOwnerFallback = () => String(app.state.authUser?.uid || '').trim();");
-    expect(rulesSource).toContain('function canReadGlobalClassCatalog() {');
+    expect(rulesSource).toContain('function isSignedIn() {');
+    expect(rulesSource).toContain('function isOwner(userId) {');
+    expect(rulesSource).toContain('allow write: if isOwner(userId);');
     expect(rulesSource).toContain('match /{path=**}/classes/{classId} {');
-    expect(rulesSource).toContain('allow read: if canReadGlobalClassCatalog();');
-    expect(rulesSource).toContain('return (isOwner(userId) || isDeveloperRole())');
+    expect(rulesSource).toContain('allow read: if isSignedIn();');
+    expect(rulesSource).toContain('match /activityLogs/{logId} {');
+    expect(rulesSource).toContain('allow create, read: if isSignedIn();');
+    expect(rulesSource).not.toContain('get(/databases/$(database)/documents/users/$(request.auth.uid))');
+    expect(rulesSource).not.toContain('function requesterRole() {');
+    expect(rulesSource).not.toContain('function isAdminOrDeveloperRole() {');
   });
 
   test('stale deleted class selection has validated fallback path', async () => {
