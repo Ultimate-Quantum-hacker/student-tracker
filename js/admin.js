@@ -280,7 +280,7 @@ const buildIdentityMarkup = ({
       ${buildAvatarMarkup(safeLabel, role)}
       <div class="${copyClass}">
         <strong>${escapeHtml(safeLabel)}</strong>
-        <span>${escapeHtml(safeSecondary || ' ')}</span>
+        ${safeSecondary ? `<span>${escapeHtml(safeSecondary)}</span>` : ''}
       </div>
     </div>
   `;
@@ -821,7 +821,7 @@ const renderActivityLogTable = (entries = []) => {
         <td><span class="inline-role-badge ${getRoleBadgeClass(actorRole)}">${escapeHtml(formatRoleLabel(actorRole))}</span></td>
         <td>${buildIdentityMarkup({
           label: ownerLabel,
-          secondary: `${formatRoleLabel(ownerRole)} owner`,
+          secondary: '',
           role: ownerRole,
           containerClass: 'activity-owner-cell',
           copyClass: 'activity-owner-copy'
