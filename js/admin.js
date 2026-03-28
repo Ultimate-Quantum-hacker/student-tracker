@@ -23,6 +23,7 @@ const LOGIN_PATH = '/login.html';
 const ROLE_TEACHER = 'teacher';
 const ROLE_ADMIN = 'admin';
 const ROLE_DEVELOPER = 'developer';
+const ROLE_STUDENT = 'student';
 const UPDATABLE_ROLES = [ROLE_TEACHER, ROLE_ADMIN];
 const THEME_STORAGE_KEY = 'theme';
 
@@ -77,6 +78,10 @@ const dom = {
   activityActionFilter: document.getElementById('activity-action-filter'),
   activitySortFilter: document.getElementById('activity-sort-filter'),
   refreshActivityBtn: document.getElementById('refresh-activity-btn'),
+  overviewSection: document.getElementById('admin-section-overview'),
+  usersSection: document.getElementById('admin-section-users'),
+  searchSection: document.getElementById('admin-section-search'),
+  activitySection: document.getElementById('admin-section-logs'),
   sidebarButtons: Array.from(document.querySelectorAll('.admin-sidebar-btn')),
   scrollSections: Array.from(document.querySelectorAll('.admin-scroll-section'))
 };
@@ -93,7 +98,7 @@ const redirectToLogin = () => {
 
 const setElementVisibility = (element, shouldShow) => {
   if (!element) return;
-  element.style.display = shouldShow ? 'block' : 'none';
+  element.style.display = shouldShow ? '' : 'none';
 };
 
 const getStoredTheme = () => {
@@ -219,13 +224,114 @@ const normalizeCount = (value) => {
   return Math.floor(parsed);
 };
 
+const prefersReducedMotion = () => {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return false;
+  }
+  return Boolean(window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+};
+
+const getInitials = (value = '', fallback = 'NA') => {
+  const normalized = normalizeDisplayText(value, '');
+  if (!normalized) return fallback;
+
+  const parts = normalized
+    .replace(/[^a-zA-Z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (!parts.length) {
+    return normalized.slice(0, 2).toUpperCase();
+  }
+
+  return parts
+    .slice(0, 2)
+    .map((part) => part.charAt(0))
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+};
+
+const getAvatarToneClass = (role = '') => {
+  const normalized = normalizeText(role).toLowerCase();
+  if (normalized === ROLE_DEVELOPER) return 'role-developer';
+  if (normalized === ROLE_ADMIN) return 'role-admin';
+  if (normalized === ROLE_TEACHER) return 'role-teacher';
+  if (normalized === ROLE_STUDENT) return 'role-student';
+  return 'role-default';
+};
+
+const buildAvatarMarkup = (label = '', role = '') => {
+  const initials = getInitials(label, 'NA');
+  return `<span class="avatar ${getAvatarToneClass(role)}" aria-hidden="true">${escapeHtml(initials)}</span>`;
+};
+
+const buildIdentityMarkup = ({
+  label = 'Unknown',
+  secondary = '',
+  role = '',
+  containerClass = 'identity-cell',
+  copyClass = 'identity-copy'
+} = {}) => {
+  const safeLabel = normalizeDisplayText(label, 'Unknown');
+  const safeSecondary = normalizeDisplayText(secondary, '');
+  return `
+    <div class="${containerClass}">
+      ${buildAvatarMarkup(safeLabel, role)}
+      <div class="${copyClass}">
+        <strong>${escapeHtml(safeLabel)}</strong>
+        <span>${escapeHtml(safeSecondary || ' ')}</span>
+      </div>
+    </div>
+  `;
+};
+
+const animateCountValue = (element, nextValue) => {
+  if (!element) return;
+
+  const targetValue = normalizeCount(nextValue);
+  const currentValue = normalizeCount(element.dataset.currentValue || element.textContent || 0);
+  element.dataset.currentValue = String(targetValue);
+
+  if (prefersReducedMotion() || currentValue === targetValue) {
+    element.textContent = String(targetValue);
+    return;
+  }
+
+  if (typeof element.__countFrame === 'number') {
+    cancelAnimationFrame(element.__countFrame);
+  }
+
+  const startTime = performance.now();
+  const duration = 700;
+  const delta = targetValue - currentValue;
+
+  const tick = (now) => {
+    const progress = Math.min(1, (now - startTime) / duration);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    element.textContent = String(Math.round(currentValue + (delta * eased)));
+    if (progress < 1) {
+      element.__countFrame = requestAnimationFrame(tick);
+      return;
+    }
+    element.textContent = String(targetValue);
+  };
+
+  element.__countFrame = requestAnimationFrame(tick);
+};
+
 const formatRoleLabel = (role) => {
+  const rawRole = normalizeText(role).toLowerCase();
+  if (rawRole === ROLE_STUDENT) return 'Student';
   const normalized = normalizeUserRole(role);
   if (normalized === ROLE_DEVELOPER) return 'Developer';
   if (normalized === ROLE_ADMIN) return 'Admin';
   return 'Teacher';
 };
+
 const getRoleBadgeClass = (role) => {
+  const rawRole = normalizeText(role).toLowerCase();
+  if (rawRole === ROLE_STUDENT) return 'role-student';
   const normalized = normalizeUserRole(role);
   if (normalized === ROLE_DEVELOPER) return 'role-developer';
   if (normalized === ROLE_ADMIN) return 'role-admin';
@@ -306,6 +412,12 @@ const updateLastUpdatedIndicator = () => {
 const markUpdatedNow = () => {
   state.lastUpdatedAt = Date.now();
   updateLastUpdatedIndicator();
+};
+
+const setSectionLoadingState = (section, isLoading) => {
+  if (!section) return;
+  section.classList.toggle('is-loading', !!isLoading);
+  section.setAttribute('aria-busy', isLoading ? 'true' : 'false');
 };
 
 const showToast = (message, type = 'info', duration = 2600) => {
@@ -438,7 +550,7 @@ const updatePanelRoleBadge = () => {
   if (!dom.roleBadge) return;
   const roleLabel = formatRoleLabel(state.currentRole);
   dom.roleBadge.textContent = roleLabel;
-  dom.roleBadge.classList.remove('role-teacher', 'role-admin', 'role-developer');
+  dom.roleBadge.classList.remove('role-teacher', 'role-admin', 'role-developer', 'role-student');
   dom.roleBadge.classList.add(getRoleBadgeClass(state.currentRole));
 };
 
@@ -453,13 +565,32 @@ const renderUsersTable = () => {
   dom.tableBody.innerHTML = '';
   filteredUsers.forEach((record) => {
     const row = document.createElement('tr');
+    row.className = 'fade-in';
+    if (record.uid === state.authUser?.uid) {
+      row.classList.add('row-active');
+    }
+
+    const userLabel = normalizeDisplayText(record.name || record.email || '', 'Unknown user');
+    const userEmail = normalizeDisplayText(record.email || '', 'No email on file');
+    const accountSummary = normalizeUserRole(record.role) === ROLE_DEVELOPER
+      ? 'Protected system account'
+      : 'Workspace member';
 
     const nameCell = document.createElement('td');
-    nameCell.textContent = String(record.name || '—');
+    nameCell.innerHTML = buildIdentityMarkup({
+      label: userLabel,
+      secondary: accountSummary,
+      role: record.role
+    });
 
     const emailCell = document.createElement('td');
     emailCell.className = 'email-cell';
-    emailCell.textContent = String(record.email || '—');
+    emailCell.innerHTML = `
+      <div class="email-stack">
+        <strong>${escapeHtml(userEmail)}</strong>
+        <span>${escapeHtml(canEditRole(record) ? 'Role can be updated' : 'Role editing unavailable')}</span>
+      </div>
+    `;
 
     const roleCell = document.createElement('td');
     const roleWrap = document.createElement('div');
@@ -468,11 +599,19 @@ const renderUsersTable = () => {
     badge.className = `inline-role-badge ${getRoleBadgeClass(record.role)}`;
     badge.textContent = formatRoleLabel(record.role);
     roleWrap.appendChild(badge);
-    roleWrap.appendChild(buildRoleSelect(record));
+    const roleSelectShell = document.createElement('div');
+    roleSelectShell.className = 'input-shell role-select-shell';
+    roleSelectShell.appendChild(buildRoleSelect(record));
+    roleWrap.appendChild(roleSelectShell);
     roleCell.appendChild(roleWrap);
 
     const createdCell = document.createElement('td');
-    createdCell.textContent = formatCreatedAt(record.createdAt);
+    createdCell.innerHTML = `
+      <div class="table-meta-stack">
+        <strong>${escapeHtml(formatCreatedAt(record.createdAt))}</strong>
+        <span>Account created</span>
+      </div>
+    `;
 
     const actionCell = document.createElement('td');
     actionCell.className = 'table-actions-cell';
@@ -491,6 +630,8 @@ const renderUsersTable = () => {
           : 'Role update is not allowed for this account';
       }
       actionCell.appendChild(updateBtn);
+    } else {
+      actionCell.innerHTML = '<span class="table-helper-text">View only</span>';
     }
 
     row.appendChild(nameCell);
@@ -503,9 +644,9 @@ const renderUsersTable = () => {
 };
 
 const renderStats = () => {
-  if (dom.totalUsers) dom.totalUsers.textContent = String(state.globalStats.totalUsers || 0);
-  if (dom.totalStudents) dom.totalStudents.textContent = String(state.globalStats.totalStudents || 0);
-  if (dom.totalExams) dom.totalExams.textContent = String(state.globalStats.totalExams || 0);
+  animateCountValue(dom.totalUsers, state.globalStats.totalUsers || 0);
+  animateCountValue(dom.totalStudents, state.globalStats.totalStudents || 0);
+  animateCountValue(dom.totalExams, state.globalStats.totalExams || 0);
 };
 
 const getActionTone = (action = '') => {
@@ -557,6 +698,22 @@ const toDateValue = (value) => {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed;
+};
+
+const formatDateLabel = (value) => {
+  const parsed = toDateValue(value);
+  if (!parsed) return 'Unknown date';
+  return parsed.toLocaleDateString([], {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  });
+};
+
+const getActionIcon = (toneClass = '') => {
+  if (toneClass === 'activity-delete') return '−';
+  if (toneClass === 'activity-update') return '↻';
+  return '+';
 };
 
 const getDateGroupKey = (timestamp) => {
@@ -638,17 +795,38 @@ const renderActivityLogTable = (entries = []) => {
     lastGroup = groupKey;
     const actionLabel = formatActionLabel(entry.action);
     const timeLabel = formatTimeOfDay(entry.timestamp);
-    const sentence = `${actorLabel} ${actionLabel} ${formatTargetLabel(entry)} at ${timeLabel}`;
+    const sentence = `${actionTone.verb} ${formatTargetLabel(entry)} at ${timeLabel}`;
     const classCellLabel = formatClassDisplayLabel(entry);
+    const timestampTitle = toDateValue(entry.timestamp)?.toLocaleString() || 'Unknown time';
 
     return `
       ${shouldRenderGroup ? `<tr class="activity-group-row"><td colspan="5">${getDateGroupLabel(groupKey)}</td></tr>` : ''}
-      <tr class="activity-row ${actionTone.className}">
-        <td>${escapeHtml(timeLabel)}</td>
-        <td><span class="activity-sentence">${escapeHtml(sentence)}</span></td>
+      <tr class="activity-row ${actionTone.className} fade-in">
+        <td title="${escapeHtml(timestampTitle)}">
+          <div class="activity-time-cell">
+            <strong>${escapeHtml(timeLabel)}</strong>
+            <span>${escapeHtml(formatDateLabel(entry.timestamp))}</span>
+          </div>
+        </td>
+        <td>
+          <div class="activity-event-cell">
+            <span class="activity-event-icon ${actionTone.className}" aria-hidden="true">${escapeHtml(getActionIcon(actionTone.className))}</span>
+            <div class="activity-event-copy">
+              <span class="activity-tag ${actionTone.className}">${escapeHtml(actionLabel)}</span>
+              <strong>${escapeHtml(actorLabel)}</strong>
+              <span class="activity-sentence">${escapeHtml(sentence)}</span>
+            </div>
+          </div>
+        </td>
         <td><span class="inline-role-badge ${getRoleBadgeClass(actorRole)}">${escapeHtml(formatRoleLabel(actorRole))}</span></td>
-        <td>${escapeHtml(ownerLabel)} <span class="inline-role-badge ${getRoleBadgeClass(ownerRole)}">${escapeHtml(formatRoleLabel(ownerRole))}</span></td>
-        <td title="${escapeHtml(normalizeDisplayText(entry.classId || '', ''))}">${escapeHtml(classCellLabel || '—')}</td>
+        <td>${buildIdentityMarkup({
+          label: ownerLabel,
+          secondary: `${formatRoleLabel(ownerRole)} owner`,
+          role: ownerRole,
+          containerClass: 'activity-owner-cell',
+          copyClass: 'activity-owner-copy'
+        })}</td>
+        <td title="${escapeHtml(normalizeDisplayText(entry.classId || '', ''))}"><span class="class-token">${escapeHtml(classCellLabel || '—')}</span></td>
       </tr>
     `;
   }).join('');
@@ -657,20 +835,31 @@ const renderActivityLogTable = (entries = []) => {
 const renderGlobalSearchResults = (entries = []) => {
   if (!dom.globalSearchResultsBody) return;
   if (!entries.length) {
-    dom.globalSearchResultsBody.innerHTML = '<tr><td colspan="4" class="empty-row"><div class="smart-empty"><span>🔎</span><p>No search results found.</p></div></td></tr>';
+    const emptyMessage = normalizeText(dom.globalSearchInput?.value || '')
+      ? 'No search results found.'
+      : 'Search by student name to see results.';
+    dom.globalSearchResultsBody.innerHTML = `<tr><td colspan="4" class="empty-row"><div class="smart-empty"><span>🔎</span><p>${escapeHtml(emptyMessage)}</p></div></td></tr>`;
     return;
   }
 
   dom.globalSearchResultsBody.innerHTML = entries.map((entry) => {
     const owner = findUserRecord(entry.userId);
-    const ownerLabel = owner?.name || owner?.email || 'Unknown owner';
-    const ownerRole = normalizeUserRole(owner?.role);
+    const studentLabel = normalizeDisplayText(entry.name || '', 'Student');
+    const ownerLabel = normalizeDisplayText(owner?.name || owner?.email || '', 'Unknown owner');
+    const ownerRole = normalizeUserRole(owner?.role || entry.userRole || 'teacher');
+    const classLabel = normalizeDisplayText(entry.className || entry.classId || '', '—');
     return `
-      <tr>
-        <td>${escapeHtml(entry.name || 'Student')}</td>
-        <td>${escapeHtml(ownerLabel)}</td>
+      <tr class="fade-in">
+        <td>${buildIdentityMarkup({ label: studentLabel, secondary: 'Student result', role: 'student' })}</td>
+        <td>${buildIdentityMarkup({
+          label: ownerLabel,
+          secondary: 'Data owner',
+          role: ownerRole,
+          containerClass: 'activity-owner-cell',
+          copyClass: 'activity-owner-copy'
+        })}</td>
         <td><span class="inline-role-badge ${getRoleBadgeClass(ownerRole)}">${escapeHtml(formatRoleLabel(ownerRole))}</span></td>
-        <td>${escapeHtml(entry.classId || '—')}</td>
+        <td><span class="class-token" title="${escapeHtml(normalizeDisplayText(entry.classId || '', ''))}">${escapeHtml(classLabel)}</span></td>
       </tr>
     `;
   }).join('');
@@ -695,10 +884,12 @@ const fetchUsers = async () => {
   if (!isFirebaseConfigured) {
     setPanelStatus('Firebase is not configured. User management is unavailable.', 'error');
     setElementVisibility(dom.usersLoading, false);
+    setSectionLoadingState(dom.usersSection, false);
     return;
   }
 
   setElementVisibility(dom.usersLoading, true);
+  setSectionLoadingState(dom.usersSection, true);
   setPanelStatus('Loading users...');
 
   try {
@@ -719,10 +910,12 @@ const fetchUsers = async () => {
     showToast('Failed to load users', 'error');
   } finally {
     setElementVisibility(dom.usersLoading, false);
+    setSectionLoadingState(dom.usersSection, false);
   }
 };
 
 const loadGlobalStats = async () => {
+  setSectionLoadingState(dom.overviewSection, true);
   try {
     const stats = await fetchAdminGlobalStats();
     state.globalStats = {
@@ -738,8 +931,10 @@ const loadGlobalStats = async () => {
       totalExams: 0
     };
     showToast('Failed to load global stats', 'error');
+  } finally {
+    renderStats();
+    setSectionLoadingState(dom.overviewSection, false);
   }
-  renderStats();
 };
 
 const shouldIncludeGlobalSearchOwner = (userId = '') => {
@@ -761,10 +956,12 @@ const buildGlobalSearchIndex = async () => {
     state.globalSearchIndex = [];
     renderGlobalSearchResults([]);
     setGlobalSearchStatus('Global search unavailable: Firebase is not configured.', 'error');
+    setSectionLoadingState(dom.searchSection, false);
     return;
   }
 
   setElementVisibility(dom.globalSearchLoading, true);
+  setSectionLoadingState(dom.searchSection, true);
   setGlobalSearchStatus('Building global search index...');
 
   try {
@@ -791,6 +988,7 @@ const buildGlobalSearchIndex = async () => {
     showToast('Failed to load global search', 'error');
   } finally {
     setElementVisibility(dom.globalSearchLoading, false);
+    setSectionLoadingState(dom.searchSection, false);
   }
 };
 
@@ -816,6 +1014,7 @@ const loadActivityLogs = async () => {
   const selectedSort = normalizeText(dom.activitySortFilter?.value || 'desc').toLowerCase() === 'asc' ? 'asc' : 'desc';
 
   setElementVisibility(dom.activityLoading, true);
+  setSectionLoadingState(dom.activitySection, true);
   setActivityStatus('Loading activity logs...');
 
   try {
@@ -853,6 +1052,7 @@ const loadActivityLogs = async () => {
     showToast('Failed to load activity logs', 'error');
   } finally {
     setElementVisibility(dom.activityLoading, false);
+    setSectionLoadingState(dom.activitySection, false);
   }
 };
 

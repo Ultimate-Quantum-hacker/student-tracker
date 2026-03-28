@@ -7,23 +7,76 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/admin.css">
+  <link rel="stylesheet" href="css/design-system.css">
 </head>
 <body>
-  <main class="admin-shell admin-layout">
-    <aside class="admin-sidebar" aria-label="Admin sections">
-      <div class="admin-sidebar-title">Admin</div>
-      <button class="admin-sidebar-btn active" type="button" data-target="overview" aria-current="true">Overview</button>
-      <button class="admin-sidebar-btn" type="button" data-target="users">Users</button>
-      <button class="admin-sidebar-btn" type="button" data-target="search">Global Search</button>
-      <button class="admin-sidebar-btn" type="button" data-target="logs">Activity Logs</button>
+  <main class="admin-shell admin-layout layout">
+    <aside class="admin-sidebar sidebar card fade-in" aria-label="Admin sections">
+      <div class="admin-sidebar-brand">
+        <div class="brand-mark" aria-hidden="true">
+          <div class="brand-mark-core"></div>
+        </div>
+        <div>
+          <p class="admin-sidebar-kicker">Control Center</p>
+          <h2 class="admin-sidebar-heading">Admin Panel</h2>
+        </div>
+      </div>
+      <p class="admin-sidebar-title">Navigate</p>
+      <nav class="admin-sidebar-nav" aria-label="Admin navigation">
+        <button class="admin-sidebar-btn active" type="button" data-target="overview" aria-current="true">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 13h6V4H4z"></path>
+              <path d="M14 20h6v-9h-6z"></path>
+              <path d="M14 10h6V4h-6z"></path>
+              <path d="M4 20h6v-3H4z"></path>
+            </svg>
+          </span>
+          <span class="nav-label">Overview</span>
+        </button>
+        <button class="admin-sidebar-btn" type="button" data-target="users">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+          </span>
+          <span class="nav-label">Users</span>
+        </button>
+        <button class="admin-sidebar-btn" type="button" data-target="search">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="7"></circle>
+              <path d="m21 21-4.35-4.35"></path>
+            </svg>
+          </span>
+          <span class="nav-label">Global Search</span>
+        </button>
+        <button class="admin-sidebar-btn" type="button" data-target="logs">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M8 6h13"></path>
+              <path d="M8 12h13"></path>
+              <path d="M8 18h13"></path>
+              <path d="M3 6h.01"></path>
+              <path d="M3 12h.01"></path>
+              <path d="M3 18h.01"></path>
+            </svg>
+          </span>
+          <span class="nav-label">Activity Logs</span>
+        </button>
+      </nav>
+      <p class="admin-sidebar-footer">Unified controls, live operational stats, and secure monitoring in one reusable dashboard system.</p>
     </aside>
 
-    <div class="admin-content">
-      <header class="panel-header">
+    <div class="admin-content content">
+      <header class="panel-header card fade-in">
         <div class="panel-header-main">
           <p class="panel-eyebrow">Administration</p>
           <h1>Admin Panel</h1>
-          <p class="panel-subtitle">Manage users and monitor system activity.</p>
+          <p class="panel-subtitle">Manage users, search global records, and monitor live system activity from a polished SaaS control center.</p>
           <p id="panel-last-updated" class="panel-last-updated" aria-live="polite">Last updated: just now</p>
         </div>
         <div class="panel-header-actions">
@@ -37,43 +90,90 @@
         </div>
       </header>
 
-      <section id="admin-section-overview" class="panel-card admin-scroll-section" data-section="overview" aria-labelledby="admin-overview-title">
+      <section id="admin-section-overview" class="panel-card card fade-in admin-scroll-section" data-section="overview" aria-labelledby="admin-overview-title">
         <div class="panel-toolbar">
-          <h2 id="admin-overview-title">Overview</h2>
+          <div class="section-heading">
+            <p class="section-kicker">Overview</p>
+            <h2 id="admin-overview-title">Live Platform Metrics</h2>
+            <p class="panel-subtitle">Track the high-level totals that matter most across your workspace.</p>
+          </div>
         </div>
         <div class="stats-grid">
-          <article class="stat-card">
-            <p>Total Users</p>
-            <strong id="admin-total-users">0</strong>
+          <article class="stat-card card fade-in">
+            <div class="stat-card-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+                <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+              </svg>
+            </div>
+            <div class="stat-card-body">
+              <p>Total Users</p>
+              <strong id="admin-total-users" class="count-value">0</strong>
+              <span class="stat-meta">All registered accounts</span>
+            </div>
           </article>
-          <article class="stat-card">
-            <p>Total Students</p>
-            <strong id="admin-total-students">0</strong>
+          <article class="stat-card card fade-in">
+            <div class="stat-card-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 14 3 9l9-5 9 5-9 5Z"></path>
+                <path d="M12 14 6.16 10.76"></path>
+                <path d="M18 12.5V17"></path>
+                <path d="M6 12v5c0 1.66 2.69 3 6 3s6-1.34 6-3v-5"></path>
+              </svg>
+            </div>
+            <div class="stat-card-body">
+              <p>Total Students</p>
+              <strong id="admin-total-students" class="count-value">0</strong>
+              <span class="stat-meta">Students indexed across classes</span>
+            </div>
           </article>
-          <article class="stat-card">
-            <p>Total Exams</p>
-            <strong id="admin-total-exams">0</strong>
+          <article class="stat-card card fade-in">
+            <div class="stat-card-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 11l3 3L22 4"></path>
+                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+              </svg>
+            </div>
+            <div class="stat-card-body">
+              <p>Total Exams</p>
+              <strong id="admin-total-exams" class="count-value">0</strong>
+              <span class="stat-meta">Recorded assessment entries</span>
+            </div>
           </article>
         </div>
       </section>
 
-      <section id="admin-section-users" class="panel-card admin-scroll-section" data-section="users" aria-labelledby="users-panel-title">
+      <section id="admin-section-users" class="panel-card card fade-in admin-scroll-section" data-section="users" aria-labelledby="users-panel-title">
         <div class="panel-toolbar">
-          <h2 id="users-panel-title">Users</h2>
-          <input
-            id="users-search-input"
-            class="search-input"
-            type="search"
-            placeholder="Search by name or email"
-            aria-label="Search users by name or email"
-            autocomplete="off"
-          >
+          <div class="section-heading">
+            <p class="section-kicker">Users</p>
+            <h2 id="users-panel-title">User Directory</h2>
+            <p class="panel-subtitle">Search, review, and manage workspace user roles with a consistent admin workflow.</p>
+          </div>
+          <label class="input-shell" aria-label="Search users by name or email">
+            <span class="input-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="7"></circle>
+                <path d="m21 21-4.35-4.35"></path>
+              </svg>
+            </span>
+            <input
+              id="users-search-input"
+              class="search-input"
+              type="search"
+              placeholder="Search by name or email"
+              aria-label="Search users by name or email"
+              autocomplete="off"
+            >
+          </label>
         </div>
 
         <p id="panel-status" class="panel-status" aria-live="polite"></p>
-        <p id="users-loading" class="loading-state" aria-live="polite">Loading users...</p>
+        <p id="users-loading" class="loading-state skeleton" aria-live="polite">Loading users...</p>
 
-        <div class="table-wrap">
+        <div class="table-wrap table-shell">
           <table class="users-table" aria-label="Application users">
             <thead>
               <tr>
@@ -93,29 +193,38 @@
         </div>
       </section>
 
-      <section id="admin-section-search" class="panel-card admin-scroll-section" data-section="search" aria-labelledby="global-search-title">
+      <section id="admin-section-search" class="panel-card card fade-in admin-scroll-section" data-section="search" aria-labelledby="global-search-title">
         <div class="panel-toolbar panel-toolbar-stacked">
-          <div>
+          <div class="section-heading">
+            <p class="section-kicker">Global Search</p>
             <h2 id="global-search-title">Global Student Search</h2>
             <p class="panel-subtitle">Search students across all users.</p>
           </div>
           <div class="search-inline-actions">
-            <input
-              id="global-student-search-input"
-              class="search-input"
-              type="search"
-              placeholder="Search student name..."
-              aria-label="Search student by name across all users"
-              autocomplete="off"
-            >
+            <label class="input-shell" aria-label="Search student by name across all users">
+              <span class="input-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="11" cy="11" r="7"></circle>
+                  <path d="m21 21-4.35-4.35"></path>
+                </svg>
+              </span>
+              <input
+                id="global-student-search-input"
+                class="search-input"
+                type="search"
+                placeholder="Search student name..."
+                aria-label="Search student by name across all users"
+                autocomplete="off"
+              >
+            </label>
             <button id="global-search-clear-btn" class="btn btn-secondary" type="button">Clear</button>
           </div>
         </div>
 
         <p id="global-search-status" class="panel-status" aria-live="polite"></p>
-        <p id="global-search-loading" class="loading-state" style="display: none;" aria-live="polite">Loading global search index...</p>
+        <p id="global-search-loading" class="loading-state skeleton" style="display: none;" aria-live="polite">Loading global search index...</p>
 
-        <div class="table-wrap">
+        <div class="table-wrap table-shell">
           <table class="users-table" aria-label="Global student search results">
             <thead>
               <tr>
@@ -134,35 +243,51 @@
         </div>
       </section>
 
-      <section id="admin-section-logs" class="panel-card admin-scroll-section" data-section="logs" aria-labelledby="activity-log-title">
+      <section id="admin-section-logs" class="panel-card card fade-in admin-scroll-section" data-section="logs" aria-labelledby="activity-log-title">
         <div class="panel-toolbar panel-toolbar-stacked">
-          <h2 id="activity-log-title">Activity Logs</h2>
+          <div class="section-heading">
+            <p class="section-kicker">Monitoring</p>
+            <h2 id="activity-log-title">Activity Logs</h2>
+            <p class="panel-subtitle">Review cross-user actions with visual event cues and flexible filtering controls.</p>
+          </div>
           <div class="activity-filters">
-            <select id="activity-user-filter" class="role-select" aria-label="Filter activity by user">
-              <option value="">All users</option>
-            </select>
-            <select id="activity-class-filter" class="role-select" aria-label="Filter activity by class">
-              <option value="">All classes</option>
-            </select>
-            <select id="activity-action-filter" class="role-select" aria-label="Filter activity by action">
-              <option value="">All actions</option>
-              <option value="student_added">Student Added</option>
-              <option value="student_deleted">Student Deleted</option>
-              <option value="exam_updated">Exam Updated</option>
-              <option value="subject_created">Subject Created</option>
-            </select>
-            <select id="activity-sort-filter" class="role-select" aria-label="Sort activity by time">
-              <option value="desc">Newest First</option>
-              <option value="asc">Oldest First</option>
-            </select>
+            <label class="filter-shell" aria-label="Filter activity by user">
+              <span class="filter-label">User</span>
+              <select id="activity-user-filter" class="role-select" aria-label="Filter activity by user">
+                <option value="">All users</option>
+              </select>
+            </label>
+            <label class="filter-shell" aria-label="Filter activity by class">
+              <span class="filter-label">Class</span>
+              <select id="activity-class-filter" class="role-select" aria-label="Filter activity by class">
+                <option value="">All classes</option>
+              </select>
+            </label>
+            <label class="filter-shell" aria-label="Filter activity by action">
+              <span class="filter-label">Action</span>
+              <select id="activity-action-filter" class="role-select" aria-label="Filter activity by action">
+                <option value="">All actions</option>
+                <option value="student_added">Student Added</option>
+                <option value="student_deleted">Student Deleted</option>
+                <option value="exam_updated">Exam Updated</option>
+                <option value="subject_created">Subject Created</option>
+              </select>
+            </label>
+            <label class="filter-shell" aria-label="Sort activity by time">
+              <span class="filter-label">Sort</span>
+              <select id="activity-sort-filter" class="role-select" aria-label="Sort activity by time">
+                <option value="desc">Newest First</option>
+                <option value="asc">Oldest First</option>
+              </select>
+            </label>
             <button id="refresh-activity-btn" class="btn btn-secondary" type="button">Refresh Logs</button>
           </div>
         </div>
 
         <p id="activity-status" class="panel-status" aria-live="polite"></p>
-        <p id="activity-loading" class="loading-state" style="display: none;" aria-live="polite">Loading activity logs...</p>
+        <p id="activity-loading" class="loading-state skeleton" style="display: none;" aria-live="polite">Loading activity logs...</p>
 
-        <div class="table-wrap">
+        <div class="table-wrap table-shell">
           <table class="users-table" aria-label="Activity logs">
             <thead>
               <tr>
