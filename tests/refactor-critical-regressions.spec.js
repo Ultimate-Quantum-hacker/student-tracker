@@ -74,6 +74,67 @@ test.describe('Class refactor critical regressions', () => {
     expect(result.message.toLowerCase()).toContain('read-only');
   });
 
+  test('teacher and developer share writable role logic while admin stays read-only', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const [stateModule, uiModule] = await Promise.all([
+        import('/js/state.js'),
+        import('/js/ui.js')
+      ]);
+
+      const app = stateModule.default || window.TrackerApp;
+      const ui = uiModule.default || app.ui;
+
+      const snapshotRole = (role) => {
+        app.setCurrentUserRole(role, { resolved: true });
+        return {
+          role,
+          stateCanWrite: app.canCurrentRoleWrite(),
+          stateReadOnly: app.isReadOnlyRoleContext(),
+          uiCanWrite: ui.canCurrentRoleWrite(),
+          uiReadOnly: ui.isReadOnlyRoleContext()
+        };
+      };
+
+      return {
+        teacher: snapshotRole('teacher'),
+        developer: snapshotRole('developer'),
+        admin: snapshotRole('admin')
+      };
+    });
+
+    expect(result.teacher.stateCanWrite).toBe(true);
+    expect(result.teacher.stateReadOnly).toBe(false);
+    expect(result.teacher.uiCanWrite).toBe(true);
+    expect(result.teacher.uiReadOnly).toBe(false);
+
+    expect(result.developer.stateCanWrite).toBe(true);
+    expect(result.developer.stateReadOnly).toBe(false);
+    expect(result.developer.uiCanWrite).toBe(true);
+    expect(result.developer.uiReadOnly).toBe(false);
+
+    expect(result.teacher).toEqual({
+      role: 'teacher',
+      stateCanWrite: true,
+      stateReadOnly: false,
+      uiCanWrite: true,
+      uiReadOnly: false
+    });
+    expect(result.developer).toEqual({
+      role: 'developer',
+      stateCanWrite: true,
+      stateReadOnly: false,
+      uiCanWrite: true,
+      uiReadOnly: false
+    });
+    expect(result.admin).toEqual({
+      role: 'admin',
+      stateCanWrite: false,
+      stateReadOnly: true,
+      uiCanWrite: false,
+      uiReadOnly: true
+    });
+  });
+
   test('teacher write flows retain writable class-scoped context', async ({ page }) => {
     const result = await page.evaluate(async () => {
       const [stateModule, studentsModule] = await Promise.all([
@@ -669,6 +730,7 @@ test.describe('Class refactor critical regressions', () => {
 
   test('migration path verifies count mismatch and fails safely', async () => {
     const dbSource = readWorkspaceFile('services/db.js');
+    const stateSource = readWorkspaceFile('js/state.js');
 
     expect(dbSource).toContain('const getRawDataCounts = (rawData) =>');
     expect(dbSource).toContain('const countsMismatchBeforeSync = !hasMatchingRawDataCounts(legacyCounts, classCountsBeforeSync);');
@@ -679,6 +741,12 @@ test.describe('Class refactor critical regressions', () => {
     expect(dbSource).toContain('classMigrationError: String(error?.message || \'Migration failed\').slice(0, 500)');
     expect(dbSource).toContain('const findClassEntryBySelection = (classes = [], classId = \'\', ownerId = \'\') => {');
     expect(dbSource).toContain('const activeClass = findClassEntryBySelection(classes, classId, currentClassOwnerId || persistedSelection.ownerId || \'\') || null;');
+    expect(dbSource).toContain('const classesSnapshot = await getDocs(collectionGroup(db, CLASSES_SUBCOLLECTION));');
+    expect(dbSource).toContain("const canRoleWrite = (role = getCurrentUserRoleContext()) => {");
+    expect(dbSource).toContain("console.log('ROLE:', role);");
+    expect(dbSource).toContain("console.log('CAN WRITE:', canRoleWrite(role));");
+    expect(stateSource).toContain('app.canCurrentRoleWrite = function () {');
+    expect(stateSource).toContain("console.log('CAN WRITE:', app.state.currentUserRole !== ROLE_ADMIN);");
   });
 
   test('stale deleted class selection has validated fallback path', async () => {

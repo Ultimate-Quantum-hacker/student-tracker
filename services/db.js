@@ -209,9 +209,15 @@ const createContextError = (code, message) => {
   return error;
 };
 
+const canRoleWrite = (role = getCurrentUserRoleContext()) => {
+  return normalizeRole(role) !== 'admin';
+};
+
 const assertWritableRole = (operationLabel = 'modify data') => {
   const role = getCurrentUserRoleContext();
-  if (role === 'admin') {
+  console.log('ROLE:', role);
+  console.log('CAN WRITE:', canRoleWrite(role));
+  if (!canRoleWrite(role)) {
     throw createContextError(ERROR_CODES.READ_ONLY_MODE, `Admin read-only mode: cannot ${operationLabel}`);
   }
 };

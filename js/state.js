@@ -74,6 +74,8 @@ window.TrackerApp = window.TrackerApp || {};
     if (typeof dataService.setCurrentUserRoleContext === 'function') {
       dataService.setCurrentUserRoleContext(app.state.currentUserRole);
     }
+    console.log('ROLE:', app.state.currentUserRole);
+    console.log('CAN WRITE:', app.state.currentUserRole !== ROLE_ADMIN);
   };
 
   const resolveCurrentClassEntry = () => {
@@ -149,8 +151,12 @@ window.TrackerApp = window.TrackerApp || {};
     return app.getCurrentClassOwnerId();
   };
 
+  app.canCurrentRoleWrite = function () {
+    return app.getCurrentUserRole() !== ROLE_ADMIN;
+  };
+
   app.isReadOnlyRoleContext = function () {
-    return Boolean(app.state.isRoleResolved) && app.isAdminRole();
+    return Boolean(app.state.isRoleResolved) && !app.canCurrentRoleWrite();
   };
 
   app.clearCurrentUserRole = function () {
@@ -386,7 +392,10 @@ window.TrackerApp = window.TrackerApp || {};
   };
 
   const ensureWritableDataContext = (operationLabel = 'modify data') => {
-    if (typeof app.isReadOnlyRoleContext === 'function' && app.isReadOnlyRoleContext()) {
+    const canWrite = typeof app.canCurrentRoleWrite === 'function'
+      ? app.canCurrentRoleWrite()
+      : !(typeof app.isReadOnlyRoleContext === 'function' && app.isReadOnlyRoleContext());
+    if (!canWrite) {
       throw createReadOnlyContextError(operationLabel);
     }
   };

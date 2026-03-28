@@ -231,6 +231,14 @@ const ui = {
       return typeof app.isReadOnlyRoleContext === 'function' && app.isReadOnlyRoleContext();
     },
 
+    canCurrentRoleWrite: function () {
+      if (typeof app.canCurrentRoleWrite === 'function') {
+        return app.canCurrentRoleWrite();
+      }
+
+      return !this.isReadOnlyRoleContext();
+    },
+
     getReadOnlyModeLabel: function () {
       const ownerName = typeof app.getCurrentClassOwnerName === 'function'
         ? String(app.getCurrentClassOwnerName() || '').trim()
@@ -244,7 +252,7 @@ const ui = {
     },
 
     ensureWritableAction: function (actionLabel = 'modify data') {
-      if (!this.isReadOnlyRoleContext()) {
+      if (this.canCurrentRoleWrite()) {
         return true;
       }
 
@@ -472,7 +480,7 @@ const ui = {
     updateRoleBasedUIAccess: function () {
       const roleResolved = Boolean(app.state.isRoleResolved);
       const currentRole = this.getCurrentRole();
-      const canManageClasses = currentRole === 'teacher' || currentRole === 'developer';
+      const canManageClasses = this.canCurrentRoleWrite();
 
       if (document.body) {
         document.body.dataset.userRole = currentRole;
@@ -940,7 +948,7 @@ const ui = {
         }
       }
 
-      const canManageClasses = this.getCurrentRole() === 'teacher' || this.getCurrentRole() === 'developer';
+      const canManageClasses = this.canCurrentRoleWrite();
       if (app.dom.createClassBtn) {
         app.dom.createClassBtn.disabled = !canManageClasses;
       }
