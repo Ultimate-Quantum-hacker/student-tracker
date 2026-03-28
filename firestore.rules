@@ -83,6 +83,10 @@ service cloud.firestore {
         && !isAdminRole();
     }
 
+    function canReadGlobalClassCatalog() {
+      return isAdminOrDeveloperRole();
+    }
+
     function hasValidActivityLogV2Shape() {
       return request.resource.data.userId is string
         && request.resource.data.userEmail is string
@@ -155,6 +159,10 @@ service cloud.firestore {
       allow create, update: if canWriteScopedOwnerPath(userId)
         && hasValidClassScopedDoc(userId, classId);
       allow delete: if canWriteScopedOwnerPath(userId);
+    }
+
+    match /{path=**}/classes/{classId} {
+      allow read: if canReadGlobalClassCatalog();
     }
 
     match /users/{userId}/students/{docId} {

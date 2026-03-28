@@ -105,6 +105,8 @@ window.TrackerApp = window.TrackerApp || {};
     return classes.find((entry) => String(entry?.id || '').trim() === currentClassId) || null;
   };
 
+  const getAuthenticatedOwnerFallback = () => String(app.state.authUser?.uid || '').trim();
+
   app.getCurrentClassOwnerId = function () {
     const classEntry = resolveCurrentClassEntry();
     const ownerId = String(classEntry?.ownerId || '').trim();
@@ -112,7 +114,11 @@ window.TrackerApp = window.TrackerApp || {};
       app.state.currentClassOwnerId = ownerId;
       return ownerId;
     }
-    return String(app.state.currentClassOwnerId || '').trim();
+    const fallbackOwnerId = String(app.state.currentClassOwnerId || '').trim() || getAuthenticatedOwnerFallback();
+    if (fallbackOwnerId) {
+      app.state.currentClassOwnerId = fallbackOwnerId;
+    }
+    return fallbackOwnerId;
   };
 
   app.getCurrentClassOwnerName = function () {
@@ -137,7 +143,7 @@ window.TrackerApp = window.TrackerApp || {};
 
   app.syncDataContext = function () {
     const classEntry = resolveCurrentClassEntry();
-    app.state.currentClassOwnerId = String(classEntry?.ownerId || app.state.currentClassOwnerId || '').trim();
+    app.state.currentClassOwnerId = String(classEntry?.ownerId || app.state.currentClassOwnerId || getAuthenticatedOwnerFallback() || '').trim();
     app.state.currentClassOwnerName = String(classEntry?.ownerName || app.state.currentClassOwnerName || '').trim() || 'Teacher';
 
     if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
@@ -771,6 +777,7 @@ window.TrackerApp = window.TrackerApp || {};
 
       console.log('Classes loaded:', nextClasses.length);
       console.log('Selected class:', app.state.currentClassId || '(none)');
+      console.log('Owner ID:', app.getCurrentClassOwnerId() || '(none)');
 
       if (validatedClassContext.isFallback) {
         console.warn('Persisted class selection was stale/invalid; selection has been reset to a valid class context.');

@@ -998,7 +998,7 @@ const getAuthenticatedUserDisplayName = () => {
 };
 
 const getActiveUserId = () => {
-  return normalizeUserId(currentClassOwnerId);
+  return normalizeUserId(currentClassOwnerId) || getAuthenticatedUserId();
 };
 
 const getCurrentUserId = () => {
@@ -1358,7 +1358,12 @@ const resolveActiveClassModel = (userId, classes = []) => {
     .map(entry => toClassModel(entry.id, entry))
     .filter(entry => entry.id);
   const classId = resolveClassIdFromCatalog(userId, normalized);
-  const activeClass = normalized.find(entry => entry.id === classId) || null;
+  const persistedSelection = readPersistedClassSelection(userId);
+  const activeClass = findClassEntryBySelection(
+    normalized,
+    classId,
+    currentClassOwnerId || persistedSelection.ownerId || ''
+  ) || null;
   return {
     classId,
     className: activeClass?.name || DEFAULT_CLASS_NAME
@@ -1985,6 +1990,7 @@ const ensureClassCatalog = async (userId) => {
 
   if (role !== 'admin') {
     await ensureClassMigration(authUserId);
+    await ensureDefaultClassDocument(authUserId);
   }
 
   const catalog = role === 'admin'
@@ -2014,6 +2020,9 @@ const ensureActiveClassContext = async (userId, options = {}) => {
       throw createMissingClassError('save class data');
     }
 
+    console.log('Classes:', classes.length);
+    console.log('Selected class:', classId || '(none)');
+    console.log('Owner ID:', classOwnerId || '(none)');
     console.log('Current Class ID:', classId || '(none)');
     console.log('User ID:', classOwnerId || '(none)');
     return {
@@ -2039,6 +2048,9 @@ const ensureActiveClassContext = async (userId, options = {}) => {
     throw createMissingClassError('save class data');
   }
 
+  console.log('Classes:', classes.length);
+  console.log('Selected class:', classId || '(none)');
+  console.log('Owner ID:', classOwnerId || '(none)');
   console.log('Current Class ID:', classId || '(none)');
   console.log('User ID:', classOwnerId || '(none)');
   return {
@@ -3087,6 +3099,9 @@ export const fetchClassCatalog = async () => {
     const persistedSelection = readPersistedClassSelection(userId);
     const activeClass = findClassEntryBySelection(cachedClasses, classId, currentClassOwnerId || persistedSelection.ownerId || '') || null;
     setCurrentClassContext(classId, userId, activeClass?.ownerId || '', activeClass?.ownerName || '');
+    console.log('Classes:', cachedClasses.length);
+    console.log('Selected class:', classId || '(none)');
+    console.log('Owner ID:', activeClass?.ownerId || '(none)');
     return {
       classes: cachedClasses,
       trashClasses: cachedTrashClasses,
@@ -3103,6 +3118,9 @@ export const fetchClassCatalog = async () => {
   const activeClass = findClassEntryBySelection(classes, classId, currentClassOwnerId || persistedSelection.ownerId || '') || null;
   setCurrentClassContext(classId, userId, activeClass?.ownerId || '', activeClass?.ownerName || '');
   writeClassCatalogCache(cacheScopeKey, classes, trashClasses);
+  console.log('Classes:', classes.length);
+  console.log('Selected class:', classId || '(none)');
+  console.log('Owner ID:', activeClass?.ownerId || '(none)');
 
   return {
     classes,

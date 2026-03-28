@@ -44,6 +44,31 @@ test.describe('Class refactor critical regressions', () => {
     expect(result.ownerName).toBe('Beta Teacher');
   });
 
+  test('authenticated user becomes owner fallback when class owner context is empty', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      return import('/js/state.js').then((stateModule) => {
+        const app = stateModule.default || window.TrackerApp;
+
+        app.state.authUser = {
+          uid: 'teacher_auth_uid',
+          email: 'teacher@example.com'
+        };
+        app.state.classes = [];
+        app.state.currentClassId = '';
+        app.state.currentClassOwnerId = '';
+        app.syncDataContext();
+
+        return {
+          ownerId: app.getCurrentClassOwnerId(),
+          effectiveUserId: app.getEffectiveUserId()
+        };
+      });
+    });
+
+    expect(result.ownerId).toBe('teacher_auth_uid');
+    expect(result.effectiveUserId).toBe('teacher_auth_uid');
+  });
+
   test('admin read-only role blocks writes', async ({ page }) => {
     const result = await page.evaluate(async () => {
       const stateModule = await import('/js/state.js');
@@ -731,6 +756,7 @@ test.describe('Class refactor critical regressions', () => {
   test('migration path verifies count mismatch and fails safely', async () => {
     const dbSource = readWorkspaceFile('services/db.js');
     const stateSource = readWorkspaceFile('js/state.js');
+    const rulesSource = readWorkspaceFile('firestore.rules');
 
     expect(dbSource).toContain('const getRawDataCounts = (rawData) =>');
     expect(dbSource).toContain('const countsMismatchBeforeSync = !hasMatchingRawDataCounts(legacyCounts, classCountsBeforeSync);');
@@ -745,8 +771,15 @@ test.describe('Class refactor critical regressions', () => {
     expect(dbSource).toContain("const canRoleWrite = (role = getCurrentUserRoleContext()) => {");
     expect(dbSource).toContain("console.log('ROLE:', role);");
     expect(dbSource).toContain("console.log('CAN WRITE:', canRoleWrite(role));");
+    expect(dbSource).toContain('await ensureDefaultClassDocument(authUserId);');
+    expect(dbSource).toContain('return normalizeUserId(currentClassOwnerId) || getAuthenticatedUserId();');
     expect(stateSource).toContain('app.canCurrentRoleWrite = function () {');
     expect(stateSource).toContain("console.log('CAN WRITE:', app.state.currentUserRole !== ROLE_ADMIN);");
+    expect(stateSource).toContain("const getAuthenticatedOwnerFallback = () => String(app.state.authUser?.uid || '').trim();");
+    expect(rulesSource).toContain('function canReadGlobalClassCatalog() {');
+    expect(rulesSource).toContain('match /{path=**}/classes/{classId} {');
+    expect(rulesSource).toContain('allow read: if canReadGlobalClassCatalog();');
+    expect(rulesSource).toContain('return (isOwner(userId) || isDeveloperRole())');
   });
 
   test('stale deleted class selection has validated fallback path', async () => {
