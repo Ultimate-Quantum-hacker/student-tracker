@@ -347,10 +347,52 @@ window.TrackerApp = window.TrackerApp || {};
     return error;
   };
 
+  const createMissingClassContextError = (operationLabel = 'modify data') => {
+    const error = new Error(`Select a class before attempting to ${operationLabel}`);
+    error.code = 'app/missing-class-context';
+    return error;
+  };
+
+  const createMissingOwnerContextError = (operationLabel = 'modify data') => {
+    const error = new Error(`Class owner context is missing for ${operationLabel}. Re-select the class and try again.`);
+    error.code = 'app/missing-class-owner-context';
+    return error;
+  };
+
   const ensureWritableDataContext = (operationLabel = 'modify data') => {
     if (typeof app.isReadOnlyRoleContext === 'function' && app.isReadOnlyRoleContext()) {
       throw createReadOnlyContextError(operationLabel);
     }
+  };
+
+  const ensureResolvedClassContext = (operationLabel = 'modify data') => {
+    if (typeof app.syncDataContext === 'function') {
+      app.syncDataContext();
+    }
+
+    const classId = String(app.state.currentClassId || '').trim();
+    const ownerId = String(app.getCurrentClassOwnerId() || '').trim();
+    const className = String(app.state.currentClassName || '').trim() || 'My Class';
+    const ownerName = String(app.getCurrentClassOwnerName() || '').trim() || 'Teacher';
+
+    if (!classId) {
+      throw createMissingClassContextError(operationLabel);
+    }
+    if (!ownerId) {
+      throw createMissingOwnerContextError(operationLabel);
+    }
+
+    return {
+      classId,
+      ownerId,
+      className,
+      ownerName
+    };
+  };
+
+  app.ensureWritableClassContext = function (operationLabel = 'modify data') {
+    ensureWritableDataContext(operationLabel);
+    return ensureResolvedClassContext(operationLabel);
   };
 
   const enqueueStateWrite = (task, { allowInReadOnly = false, operationLabel = 'modify data' } = {}) => {
@@ -978,12 +1020,16 @@ window.TrackerApp = window.TrackerApp || {};
   app.addStudent = async function (studentData) {
     return enqueueStateWrite(async () => {
       try {
+        const classContext = ensureResolvedClassContext('add student');
         const newStudent = {
           id: app.utils.uuid(),
           name: normalizeLabel(studentData.name),
           class: studentData.class || '',
           notes: studentData.notes || '',
-          scores: studentData.scores && typeof studentData.scores === 'object' ? studentData.scores : {}
+          scores: studentData.scores && typeof studentData.scores === 'object' ? studentData.scores : {},
+          classId: classContext.classId,
+          ownerId: classContext.ownerId,
+          userId: classContext.ownerId
         };
 
         const nextStudents = deepClone(app.state.students || []);
@@ -994,7 +1040,10 @@ window.TrackerApp = window.TrackerApp || {};
         const saveResult = await dataService.saveStudent(app.getRawData(), newStudent);
         syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult, 'save student');
         await logTrackedActivity('student_added', newStudent.id, 'student', {
-          classId: app.state.currentClassId
+          classId: classContext.classId,
+          ownerId: classContext.ownerId,
+          className: classContext.className,
+          ownerName: classContext.ownerName
         });
         await app.refreshDashboardStudentCount();
         return newStudent;
@@ -1202,13 +1251,17 @@ window.TrackerApp = window.TrackerApp || {};
   app.addExam = async function (examData) {
     return enqueueStateWrite(async () => {
       try {
+        const classContext = ensureResolvedClassContext('add exam');
         const title = normalizeLabel(examData.title || examData.name);
         if (!title) throw new Error('Exam title is required');
         const newExam = {
           id: app.utils.uuid(),
           title,
           name: title,
-          date: examData.date || new Date().toISOString()
+          date: examData.date || new Date().toISOString(),
+          classId: classContext.classId,
+          ownerId: classContext.ownerId,
+          userId: classContext.ownerId
         };
 
         const nextStudents = deepClone(app.state.students || []);
@@ -1305,9 +1358,16 @@ window.TrackerApp = window.TrackerApp || {};
   app.addSubject = async function (subjectData) {
     return enqueueStateWrite(async () => {
       try {
+        const classContext = ensureResolvedClassContext('add subject');
         const name = normalizeLabel(subjectData.name);
         if (!name) throw new Error('Subject name is required');
-        const newSubject = { id: app.utils.uuid(), name };
+        const newSubject = {
+          id: app.utils.uuid(),
+          name,
+          classId: classContext.classId,
+          ownerId: classContext.ownerId,
+          userId: classContext.ownerId
+        };
 
         const nextStudents = deepClone(app.state.students || []);
         const nextSubjects = deepClone(app.state.subjects || []);
@@ -1317,7 +1377,10 @@ window.TrackerApp = window.TrackerApp || {};
         const saveResult = await dataService.updateSubjects(app.getRawData(), nextSubjects);
         syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult, 'update subjects');
         await logTrackedActivity('subject_created', newSubject.id, 'subject', {
-          classId: app.state.currentClassId
+          classId: classContext.classId,
+          ownerId: classContext.ownerId,
+          className: classContext.className,
+          ownerName: classContext.ownerName
         });
         return newSubject;
       } catch (error) {

@@ -143,6 +143,413 @@ test.describe('Class refactor critical regressions', () => {
     expect(result.calls).toEqual(['addStudent', 'addSubject', 'addExam', 'saveMarks']);
   });
 
+  test('teacher can add student end-to-end via UI submit', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const [stateModule, uiModule, studentsModule] = await Promise.all([
+        import('/js/state.js'),
+        import('/js/ui.js'),
+        import('/js/students.js')
+      ]);
+
+      const app = stateModule.default || window.TrackerApp;
+      const ui = uiModule.default || app.ui;
+      const students = studentsModule.default || app.students;
+
+      document.body.innerHTML = `
+        <div id="toast"></div>
+        <div class="global-class-switcher"><div class="class-switcher-main">
+          <button id="class-prev-btn" type="button"></button>
+          <div id="class-dropdown" class="class-dropdown">
+            <button id="class-dropdown-toggle" type="button"><span id="class-dropdown-value"></span></button>
+            <div id="class-dropdown-menu" class="class-dropdown-menu"></div>
+          </div>
+          <button id="class-next-btn" type="button"></button>
+          <button id="create-class-btn" type="button"></button>
+          <button id="delete-class-btn" type="button"></button>
+        </div><p id="class-name-display"></p></div>
+        <div id="admin-readonly-banner" hidden><span id="admin-readonly-label"></span></div>
+        <div id="empty-msg"></div>
+        <form id="add-student-form"><input id="student-name-input" /><button type="submit">Add</button></form>
+        <form id="addMockForm"><input id="mockNameInput" /><button type="submit">Add Exam</button></form>
+        <form id="addSubjectForm"><input id="subjectNameInput" /><button type="submit">Add Subject</button></form>
+        <div id="mockList"></div>
+        <div id="subjectList"></div>
+      `;
+
+      app.students = students;
+      ui.init();
+      ui.bindEvents();
+
+      app.setCurrentUserRole('teacher', { resolved: true });
+      app.state.isLoading = false;
+      app.state.classes = [
+        { id: 'class_teacher', name: 'Teacher Class', ownerId: 'owner_teacher', ownerName: 'Teacher Owner' }
+      ];
+      app.state.currentClassId = 'class_teacher';
+      app.state.currentClassOwnerId = 'owner_teacher';
+      app.state.currentClassName = 'Teacher Class';
+      app.syncDataContext();
+
+      let submittedPayload = null;
+      app.addStudent = async (payload) => {
+        submittedPayload = payload;
+        return { id: 'student_ui_1' };
+      };
+
+      ui.refreshUI();
+      const form = document.getElementById('add-student-form');
+      const nameInput = document.getElementById('student-name-input');
+      nameInput.value = 'Student UI One';
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      return {
+        submittedPayload,
+        toast: document.getElementById('toast')?.textContent || ''
+      };
+    });
+
+    expect(result.submittedPayload).toMatchObject({
+      name: 'Student UI One',
+      class: '',
+      notes: ''
+    });
+    expect(result.toast).toContain('Student added');
+  });
+
+  test('teacher can add subject end-to-end via UI submit', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const [stateModule, uiModule] = await Promise.all([
+        import('/js/state.js'),
+        import('/js/ui.js')
+      ]);
+
+      const app = stateModule.default || window.TrackerApp;
+      const ui = uiModule.default || app.ui;
+
+      document.body.innerHTML = `
+        <div id="toast"></div>
+        <div class="global-class-switcher"><div class="class-switcher-main">
+          <button id="class-prev-btn" type="button"></button>
+          <div id="class-dropdown" class="class-dropdown">
+            <button id="class-dropdown-toggle" type="button"><span id="class-dropdown-value"></span></button>
+            <div id="class-dropdown-menu" class="class-dropdown-menu"></div>
+          </div>
+          <button id="class-next-btn" type="button"></button>
+          <button id="create-class-btn" type="button"></button>
+          <button id="delete-class-btn" type="button"></button>
+        </div><p id="class-name-display"></p></div>
+        <div id="admin-readonly-banner" hidden><span id="admin-readonly-label"></span></div>
+        <div id="empty-msg"></div>
+        <form id="add-student-form"><input id="student-name-input" /><button type="submit">Add</button></form>
+        <form id="addMockForm"><input id="mockNameInput" /><button type="submit">Add Exam</button></form>
+        <form id="addSubjectForm"><input id="subjectNameInput" /><button type="submit">Add Subject</button></form>
+        <div id="mockList"></div>
+        <div id="subjectList"></div>
+      `;
+
+      ui.init();
+      ui.bindEvents();
+
+      app.setCurrentUserRole('teacher', { resolved: true });
+      app.state.isLoading = false;
+      app.state.classes = [
+        { id: 'class_teacher', name: 'Teacher Class', ownerId: 'owner_teacher', ownerName: 'Teacher Owner' }
+      ];
+      app.state.currentClassId = 'class_teacher';
+      app.state.currentClassOwnerId = 'owner_teacher';
+      app.syncDataContext();
+
+      let submittedPayload = null;
+      app.addSubject = async (payload) => {
+        submittedPayload = payload;
+        return { id: 'subject_ui_1', ...payload };
+      };
+
+      ui.refreshUI();
+      const form = document.getElementById('addSubjectForm');
+      const input = document.getElementById('subjectNameInput');
+      input.value = 'Science';
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      return {
+        submittedPayload
+      };
+    });
+
+    expect(result.submittedPayload).toEqual({ name: 'Science' });
+  });
+
+  test('teacher can add exam end-to-end via UI submit', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const [stateModule, uiModule] = await Promise.all([
+        import('/js/state.js'),
+        import('/js/ui.js')
+      ]);
+
+      const app = stateModule.default || window.TrackerApp;
+      const ui = uiModule.default || app.ui;
+
+      document.body.innerHTML = `
+        <div id="toast"></div>
+        <div class="global-class-switcher"><div class="class-switcher-main">
+          <button id="class-prev-btn" type="button"></button>
+          <div id="class-dropdown" class="class-dropdown">
+            <button id="class-dropdown-toggle" type="button"><span id="class-dropdown-value"></span></button>
+            <div id="class-dropdown-menu" class="class-dropdown-menu"></div>
+          </div>
+          <button id="class-next-btn" type="button"></button>
+          <button id="create-class-btn" type="button"></button>
+          <button id="delete-class-btn" type="button"></button>
+        </div><p id="class-name-display"></p></div>
+        <div id="admin-readonly-banner" hidden><span id="admin-readonly-label"></span></div>
+        <div id="empty-msg"></div>
+        <form id="add-student-form"><input id="student-name-input" /><button type="submit">Add</button></form>
+        <form id="addMockForm"><input id="mockNameInput" /><button type="submit">Add Exam</button></form>
+        <form id="addSubjectForm"><input id="subjectNameInput" /><button type="submit">Add Subject</button></form>
+        <div id="mockList"></div>
+        <div id="subjectList"></div>
+      `;
+
+      ui.init();
+      ui.bindEvents();
+
+      app.setCurrentUserRole('teacher', { resolved: true });
+      app.state.isLoading = false;
+      app.state.classes = [
+        { id: 'class_teacher', name: 'Teacher Class', ownerId: 'owner_teacher', ownerName: 'Teacher Owner' }
+      ];
+      app.state.currentClassId = 'class_teacher';
+      app.state.currentClassOwnerId = 'owner_teacher';
+      app.syncDataContext();
+
+      let submittedPayload = null;
+      app.addExam = async (payload) => {
+        submittedPayload = payload;
+        return { id: 'exam_ui_1', ...payload };
+      };
+
+      ui.refreshUI();
+      const form = document.getElementById('addMockForm');
+      const input = document.getElementById('mockNameInput');
+      input.value = 'Mock UI 1';
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      return {
+        submittedPayload
+      };
+    });
+
+    expect(result.submittedPayload?.title).toBe('Mock UI 1');
+    expect(result.submittedPayload?.date).toBeTruthy();
+  });
+
+  test('admin dropdown renders when valid classes exist', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const [stateModule, uiModule] = await Promise.all([
+        import('/js/state.js'),
+        import('/js/ui.js')
+      ]);
+
+      const app = stateModule.default || window.TrackerApp;
+      const ui = uiModule.default || app.ui;
+
+      document.body.innerHTML = `
+        <div id="toast"></div>
+        <div class="global-class-switcher"><div class="class-switcher-main">
+          <button id="class-prev-btn" type="button"></button>
+          <div id="class-dropdown" class="class-dropdown">
+            <button id="class-dropdown-toggle" type="button"><span id="class-dropdown-value"></span></button>
+            <div id="class-dropdown-menu" class="class-dropdown-menu"></div>
+          </div>
+          <button id="class-next-btn" type="button"></button>
+          <button id="create-class-btn" type="button"></button>
+          <button id="delete-class-btn" type="button"></button>
+        </div><p id="class-name-display"></p></div>
+        <div id="admin-readonly-banner" hidden><span id="admin-readonly-label"></span></div>
+        <div id="empty-msg"></div>
+        <form id="add-student-form"><input id="student-name-input" /><button type="submit">Add</button></form>
+        <form id="addMockForm"><input id="mockNameInput" /><button type="submit">Add Exam</button></form>
+        <form id="addSubjectForm"><input id="subjectNameInput" /><button type="submit">Add Subject</button></form>
+        <div id="mockList"></div>
+        <div id="subjectList"></div>
+      `;
+
+      ui.init();
+      ui.bindEvents();
+
+      app.setCurrentUserRole('admin', { resolved: true });
+      app.state.isLoading = false;
+      app.state.classes = [
+        { id: 'class_a', name: 'Class A', ownerId: 'owner_a', ownerName: 'Teacher A' },
+        { id: 'class_b', name: 'Class B', ownerId: 'owner_b', ownerName: 'Teacher B' }
+      ];
+      app.state.currentClassId = 'class_a';
+      app.state.currentClassOwnerId = 'owner_a';
+      app.syncDataContext();
+
+      ui.refreshUI();
+
+      const switcher = document.querySelector('.global-class-switcher');
+      const menuItems = document.querySelectorAll('#class-dropdown-menu .class-dropdown-item[data-class-id]');
+
+      return {
+        switcherHidden: Boolean(switcher?.hidden),
+        switcherDisplay: switcher?.style?.display || '',
+        toggleDisabled: Boolean(document.getElementById('class-dropdown-toggle')?.disabled),
+        menuCount: menuItems.length
+      };
+    });
+
+    expect(result.switcherHidden).toBe(false);
+    expect(result.switcherDisplay).toBe('');
+    expect(result.toggleDisabled).toBe(false);
+    expect(result.menuCount).toBe(2);
+  });
+
+  test('admin can change class and load corresponding data', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const [stateModule, uiModule] = await Promise.all([
+        import('/js/state.js'),
+        import('/js/ui.js')
+      ]);
+
+      const app = stateModule.default || window.TrackerApp;
+      const ui = uiModule.default || app.ui;
+
+      document.body.innerHTML = `
+        <div id="toast"></div>
+        <div class="global-class-switcher"><div class="class-switcher-main">
+          <button id="class-prev-btn" type="button"></button>
+          <div id="class-dropdown" class="class-dropdown">
+            <button id="class-dropdown-toggle" type="button"><span id="class-dropdown-value"></span></button>
+            <div id="class-dropdown-menu" class="class-dropdown-menu"></div>
+          </div>
+          <button id="class-next-btn" type="button"></button>
+          <button id="create-class-btn" type="button"></button>
+          <button id="delete-class-btn" type="button"></button>
+        </div><p id="class-name-display"></p></div>
+        <div id="admin-readonly-banner" hidden><span id="admin-readonly-label"></span></div>
+        <div id="empty-msg"></div>
+        <form id="add-student-form"><input id="student-name-input" /><button type="submit">Add</button></form>
+        <form id="addMockForm"><input id="mockNameInput" /><button type="submit">Add Exam</button></form>
+        <form id="addSubjectForm"><input id="subjectNameInput" /><button type="submit">Add Subject</button></form>
+        <div id="mockList"></div>
+        <div id="subjectList"></div>
+      `;
+
+      ui.init();
+      ui.bindEvents();
+
+      app.setCurrentUserRole('admin', { resolved: true });
+      app.state.isLoading = false;
+      app.state.classes = [
+        { id: 'class_shared', name: 'Class One', ownerId: 'owner_one', ownerName: 'Teacher One' },
+        { id: 'class_shared', name: 'Class Two', ownerId: 'owner_two', ownerName: 'Teacher Two' }
+      ];
+      app.state.currentClassId = 'class_shared';
+      app.state.currentClassOwnerId = 'owner_one';
+      app.syncDataContext();
+
+      const loadCalls = [];
+      app.load = async () => {
+        loadCalls.push({
+          classId: app.state.currentClassId,
+          ownerId: app.getCurrentClassOwnerId()
+        });
+      };
+
+      ui.refreshUI();
+
+      const target = document.querySelector('#class-dropdown-menu .class-dropdown-item[data-owner-id="owner_two"]');
+      target.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      return {
+        classId: app.state.currentClassId,
+        ownerId: app.getCurrentClassOwnerId(),
+        loadCalls
+      };
+    });
+
+    expect(result.classId).toBe('class_shared');
+    expect(result.ownerId).toBe('owner_two');
+    expect(result.loadCalls).toEqual([{ classId: 'class_shared', ownerId: 'owner_two' }]);
+  });
+
+  test('admin write remains blocked in UI submit path', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const [stateModule, uiModule, studentsModule] = await Promise.all([
+        import('/js/state.js'),
+        import('/js/ui.js'),
+        import('/js/students.js')
+      ]);
+
+      const app = stateModule.default || window.TrackerApp;
+      const ui = uiModule.default || app.ui;
+      const students = studentsModule.default || app.students;
+
+      document.body.innerHTML = `
+        <div id="toast"></div>
+        <div class="global-class-switcher"><div class="class-switcher-main">
+          <button id="class-prev-btn" type="button"></button>
+          <div id="class-dropdown" class="class-dropdown">
+            <button id="class-dropdown-toggle" type="button"><span id="class-dropdown-value"></span></button>
+            <div id="class-dropdown-menu" class="class-dropdown-menu"></div>
+          </div>
+          <button id="class-next-btn" type="button"></button>
+          <button id="create-class-btn" type="button"></button>
+          <button id="delete-class-btn" type="button"></button>
+        </div><p id="class-name-display"></p></div>
+        <div id="admin-readonly-banner" hidden><span id="admin-readonly-label"></span></div>
+        <div id="empty-msg"></div>
+        <form id="add-student-form"><input id="student-name-input" /><button type="submit">Add</button></form>
+        <form id="addMockForm"><input id="mockNameInput" /><button type="submit">Add Exam</button></form>
+        <form id="addSubjectForm"><input id="subjectNameInput" /><button type="submit">Add Subject</button></form>
+        <div id="mockList"></div>
+        <div id="subjectList"></div>
+      `;
+
+      app.students = students;
+      ui.init();
+      ui.bindEvents();
+
+      app.setCurrentUserRole('admin', { resolved: true });
+      app.state.isLoading = false;
+      app.state.classes = [
+        { id: 'class_admin', name: 'Admin Class', ownerId: 'owner_admin', ownerName: 'Teacher Admin' }
+      ];
+      app.state.currentClassId = 'class_admin';
+      app.state.currentClassOwnerId = 'owner_admin';
+      app.syncDataContext();
+
+      let addStudentCalls = 0;
+      app.addStudent = async () => {
+        addStudentCalls += 1;
+        return { id: 'should_not_happen' };
+      };
+
+      ui.refreshUI();
+      const form = document.getElementById('add-student-form');
+      const nameInput = document.getElementById('student-name-input');
+      nameInput.value = 'Blocked Admin Student';
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      return {
+        addStudentCalls,
+        readOnly: app.isReadOnlyRoleContext(),
+        bannerVisible: document.getElementById('admin-readonly-banner')?.hidden === false
+      };
+    });
+
+    expect(result.addStudentCalls).toBe(0);
+    expect(result.readOnly).toBe(true);
+    expect(result.bannerVisible).toBe(true);
+  });
+
   test('admin class switch keeps owner-aware read context', async ({ page }) => {
     const result = await page.evaluate(async () => {
       const stateModule = await import('/js/state.js');

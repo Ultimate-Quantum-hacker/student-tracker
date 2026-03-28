@@ -248,9 +248,48 @@ const ui = {
         return true;
       }
 
-      const label = this.getReadOnlyModeLabel();
-      this.showToast(`${label} ${actionLabel} is disabled.`);
+      this.showReadOnlyRoleToast(actionLabel);
       return false;
+    },
+
+    resolveClassContextErrorMessage: function (error, fallbackMessage = 'Please select a class and try again.') {
+      const code = String(error?.code || '').trim().toLowerCase();
+      const message = String(error?.message || '').trim();
+      if (code === 'app/missing-class-context' || code === 'app/missing-class-id') {
+        return 'Select a class before continuing.';
+      }
+      if (code === 'app/missing-class-owner-context' || code === 'app/missing-owner-id') {
+        return 'Class owner context is missing. Re-select the class and try again.';
+      }
+      if (code === 'app/class-not-found') {
+        return 'Selected class no longer exists. Refresh classes and try again.';
+      }
+      if (code === 'app/invalid-owner') {
+        return 'Selected class owner is invalid. Re-select the class and try again.';
+      }
+      if (message) {
+        return message;
+      }
+      return fallbackMessage;
+    },
+
+    ensureWritableClassAction: function (actionLabel = 'modify data', operationLabel = 'modify data') {
+      if (!this.ensureWritableAction(actionLabel)) {
+        return false;
+      }
+
+      if (typeof app.ensureWritableClassContext !== 'function') {
+        return true;
+      }
+
+      try {
+        app.ensureWritableClassContext(operationLabel);
+        return true;
+      } catch (error) {
+        const message = this.resolveClassContextErrorMessage(error, `Unable to ${String(operationLabel || 'continue').trim()}.`);
+        this.showToast(message);
+        return false;
+      }
     },
 
     setReadOnlyControlState: function (elements = [], isReadOnly = false) {
@@ -451,6 +490,12 @@ const ui = {
           app.dom.createClassBtn,
           app.dom.deleteClassBtn
         ]);
+      }
+
+      const classSwitcher = document.querySelector('.global-class-switcher');
+      if (classSwitcher) {
+        classSwitcher.hidden = false;
+        classSwitcher.style.display = '';
       }
 
       this.applyFeatureAccessState('developerTools', [
@@ -2278,7 +2323,7 @@ const ui = {
         if (app.dom.form) {
           app.dom.form.onsubmit = async (e) => {
             e.preventDefault();
-            if (!this.ensureWritableAction('Student creation')) return;
+            if (!this.ensureWritableClassAction('Student creation', 'add student')) return;
             const didAddStudent = await app.students.addStudent(app.dom.nameInput.value, app, this);
             if (didAddStudent && app.dom.nameInput) {
               app.dom.nameInput.value = '';
@@ -2480,7 +2525,7 @@ const ui = {
         };
         if (app.dom.addMockForm) app.dom.addMockForm.onsubmit = async (e) => { 
           e.preventDefault(); 
-          if (!this.ensureWritableAction('Exam creation')) return;
+          if (!this.ensureWritableClassAction('Exam creation', 'add exam')) return;
           if (app.dom.mockNameInput.value.trim()) { 
             try {
               await app.addExam({ title: app.dom.mockNameInput.value.trim(), date: new Date().toISOString() });
@@ -2488,21 +2533,21 @@ const ui = {
               app.ui.showToast('Exam added');
             } catch (error) {
               console.error('Failed to add exam:', error);
-              app.ui.showToast('Failed to add exam');
+              app.ui.showToast(this.resolveClassContextErrorMessage(error, 'Failed to add exam'));
             }
           } 
           app.dom.mockNameInput.value = ''; 
         };
         if (app.dom.addSubjectForm) app.dom.addSubjectForm.onsubmit = async (e) => { 
           e.preventDefault(); 
-          if (!this.ensureWritableAction('Subject creation')) return;
+          if (!this.ensureWritableClassAction('Subject creation', 'add subject')) return;
           if (app.dom.subjectNameInput.value.trim()) { 
             try {
               await app.addSubject({ name: app.dom.subjectNameInput.value.trim() });
               this.refreshUI(); 
             } catch (error) {
               console.error('Failed to add subject:', error);
-              app.ui.showToast('Failed to add subject');
+              app.ui.showToast(this.resolveClassContextErrorMessage(error, 'Failed to add subject'));
             }
           } 
           app.dom.subjectNameInput.value = ''; 

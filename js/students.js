@@ -24,6 +24,26 @@ const ensureWritable = (appRef, uiRef) => {
   return false;
 };
 const isReadOnlyError = (error) => String(error?.code || '').trim().toLowerCase() === 'app/read-only-admin';
+const resolveClassContextErrorMessage = (error, fallback = 'Failed to add student') => {
+  const code = String(error?.code || '').trim().toLowerCase();
+  const message = String(error?.message || '').trim();
+  if (code === 'app/missing-class-context' || code === 'app/missing-class-id') {
+    return 'Select a class before adding a student.';
+  }
+  if (code === 'app/missing-class-owner-context' || code === 'app/missing-owner-id') {
+    return 'Class owner context is missing. Re-select the class and try again.';
+  }
+  if (code === 'app/class-not-found') {
+    return 'Selected class no longer exists. Refresh classes and try again.';
+  }
+  if (code === 'app/invalid-owner') {
+    return 'Selected class owner is invalid. Re-select the class and try again.';
+  }
+  if (message) {
+    return message;
+  }
+  return fallback;
+};
 
 const students = {
   addStudent: async function (name, runtimeApp, runtimeUi) {
@@ -44,7 +64,7 @@ const students = {
       return true;
     } catch (error) {
       console.error('Failed to add student:', error);
-      uiRef?.showToast?.('Failed to add student');
+      uiRef?.showToast?.(resolveClassContextErrorMessage(error, 'Failed to add student'));
       return false;
     }
   },
