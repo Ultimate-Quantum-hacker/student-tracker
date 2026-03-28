@@ -346,6 +346,67 @@ test.describe('Class refactor critical regressions', () => {
     expect(result.submittedPayload?.date).toBeTruthy();
   });
 
+  test('teacher class controls stay enabled after switching classes', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const [stateModule, uiModule] = await Promise.all([
+        import('/js/state.js'),
+        import('/js/ui.js')
+      ]);
+
+      const app = stateModule.default || window.TrackerApp;
+      const ui = uiModule.default || app.ui;
+
+      document.body.innerHTML = `
+        <div id="toast"></div>
+        <div class="global-class-switcher"><div class="class-switcher-main">
+          <button id="class-prev-btn" type="button"></button>
+          <div id="class-dropdown" class="class-dropdown">
+            <button id="class-dropdown-toggle" type="button"><span id="class-dropdown-value"></span></button>
+            <div id="class-dropdown-menu" class="class-dropdown-menu"></div>
+          </div>
+          <button id="class-next-btn" type="button"></button>
+          <button id="create-class-btn" type="button"></button>
+          <button id="delete-class-btn" type="button"></button>
+        </div><p id="class-name-display"></p></div>
+        <div id="admin-readonly-banner" hidden><span id="admin-readonly-label"></span></div>
+        <div id="empty-msg"></div>
+        <form id="add-student-form"><input id="student-name-input" /><button type="submit">Add</button></form>
+        <form id="addMockForm"><input id="mockNameInput" /><button type="submit">Add Exam</button></form>
+        <form id="addSubjectForm"><input id="subjectNameInput" /><button type="submit">Add Subject</button></form>
+        <div id="mockList"></div>
+        <div id="subjectList"></div>
+      `;
+
+      ui.init();
+      ui.bindEvents();
+
+      app.setCurrentUserRole('teacher', { resolved: true });
+      app.state.isLoading = false;
+      app.state.classes = [
+        { id: 'class_one', name: 'Class One', ownerId: 'owner_teacher', ownerName: 'Teacher Owner' },
+        { id: 'class_two', name: 'Class Two', ownerId: 'owner_teacher', ownerName: 'Teacher Owner' }
+      ];
+      app.state.currentClassId = 'class_one';
+      app.state.currentClassOwnerId = 'owner_teacher';
+      app.syncDataContext();
+
+      app.load = async () => {};
+
+      ui.refreshUI();
+      await ui.switchToClass('class_two', 'owner_teacher');
+
+      return {
+        currentClassId: app.state.currentClassId,
+        createDisabled: Boolean(document.getElementById('create-class-btn')?.disabled),
+        deleteDisabled: Boolean(document.getElementById('delete-class-btn')?.disabled)
+      };
+    });
+
+    expect(result.currentClassId).toBe('class_two');
+    expect(result.createDisabled).toBe(false);
+    expect(result.deleteDisabled).toBe(false);
+  });
+
   test('admin dropdown renders when valid classes exist', async ({ page }) => {
     const result = await page.evaluate(async () => {
       const [stateModule, uiModule] = await Promise.all([
@@ -616,6 +677,8 @@ test.describe('Class refactor critical regressions', () => {
     expect(dbSource).toContain('Migration verification mismatch');
     expect(dbSource).toContain("await updateMigrationState(userId, 'failed', {");
     expect(dbSource).toContain('classMigrationError: String(error?.message || \'Migration failed\').slice(0, 500)');
+    expect(dbSource).toContain('const findClassEntryBySelection = (classes = [], classId = \'\', ownerId = \'\') => {');
+    expect(dbSource).toContain('const activeClass = findClassEntryBySelection(classes, classId, currentClassOwnerId || persistedSelection.ownerId || \'\') || null;');
   });
 
   test('stale deleted class selection has validated fallback path', async () => {

@@ -845,6 +845,7 @@ const ui = {
         this.showToast('Failed to switch class');
       } finally {
         this.renderClassControls();
+        this.applyReadOnlyRoleState();
       }
     },
 
@@ -939,8 +940,12 @@ const ui = {
         }
       }
 
+      const canManageClasses = this.getCurrentRole() === 'teacher' || this.getCurrentRole() === 'developer';
+      if (app.dom.createClassBtn) {
+        app.dom.createClassBtn.disabled = !canManageClasses;
+      }
       if (app.dom.deleteClassBtn) {
-        app.dom.deleteClassBtn.disabled = classes.length <= 1 || !resolvedClassId;
+        app.dom.deleteClassBtn.disabled = !canManageClasses || classes.length <= 1 || !resolvedClassId;
       }
 
       const disableArrows = classes.length <= 1 || !resolvedClassId;
@@ -972,7 +977,6 @@ const ui = {
         }
       }
 
-      const canManageClasses = this.getCurrentRole() === 'teacher' || this.getCurrentRole() === 'developer';
       if (!canManageClasses && app.dom.classDropdownValue && !classes.length) {
         app.dom.classDropdownValue.textContent = 'No classes available';
       }

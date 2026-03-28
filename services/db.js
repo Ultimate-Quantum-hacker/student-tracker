@@ -1220,6 +1220,38 @@ const sortClasses = (classes = []) => {
   });
 };
 
+const findClassEntryBySelection = (classes = [], classId = '', ownerId = '') => {
+  const normalizedClasses = Array.isArray(classes)
+    ? classes.map((entry) => toClassModel(entry?.id, entry)).filter((entry) => entry.id)
+    : [];
+  const normalizedClassId = normalizeClassId(classId);
+  const normalizedOwnerId = normalizeUserId(ownerId);
+
+  if (!normalizedClasses.length) {
+    return null;
+  }
+
+  if (!normalizedClassId) {
+    return normalizedClasses[0] || null;
+  }
+
+  const ownerAwareMatch = normalizedClasses.find((entry) => {
+    if (entry.id !== normalizedClassId) {
+      return false;
+    }
+    if (!normalizedOwnerId) {
+      return true;
+    }
+    return normalizeUserId(entry.ownerId || '') === normalizedOwnerId;
+  });
+
+  if (ownerAwareMatch) {
+    return ownerAwareMatch;
+  }
+
+  return normalizedClasses.find((entry) => entry.id === normalizedClassId) || normalizedClasses[0] || null;
+};
+
 const sortClassTrashEntries = (entries = []) => {
   return [...entries].sort((a, b) => {
     const aTime = new Date(a?.deletedAt || 0).getTime() || 0;
@@ -1261,13 +1293,8 @@ const resolveClassIdFromCatalog = (userId, classes = []) => {
   const requestedClassId = normalizeClassId(currentClassId) || normalizeClassId(persistedSelection.classId || '');
   const requestedOwnerId = normalizeUserId(persistedSelection.ownerId || '');
 
-  const matchedClass = normalizedClasses.find((entry) => {
-    if (entry.id !== requestedClassId) return false;
-    if (!requestedOwnerId) return true;
-    return normalizeUserId(entry.ownerId || '') === requestedOwnerId;
-  });
-  const nextClassId = matchedClass?.id || normalizedClasses[0].id;
-  const nextClass = normalizedClasses.find(entry => entry.id === nextClassId) || null;
+  const nextClass = findClassEntryBySelection(normalizedClasses, requestedClassId, requestedOwnerId);
+  const nextClassId = nextClass?.id || '';
   setCurrentClassContext(nextClassId, userId, nextClass?.ownerId || '', nextClass?.ownerName || '');
   return nextClassId;
 };
@@ -1972,7 +1999,8 @@ const ensureActiveClassContext = async (userId, options = {}) => {
     const trashClasses = readClassTrashCache(scopeKey);
 
     const { classId, className } = resolveActiveClassModel(authUserId, classes);
-    const activeClass = classes.find((entry) => normalizeClassId(entry?.id) === normalizeClassId(classId)) || null;
+    const persistedSelection = readPersistedClassSelection(authUserId);
+    const activeClass = findClassEntryBySelection(classes, classId, currentClassOwnerId || persistedSelection.ownerId || '') || null;
     const classOwnerId = normalizeUserId(activeClass?.ownerId || '');
     const classOwnerName = normalizeDisplayName(activeClass?.ownerName || '', 'Teacher');
     setCurrentClassContext(classId, authUserId, classOwnerId, classOwnerName);
@@ -1996,7 +2024,8 @@ const ensureActiveClassContext = async (userId, options = {}) => {
   const classes = catalog.classes || [];
   const trashClasses = catalog.trashClasses || [];
   const { classId, className } = resolveActiveClassModel(authUserId, classes);
-  const activeClass = classes.find((entry) => normalizeClassId(entry?.id) === normalizeClassId(classId)) || null;
+  const persistedSelection = readPersistedClassSelection(authUserId);
+  const activeClass = findClassEntryBySelection(classes, classId, currentClassOwnerId || persistedSelection.ownerId || '') || null;
   const classOwnerId = normalizeUserId(activeClass?.ownerId || '');
   const classOwnerName = normalizeDisplayName(activeClass?.ownerName || '', 'Teacher');
   setCurrentClassContext(classId, authUserId, classOwnerId, classOwnerName);
@@ -3049,7 +3078,8 @@ export const fetchClassCatalog = async () => {
     const cachedClasses = readClassCatalogCache(cacheScopeKey);
     const cachedTrashClasses = readClassTrashCache(cacheScopeKey);
     const { classId, className } = resolveActiveClassModel(userId, cachedClasses);
-    const activeClass = cachedClasses.find((entry) => normalizeClassId(entry?.id) === normalizeClassId(classId)) || null;
+    const persistedSelection = readPersistedClassSelection(userId);
+    const activeClass = findClassEntryBySelection(cachedClasses, classId, currentClassOwnerId || persistedSelection.ownerId || '') || null;
     setCurrentClassContext(classId, userId, activeClass?.ownerId || '', activeClass?.ownerName || '');
     return {
       classes: cachedClasses,
@@ -3063,7 +3093,8 @@ export const fetchClassCatalog = async () => {
   const classes = catalog.classes || [];
   const trashClasses = catalog.trashClasses || [];
   const { classId, className } = resolveActiveClassModel(userId, classes);
-  const activeClass = classes.find((entry) => normalizeClassId(entry?.id) === normalizeClassId(classId)) || null;
+  const persistedSelection = readPersistedClassSelection(userId);
+  const activeClass = findClassEntryBySelection(classes, classId, currentClassOwnerId || persistedSelection.ownerId || '') || null;
   setCurrentClassContext(classId, userId, activeClass?.ownerId || '', activeClass?.ownerName || '');
   writeClassCatalogCache(cacheScopeKey, classes, trashClasses);
 
