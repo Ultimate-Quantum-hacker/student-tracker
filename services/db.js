@@ -1393,11 +1393,23 @@ const readLegacyRawData = async (userId) => {
     return createDefaultRawData();
   }
 
-  const [studentsSnapshot, subjectsSnapshot, examsSnapshot] = await Promise.all([
-    getDocs(getLegacyStudentsCollectionRef(userId)),
-    getDocs(getLegacySubjectsCollectionRef(userId)),
-    getDocs(getLegacyExamsCollectionRef(userId))
-  ]);
+  let studentsSnapshot;
+  let subjectsSnapshot;
+  let examsSnapshot;
+
+  try {
+    [studentsSnapshot, subjectsSnapshot, examsSnapshot] = await Promise.all([
+      getDocs(getLegacyStudentsCollectionRef(userId)),
+      getDocs(getLegacySubjectsCollectionRef(userId)),
+      getDocs(getLegacyExamsCollectionRef(userId))
+    ]);
+  } catch (error) {
+    if (classifyFirebaseError(error) === 'permission') {
+      console.warn('Skipping legacy root data read during class migration due to permissions:', error);
+      return createDefaultRawData();
+    }
+    throw error;
+  }
 
   const students = [];
   studentsSnapshot.forEach((entry) => {

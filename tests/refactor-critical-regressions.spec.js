@@ -759,6 +759,8 @@ test.describe('Class refactor critical regressions', () => {
     const rulesSource = readWorkspaceFile('firestore.rules');
 
     expect(dbSource).toContain('const getRawDataCounts = (rawData) =>');
+    expect(dbSource).toContain("if (classifyFirebaseError(error) === 'permission') {");
+    expect(dbSource).toContain('Skipping legacy root data read during class migration due to permissions:');
     expect(dbSource).toContain('const countsMismatchBeforeSync = !hasMatchingRawDataCounts(legacyCounts, classCountsBeforeSync);');
     expect(dbSource).toContain('if (hasLegacyData && countsMismatchBeforeSync) {');
     expect(dbSource).toContain('await writeModularData(classOwnerId, classId, legacyRawData);');
@@ -779,6 +781,9 @@ test.describe('Class refactor critical regressions', () => {
     expect(rulesSource).toContain('function isSignedIn() {');
     expect(rulesSource).toContain('function isOwner(userId) {');
     expect(rulesSource).toContain('allow write: if isOwner(userId);');
+    expect(rulesSource).toContain('match /users/{userId}/students/{docId} {');
+    expect(rulesSource).toContain('match /users/{userId}/subjects/{docId} {');
+    expect(rulesSource).toContain('match /users/{userId}/exams/{docId} {');
     expect(rulesSource).toContain('match /{path=**}/classes/{classId} {');
     expect(rulesSource).toContain('allow read: if isSignedIn();');
     expect(rulesSource).toContain('match /activityLogs/{logId} {');
