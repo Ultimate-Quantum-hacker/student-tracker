@@ -264,6 +264,8 @@ const bindAuthStateWatcher = () => {
   authSubscriptionCleanup = subscribeAuthState((authUser) => {
     handleAuthUserChange(authUser).catch((error) => {
       console.error('Auth state handler failed:', error);
+      clearLoadedDataForLogout();
+      redirectToLogin();
     });
   });
 };

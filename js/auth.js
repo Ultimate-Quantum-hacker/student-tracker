@@ -23,8 +23,17 @@ const ROLE_ADMIN = 'admin';
 const ROLE_DEVELOPER = 'developer';
 const USER_ROLES = [ROLE_TEACHER, ROLE_ADMIN, ROLE_DEVELOPER, LEGACY_ROLE_USER];
 const DEFAULT_USER_ROLE = ROLE_TEACHER;
+const ACCOUNT_STATUS_ACTIVE = 'active';
+const ACCOUNT_STATUS_SUSPENDED = 'suspended';
+const ACCOUNT_STATUS_DELETED = 'deleted';
 
 export const isDeveloperAccountEmail = (email) => normalizeEmail(email) === DEVELOPER_EMAIL;
+export const normalizeAccountStatus = (status) => {
+  const normalized = String(status || '').trim().toLowerCase();
+  if (normalized === ACCOUNT_STATUS_SUSPENDED) return ACCOUNT_STATUS_SUSPENDED;
+  if (normalized === ACCOUNT_STATUS_DELETED) return ACCOUNT_STATUS_DELETED;
+  return ACCOUNT_STATUS_ACTIVE;
+};
 
 export const normalizeUserRole = (role) => {
   const normalized = String(role || '').trim().toLowerCase();
@@ -55,8 +64,44 @@ const sanitizeProfilePayload = (authUser, existingRole = '') => ({
   role: resolveProfileRole(authUser, existingRole),
   name: normalizeName(authUser?.name),
   email: normalizeEmail(authUser?.email),
+  accountStatus: ACCOUNT_STATUS_ACTIVE,
+  suspendedAt: null,
+  deletedAt: null,
   createdAt: serverTimestamp()
 });
+
+const createAccountStateError = (status = ACCOUNT_STATUS_SUSPENDED) => {
+  const normalizedStatus = normalizeAccountStatus(status);
+  const error = new Error(
+    normalizedStatus === ACCOUNT_STATUS_DELETED
+      ? 'This account has been deleted. Contact an administrator.'
+      : 'This account has been suspended. Contact an administrator.'
+  );
+  error.code = normalizedStatus === ACCOUNT_STATUS_DELETED ? 'auth/account-deleted' : 'auth/account-suspended';
+  return error;
+};
+
+const isBlockedAccountError = (error) => {
+  const code = String(error?.code || '').trim().toLowerCase();
+  return code.includes('account-suspended') || code.includes('account-deleted') || code.includes('user-disabled');
+};
+
+const assertAccountAccess = async (profile = {}) => {
+  const normalizedStatus = normalizeAccountStatus(profile?.accountStatus || (profile?.deletedAt ? ACCOUNT_STATUS_DELETED : ''));
+  if (normalizedStatus === ACCOUNT_STATUS_ACTIVE) {
+    return normalizedStatus;
+  }
+
+  if (auth?.currentUser) {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error('Failed to sign out blocked account:', error);
+    }
+  }
+
+  throw createAccountStateError(normalizedStatus);
+};
 
 const ensureUserProfileDocument = async (authUser) => {
   const uid = String(authUser?.uid || '').trim();
@@ -103,6 +148,7 @@ const ensureUserProfileDocument = async (authUser) => {
   const normalizedName = normalizeName(data.name || authUser?.name);
   const profileEmail = normalizeEmail(data.email || '');
   const resolvedEmailForProfile = normalizedEmail || profileEmail;
+  const resolvedAccountStatus = normalizeAccountStatus(data.accountStatus || (data.deletedAt ? ACCOUNT_STATUS_DELETED : ''));
   const resolvedRole = resolveProfileRole(
     {
       uid,
@@ -125,6 +171,15 @@ const ensureUserProfileDocument = async (authUser) => {
   if (String(data.role || '').trim().toLowerCase() !== resolvedRole) {
     patch.role = resolvedRole;
   }
+  if (normalizeAccountStatus(data.accountStatus || (data.deletedAt ? ACCOUNT_STATUS_DELETED : '')) !== resolvedAccountStatus) {
+    patch.accountStatus = resolvedAccountStatus;
+  }
+
+  await assertAccountAccess({
+    uid,
+    accountStatus: resolvedAccountStatus,
+    deletedAt: data.deletedAt || null
+  });
 
   if (Object.keys(patch).length) {
     await setDoc(profileRef, patch, { merge: true });
@@ -138,6 +193,7 @@ const ensureUserProfileDocument = async (authUser) => {
     role: resolvedRole,
     name: normalizedName,
     email: resolvedEmailForProfile,
+    accountStatus: resolvedAccountStatus,
     createdAt: data.createdAt || null
   };
 };
@@ -154,6 +210,9 @@ export const resolveUserRole = async (authUser) => {
     }
     return normalizedRole;
   } catch (error) {
+    if (isBlockedAccountError(error)) {
+      throw error;
+    }
     console.error('Failed to resolve user role. Falling back to teacher:', error);
     if (isDeveloperEmail) {
       console.log('Assigned role:', ROLE_DEVELOPER);
@@ -186,6 +245,8 @@ export const formatAuthError = (error) => {
   if (code.includes('email-already-in-use')) return 'This email is already in use.';
   if (code.includes('user-not-found')) return 'No account found for this email.';
   if (code.includes('wrong-password') || code.includes('invalid-credential')) return 'Invalid email or password.';
+  if (code.includes('account-suspended') || code.includes('user-disabled')) return 'Your account has been suspended. Contact an administrator.';
+  if (code.includes('account-deleted')) return 'Your account has been deleted. Contact an administrator.';
   if (code.includes('permission-denied')) return 'Access denied. You don\'t have permission.';
   if (code.includes('network-request-failed')) return 'Network error. Please check your internet connection.';
   if (code.includes('too-many-requests')) return 'Too many attempts. Please try again later.';
@@ -238,11 +299,7 @@ export const registerUser = async ({ name, email, password }) => {
   }
 
   const nextAuthUser = toAuthUser(credential.user);
-  try {
-    await ensureUserProfileDocument(nextAuthUser);
-  } catch (error) {
-    console.error('Failed to initialize user profile during signup:', error);
-  }
+  await ensureUserProfileDocument(nextAuthUser);
   return nextAuthUser;
 };
 
@@ -253,11 +310,7 @@ export const loginUser = async ({ email, password }) => {
 
   const credential = await signInWithEmailAndPassword(auth, normalizeEmail(email), password);
   const nextAuthUser = toAuthUser(credential.user);
-  try {
-    await ensureUserProfileDocument(nextAuthUser);
-  } catch (error) {
-    console.error('Failed to initialize user profile during login:', error);
-  }
+  await ensureUserProfileDocument(nextAuthUser);
   return nextAuthUser;
 };
 

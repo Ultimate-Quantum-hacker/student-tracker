@@ -36,6 +36,10 @@ const DEFAULT_CLASS_NAME = 'My Class';
 const TRASH_RETENTION_DAYS = 3;
 const ACTIVITY_LOG_FETCH_LIMIT = 300;
 const CLASS_MIGRATION_VERSION = 2;
+const DEVELOPER_EMAIL = 'pokumike2@gmail.com';
+const ACCOUNT_STATUS_ACTIVE = 'active';
+const ACCOUNT_STATUS_SUSPENDED = 'suspended';
+const ACCOUNT_STATUS_DELETED = 'deleted';
 
 const ERROR_CODES = {
   READ_ONLY_MODE: 'READ_ONLY_MODE',
@@ -69,11 +73,18 @@ let writeChain = Promise.resolve();
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const asArray = (value) => Array.isArray(value) ? value : [];
+const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
 const normalizeRole = (value) => {
   const normalized = String(value || '').trim().toLowerCase();
   if (normalized === 'admin') return 'admin';
   if (normalized === 'developer') return 'developer';
   return 'teacher';
+};
+const normalizeAccountStatus = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === ACCOUNT_STATUS_SUSPENDED) return ACCOUNT_STATUS_SUSPENDED;
+  if (normalized === ACCOUNT_STATUS_DELETED) return ACCOUNT_STATUS_DELETED;
+  return ACCOUNT_STATUS_ACTIVE;
 };
 
 const normalizeDeletedAtValue = (value) => {
@@ -1283,6 +1294,17 @@ const getOwnerIdFromClassRefPath = (path = '') => {
     return normalizeUserId(segments[1]);
   }
   return '';
+};
+const getClassIdFromClassRefPath = (path = '') => {
+  const segments = String(path || '').split('/').filter(Boolean);
+  if (segments.length >= 4 && segments[0] === USERS_COLLECTION && segments[2] === CLASSES_SUBCOLLECTION) {
+    return normalizeClassId(segments[3]);
+  }
+  return '';
+};
+const isLegacyRootSubcollectionPath = (path = '', subcollectionName = '') => {
+  const segments = String(path || '').split('/').filter(Boolean);
+  return segments.length === 4 && segments[0] === USERS_COLLECTION && segments[2] === subcollectionName;
 };
 
 const resolveClassIdFromCatalog = (userId, classes = []) => {
@@ -2528,6 +2550,99 @@ const countActiveCollectionEntries = (snapshot) => {
   return count;
 };
 
+const countActiveUserProfiles = (snapshot) => {
+  let count = 0;
+  snapshot.forEach((entry) => {
+    const payload = entry.data() || {};
+    if (normalizeAccountStatus(payload.accountStatus || (payload.deletedAt ? ACCOUNT_STATUS_DELETED : '')) === ACCOUNT_STATUS_DELETED) {
+      return;
+    }
+    count += 1;
+  });
+  return count;
+};
+
+const buildClassScopeMetadataMap = (classes = []) => {
+  const metadataMap = new Map();
+  asArray(classes).forEach((entry) => {
+    const ownerId = normalizeUserId(entry?.ownerId || '');
+    const classId = normalizeClassId(entry?.id || '');
+    if (!ownerId || !classId) return;
+    metadataMap.set(`${ownerId}::${classId}`, {
+      ownerId,
+      ownerName: normalizeDisplayName(entry?.ownerName || '', 'Teacher'),
+      classId,
+      className: normalizeClassName(entry?.name || '', classId)
+    });
+  });
+  return metadataMap;
+};
+
+const getScopedSubcollectionRef = (ownerId = '', classId = '', subcollectionName = '') => {
+  const normalizedOwnerId = normalizeUserId(ownerId);
+  const normalizedClassId = normalizeClassId(classId);
+  if (!normalizedOwnerId || !normalizedClassId) {
+    return null;
+  }
+  if (subcollectionName === STUDENTS_SUBCOLLECTION) {
+    return getClassStudentsCollectionRef(normalizedOwnerId, normalizedClassId);
+  }
+  if (subcollectionName === SUBJECTS_SUBCOLLECTION) {
+    return getClassSubjectsCollectionRef(normalizedOwnerId, normalizedClassId);
+  }
+  if (subcollectionName === EXAMS_SUBCOLLECTION) {
+    return getClassExamsCollectionRef(normalizedOwnerId, normalizedClassId);
+  }
+  return null;
+};
+
+const readAdminGlobalClassScopes = async (requesterUserId = '') => {
+  const catalog = await readGlobalClassCatalogFromFirestore(requesterUserId);
+  return sortClasses(asArray(catalog?.classes)).filter((entry) => {
+    return Boolean(normalizeUserId(entry?.ownerId || '') && normalizeClassId(entry?.id || ''));
+  });
+};
+
+const readGlobalSubcollectionEntriesWithFallback = async (subcollectionName, requesterUserId = '') => {
+  try {
+    const entries = [];
+    const snapshot = await getDocs(collectionGroup(db, subcollectionName));
+    snapshot.forEach((entry) => {
+      if (isLegacyRootSubcollectionPath(entry.ref?.path, subcollectionName)) {
+        return;
+      }
+      entries.push(entry);
+    });
+    return {
+      entries,
+      classMetadataMap: new Map()
+    };
+  } catch (error) {
+    if (classifyFirebaseError(error) !== 'permission') {
+      throw error;
+    }
+
+    const classScopes = await readAdminGlobalClassScopes(requesterUserId);
+    const classMetadataMap = buildClassScopeMetadataMap(classScopes);
+    const entries = [];
+    const snapshots = await Promise.all(
+      classScopes.map((entry) => {
+        const collectionRef = getScopedSubcollectionRef(entry.ownerId, entry.id, subcollectionName);
+        return collectionRef ? getDocs(collectionRef) : Promise.resolve(null);
+      })
+    );
+    snapshots.forEach((snapshot) => {
+      snapshot?.forEach((entry) => {
+        entries.push(entry);
+      });
+    });
+    return {
+      entries,
+      classMetadataMap
+    };
+  }
+};
+
 export const logActivity = async (action, targetId, targetType, options = {}) => {
   try {
     if (!isFirebaseConfigured || !db) {
@@ -2608,16 +2723,17 @@ export const fetchAdminGlobalStats = async () => {
     };
   }
 
-  const [usersSnapshot, studentsSnapshot, examsSnapshot] = await Promise.all([
+  const requesterUserId = getAuthenticatedUserId();
+  const [usersSnapshot, studentsResult, examsResult] = await Promise.all([
     getDocs(collection(db, USERS_COLLECTION)),
-    getDocs(collectionGroup(db, STUDENTS_SUBCOLLECTION)),
-    getDocs(collectionGroup(db, EXAMS_SUBCOLLECTION))
+    readGlobalSubcollectionEntriesWithFallback(STUDENTS_SUBCOLLECTION, requesterUserId),
+    readGlobalSubcollectionEntriesWithFallback(EXAMS_SUBCOLLECTION, requesterUserId)
   ]);
 
   return {
-    totalUsers: usersSnapshot.size,
-    totalStudents: countActiveCollectionEntries(studentsSnapshot),
-    totalExams: countActiveCollectionEntries(examsSnapshot)
+    totalUsers: countActiveUserProfiles(usersSnapshot),
+    totalStudents: countActiveCollectionEntries(studentsResult.entries),
+    totalExams: countActiveCollectionEntries(examsResult.entries)
   };
 };
 
@@ -2634,9 +2750,12 @@ export const fetchAdminUsers = async () => {
     records.push({
       docId: snapshot.id,
       uid: normalizeUserId(data.uid || snapshot.id),
-      email: String(data.email || '').trim().toLowerCase(),
+      email: normalizeEmail(data.email || ''),
       name: String(data.name || '').trim(),
       role: normalizeRole(data.role),
+      accountStatus: normalizeAccountStatus(data.accountStatus || (data.deletedAt ? ACCOUNT_STATUS_DELETED : '')),
+      suspendedAt: data.suspendedAt || null,
+      deletedAt: data.deletedAt || null,
       createdAt: data.createdAt || null
     });
   });
@@ -2669,22 +2788,95 @@ export const updateAdminUserRole = async ({ uid = '', name = '', email = '', rol
   return true;
 };
 
+export const updateAdminUserAccountState = async ({ uid = '', status = ACCOUNT_STATUS_ACTIVE } = {}) => {
+  await ensureAuthenticatedUserId('manage user account');
+  const actorRole = normalizeRole(getCurrentUserRoleContext());
+  if (actorRole !== 'admin' && actorRole !== 'developer') {
+    throw createContextError(ERROR_CODES.READ_ONLY_MODE, 'Only admins or developers can manage users');
+  }
+  if (!isFirebaseConfigured || !db) {
+    throw new Error('Firebase unavailable');
+  }
+
+  const normalizedUid = normalizeUserId(uid);
+  if (!normalizedUid) {
+    throw new Error('User id is required');
+  }
+
+  const actorUserId = getAuthenticatedUserId();
+  const normalizedStatus = normalizeAccountStatus(status);
+  if (normalizedUid === actorUserId && normalizedStatus !== ACCOUNT_STATUS_ACTIVE) {
+    throw createContextError(ERROR_CODES.READ_ONLY_MODE, 'You cannot disable or delete your own account');
+  }
+
+  const targetRef = doc(db, USERS_COLLECTION, normalizedUid);
+  const targetSnapshot = await getDoc(targetRef);
+  if (!targetSnapshot.exists()) {
+    throw new Error('User not found');
+  }
+
+  const targetData = targetSnapshot.data() || {};
+  const targetRole = normalizeRole(targetData.role);
+  const targetEmail = normalizeEmail(targetData.email || '');
+  const isProtectedDeveloper = targetRole === 'developer' || targetEmail === DEVELOPER_EMAIL;
+
+  if (actorRole === 'admin') {
+    if (isProtectedDeveloper) {
+      throw createContextError(ERROR_CODES.READ_ONLY_MODE, 'Admin cannot manage developer accounts');
+    }
+    if (normalizedStatus === ACCOUNT_STATUS_DELETED && targetRole !== 'teacher') {
+      throw createContextError(ERROR_CODES.READ_ONLY_MODE, 'Admin can only delete teacher accounts');
+    }
+  }
+
+  const patch = {
+    uid: normalizeUserId(targetData.uid || normalizedUid),
+    name: String(targetData.name || '').trim(),
+    email: targetEmail,
+    role: targetRole,
+    accountStatus: normalizedStatus,
+    deleted: normalizedStatus === ACCOUNT_STATUS_DELETED,
+    statusUpdatedAt: serverTimestamp(),
+    statusUpdatedBy: actorUserId,
+    statusUpdatedByRole: actorRole
+  };
+
+  if (normalizedStatus === ACCOUNT_STATUS_ACTIVE) {
+    patch.suspendedAt = null;
+    patch.deletedAt = null;
+  } else if (normalizedStatus === ACCOUNT_STATUS_SUSPENDED) {
+    patch.suspendedAt = serverTimestamp();
+    patch.deletedAt = null;
+  } else {
+    patch.deletedAt = serverTimestamp();
+  }
+
+  await updateDoc(targetRef, patch);
+  return {
+    uid: normalizedUid,
+    status: normalizedStatus
+  };
+};
+
 export const fetchGlobalStudentSearchIndex = async () => {
   await ensureAuthenticatedUserId('read global student search index');
   if (!isFirebaseConfigured || !db) {
     return [];
   }
 
-  const snapshot = await getDocs(collectionGroup(db, STUDENTS_SUBCOLLECTION));
+  const requesterUserId = getAuthenticatedUserId();
+  const classScopes = await readAdminGlobalClassScopes(requesterUserId);
+  const classMetadataMap = buildClassScopeMetadataMap(classScopes);
+  const { entries } = await readGlobalSubcollectionEntriesWithFallback(STUDENTS_SUBCOLLECTION, requesterUserId);
   const rows = [];
   const seen = new Set();
 
-  snapshot.forEach((entry) => {
+  entries.forEach((entry) => {
     const payload = entry.data() || {};
     if (payload.deleted === true) return;
 
     const userId = normalizeUserId(payload.ownerId || payload.userId || getOwnerIdFromClassRefPath(entry.ref?.path));
-    const classId = normalizeClassId(payload.classId || '');
+    const classId = normalizeClassId(payload.classId || getClassIdFromClassRefPath(entry.ref?.path));
     const id = String(payload.id || entry.id || '').trim();
     const name = String(payload.name || '').trim() || 'Student';
     if (!userId || !classId || !id) return;
@@ -2693,11 +2885,15 @@ export const fetchGlobalStudentSearchIndex = async () => {
     if (seen.has(key)) return;
     seen.add(key);
 
+    const classMetadata = classMetadataMap.get(`${userId}::${classId}`) || null;
+
     rows.push({
       id,
       name,
       classId,
-      userId
+      userId,
+      className: normalizeClassName(payload.className || classMetadata?.className || classId, classId),
+      ownerName: normalizeDisplayName(payload.ownerName || classMetadata?.ownerName || '', '')
     });
   });
 

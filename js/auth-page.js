@@ -2,6 +2,7 @@ import {
   waitForInitialAuthState,
   registerUser,
   loginUser,
+  resolveUserRole,
   formatAuthError,
   isAuthAvailable
 } from './auth.js';
@@ -105,11 +106,13 @@ const initAuthPage = async () => {
   try {
     const authUser = await waitForInitialAuthState();
     if (authUser) {
+      await resolveUserRole(authUser);
       redirectToDashboard();
       return;
     }
   } catch (error) {
     console.error('Unable to resolve initial authentication state:', error);
+    setError(errorEl, formatAuthError(error));
   }
 
   form.addEventListener('submit', async (event) => {
