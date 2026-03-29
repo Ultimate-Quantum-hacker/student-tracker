@@ -837,6 +837,333 @@ body.dark-mode .admin-toast.error {
   color: #fecaca;
 }
 
+body.admin-panel {
+  --admin-glass-surface: linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+  --admin-glass-surface-hover: linear-gradient(135deg, rgba(96, 165, 250, 0.16), rgba(255, 255, 255, 0.04));
+  --admin-glass-border: rgba(255, 255, 255, 0.08);
+  --admin-glass-border-strong: rgba(59, 130, 246, 0.4);
+  --admin-glass-shadow: 0 16px 34px rgba(2, 6, 23, 0.24);
+  --admin-glass-focus: 0 0 0 2px rgba(59, 130, 246, 0.15), 0 8px 25px rgba(0, 0, 0, 0.3);
+  --admin-label-color: rgba(226, 232, 240, 0.52);
+  --admin-arrow-color: rgba(191, 219, 254, 0.84);
+}
+
+body.admin-panel.light-mode {
+  --admin-glass-surface: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.82));
+  --admin-glass-surface-hover: linear-gradient(135deg, rgba(239, 246, 255, 0.98), rgba(219, 234, 254, 0.92));
+  --admin-glass-border: rgba(148, 163, 184, 0.2);
+  --admin-glass-border-strong: rgba(59, 130, 246, 0.32);
+  --admin-glass-shadow: 0 16px 30px rgba(15, 23, 42, 0.12);
+  --admin-label-color: rgba(71, 85, 105, 0.72);
+  --admin-arrow-color: rgba(71, 85, 105, 0.74);
+}
+
+body.admin-panel .admin-sidebar {
+  height: fit-content;
+  max-height: calc(100vh - 32px);
+  overflow: hidden;
+}
+
+body.admin-panel .panel-toolbar {
+  align-items: flex-end;
+}
+
+body.admin-panel .panel-toolbar-stacked {
+  align-items: stretch;
+}
+
+body.admin-panel .admin-field {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+}
+
+body.admin-panel #admin-section-users .panel-toolbar > .admin-field {
+  flex: 0 1 360px;
+  max-width: 360px;
+  margin-left: auto;
+}
+
+body.admin-panel .admin-field-label {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--admin-label-color);
+  letter-spacing: 0.04em;
+}
+
+body.admin-panel .admin-field-label-hidden {
+  visibility: hidden;
+  user-select: none;
+}
+
+body.admin-panel .search-inline-actions {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.75rem;
+}
+
+body.admin-panel .search-inline-actions > .admin-field {
+  min-width: 0;
+}
+
+body.admin-panel .activity-filters {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+  align-items: end;
+}
+
+body.admin-panel .admin-filter-action {
+  align-self: stretch;
+}
+
+body.admin-panel .search-inline-actions > .btn,
+body.admin-panel .admin-filter-action > .btn {
+  min-height: 58px;
+  width: 100%;
+}
+
+body.admin-panel .search-container,
+body.admin-panel .role-select-shell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 58px;
+  padding: 10px 14px;
+  border: 1px solid var(--admin-glass-border);
+  border-radius: 14px;
+  background: var(--admin-glass-surface);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), var(--admin-glass-shadow);
+  transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease, background 0.25s ease;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+body.admin-panel .select-container,
+body.admin-panel .role-select-shell {
+  padding-right: 44px;
+  background:
+    linear-gradient(90deg, transparent calc(100% - 44px), rgba(255, 255, 255, 0.04) calc(100% - 44px), rgba(255, 255, 255, 0.04) 100%),
+    var(--admin-glass-surface);
+}
+
+body.admin-panel .search-container::before,
+body.admin-panel .role-select-shell::before {
+  content: '';
+  position: absolute;
+  inset: -34% auto -34% -32%;
+  width: 48%;
+  opacity: 0;
+  pointer-events: none;
+  background: linear-gradient(120deg, transparent 0%, rgba(125, 211, 252, 0.12) 24%, rgba(96, 165, 250, 0.36) 50%, rgba(125, 211, 252, 0.12) 76%, transparent 100%);
+  transform: translateX(-140%) skewX(-18deg);
+}
+
+body.admin-panel .search-container:hover,
+body.admin-panel .role-select-shell:hover {
+  transform: translateY(-1px);
+  border-color: var(--admin-glass-border-strong);
+  background: var(--admin-glass-surface-hover);
+}
+
+body.admin-panel .select-container:hover,
+body.admin-panel .role-select-shell:hover {
+  background:
+    linear-gradient(90deg, transparent calc(100% - 44px), rgba(96, 165, 250, 0.08) calc(100% - 44px), rgba(96, 165, 250, 0.08) 100%),
+    var(--admin-glass-surface-hover);
+}
+
+body.admin-panel .search-container:hover::before,
+body.admin-panel .role-select-shell:hover::before {
+  animation: commandSweep 1.15s cubic-bezier(0.19, 1, 0.22, 1);
+}
+
+body.admin-panel .search-container:focus-within,
+body.admin-panel .role-select-shell:focus-within {
+  border-color: #3b82f6;
+  box-shadow: var(--admin-glass-focus);
+  background: var(--admin-glass-surface-hover);
+}
+
+body.admin-panel .select-container:focus-within,
+body.admin-panel .role-select-shell:focus-within {
+  background:
+    linear-gradient(90deg, transparent calc(100% - 44px), rgba(59, 130, 246, 0.1) calc(100% - 44px), rgba(59, 130, 246, 0.1) 100%),
+    var(--admin-glass-surface-hover);
+}
+
+body.admin-panel .search-container .input-icon {
+  position: relative;
+  z-index: 1;
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  color: #93c5fd;
+  background: rgba(59, 130, 246, 0.14);
+  border: 1px solid rgba(96, 165, 250, 0.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transition: transform 0.25s ease, border-color 0.25s ease, background 0.25s ease;
+}
+
+body.admin-panel .search-container:hover .input-icon,
+body.admin-panel .search-container:focus-within .input-icon {
+  transform: scale(1.03);
+  border-color: rgba(96, 165, 250, 0.4);
+  background: rgba(59, 130, 246, 0.2);
+}
+
+body.admin-panel .admin-search-input,
+body.admin-panel .admin-select-input,
+body.admin-panel .role-select-shell .role-select {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  box-shadow: none;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+body.admin-panel .admin-search-input::placeholder {
+  color: var(--text-secondary);
+}
+
+body.admin-panel .admin-select-input,
+body.admin-panel .role-select-shell .role-select {
+  padding-right: 4px;
+  cursor: pointer;
+  background-image: none;
+}
+
+body.admin-panel .select-container::after,
+body.admin-panel .role-select-shell::after {
+  content: '';
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  border-right: 2px solid var(--admin-arrow-color);
+  border-bottom: 2px solid var(--admin-arrow-color);
+  transform: translateY(-62%) rotate(45deg);
+  opacity: 0.82;
+  pointer-events: none;
+  transition: transform 0.25s ease, opacity 0.25s ease, border-color 0.25s ease;
+}
+
+body.admin-panel .select-container:hover::after,
+body.admin-panel .select-container:focus-within::after,
+body.admin-panel .role-select-shell:hover::after,
+body.admin-panel .role-select-shell:focus-within::after {
+  opacity: 1;
+  transform: translateY(-52%) rotate(45deg);
+}
+
+body.admin-panel .role-select-shell {
+  width: min(100%, 280px);
+  min-width: 0;
+}
+
+body.admin-panel .role-cell-wrap {
+  width: 100%;
+  align-content: center;
+}
+
+body.admin-panel #admin-section-users .users-table th:last-child {
+  text-align: right;
+}
+
+body.admin-panel #admin-section-users .users-table td:last-child {
+  width: 1%;
+  white-space: nowrap;
+}
+
+body.admin-panel .table-actions-cell {
+  width: 100%;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+body.admin-panel .table-helper-text {
+  white-space: nowrap;
+}
+
+body.admin-panel .stat-card {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  transition: transform 0.26s ease, border-color 0.26s ease, box-shadow 0.32s ease, background 0.26s ease;
+}
+
+body.admin-panel .stat-card::before,
+body.admin-panel .stat-card::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+}
+
+body.admin-panel .stat-card::before {
+  inset: -26% auto -26% -32%;
+  width: 48%;
+  opacity: 0;
+  background: linear-gradient(120deg, transparent 0%, rgba(125, 211, 252, 0.16) 24%, rgba(96, 165, 250, 0.52) 50%, rgba(125, 211, 252, 0.16) 76%, transparent 100%);
+  transform: translateX(-140%) skewX(-18deg);
+}
+
+body.admin-panel .stat-card::after {
+  inset: 8px;
+  border-radius: 14px;
+  border: 1px solid rgba(96, 165, 250, 0.14);
+  opacity: 0;
+  box-shadow: inset 0 0 24px rgba(59, 130, 246, 0.12);
+  transition: opacity 0.26s ease;
+}
+
+body.admin-panel .stat-card:hover {
+  transform: translateY(-4px) scale(1.01);
+  border-color: rgba(96, 165, 250, 0.34);
+  background: linear-gradient(160deg, rgba(59, 130, 246, 0.14), rgba(15, 23, 42, 0.18));
+  box-shadow: 0 18px 34px rgba(37, 99, 235, 0.18);
+}
+
+body.admin-panel.light-mode .stat-card:hover {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.96), rgba(219, 234, 254, 0.88));
+}
+
+body.admin-panel .stat-card:hover::before {
+  animation: commandSweep 1.15s cubic-bezier(0.19, 1, 0.22, 1);
+}
+
+body.admin-panel .stat-card:hover::after {
+  opacity: 1;
+}
+
+body.admin-panel .stat-card-icon,
+body.admin-panel .stat-card-icon svg {
+  transition: transform 0.28s ease, box-shadow 0.28s ease;
+}
+
+body.admin-panel .stat-card:hover .stat-card-icon {
+  transform: translateY(-1px) scale(1.04);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.34), 0 20px 34px rgba(59, 130, 246, 0.34);
+  animation: pulseGlow 1.8s ease-in-out infinite;
+}
+
+body.admin-panel .stat-card:hover .stat-card-icon svg {
+  transform: scale(1.04);
+}
+
 @media (max-width: 900px) {
   .admin-layout {
     grid-template-columns: 1fr;
@@ -883,5 +1210,45 @@ body.dark-mode .admin-toast.error {
 
   .search-input {
     width: 100%;
+  }
+
+  body.admin-panel .admin-sidebar {
+    max-height: none;
+    overflow: visible;
+  }
+
+  body.admin-panel .panel-toolbar {
+    align-items: stretch;
+  }
+
+  body.admin-panel #admin-section-users .panel-toolbar > .admin-field {
+    flex: 1 1 auto;
+    max-width: none;
+    margin-left: 0;
+  }
+
+  body.admin-panel .search-inline-actions,
+  body.admin-panel .activity-filters {
+    grid-template-columns: 1fr;
+  }
+
+  body.admin-panel .search-inline-actions > .btn,
+  body.admin-panel .admin-filter-action > .btn {
+    width: 100%;
+  }
+
+  body.admin-panel .role-select-shell {
+    width: 100%;
+    min-width: 0;
+  }
+
+  body.admin-panel #admin-section-users .users-table th:last-child,
+  body.admin-panel #admin-section-users .users-table td:last-child {
+    text-align: left;
+    width: auto;
+  }
+
+  body.admin-panel .table-actions-cell {
+    justify-content: flex-start;
   }
 }

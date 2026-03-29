@@ -600,7 +600,7 @@ const renderUsersTable = () => {
     badge.textContent = formatRoleLabel(record.role);
     roleWrap.appendChild(badge);
     const roleSelectShell = document.createElement('div');
-    roleSelectShell.className = 'input-shell role-select-shell';
+    roleSelectShell.className = 'input-shell role-select-shell search-container select-container';
     roleSelectShell.appendChild(buildRoleSelect(record));
     roleWrap.appendChild(roleSelectShell);
     roleCell.appendChild(roleWrap);
@@ -614,7 +614,8 @@ const renderUsersTable = () => {
     `;
 
     const actionCell = document.createElement('td');
-    actionCell.className = 'table-actions-cell';
+    const actionWrap = document.createElement('div');
+    actionWrap.className = 'table-actions-cell';
 
     if (canManageRoles()) {
       const updateBtn = document.createElement('button');
@@ -629,10 +630,11 @@ const renderUsersTable = () => {
           ? 'Developer role cannot be changed here'
           : 'Role update is not allowed for this account';
       }
-      actionCell.appendChild(updateBtn);
+      actionWrap.appendChild(updateBtn);
     } else {
-      actionCell.innerHTML = '<span class="table-helper-text">View only</span>';
+      actionWrap.innerHTML = '<span class="table-helper-text">View only</span>';
     }
+    actionCell.appendChild(actionWrap);
 
     row.appendChild(nameCell);
     row.appendChild(emailCell);
