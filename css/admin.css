@@ -780,6 +780,21 @@ body.dark-mode .role-select {
   color: #e2e8f0;
 }
 
+body.dark .admin-select-input,
+body.dark .role-select-shell .role-select,
+body.dark-mode .admin-select-input,
+body.dark-mode .role-select-shell .role-select {
+  color-scheme: dark;
+}
+
+body.dark .admin-select-input option,
+body.dark .role-select-shell .role-select option,
+body.dark-mode .admin-select-input option,
+body.dark-mode .role-select-shell .role-select option {
+  background: #0b1220;
+  color: #e2e8f0;
+}
+
 body.dark .role-select:focus-visible,
 body.dark-mode .role-select:focus-visible,
 body.dark .search-input:focus-visible,
@@ -944,7 +959,7 @@ body.admin-panel .role-select-shell {
 
 body.admin-panel .select-container,
 body.admin-panel .role-select-shell {
-  padding-right: 44px;
+  padding-right: 14px;
   background:
     linear-gradient(90deg, transparent calc(100% - 44px), rgba(255, 255, 255, 0.04) calc(100% - 44px), rgba(255, 255, 255, 0.04) 100%),
     var(--admin-glass-surface);
@@ -1041,9 +1056,18 @@ body.admin-panel .admin-search-input::placeholder {
 
 body.admin-panel .admin-select-input,
 body.admin-panel .role-select-shell .role-select {
-  padding-right: 4px;
+  min-height: 36px;
+  padding-right: 36px;
   cursor: pointer;
   background-image: none;
+  position: relative;
+  z-index: 1;
+}
+
+body.admin-panel .admin-select-input option,
+body.admin-panel .role-select-shell .role-select option {
+  background: #ffffff;
+  color: #0f172a;
 }
 
 body.admin-panel .select-container::after,

@@ -25,15 +25,15 @@ service cloud.firestore {
     }
 
     match /users/{userId}/students/{docId} {
-      allow read: if isOwner(userId);
+      allow read: if isSignedIn();
     }
 
     match /users/{userId}/subjects/{docId} {
-      allow read: if isOwner(userId);
+      allow read: if isSignedIn();
     }
 
     match /users/{userId}/exams/{docId} {
-      allow read: if isOwner(userId);
+      allow read: if isSignedIn();
     }
 
     match /{path=**}/classes/{classId} {

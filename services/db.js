@@ -1861,6 +1861,11 @@ const normalizeClassOwnerMetadata = async (ownerId = '', classId = '', payload =
     return;
   }
 
+  const authenticatedUserId = getAuthenticatedUserId();
+  if (!authenticatedUserId || normalizeUserId(ownerId) !== authenticatedUserId) {
+    return;
+  }
+
   const hasOwnerId = normalizeUserId(payload?.ownerId || payload?.userId || '') === ownerId;
   const hasOwnerName = String(payload?.ownerName || '').trim().length > 0;
   if (hasOwnerId && hasOwnerName) {
