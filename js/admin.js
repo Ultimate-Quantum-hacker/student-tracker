@@ -5,7 +5,6 @@ import {
   waitForInitialAuthState,
   resolveUserRole,
   normalizeUserRole,
-  normalizeAccountStatus,
   logoutUser,
   formatAuthError,
   isDeveloperAccountEmail
@@ -15,7 +14,6 @@ import {
   fetchActivityLogs,
   fetchAdminUsers,
   updateAdminUserRole,
-  updateAdminUserAccountState,
   fetchGlobalStudentSearchIndex,
   setCurrentUserRoleContext
 } from '../services/db.js';
@@ -26,9 +24,6 @@ const ROLE_TEACHER = 'teacher';
 const ROLE_ADMIN = 'admin';
 const ROLE_DEVELOPER = 'developer';
 const ROLE_STUDENT = 'student';
-const ACCOUNT_STATUS_ACTIVE = 'active';
-const ACCOUNT_STATUS_SUSPENDED = 'suspended';
-const ACCOUNT_STATUS_DELETED = 'deleted';
 const UPDATABLE_ROLES = [ROLE_TEACHER, ROLE_ADMIN];
 const THEME_STORAGE_KEY = 'theme';
 
@@ -42,7 +37,6 @@ const state = {
   toastTimer: null,
   pendingConfirmResolver: null,
   pendingConfirmAction: null,
-  openUserMenuId: '',
   lastUpdatedAt: null,
   globalStats: {
     totalUsers: 0,
@@ -393,85 +387,7 @@ const formatActionLabel = (action = '') => {
 
 const isPermissionDeniedError = (error) => String(error?.code || '').toLowerCase().includes('permission-denied');
 const canManageRoles = () => state.currentRole === ROLE_DEVELOPER;
-const canManageUsers = () => state.currentRole === ROLE_ADMIN || state.currentRole === ROLE_DEVELOPER;
 const isAdminOnlyRole = () => state.currentRole === ROLE_ADMIN;
-const isDeletedAccount = (record) => normalizeAccountStatus(record?.accountStatus || '') === ACCOUNT_STATUS_DELETED;
-const isSuspendedAccount = (record) => normalizeAccountStatus(record?.accountStatus || '') === ACCOUNT_STATUS_SUSPENDED;
-const isActiveAccount = (record) => normalizeAccountStatus(record?.accountStatus || '') === ACCOUNT_STATUS_ACTIVE;
-const isProtectedDeveloperRecord = (record) => {
-  return normalizeUserRole(record?.role) === ROLE_DEVELOPER || isDeveloperAccountEmail(record?.email);
-};
-const getAccountStatusLabel = (status = '') => {
-  const normalized = normalizeAccountStatus(status);
-  if (normalized === ACCOUNT_STATUS_SUSPENDED) return 'Suspended';
-  if (normalized === ACCOUNT_STATUS_DELETED) return 'Deleted';
-  return 'Active';
-};
-const getAccountStatusBadgeClass = (status = '') => {
-  const normalized = normalizeAccountStatus(status);
-  if (normalized === ACCOUNT_STATUS_SUSPENDED) return 'status-suspended';
-  if (normalized === ACCOUNT_STATUS_DELETED) return 'status-deleted';
-  return 'status-active';
-};
-const getAccountSummary = (record) => {
-  if (isProtectedDeveloperRecord(record)) return 'Protected system account';
-  if (isDeletedAccount(record)) return 'Deleted workspace account';
-  if (isSuspendedAccount(record)) return 'Suspended workspace account';
-  return 'Workspace member';
-};
-const canSuspendUser = (record) => {
-  if (!canManageUsers() || !record?.uid) return false;
-  if (record.uid === state.authUser?.uid) return false;
-  if (isDeletedAccount(record)) return false;
-  if (isAdminOnlyRole() && isProtectedDeveloperRecord(record)) return false;
-  return true;
-};
-const canRestoreUserAccess = (record) => {
-  if (!canManageUsers() || !record?.uid) return false;
-  if (record.uid === state.authUser?.uid) return false;
-  if (isDeletedAccount(record)) return false;
-  if (state.currentRole === ROLE_ADMIN && isProtectedDeveloperRecord(record)) return false;
-  return isSuspendedAccount(record);
-};
-const canDeleteUser = (record) => {
-  if (!canManageUsers() || !record?.uid) return false;
-  if (record.uid === state.authUser?.uid) return false;
-  if (isDeletedAccount(record)) return false;
-  if (isAdminOnlyRole() && isProtectedDeveloperRecord(record)) return false;
-  if (state.currentRole === ROLE_ADMIN) {
-    return normalizeUserRole(record?.role) === ROLE_TEACHER;
-  }
-  return true;
-};
-const getUserManagementHint = (record) => {
-  if (isDeletedAccount(record)) return 'Account removed from active admin views';
-  if (isSuspendedAccount(record)) return 'Sign-in blocked until restored';
-  if (isProtectedDeveloperRecord(record) && isAdminOnlyRole()) return 'Developer account is protected from admin actions';
-  if (canEditRole(record)) return 'Role and access can be managed';
-  if (canSuspendUser(record) || canDeleteUser(record)) return 'Access can be managed';
-  return 'View only';
-};
-const syncUserActionMenus = () => {
-  if (!dom.tableBody) return;
-  dom.tableBody.querySelectorAll('.user-action-menu').forEach((menu) => {
-    const isOpen = normalizeText(menu.dataset.userId || '') === state.openUserMenuId;
-    menu.classList.toggle('open', isOpen);
-    const trigger = menu.querySelector('button[data-action="toggle-user-menu"]');
-    if (trigger) {
-      trigger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-    }
-  });
-};
-const closeAllUserActionMenus = () => {
-  if (!state.openUserMenuId) return;
-  state.openUserMenuId = '';
-  syncUserActionMenus();
-};
-const toggleUserActionMenu = (uid = '') => {
-  const normalizedUid = normalizeText(uid);
-  state.openUserMenuId = state.openUserMenuId === normalizedUid ? '' : normalizedUid;
-  syncUserActionMenus();
-};
 
 const updateLastUpdatedIndicator = () => {
   if (!dom.lastUpdated) return;
@@ -580,12 +496,10 @@ const findUserRecord = (uid = '') => {
 };
 
 const getVisibleUsers = () => {
-  let records = state.users.filter((entry) => !isDeletedAccount(entry));
   if (!isAdminOnlyRole()) {
-    return records.slice();
+    return state.users.slice();
   }
-  records = records.filter((entry) => !isProtectedDeveloperRecord(entry));
-  return records;
+  return state.users.filter((entry) => normalizeUserRole(entry.role) !== ROLE_DEVELOPER);
 };
 
 const getFilteredUsers = () => {
@@ -605,104 +519,9 @@ const canEditRole = (record) => {
   if (!canManageRoles()) return false;
   const normalizedRole = normalizeUserRole(record?.role);
   if (!record?.uid) return false;
-  if (!isActiveAccount(record)) return false;
   if (normalizedRole === ROLE_DEVELOPER) return false;
   if (isDeveloperAccountEmail(record?.email)) return false;
   return true;
-};
-
-const buildUserActionItems = (record) => {
-  const items = [];
-  const normalizedRole = normalizeUserRole(record?.role);
-
-  if (canEditRole(record)) {
-    if (normalizedRole === ROLE_TEACHER) {
-      items.push({
-        action: 'update-role',
-        label: 'Promote to Admin',
-        nextRole: ROLE_ADMIN,
-        tone: 'accent'
-      });
-    } else if (normalizedRole === ROLE_ADMIN) {
-      items.push({
-        action: 'update-role',
-        label: 'Demote to Teacher',
-        nextRole: ROLE_TEACHER,
-        tone: 'accent'
-      });
-    }
-  }
-
-  if (canRestoreUserAccess(record)) {
-    items.push({
-      action: 'set-account-status',
-      label: 'Restore Access',
-      nextStatus: ACCOUNT_STATUS_ACTIVE,
-      tone: 'accent'
-    });
-  } else if (canSuspendUser(record)) {
-    items.push({
-      action: 'set-account-status',
-      label: 'Suspend User',
-      nextStatus: ACCOUNT_STATUS_SUSPENDED,
-      tone: 'warning'
-    });
-  }
-
-  if (canDeleteUser(record)) {
-    items.push({
-      action: 'set-account-status',
-      label: 'Delete User',
-      nextStatus: ACCOUNT_STATUS_DELETED,
-      tone: 'danger'
-    });
-  }
-
-  return items;
-};
-
-const buildUserActionMenu = (record) => {
-  const items = buildUserActionItems(record);
-  if (!items.length) return null;
-
-  const menu = document.createElement('div');
-  menu.className = 'user-action-menu';
-  menu.dataset.userId = record.uid;
-
-  const trigger = document.createElement('button');
-  trigger.type = 'button';
-  trigger.className = 'btn btn-secondary user-action-trigger';
-  trigger.dataset.action = 'toggle-user-menu';
-  trigger.dataset.userId = record.uid;
-  trigger.setAttribute('aria-expanded', 'false');
-  trigger.setAttribute('aria-haspopup', 'menu');
-  trigger.setAttribute('aria-label', `Open actions for ${record.name || record.email || 'user'}`);
-  trigger.textContent = '⋮';
-
-  const dropdown = document.createElement('div');
-  dropdown.className = 'user-action-dropdown';
-  dropdown.setAttribute('role', 'menu');
-
-  items.forEach((item) => {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = `user-action-item ${item.tone}`;
-    button.dataset.action = item.action;
-    button.dataset.userId = record.uid;
-    if (item.nextRole) {
-      button.dataset.nextRole = item.nextRole;
-    }
-    if (item.nextStatus) {
-      button.dataset.nextStatus = item.nextStatus;
-    }
-    button.setAttribute('role', 'menuitem');
-    button.textContent = item.label;
-    dropdown.appendChild(button);
-  });
-
-  menu.appendChild(trigger);
-  menu.appendChild(dropdown);
-  return menu;
 };
 
 const buildRoleSelect = (record) => {
@@ -737,7 +556,6 @@ const updatePanelRoleBadge = () => {
 
 const renderUsersTable = () => {
   if (!dom.tableBody) return;
-  state.openUserMenuId = '';
   const filteredUsers = getFilteredUsers();
   if (!filteredUsers.length) {
     dom.tableBody.innerHTML = '<tr><td colspan="5" class="empty-row"><div class="smart-empty"><span>👤</span><p>No matching users found.</p></div></td></tr>';
@@ -754,9 +572,9 @@ const renderUsersTable = () => {
 
     const userLabel = normalizeDisplayText(record.name || record.email || '', 'Unknown user');
     const userEmail = normalizeDisplayText(record.email || '', 'No email on file');
-    const accountSummary = getAccountSummary(record);
-    const managementHint = getUserManagementHint(record);
-    const actionMenu = buildUserActionMenu(record);
+    const accountSummary = normalizeUserRole(record.role) === ROLE_DEVELOPER
+      ? 'Protected system account'
+      : 'Workspace member';
 
     const nameCell = document.createElement('td');
     nameCell.innerHTML = buildIdentityMarkup({
@@ -770,7 +588,7 @@ const renderUsersTable = () => {
     emailCell.innerHTML = `
       <div class="email-stack">
         <strong>${escapeHtml(userEmail)}</strong>
-        <span>${escapeHtml(managementHint)}</span>
+        <span>${escapeHtml(canEditRole(record) ? 'Role can be updated' : 'Role editing unavailable')}</span>
       </div>
     `;
 
@@ -781,10 +599,10 @@ const renderUsersTable = () => {
     badge.className = `inline-role-badge ${getRoleBadgeClass(record.role)}`;
     badge.textContent = formatRoleLabel(record.role);
     roleWrap.appendChild(badge);
-    const statusBadge = document.createElement('span');
-    statusBadge.className = `account-status-badge ${getAccountStatusBadgeClass(record.accountStatus)}`;
-    statusBadge.textContent = getAccountStatusLabel(record.accountStatus);
-    roleWrap.appendChild(statusBadge);
+    const roleSelectShell = document.createElement('div');
+    roleSelectShell.className = 'input-shell role-select-shell search-container select-container';
+    roleSelectShell.appendChild(buildRoleSelect(record));
+    roleWrap.appendChild(roleSelectShell);
     roleCell.appendChild(roleWrap);
 
     const createdCell = document.createElement('td');
@@ -799,8 +617,20 @@ const renderUsersTable = () => {
     const actionWrap = document.createElement('div');
     actionWrap.className = 'table-actions-cell';
 
-    if (canManageUsers() && actionMenu) {
-      actionWrap.appendChild(actionMenu);
+    if (canManageRoles()) {
+      const updateBtn = document.createElement('button');
+      updateBtn.type = 'button';
+      updateBtn.className = 'btn btn-primary';
+      updateBtn.dataset.action = 'update-role';
+      updateBtn.dataset.userId = record.uid;
+      updateBtn.textContent = 'Update Role';
+      if (!canEditRole(record)) {
+        updateBtn.disabled = true;
+        updateBtn.title = normalizeUserRole(record?.role) === ROLE_DEVELOPER
+          ? 'Developer role cannot be changed here'
+          : 'Role update is not allowed for this account';
+      }
+      actionWrap.appendChild(updateBtn);
     } else {
       actionWrap.innerHTML = '<span class="table-helper-text">View only</span>';
     }
@@ -1010,28 +840,28 @@ const renderGlobalSearchResults = (entries = []) => {
     const emptyMessage = normalizeText(dom.globalSearchInput?.value || '')
       ? 'No search results found.'
       : 'Search by student name to see results.';
-    dom.globalSearchResultsBody.innerHTML = `<tr><td colspan="3" class="empty-row"><div class="smart-empty"><span>🔎</span><p>${escapeHtml(emptyMessage)}</p></div></td></tr>`;
+    dom.globalSearchResultsBody.innerHTML = `<tr><td colspan="4" class="empty-row"><div class="smart-empty"><span>🔎</span><p>${escapeHtml(emptyMessage)}</p></div></td></tr>`;
     return;
   }
 
   dom.globalSearchResultsBody.innerHTML = entries.map((entry) => {
     const owner = findUserRecord(entry.userId);
     const studentLabel = normalizeDisplayText(entry.name || '', 'Student');
-    const ownerLabel = normalizeDisplayText(owner?.name || owner?.email || entry.ownerName || '', 'Unknown owner');
+    const ownerLabel = normalizeDisplayText(owner?.name || owner?.email || '', 'Unknown owner');
     const ownerRole = normalizeUserRole(owner?.role || entry.userRole || 'teacher');
     const classLabel = normalizeDisplayText(entry.className || entry.classId || '', '—');
-    const ownerSummary = `Data owner · ${formatRoleLabel(ownerRole)}`;
     return `
       <tr class="fade-in">
         <td>${buildIdentityMarkup({ label: studentLabel, secondary: 'Student result', role: 'student' })}</td>
-        <td><span class="class-token" title="${escapeHtml(normalizeDisplayText(entry.classId || '', ''))}">${escapeHtml(classLabel)}</span></td>
         <td>${buildIdentityMarkup({
           label: ownerLabel,
-          secondary: ownerSummary,
+          secondary: 'Data owner',
           role: ownerRole,
           containerClass: 'activity-owner-cell',
           copyClass: 'activity-owner-copy'
         })}</td>
+        <td><span class="inline-role-badge ${getRoleBadgeClass(ownerRole)}">${escapeHtml(formatRoleLabel(ownerRole))}</span></td>
+        <td><span class="class-token" title="${escapeHtml(normalizeDisplayText(entry.classId || '', ''))}">${escapeHtml(classLabel)}</span></td>
       </tr>
     `;
   }).join('');
@@ -1115,16 +945,12 @@ const shouldIncludeGlobalSearchOwner = (userId = '') => {
     return false;
   }
 
-  const owner = findUserRecord(normalizedUserId);
-  if (isDeletedAccount(owner)) {
-    return false;
-  }
-
   if (!isAdminOnlyRole()) {
     return true;
   }
 
-  return !isProtectedDeveloperRecord(owner);
+  const owner = findUserRecord(normalizedUserId);
+  return normalizeUserRole(owner?.role) !== ROLE_DEVELOPER;
 };
 
 const buildGlobalSearchIndex = async () => {
@@ -1278,7 +1104,6 @@ const updateUserRole = async (uid, nextRole) => {
   }
 
   try {
-    closeAllUserActionMenus();
     setPanelStatus('Updating role...');
     await updateAdminUserRole({
       uid,
@@ -1305,88 +1130,6 @@ const updateUserRole = async (uid, nextRole) => {
   }
 };
 
-const updateUserAccountState = async (uid, nextStatus) => {
-  const record = findUserRecord(uid);
-  if (!record) {
-    setPanelStatus('Unable to find selected user.', 'error');
-    return;
-  }
-  if (!canManageUsers()) {
-    setPanelStatus('You do not have permission to manage this account.', 'warning');
-    return;
-  }
-
-  const normalizedNextStatus = normalizeAccountStatus(nextStatus);
-  const currentStatus = normalizeAccountStatus(record.accountStatus || '');
-  if (currentStatus === normalizedNextStatus) {
-    setPanelStatus('No account changes to apply.', 'warning');
-    return;
-  }
-
-  const userLabel = record.name || record.email || 'this user';
-  const actionLabel = normalizedNextStatus === ACCOUNT_STATUS_ACTIVE
-    ? 'Restore Access'
-    : normalizedNextStatus === ACCOUNT_STATUS_SUSPENDED
-      ? 'Suspend User'
-      : 'Delete User';
-  const confirmMessage = normalizedNextStatus === ACCOUNT_STATUS_ACTIVE
-    ? `Restore access for ${userLabel}?`
-    : normalizedNextStatus === ACCOUNT_STATUS_SUSPENDED
-      ? `Suspend ${userLabel}? They will lose dashboard access until restored.`
-      : `Delete ${userLabel}? This blocks app access and removes the account from active admin views.`;
-
-  const shouldContinue = await requestConfirmation({
-    message: confirmMessage,
-    confirmLabel: actionLabel,
-    dangerous: normalizedNextStatus !== ACCOUNT_STATUS_ACTIVE
-  });
-
-  if (!shouldContinue) {
-    setPanelStatus(`${actionLabel} canceled.`, 'warning');
-    return;
-  }
-
-  try {
-    closeAllUserActionMenus();
-    setPanelStatus(`${actionLabel}...`);
-    await updateAdminUserAccountState({
-      uid,
-      status: normalizedNextStatus
-    });
-
-    record.accountStatus = normalizedNextStatus;
-    if (normalizedNextStatus === ACCOUNT_STATUS_ACTIVE) {
-      record.suspendedAt = null;
-      record.deletedAt = null;
-    } else if (normalizedNextStatus === ACCOUNT_STATUS_SUSPENDED) {
-      record.suspendedAt = new Date().toISOString();
-      record.deletedAt = null;
-    } else {
-      record.deletedAt = new Date().toISOString();
-    }
-
-    renderUsersTable();
-    populateActivityUserFilter();
-    if (normalizedNextStatus === ACCOUNT_STATUS_DELETED) {
-      await loadGlobalStats();
-      await buildGlobalSearchIndex();
-      runGlobalSearch();
-    }
-    setPanelStatus(`${actionLabel} completed successfully.`, 'success');
-    showToast(`${actionLabel} completed`, 'success');
-    markUpdatedNow();
-  } catch (error) {
-    console.error('Failed to update account state:', error);
-    if (isPermissionDeniedError(error)) {
-      setPanelStatus('Access denied. You do not have permission.', 'error');
-      showToast('Permission denied', 'error');
-      return;
-    }
-    setPanelStatus(`Failed to manage user: ${formatAuthError(error)}`, 'error');
-    showToast('Failed to manage user', 'error');
-  }
-};
-
 const ensurePanelAccess = async () => {
   const authUser = await waitForInitialAuthState();
   if (!authUser) {
@@ -1395,15 +1138,7 @@ const ensurePanelAccess = async () => {
   }
 
   state.authUser = authUser;
-  let resolvedRole = ROLE_TEACHER;
-  try {
-    resolvedRole = normalizeUserRole(await resolveUserRole(authUser));
-  } catch (error) {
-    console.error('Failed to resolve panel access:', error);
-    showToast(formatAuthError(error), 'error');
-    redirectToLogin();
-    return false;
-  }
+  const resolvedRole = normalizeUserRole(await resolveUserRole(authUser));
   state.currentRole = isDeveloperAccountEmail(authUser?.email) ? ROLE_DEVELOPER : resolvedRole;
   if (typeof setCurrentUserRoleContext === 'function') {
     setCurrentUserRoleContext(state.currentRole);
@@ -1492,18 +1227,7 @@ const bindEvents = () => {
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && dom.confirmModal?.classList.contains('active')) {
       resolvePendingConfirmation(false);
-      return;
     }
-    if (event.key === 'Escape') {
-      closeAllUserActionMenus();
-    }
-  });
-
-  document.addEventListener('click', (event) => {
-    if (event.target.closest('.user-action-menu')) {
-      return;
-    }
-    closeAllUserActionMenus();
   });
 
   dom.tableBody?.addEventListener('click', async (event) => {
@@ -1514,31 +1238,17 @@ const bindEvents = () => {
     if (!uid) return;
 
     const action = normalizeText(trigger.dataset.action || '');
-    if (action === 'toggle-user-menu') {
-      event.preventDefault();
-      event.stopPropagation();
-      toggleUserActionMenu(uid);
-      return;
-    }
-
-    closeAllUserActionMenus();
+    if (action !== 'update-role') return;
+    const roleSelect = trigger.closest('tr')?.querySelector('select.role-select');
+    const nextRole = normalizeText(roleSelect?.value || '');
+    if (!nextRole) return;
 
     trigger.disabled = true;
     const previousLabel = trigger.textContent;
-    trigger.textContent = action === 'set-account-status' ? 'Working...' : 'Updating...';
-    if (action === 'update-role') {
-      const nextRole = normalizeText(trigger.dataset.nextRole || '');
-      if (nextRole) {
-        await updateUserRole(uid, nextRole);
-      }
-    } else if (action === 'set-account-status') {
-      const nextStatus = normalizeAccountStatus(trigger.dataset.nextStatus || '');
-      if (nextStatus) {
-        await updateUserAccountState(uid, nextStatus);
-      }
-    }
+    trigger.textContent = 'Updating...';
+    await updateUserRole(uid, nextRole);
     trigger.textContent = previousLabel;
-    trigger.disabled = false;
+    trigger.disabled = !canEditRole(findUserRecord(uid));
   });
 };
 

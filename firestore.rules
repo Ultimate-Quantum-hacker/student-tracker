@@ -9,96 +9,39 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    function requesterRole() {
-      return !isSignedIn()
-        ? 'teacher'
-        : (!exists(/databases/$(database)/documents/users/$(request.auth.uid))
-            ? 'teacher'
-            : get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role);
-    }
-
-    function requesterAccountStatus() {
-      return !isSignedIn()
-        ? 'deleted'
-        : (!exists(/databases/$(database)/documents/users/$(request.auth.uid))
-            ? 'active'
-            : (
-                get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accountStatus == 'suspended'
-                  ? 'suspended'
-                  : get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accountStatus == 'deleted'
-                    ? 'deleted'
-                    : 'active'
-              ));
-    }
-
-    function isRequesterActive() {
-      return isSignedIn() && requesterAccountStatus() == 'active';
-    }
-
-    function isRequesterAdmin() {
-      return isRequesterActive() && requesterRole() == 'admin';
-    }
-
-    function isRequesterDeveloper() {
-      return isRequesterActive() && requesterRole() == 'developer';
-    }
-
-    function canReadManagedUserData(userId) {
-      return isOwner(userId) || isRequesterAdmin() || isRequesterDeveloper();
-    }
-
-    function isProtectedDeveloperTarget() {
-      return resource.data.role == 'developer' || resource.data.email == 'pokumike2@gmail.com';
-    }
-
-    function isAdminManagedStatusUpdate() {
-      return request.resource.data.uid == resource.data.uid
-        && request.resource.data.name == resource.data.name
-        && request.resource.data.email == resource.data.email
-        && request.resource.data.role == resource.data.role
-        && (
-          request.resource.data.accountStatus == 'active'
-          || request.resource.data.accountStatus == 'suspended'
-          || (request.resource.data.accountStatus == 'deleted' && resource.data.role == 'teacher')
-        );
-    }
-
     match /users/{userId} {
-      allow read: if canReadManagedUserData(userId);
-      allow create: if isOwner(userId);
-      allow update: if (isOwner(userId) && isRequesterActive())
-        || isRequesterDeveloper()
-        || (isRequesterAdmin() && !isProtectedDeveloperTarget() && isAdminManagedStatusUpdate());
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId);
     }
 
     match /users/{userId}/classes/{classId} {
-      allow read: if canReadManagedUserData(userId);
-      allow write: if isOwner(userId) && isRequesterActive();
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId);
     }
 
     match /users/{userId}/classes/{classId}/{collection}/{docId} {
-      allow read: if canReadManagedUserData(userId);
-      allow write: if isOwner(userId) && isRequesterActive();
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId);
     }
 
     match /users/{userId}/students/{docId} {
-      allow read: if canReadManagedUserData(userId);
+      allow read: if isOwner(userId);
     }
 
     match /users/{userId}/subjects/{docId} {
-      allow read: if canReadManagedUserData(userId);
+      allow read: if isOwner(userId);
     }
 
     match /users/{userId}/exams/{docId} {
-      allow read: if canReadManagedUserData(userId);
+      allow read: if isOwner(userId);
     }
 
     match /{path=**}/classes/{classId} {
-      allow read: if isRequesterActive();
+      allow read: if isSignedIn();
     }
 
     match /activityLogs/{logId} {
-      allow create, read: if isRequesterActive();
+      allow create, read: if isSignedIn();
     }
 
     match /{document=**} {
