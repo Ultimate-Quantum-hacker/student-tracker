@@ -36,6 +36,18 @@ service cloud.firestore {
       allow read: if isSignedIn();
     }
 
+    match /{path=**}/students/{docId} {
+      allow read: if isSignedIn();
+    }
+
+    match /{path=**}/subjects/{docId} {
+      allow read: if isSignedIn();
+    }
+
+    match /{path=**}/exams/{docId} {
+      allow read: if isSignedIn();
+    }
+
     match /{path=**}/classes/{classId} {
       allow read: if isSignedIn();
     }
