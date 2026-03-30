@@ -293,14 +293,16 @@ const buildIdentityMarkup = ({
   label = 'Unknown',
   secondary = '',
   role = '',
+  avatarLabel = '',
   containerClass = 'identity-cell',
   copyClass = 'identity-copy'
 } = {}) => {
   const safeLabel = normalizeDisplayText(label, 'Unknown');
   const safeSecondary = normalizeDisplayText(secondary, '');
+  const safeAvatarLabel = normalizeDisplayText(avatarLabel, '');
   return `
     <div class="${containerClass}">
-      ${buildAvatarMarkup(safeLabel, role)}
+      ${buildAvatarMarkup(safeAvatarLabel || safeLabel, role)}
       <div class="${copyClass}">
         <strong>${escapeHtml(safeLabel)}</strong>
         ${safeSecondary ? `<span>${escapeHtml(safeSecondary)}</span>` : ''}
@@ -882,7 +884,7 @@ const renderGlobalSearchResults = (entries = []) => {
     const classLabel = normalizeDisplayText(entry.className || entry.classId || '', '—');
     return `
       <tr class="fade-in">
-        <td>${buildIdentityMarkup({ label: studentLabel, secondary: 'Student result', role: 'student' })}</td>
+        <td>${buildIdentityMarkup({ label: studentLabel, role: 'student' })}</td>
         <td>${buildIdentityMarkup({
           label: ownerLabel,
           secondary: 'Data owner',
@@ -1003,7 +1005,6 @@ const buildGlobalSearchIndex = async () => {
       : [];
     rows.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
     state.globalSearchIndex = rows;
-    state.globalSearchResults = [];
     state.globalStats = {
       ...state.globalStats,
       totalStudents: rows.length
@@ -1454,7 +1455,7 @@ async function fetchAdminClassNameMap() {
     }
 
     classMap.set(classKey, {
-      name: normalizeDisplayText(payload.name || payload.className || '', 'Unnamed Class'),
+      name: normalizeDisplayText(payload.name || payload.className || payload.title || '', 'Unnamed Class'),
       ownerId,
       ownerName: resolveAdminRegistryTeacherName(ownerId, {
         ownerName: payload.ownerName || payload.teacherName || ''
@@ -1495,30 +1496,80 @@ const resolveAdminRegistryClassInfoByName = (classMap = new Map(), ownerId = '',
   };
 };
 
+const getAdminRegistryOwnerClasses = (classMap = new Map(), ownerId = '') => {
+  const normalizedOwnerId = normalizeDisplayText(ownerId, '');
+  if (!(classMap instanceof Map) || !normalizedOwnerId) {
+    return [];
+  }
+
+  const matches = [];
+  for (const [classKey, classInfo] of classMap.entries()) {
+    if (normalizeDisplayText(classInfo?.ownerId, '') !== normalizedOwnerId) {
+      continue;
+    }
+
+    matches.push({
+      classKey,
+      classInfo
+    });
+  }
+
+  return matches;
+};
+
+const resolveAdminRegistryClassInfo = (classMap = new Map(), ownerId = '', classId = '', className = '') => {
+  const normalizedOwnerId = normalizeDisplayText(ownerId, '');
+  const normalizedClassId = normalizeDisplayText(classId, '');
+  const normalizedClassName = normalizeDisplayText(className, '');
+  if (!(classMap instanceof Map) || !normalizedOwnerId) {
+    return {
+      classKey: '',
+      classInfo: null
+    };
+  }
+
+  const directClassKey = buildAdminRegistryClassKey(normalizedOwnerId, normalizedClassId);
+  const directClassInfo = classMap.get(directClassKey) || null;
+  if (directClassInfo) {
+    return {
+      classKey: directClassKey,
+      classInfo: directClassInfo
+    };
+  }
+
+  const candidateNames = [normalizedClassName, normalizedClassId].filter(Boolean);
+  for (const candidateName of candidateNames) {
+    const resolvedByName = resolveAdminRegistryClassInfoByName(classMap, normalizedOwnerId, candidateName);
+    if (resolvedByName.classInfo) {
+      return resolvedByName;
+    }
+  }
+
+  const ownerClasses = getAdminRegistryOwnerClasses(classMap, normalizedOwnerId);
+  if (ownerClasses.length === 1) {
+    return ownerClasses[0];
+  }
+
+  return {
+    classKey: '',
+    classInfo: null
+  };
+};
+
 const mapAdminStudentRecord = (student = {}, classMap = new Map()) => {
   const ownerId = normalizeDisplayText(student.ownerId || student.userId || '', '');
   const studentClassName = normalizeDisplayText(student.className || student.class || '', '');
   const classId = normalizeDisplayText(student.classId || '', '');
-  let classKey = buildAdminRegistryClassKey(ownerId, classId);
-  let classInfo = classMap.get(classKey) || null;
-
-  if (!classInfo && ownerId && studentClassName) {
-    const resolvedClass = resolveAdminRegistryClassInfoByName(classMap, ownerId, studentClassName);
-    if (resolvedClass.classInfo) {
-      classKey = resolvedClass.classKey;
-      classInfo = resolvedClass.classInfo;
-    }
-  }
-
-  classKey = classKey || buildAdminRegistryFallbackClassKey(ownerId, studentClassName);
+  const resolvedClass = resolveAdminRegistryClassInfo(classMap, ownerId, classId, studentClassName);
+  const classKey = resolvedClass.classKey || buildAdminRegistryFallbackClassKey(ownerId, studentClassName || classId);
 
   return {
     name: normalizeDisplayText(student.name, 'Unnamed'),
     ownerId,
     classId,
     classKey,
-    className: normalizeDisplayText(classInfo?.name || studentClassName || '', 'Unknown Class'),
-    teacherName: resolveAdminRegistryTeacherName(ownerId, classInfo, student)
+    className: normalizeDisplayText(resolvedClass.classInfo?.name || studentClassName || '', 'Unknown Class'),
+    teacherName: resolveAdminRegistryTeacherName(ownerId, resolvedClass.classInfo, student)
   };
 };
 
@@ -1829,7 +1880,7 @@ const renderAdminStudentsPagination = ({
   }
 };
 
-const renderAdminStudentsTable = (groups = []) => {
+const renderAdminStudentsTable = (groups = [], startIndex = 0) => {
   if (!dom.adminStudentsTableBody) return;
   const { hasActiveCriteria } = getAdminStudentsFilterState();
   if (!groups.length) {
@@ -1847,13 +1898,15 @@ const renderAdminStudentsTable = (groups = []) => {
     return;
   }
 
+  let studentNumber = Math.max(0, Number(startIndex) || 0);
   dom.adminStudentsTableBody.innerHTML = groups.map((group) => {
     const groupLabel = normalizeDisplayText(group?.label, 'Unknown Class');
     const rows = (Array.isArray(group?.students) ? group.students : []).map((student) => {
+      studentNumber += 1;
       const classLabel = normalizeDisplayText(student.className, 'Unknown Class');
       return `
         <tr class="fade-in">
-          <td>${buildIdentityMarkup({ label: student.name, role: ROLE_STUDENT })}</td>
+          <td>${buildIdentityMarkup({ label: student.name, role: ROLE_STUDENT, avatarLabel: String(studentNumber) })}</td>
           <td>
             <div class="admin-student-meta">
               <strong>${escapeHtml(classLabel)}</strong>
@@ -1882,7 +1935,7 @@ const updateAdminStudentsView = () => {
   const pagination = getAdminStudentsPagination(groupedStudents);
   const visibleRange = filteredStudents.length ? `${pagination.startIndex + 1}-${pagination.endIndex}` : '0';
 
-  renderAdminStudentsTable(pagination.groups);
+  renderAdminStudentsTable(pagination.groups, pagination.startIndex);
   renderAdminStudentsPagination(pagination);
   updateAdminStudentsFilterControls();
 
