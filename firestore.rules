@@ -9,23 +9,63 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    function isPrivilegedUser() {
+      return isSignedIn() && (
+        request.auth.token.email == 'pokumike2@gmail.com' || (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'developer'
+          )
+        )
+      );
+    }
+
+    function isPrivilegedUserMetadataTouch(userId) {
+      return isPrivilegedUser()
+        && request.resource.data.userId == userId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['userId', 'updatedAt']);
+    }
+
+    function isPrivilegedClassMetadataTouch(userId, classId) {
+      return isPrivilegedUser()
+        && request.resource.data.id == classId
+        && request.resource.data.userId == userId
+        && request.resource.data.ownerId == userId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['id', 'updatedAt', 'userId', 'ownerId']);
+    }
+
+    function isPrivilegedStudentSoftDelete(userId) {
+      return isPrivilegedUser()
+        && resource.data.deleted != true
+        && request.resource.data.deleted == true
+        && request.resource.data.userId == userId
+        && request.resource.data.ownerId == userId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deleted', 'deletedAt', 'updatedAt', 'userId', 'ownerId', 'classId']);
+    }
+
     match /users/{userId} {
       allow read: if isSignedIn();
-      allow write: if isOwner(userId);
+      allow create, delete: if isOwner(userId);
+      allow update: if isOwner(userId) || isPrivilegedUserMetadataTouch(userId);
     }
 
     match /users/{userId}/classes/{classId} {
       allow read: if isSignedIn();
-      allow write: if isOwner(userId);
+      allow create, delete: if isOwner(userId);
+      allow update: if isOwner(userId) || isPrivilegedClassMetadataTouch(userId, classId);
     }
 
     match /users/{userId}/classes/{classId}/{collection}/{docId} {
       allow read: if isSignedIn();
       allow write: if isOwner(userId);
+      allow update: if collection == 'students'
+        && request.resource.data.classId == classId
+        && isPrivilegedStudentSoftDelete(userId);
     }
 
     match /users/{userId}/students/{docId} {
       allow read: if isSignedIn();
+      allow update: if isPrivilegedStudentSoftDelete(userId);
     }
 
     match /users/{userId}/subjects/{docId} {

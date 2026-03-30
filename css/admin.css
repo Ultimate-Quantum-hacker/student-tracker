@@ -482,6 +482,7 @@ h1 {
 
 .activity-group-row td {
   background: #f1f5f9;
+  padding: 0.55rem 1rem;
   font-size: 0.74rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -1264,8 +1265,14 @@ body.admin-panel .admin-students-empty p {
   opacity: 0.88;
 }
 
+body.admin-panel .admin-students-table th:last-child,
+body.admin-panel .admin-students-table td:last-child {
+  width: 1%;
+  white-space: nowrap;
+}
+
 body.admin-panel .admin-students-group-row td {
-  padding: 0.75rem 1rem;
+  padding: 0.6rem 1rem;
   position: sticky;
   top: 0;
   z-index: 2;
@@ -1278,6 +1285,22 @@ body.admin-panel .admin-students-group-row td {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+body.admin-panel .admin-students-row-actions,
+body.admin-panel .admin-student-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+body.admin-panel .admin-student-row-actions {
+  flex-wrap: nowrap;
+}
+
+body.admin-panel .admin-student-delete-btn {
+  min-width: 104px;
 }
 
 body.admin-panel.light-mode .admin-students-group-row td {

@@ -227,6 +227,14 @@ const assertWritableRole = (operationLabel = 'modify data') => {
   }
 };
 
+const assertAdminOrDeveloperRole = (operationLabel = 'manage admin data') => {
+  const role = getCurrentUserRoleContext();
+  if (role !== 'admin' && role !== 'developer') {
+    throw createContextError(ERROR_CODES.READ_ONLY_MODE, `Only admins or developers can ${operationLabel}`);
+  }
+  return role;
+};
+
 const ensureValidClassContext = async (operationLabel = 'access class data', options = {}) => {
   const requireClass = options?.requireClass !== false;
   const requireWritable = options?.requireWritable === true;
@@ -2763,6 +2771,37 @@ const buildGlobalStudentIdentityKey = (ownerId = '', studentId = '') => {
   return `${normalizedOwnerId}::${normalizedStudentId}`;
 };
 
+const findStudentDocumentRefsByIdentity = async (ownerId = '', studentId = '') => {
+  const normalizedOwnerId = normalizeUserId(ownerId);
+  const normalizedStudentId = String(studentId || '').trim();
+  if (!normalizedOwnerId || !normalizedStudentId || !isFirebaseConfigured || !db) {
+    return [];
+  }
+
+  const snapshot = await getDocs(collectionGroup(db, STUDENTS_SUBCOLLECTION));
+  const matches = [];
+  snapshot.forEach((entry) => {
+    const payload = entry.data() || {};
+    if (payload.deleted === true) {
+      return;
+    }
+
+    const parsedPath = parseGlobalStudentRefPath(entry.ref?.path);
+    const entryOwnerId = normalizeUserId(payload.ownerId || payload.userId || parsedPath.ownerId || '');
+    const entryStudentId = String(payload.id || parsedPath.studentDocId || entry.id || '').trim();
+    if (entryOwnerId !== normalizedOwnerId || entryStudentId !== normalizedStudentId) {
+      return;
+    }
+
+    matches.push({
+      ref: entry.ref,
+      classId: normalizeClassId(payload.classId || parsedPath.classId || '')
+    });
+  });
+
+  return matches;
+};
+
 const pickPreferredGlobalStudentRecord = (current = null, candidate = null) => {
   if (!candidate) {
     return current;
@@ -3672,6 +3711,75 @@ export const restoreStudent = async (rawData, studentId) => enqueueWrite(async (
 export const permanentlyDeleteStudent = async (rawData, studentId) => enqueueWrite(async () => {
   const next = normalizeRawData(rawData);
   return persistStudentHardDeleteById(studentId, next);
+});
+
+export const deleteAdminRegistryStudent = async ({ ownerId = '', studentId = '', studentName = '' } = {}) => enqueueWrite(async () => {
+  await ensureAuthenticatedUserId('delete registry student');
+  const actorRole = assertAdminOrDeveloperRole('delete student records from the registry');
+  if (!isFirebaseConfigured || !db) {
+    throw new Error('Firebase unavailable');
+  }
+
+  const normalizedOwnerId = normalizeUserId(ownerId);
+  const normalizedStudentId = String(studentId || '').trim();
+  const normalizedStudentName = String(studentName || '').trim() || 'Student';
+  if (!normalizedOwnerId) {
+    throw new Error('Owner id is required to delete registry student');
+  }
+  if (!normalizedStudentId) {
+    throw new Error('Student id is required to delete registry student');
+  }
+
+  const matches = await findStudentDocumentRefsByIdentity(normalizedOwnerId, normalizedStudentId);
+  if (!matches.length) {
+    return {
+      ownerId: normalizedOwnerId,
+      studentId: normalizedStudentId,
+      studentName: normalizedStudentName,
+      deletedCount: 0
+    };
+  }
+
+  const updatedAt = new Date().toISOString();
+  await Promise.all(matches.map(({ ref, classId = '' }) => {
+    const patch = {
+      deleted: true,
+      deletedAt: serverTimestamp(),
+      updatedAt,
+      userId: normalizedOwnerId,
+      ownerId: normalizedOwnerId
+    };
+    if (classId) {
+      patch.classId = classId;
+    }
+    return updateDoc(ref, patch);
+  }));
+
+  const uniqueClassIds = Array.from(new Set(matches.map((entry) => normalizeClassId(entry?.classId || '')).filter(Boolean)));
+  await Promise.all([
+    ...uniqueClassIds.map((classId) => setDoc(getClassDocRef(normalizedOwnerId, classId), {
+      id: classId,
+      updatedAt,
+      userId: normalizedOwnerId,
+      ownerId: normalizedOwnerId
+    }, { merge: true })),
+    setDoc(getUserRootRef(normalizedOwnerId), {
+      userId: normalizedOwnerId,
+      updatedAt
+    }, { merge: true }),
+    logActivity('student_deleted', normalizedStudentId, 'student', {
+      ownerId: normalizedOwnerId,
+      dataOwnerUserId: normalizedOwnerId,
+      userRole: actorRole
+    })
+  ]);
+
+  return {
+    ownerId: normalizedOwnerId,
+    studentId: normalizedStudentId,
+    studentName: normalizedStudentName,
+    deletedCount: matches.length
+  };
 });
 
 export const fetchStudentTrash = async () => {

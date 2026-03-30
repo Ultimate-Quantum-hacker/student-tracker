@@ -16,6 +16,7 @@ import {
   fetchAdminGlobalStats,
   fetchActivityLogs,
   fetchAdminUsers,
+  deleteAdminRegistryStudent,
   updateAdminUserRole,
   fetchGlobalStudentSearchIndex,
   setCurrentUserRoleContext
@@ -30,6 +31,7 @@ const ROLE_STUDENT = 'student';
 const UPDATABLE_ROLES = [ROLE_TEACHER, ROLE_ADMIN];
 const THEME_STORAGE_KEY = 'theme';
 const ADMIN_STUDENTS_PAGE_SIZE = 50;
+const ADMIN_STUDENTS_TABLE_COLUMN_COUNT = 4;
 
 const state = {
   authUser: null,
@@ -413,6 +415,7 @@ const formatActionLabel = (action = '') => {
 const isPermissionDeniedError = (error) => String(error?.code || '').toLowerCase().includes('permission-denied');
 const canManageRoles = () => state.currentRole === ROLE_DEVELOPER;
 const isAdminOnlyRole = () => state.currentRole === ROLE_ADMIN;
+const canDeleteAdminStudents = () => state.currentRole === ROLE_ADMIN || state.currentRole === ROLE_DEVELOPER;
 
 const updateLastUpdatedIndicator = () => {
   if (!dom.lastUpdated) return;
@@ -1338,11 +1341,13 @@ async function fetchAllStudentsGlobal() {
 
     const candidate = {
       ...data,
+      id: studentId,
       ownerId,
       classId,
       className,
       isClassScoped: Boolean(classId || parsedPath.isClassScoped)
     };
+
     const current = dedupedStudents.get(identityKey) || null;
     dedupedStudents.set(identityKey, pickPreferredAdminRegistryStudentRecord(current, candidate));
   });
@@ -1566,6 +1571,7 @@ const mapAdminStudentRecord = (student = {}, classMap = new Map()) => {
   return {
     name: normalizeDisplayText(student.name, 'Unnamed'),
     ownerId,
+    studentId: normalizeDisplayText(student.id || '', ''),
     classId,
     classKey,
     className: normalizeDisplayText(resolvedClass.classInfo?.name || studentClassName || '', 'Unknown Class'),
@@ -1724,12 +1730,40 @@ const getFilteredAdminStudents = () => {
   return sortAdminStudentsRegistry(filteredStudents);
 };
 
+const buildAdminStudentsActionMarkup = (student = {}) => {
+  const ownerId = normalizeDisplayText(student?.ownerId, '');
+  const studentId = normalizeDisplayText(student?.studentId, '');
+  const studentName = normalizeDisplayText(student?.name, 'Student');
+  const isDisabled = !canDeleteAdminStudents() || !ownerId || !studentId;
+  const buttonTitle = !canDeleteAdminStudents()
+    ? 'Only admins and developers can delete registry students.'
+    : !ownerId || !studentId
+      ? 'This registry row is missing the student identity needed for deletion.'
+      : `Delete ${studentName} from the registry`;
+
+  return `
+    <div class="table-actions-cell admin-student-row-actions">
+      <button
+        class="btn btn-danger admin-student-delete-btn"
+        type="button"
+        data-admin-student-delete="true"
+        data-owner-id="${escapeHtml(ownerId)}"
+        data-student-id="${escapeHtml(studentId)}"
+        data-student-name="${escapeHtml(studentName)}"
+        aria-label="${escapeHtml(buttonTitle)}"
+        title="${escapeHtml(buttonTitle)}"
+        ${isDisabled ? 'disabled' : ''}
+      >Delete</button>
+    </div>
+  `;
+};
+
 const buildAdminStudentsEmptyStateMarkup = ({
   icon = '🎓',
   title = 'No student records found.',
   detail = 'There are no active student entries to display in the registry right now.'
 } = {}) => {
-  return `<tr><td colspan="3" class="empty-row"><div class="smart-empty admin-students-empty"><span>${escapeHtml(icon)}</span><strong>${escapeHtml(title)}</strong><p>${escapeHtml(detail)}</p></div></td></tr>`;
+  return `<tr><td colspan="${ADMIN_STUDENTS_TABLE_COLUMN_COUNT}" class="empty-row"><div class="smart-empty admin-students-empty"><span>${escapeHtml(icon)}</span><strong>${escapeHtml(title)}</strong><p>${escapeHtml(detail)}</p></div></td></tr>`;
 };
 
 const renderAdminStudentsSkeletonRows = (rowCount = 6) => {
@@ -1738,7 +1772,7 @@ const renderAdminStudentsSkeletonRows = (rowCount = 6) => {
   const skeletonMarkup = Array.from({ length: rowCount }, (_, index) => {
     const shouldRenderClassGroup = index === 0 || index % 3 === 0;
     return `
-      ${shouldRenderClassGroup ? `<tr class="admin-students-group-row admin-students-group-row-skeleton" aria-hidden="true"><td colspan="3"><div class="admin-students-skeleton admin-students-skeleton-group"></div></td></tr>` : ''}
+      ${shouldRenderClassGroup ? `<tr class="admin-students-group-row admin-students-group-row-skeleton" aria-hidden="true"><td colspan="${ADMIN_STUDENTS_TABLE_COLUMN_COUNT}"><div class="admin-students-skeleton admin-students-skeleton-group"></div></td></tr>` : ''}
       <tr class="admin-students-row-skeleton" aria-hidden="true">
         <td>
           <div class="admin-students-skeleton-stack">
@@ -1756,6 +1790,11 @@ const renderAdminStudentsSkeletonRows = (rowCount = 6) => {
           <div class="admin-students-skeleton-stack">
             <div class="admin-students-skeleton admin-students-skeleton-title"></div>
             <div class="admin-students-skeleton admin-students-skeleton-copy"></div>
+          </div>
+        </td>
+        <td>
+          <div class="admin-students-row-actions">
+            <div class="admin-students-skeleton admin-students-skeleton-action"></div>
           </div>
         </td>
       </tr>
@@ -1919,11 +1958,12 @@ const renderAdminStudentsTable = (groups = [], startIndex = 0) => {
               <span>Teacher</span>
             </div>
           </td>
+          <td>${buildAdminStudentsActionMarkup(student)}</td>
         </tr>
       `;
     }).join('');
 
-    return `<tr class="admin-students-group-row"><td colspan="3">${escapeHtml(groupLabel)}</td></tr>${rows}`;
+    return `<tr class="admin-students-group-row"><td colspan="${ADMIN_STUDENTS_TABLE_COLUMN_COUNT}">${escapeHtml(groupLabel)}</td></tr>${rows}`;
   }).join('');
 };
 
@@ -2041,6 +2081,101 @@ const loadAdminStudentsRegistry = async () => {
   }
 };
 
+const removeAdminRegistryStudentFromState = (ownerId = '', studentId = '') => {
+  const targetKey = buildAdminRegistryStudentIdentityKey(ownerId, studentId);
+  if (!targetKey) {
+    return 0;
+  }
+
+  const currentStudents = Array.isArray(state.adminStudentsRegistry) ? state.adminStudentsRegistry : [];
+  const nextStudents = currentStudents.filter((student) => {
+    return buildAdminRegistryStudentIdentityKey(student.ownerId, student.studentId) !== targetKey;
+  });
+  const removedCount = currentStudents.length - nextStudents.length;
+  if (!removedCount) {
+    return 0;
+  }
+
+  state.adminStudentsRegistry = nextStudents;
+  state.globalStats = {
+    ...state.globalStats,
+    totalStudents: nextStudents.length
+  };
+  renderStats();
+  renderAdminStudentsFilterOptions(new Map(), nextStudents);
+  updateAdminStudentsView();
+  return removedCount;
+};
+
+const handleAdminRegistryStudentDelete = async ({ ownerId = '', studentId = '', studentName = '' } = {}) => {
+  if (!canDeleteAdminStudents()) {
+    setAdminStudentsStatus('Only admins and developers can delete registry students.', 'warning');
+    showToast('Student deletion unavailable', 'warning');
+    return;
+  }
+
+  const normalizedOwnerId = normalizeDisplayText(ownerId, '');
+  const normalizedStudentId = normalizeDisplayText(studentId, '');
+  const normalizedStudentName = normalizeDisplayText(studentName, 'Student');
+  if (!normalizedOwnerId || !normalizedStudentId) {
+    setAdminStudentsStatus('The selected registry row is missing the student identity needed for deletion.', 'warning');
+    showToast('Student cannot be deleted from registry', 'warning');
+    return;
+  }
+
+  const shouldContinue = await requestConfirmation({
+    message: `Delete ${normalizedStudentName} from the registry? This moves every matching active student record for that teacher into Trash.`,
+    confirmLabel: 'Delete Student',
+    dangerous: true
+  });
+
+  if (!shouldContinue) {
+    setAdminStudentsStatus('Student deletion canceled.', 'warning');
+    return;
+  }
+
+  try {
+    setAdminStudentsStatus(`Deleting ${normalizedStudentName} from the registry...`);
+    const result = await deleteAdminRegistryStudent({
+      ownerId: normalizedOwnerId,
+      studentId: normalizedStudentId,
+      studentName: normalizedStudentName
+    });
+    const removedCount = removeAdminRegistryStudentFromState(normalizedOwnerId, normalizedStudentId);
+    await Promise.allSettled([
+      loadGlobalStats(),
+      buildGlobalSearchIndex(),
+      loadActivityLogs()
+    ]);
+
+    if (Number(result?.deletedCount || 0) > 0) {
+      setAdminStudentsStatus(`${normalizedStudentName} was removed from the registry.`, 'success');
+      showToast('Student removed from registry', 'success');
+      markUpdatedNow();
+      return;
+    }
+
+    if (removedCount > 0) {
+      setAdminStudentsStatus(`${normalizedStudentName} was already cleared, so the registry view was refreshed.`, 'warning');
+      showToast('Registry refreshed', 'warning');
+      markUpdatedNow();
+      return;
+    }
+
+    setAdminStudentsStatus('No matching active student records were found for that registry entry.', 'warning');
+    showToast('Student record not found', 'warning');
+  } catch (error) {
+    console.error('Failed to delete registry student:', error);
+    if (isPermissionDeniedError(error)) {
+      setAdminStudentsStatus('Access denied. You do not have permission to delete this registry record.', 'error');
+      showToast('Permission denied', 'error');
+      return;
+    }
+    setAdminStudentsStatus(`Failed to delete student record: ${formatAuthError(error)}`, 'error');
+    showToast('Failed to delete student from registry', 'error');
+  }
+};
+
 const setAdminStudentsRegistryVisibility = (shouldShow) => {
   const studentsView = dom.adminStudentsView;
   const mainView = dom.adminMainView;
@@ -2135,6 +2270,32 @@ const initAdminStudentsRegistryView = () => {
   dom.adminStudentsNextPageBtn?.addEventListener('click', () => {
     state.adminStudentsRegistryPage += 1;
     updateAdminStudentsView();
+  });
+
+  dom.adminStudentsTableBody?.addEventListener('click', async (event) => {
+    const trigger = event.target instanceof Element ? event.target.closest('[data-admin-student-delete="true"]') : null;
+    if (!(trigger instanceof HTMLButtonElement)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const previousLabel = trigger.textContent;
+    trigger.disabled = true;
+    trigger.textContent = 'Deleting...';
+    try {
+      await handleAdminRegistryStudentDelete({
+        ownerId: trigger.dataset.ownerId || '',
+        studentId: trigger.dataset.studentId || '',
+        studentName: trigger.dataset.studentName || ''
+      });
+    } finally {
+      if (trigger.isConnected) {
+        trigger.disabled = false;
+        trigger.textContent = previousLabel || 'Delete';
+      }
+    }
   });
 
   dom.sidebarButtons.forEach((button) => {
