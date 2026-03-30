@@ -129,6 +129,33 @@ const normalizeRawData = (rawData) => {
 
 };
 
+const parseCache = (raw) => {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && parsed.data) {
+      return {
+        data: normalizeRawData(parsed.data),
+        lastUpdated: parsed.lastUpdated || null
+      };
+    }
+    if (parsed && typeof parsed === 'object') {
+      return {
+        data: normalizeRawData(parsed),
+        lastUpdated: parsed.lastUpdated || null
+      };
+    }
+  } catch (_error) {
+    return null;
+  }
+  return null;
+};
+
+const withTimestamp = (data) => ({
+  data: normalizeRawData(data),
+  lastUpdated: new Date().toISOString()
+});
+
 const persistStudentRestoreById = async (studentId, nextData) => {
   const normalizedStudentId = String(studentId || '').trim();
   if (!normalizedStudentId) {
