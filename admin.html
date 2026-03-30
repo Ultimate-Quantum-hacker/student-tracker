@@ -337,24 +337,46 @@
             <p class="panel-subtitle">Review all loaded student records across classes in one read-only admin view.</p>
           </div>
           <div class="admin-students-actions">
-            <div class="admin-field admin-search-field">
-              <span class="admin-field-label">Search loaded students</span>
-              <label class="input-shell search-container" aria-label="Search loaded students in the global registry">
-                <span class="input-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="11" cy="11" r="7"></circle>
-                    <path d="m21 21-4.35-4.35"></path>
-                  </svg>
-                </span>
-                <input
-                  id="admin-students-search-input"
-                  class="search-input admin-search-input"
-                  type="search"
-                  placeholder="Search by student, class, or owner"
-                  aria-label="Search loaded students in the global registry"
-                  autocomplete="off"
-                >
-              </label>
+            <div class="admin-students-filters">
+              <div class="admin-field admin-search-field">
+                <span class="admin-field-label">Search loaded students</span>
+                <label class="input-shell search-container" aria-label="Search loaded students in the global registry">
+                  <span class="input-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="11" cy="11" r="7"></circle>
+                      <path d="m21 21-4.35-4.35"></path>
+                    </svg>
+                  </span>
+                  <input
+                    id="admin-students-search-input"
+                    class="search-input admin-search-input"
+                    type="search"
+                    placeholder="Search by student, class, or teacher"
+                    aria-label="Search loaded students by student, class, or teacher"
+                    autocomplete="off"
+                  >
+                </label>
+              </div>
+              <div class="admin-field admin-filter-field">
+                <span class="admin-field-label">Class</span>
+                <label class="filter-shell search-container select-container" aria-label="Filter loaded students by class">
+                  <select id="admin-students-class-filter" class="admin-select-input" aria-label="Filter loaded students by class">
+                    <option value="">All classes</option>
+                  </select>
+                </label>
+              </div>
+              <div class="admin-field admin-filter-field">
+                <span class="admin-field-label">Teacher</span>
+                <label class="filter-shell search-container select-container" aria-label="Filter loaded students by teacher">
+                  <select id="admin-students-teacher-filter" class="admin-select-input" aria-label="Filter loaded students by teacher">
+                    <option value="">All teachers</option>
+                  </select>
+                </label>
+              </div>
+              <div class="admin-field admin-filter-action">
+                <span class="admin-field-label admin-field-label-hidden" aria-hidden="true">Clear registry filters</span>
+                <button id="admin-students-clear-filters-btn" class="btn btn-secondary" type="button">Clear Filters</button>
+              </div>
             </div>
             <button id="admin-students-back-btn" class="btn btn-secondary" type="button">← Back to Dashboard</button>
           </div>
@@ -369,7 +391,7 @@
               <tr>
                 <th>Student</th>
                 <th>Class</th>
-                <th>Owner</th>
+                <th>Teacher</th>
               </tr>
             </thead>
             <tbody id="admin-students-table-body">
