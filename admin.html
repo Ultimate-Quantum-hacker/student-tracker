@@ -90,6 +90,8 @@
         </div>
       </header>
 
+      <div class="admin-main-view">
+
       <section id="admin-section-overview" class="panel-card card fade-in admin-scroll-section" data-section="overview" aria-labelledby="admin-overview-title">
         <div class="panel-toolbar">
           <div class="section-heading">
@@ -114,7 +116,7 @@
               <span class="stat-meta">All registered accounts</span>
             </div>
           </article>
-          <article class="stat-card card fade-in">
+          <article class="stat-card card fade-in total-students-card">
             <div class="stat-card-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 14 3 9l9-5 9 5-9 5Z"></path>
@@ -127,6 +129,7 @@
               <p>Total Students</p>
               <strong id="admin-total-students" class="count-value">0</strong>
               <span class="stat-meta">Students indexed across classes</span>
+              <div class="card-subtext">View full student list →</div>
             </div>
           </article>
           <article class="stat-card card fade-in">
@@ -321,6 +324,69 @@
               </tr>
             </tbody>
           </table>
+        </div>
+      </section>
+
+      </div>
+
+      <section class="panel-card card fade-in admin-students-view hidden" aria-labelledby="admin-students-title">
+        <div class="panel-toolbar panel-toolbar-stacked">
+          <div class="section-heading">
+            <p class="section-kicker">Registry</p>
+            <h2 id="admin-students-title">Global Student Registry</h2>
+            <p class="panel-subtitle">Review all loaded student records across classes in one read-only admin view.</p>
+          </div>
+          <div class="admin-students-actions">
+            <div class="admin-field admin-search-field">
+              <span class="admin-field-label">Search loaded students</span>
+              <label class="input-shell search-container" aria-label="Search loaded students in the global registry">
+                <span class="input-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="7"></circle>
+                    <path d="m21 21-4.35-4.35"></path>
+                  </svg>
+                </span>
+                <input
+                  id="admin-students-search-input"
+                  class="search-input admin-search-input"
+                  type="search"
+                  placeholder="Search by student, class, or owner"
+                  aria-label="Search loaded students in the global registry"
+                  autocomplete="off"
+                >
+              </label>
+            </div>
+            <button id="admin-students-back-btn" class="btn btn-secondary" type="button">← Back to Dashboard</button>
+          </div>
+        </div>
+
+        <p id="admin-students-status" class="panel-status" aria-live="polite">Open the Total Students card to load the global registry.</p>
+        <p id="admin-students-loading" class="loading-state skeleton" style="display: none;" aria-live="polite">Loading global student registry...</p>
+
+        <div class="table-wrap table-shell">
+          <table class="users-table admin-students-table" aria-label="Global student registry">
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th>Class</th>
+                <th>Owner</th>
+              </tr>
+            </thead>
+            <tbody id="admin-students-table-body">
+              <tr>
+                <td colspan="3" class="empty-row">Open the Total Students card to load the registry.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div id="admin-students-pagination" class="admin-students-pagination hidden" aria-label="Registry pagination controls">
+          <p id="admin-students-pagination-summary" class="admin-students-pagination-summary" aria-live="polite">No pages to display.</p>
+          <div class="admin-students-pagination-controls">
+            <button id="admin-students-page-prev-btn" class="btn btn-secondary" type="button">← Previous</button>
+            <span id="admin-students-page-indicator" class="admin-students-page-indicator">Page 1 of 1</span>
+            <button id="admin-students-page-next-btn" class="btn btn-secondary" type="button">Next →</button>
+          </div>
         </div>
       </section>
     </div>

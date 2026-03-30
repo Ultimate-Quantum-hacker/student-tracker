@@ -1,5 +1,8 @@
 import {
-  isFirebaseConfigured
+  isFirebaseConfigured,
+  db,
+  getDocs,
+  collectionGroup
 } from './firebase.js';
 import {
   waitForInitialAuthState,
@@ -26,6 +29,7 @@ const ROLE_DEVELOPER = 'developer';
 const ROLE_STUDENT = 'student';
 const UPDATABLE_ROLES = [ROLE_TEACHER, ROLE_ADMIN];
 const THEME_STORAGE_KEY = 'theme';
+const ADMIN_STUDENTS_PAGE_SIZE = 50;
 
 const state = {
   authUser: null,
@@ -34,6 +38,9 @@ const state = {
   activityLogs: [],
   globalSearchIndex: [],
   globalSearchResults: [],
+  adminStudentsRegistry: [],
+  adminStudentsRegistryLoaded: false,
+  adminStudentsRegistryPage: 1,
   toastTimer: null,
   pendingConfirmResolver: null,
   pendingConfirmAction: null,
@@ -65,6 +72,18 @@ const dom = {
   totalUsers: document.getElementById('admin-total-users'),
   totalStudents: document.getElementById('admin-total-students'),
   totalExams: document.getElementById('admin-total-exams'),
+  adminMainView: document.querySelector('.admin-main-view'),
+  adminStudentsView: document.querySelector('.admin-students-view'),
+  adminStudentsSearchInput: document.getElementById('admin-students-search-input'),
+  adminStudentsStatus: document.getElementById('admin-students-status'),
+  adminStudentsLoading: document.getElementById('admin-students-loading'),
+  adminStudentsTableBody: document.getElementById('admin-students-table-body'),
+  adminStudentsBackBtn: document.getElementById('admin-students-back-btn'),
+  adminStudentsPagination: document.getElementById('admin-students-pagination'),
+  adminStudentsPaginationSummary: document.getElementById('admin-students-pagination-summary'),
+  adminStudentsPageIndicator: document.getElementById('admin-students-page-indicator'),
+  adminStudentsPrevPageBtn: document.getElementById('admin-students-page-prev-btn'),
+  adminStudentsNextPageBtn: document.getElementById('admin-students-page-next-btn'),
   globalSearchInput: document.getElementById('global-student-search-input'),
   globalSearchClearBtn: document.getElementById('global-search-clear-btn'),
   globalSearchStatus: document.getElementById('global-search-status'),
@@ -452,6 +471,13 @@ const setGlobalSearchStatus = (message, type = '') => {
   dom.globalSearchStatus.textContent = String(message || '');
   dom.globalSearchStatus.className = 'panel-status';
   if (type) dom.globalSearchStatus.classList.add(type);
+};
+
+const setAdminStudentsStatus = (message, type = '') => {
+  if (!dom.adminStudentsStatus) return;
+  dom.adminStudentsStatus.textContent = String(message || '');
+  dom.adminStudentsStatus.className = 'panel-status';
+  if (type) dom.adminStudentsStatus.classList.add(type);
 };
 
 const setConfirmModalVisibility = (isOpen) => {
@@ -1271,6 +1297,7 @@ const init = async () => {
     showToast('Admin panel ready', 'success');
   } catch (error) {
     console.error('Failed to initialize admin panel:', error);
+
     setPanelStatus(`Failed to initialize panel: ${formatAuthError(error)}`, 'error');
     showToast('Failed to initialize admin panel', 'error');
   }
@@ -1278,4 +1305,440 @@ const init = async () => {
 
 document.addEventListener('DOMContentLoaded', () => {
   init();
+});
+
+async function fetchAllStudentsGlobal() {
+  if (!isFirebaseConfigured || !db) {
+    return [];
+  }
+  const snapshot = await getDocs(collectionGroup(db, 'students'));
+  return snapshot.docs.map((doc) => ({
+    ...doc.data(),
+    __docId: doc.id,
+    __refPath: doc.ref?.path || ''
+  }));
+}
+
+const getOwnerIdFromRegistryPath = (path = '') => {
+  const segments = String(path || '').split('/').filter(Boolean);
+  if (segments[0] === 'users' && segments[1]) {
+    return normalizeDisplayText(segments[1], '');
+  }
+  return '';
+};
+
+const getRegistryAncestorIdFromPath = (path = '', collectionName = '') => {
+  const normalizedCollectionName = normalizeText(collectionName);
+  if (!normalizedCollectionName) {
+    return '';
+  }
+
+  const segments = String(path || '').split('/').filter(Boolean);
+  const collectionIndex = segments.lastIndexOf(normalizedCollectionName);
+  if (collectionIndex === -1 || !segments[collectionIndex + 1]) {
+    return '';
+  }
+  return normalizeDisplayText(segments[collectionIndex + 1], '');
+};
+
+const buildAdminRegistryClassKey = (ownerId = '', classId = '') => {
+  const normalizedClassId = normalizeDisplayText(classId, '');
+  if (!normalizedClassId) {
+    return '';
+  }
+
+  const normalizedOwnerId = normalizeDisplayText(ownerId, '');
+  return normalizedOwnerId ? `${normalizedOwnerId}::${normalizedClassId}` : normalizedClassId;
+};
+
+async function fetchAdminClassNameMap() {
+  if (!isFirebaseConfigured || !db) {
+    return new Map();
+  }
+
+  const snapshot = await getDocs(collectionGroup(db, 'classes'));
+  const classMap = new Map();
+  snapshot.forEach((entry) => {
+    const payload = entry.data() || {};
+    if (payload.deleted === true) {
+      return;
+    }
+
+    const ownerId = normalizeDisplayText(
+      payload.ownerId || payload.userId || getOwnerIdFromRegistryPath(entry.ref?.path),
+      ''
+    );
+    const classId = normalizeDisplayText(
+      payload.id || entry.id || getRegistryAncestorIdFromPath(entry.ref?.path, 'classes'),
+      ''
+    );
+    const className = normalizeDisplayText(payload.name || payload.className || '', '');
+    if (!classId || !className) {
+      return;
+    }
+
+    const keyedClassId = buildAdminRegistryClassKey(ownerId, classId);
+    if (keyedClassId) {
+      classMap.set(keyedClassId, className);
+    }
+    if (!classMap.has(classId)) {
+      classMap.set(classId, className);
+    }
+  });
+  return classMap;
+}
+
+const mapAdminStudentRecord = (student = {}, classMap = new Map()) => {
+  const ownerId = normalizeDisplayText(
+    student.ownerId || student.userId || getOwnerIdFromRegistryPath(student.__refPath),
+    ''
+  );
+  const classId = normalizeDisplayText(
+    student.classId || getRegistryAncestorIdFromPath(student.__refPath, 'classes'),
+    ''
+  );
+  const classKey = buildAdminRegistryClassKey(ownerId, classId);
+  const name = student.name || 'Unnamed';
+  const className = student.className || classMap.get(classKey) || classMap.get(classId) || 'Unknown Class';
+  const owner = student.ownerName || 'Unknown';
+
+  return {
+    id: normalizeDisplayText(student.id || student.studentId || student.__docId || '', ''),
+    name: normalizeDisplayText(name, 'Unnamed'),
+    classId: normalizeDisplayText(classId, ''),
+    className: normalizeDisplayText(className, 'Unknown Class'),
+    owner: normalizeDisplayText(owner, 'Unknown')
+  };
+};
+
+const sortAdminStudentsRegistry = (students = []) => {
+  const sortedStudents = [...students];
+  sortedStudents.sort((a, b) => {
+    const classCompare = String(a.className || '').localeCompare(String(b.className || ''), undefined, { sensitivity: 'base', numeric: true });
+    if (classCompare !== 0) return classCompare;
+    return String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base', numeric: true });
+  });
+  return sortedStudents;
+};
+
+const getFilteredAdminStudents = () => {
+  const term = normalizeText(dom.adminStudentsSearchInput?.value || '').toLowerCase();
+  const students = Array.isArray(state.adminStudentsRegistry) ? state.adminStudentsRegistry : [];
+  if (!term) {
+    return sortAdminStudentsRegistry(students);
+  }
+
+  const filteredStudents = students.filter((student) => {
+    return [student.name, student.className, student.owner, student.id]
+      .some((value) => String(value || '').toLowerCase().includes(term));
+  });
+
+  return sortAdminStudentsRegistry(filteredStudents);
+};
+
+const buildAdminStudentsEmptyStateMarkup = ({
+  icon = '🎓',
+  title = 'No student records found.',
+  detail = 'There are no active student entries to display in the registry right now.'
+} = {}) => {
+  return `<tr><td colspan="3" class="empty-row"><div class="smart-empty admin-students-empty"><span>${escapeHtml(icon)}</span><strong>${escapeHtml(title)}</strong><p>${escapeHtml(detail)}</p></div></td></tr>`;
+};
+
+const renderAdminStudentsSkeletonRows = (rowCount = 6) => {
+  if (!dom.adminStudentsTableBody) return;
+
+  const skeletonMarkup = Array.from({ length: rowCount }, (_, index) => {
+    const shouldRenderClassGroup = index === 0 || index % 3 === 0;
+    return `
+      ${shouldRenderClassGroup ? `<tr class="admin-students-group-row admin-students-group-row-skeleton" aria-hidden="true"><td colspan="3"><div class="admin-students-skeleton admin-students-skeleton-group"></div></td></tr>` : ''}
+      <tr class="admin-students-row-skeleton" aria-hidden="true">
+        <td>
+          <div class="admin-students-skeleton-stack">
+            <div class="admin-students-skeleton admin-students-skeleton-title"></div>
+            <div class="admin-students-skeleton admin-students-skeleton-copy"></div>
+          </div>
+        </td>
+        <td>
+          <div class="admin-students-skeleton-stack">
+            <div class="admin-students-skeleton admin-students-skeleton-title"></div>
+            <div class="admin-students-skeleton admin-students-skeleton-copy"></div>
+          </div>
+        </td>
+        <td>
+          <div class="admin-students-skeleton-stack">
+            <div class="admin-students-skeleton admin-students-skeleton-title"></div>
+            <div class="admin-students-skeleton admin-students-skeleton-copy"></div>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  dom.adminStudentsTableBody.innerHTML = skeletonMarkup;
+};
+
+const getAdminStudentsPagination = (students = []) => {
+  const totalItems = Array.isArray(students) ? students.length : 0;
+  const totalPages = Math.max(1, Math.ceil(totalItems / ADMIN_STUDENTS_PAGE_SIZE));
+  const requestedPage = Math.max(1, Number.parseInt(state.adminStudentsRegistryPage, 10) || 1);
+  const currentPage = totalItems ? Math.min(requestedPage, totalPages) : 1;
+  const startIndex = totalItems ? (currentPage - 1) * ADMIN_STUDENTS_PAGE_SIZE : 0;
+  const endIndex = Math.min(startIndex + ADMIN_STUDENTS_PAGE_SIZE, totalItems);
+
+  state.adminStudentsRegistryPage = currentPage;
+
+  return {
+    items: students.slice(startIndex, endIndex),
+    totalItems,
+    totalPages,
+    currentPage,
+    startIndex,
+    endIndex
+  };
+};
+
+const renderAdminStudentsPagination = ({
+  totalItems = 0,
+  totalPages = 1,
+  currentPage = 1,
+  startIndex = 0,
+  endIndex = 0,
+  isLoading = false
+} = {}) => {
+  if (!dom.adminStudentsPagination) return;
+
+  const shouldShow = Boolean(isLoading || totalItems > 0);
+  dom.adminStudentsPagination.classList.toggle('hidden', !shouldShow);
+
+  if (dom.adminStudentsPaginationSummary) {
+    if (isLoading) {
+      dom.adminStudentsPaginationSummary.textContent = 'Preparing registry pages...';
+    } else if (!totalItems) {
+      dom.adminStudentsPaginationSummary.textContent = 'No pages to display.';
+    } else {
+      dom.adminStudentsPaginationSummary.textContent = `Showing ${startIndex + 1}-${endIndex} of ${totalItems} student${totalItems === 1 ? '' : 's'}.`;
+    }
+  }
+
+  if (dom.adminStudentsPageIndicator) {
+    dom.adminStudentsPageIndicator.textContent = `Page ${currentPage} of ${totalPages}`;
+  }
+
+  if (dom.adminStudentsPrevPageBtn) {
+    dom.adminStudentsPrevPageBtn.disabled = isLoading || currentPage <= 1 || totalItems === 0;
+  }
+
+  if (dom.adminStudentsNextPageBtn) {
+    dom.adminStudentsNextPageBtn.disabled = isLoading || currentPage >= totalPages || totalItems === 0;
+  }
+};
+
+const renderAdminStudentsTable = (students = []) => {
+  if (!dom.adminStudentsTableBody) return;
+  if (!students.length) {
+    const hasSearchTerm = normalizeText(dom.adminStudentsSearchInput?.value || '');
+    dom.adminStudentsTableBody.innerHTML = hasSearchTerm
+      ? buildAdminStudentsEmptyStateMarkup({
+        icon: '🔎',
+        title: 'No students match your search.',
+        detail: 'Try a different student, class, or owner keyword.'
+      })
+      : buildAdminStudentsEmptyStateMarkup({
+        icon: '🎓',
+        title: 'No student records found.',
+        detail: 'The global registry does not have any active student entries to show yet.'
+      });
+    return;
+  }
+
+  let previousClassGroup = '';
+  dom.adminStudentsTableBody.innerHTML = students.map((student) => {
+    const classLabel = normalizeDisplayText(student.className, 'Unknown Class');
+    const classGroupKey = classLabel.toLowerCase();
+    const shouldRenderClassGroup = classGroupKey !== previousClassGroup;
+    previousClassGroup = classGroupKey;
+    return `
+      ${shouldRenderClassGroup ? `<tr class="admin-students-group-row"><td colspan="3">${escapeHtml(classLabel)}</td></tr>` : ''}
+      <tr class="fade-in">
+        <td>${buildIdentityMarkup({ label: student.name, secondary: student.id ? `Record ID: ${student.id}` : 'Student record', role: ROLE_STUDENT })}</td>
+        <td>
+          <div class="admin-student-meta">
+            <strong>${escapeHtml(classLabel)}</strong>
+            <span>Class assignment</span>
+          </div>
+        </td>
+        <td>
+          <div class="admin-student-meta">
+            <strong>${escapeHtml(student.owner)}</strong>
+            <span>Data owner</span>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+};
+
+const updateAdminStudentsView = () => {
+  const filteredStudents = getFilteredAdminStudents();
+  const totalLoadedStudents = Array.isArray(state.adminStudentsRegistry) ? state.adminStudentsRegistry.length : 0;
+  const hasSearchTerm = normalizeText(dom.adminStudentsSearchInput?.value || '');
+  const pagination = getAdminStudentsPagination(filteredStudents);
+  const visibleRange = filteredStudents.length ? `${pagination.startIndex + 1}-${pagination.endIndex}` : '0';
+
+  renderAdminStudentsTable(pagination.items);
+  renderAdminStudentsPagination(pagination);
+
+  if (!state.adminStudentsRegistryLoaded) {
+    return;
+  }
+
+  if (totalLoadedStudents === 0) {
+    setAdminStudentsStatus('No active student records were found in the global registry.', 'warning');
+    return;
+  }
+
+  if (!filteredStudents.length && hasSearchTerm) {
+    setAdminStudentsStatus('No students match your search in the loaded registry.', 'warning');
+    return;
+  }
+
+  const message = hasSearchTerm
+    ? `Page ${pagination.currentPage} of ${pagination.totalPages}. Showing ${visibleRange} of ${filteredStudents.length} matching student${filteredStudents.length === 1 ? '' : 's'}.`
+    : `Page ${pagination.currentPage} of ${pagination.totalPages}. Showing ${visibleRange} of ${filteredStudents.length} student${filteredStudents.length === 1 ? '' : 's'} in the registry.`;
+  setAdminStudentsStatus(message, filteredStudents.length ? 'success' : 'warning');
+};
+
+const loadAdminStudentsRegistry = async () => {
+  if (!dom.adminStudentsView) {
+    return;
+  }
+
+  if (!isFirebaseConfigured || !db) {
+    state.adminStudentsRegistry = [];
+    state.adminStudentsRegistryLoaded = false;
+    state.adminStudentsRegistryPage = 1;
+    renderAdminStudentsTable([]);
+    renderAdminStudentsPagination();
+    setAdminStudentsStatus('Global student registry is unavailable because Firebase is not configured.', 'error');
+    setElementVisibility(dom.adminStudentsLoading, false);
+    setSectionLoadingState(dom.adminStudentsView, false);
+    return;
+  }
+
+  if (state.adminStudentsRegistryLoaded) {
+    updateAdminStudentsView();
+    return;
+  }
+
+  state.adminStudentsRegistryPage = Math.max(1, Number.parseInt(state.adminStudentsRegistryPage, 10) || 1);
+  setElementVisibility(dom.adminStudentsLoading, true);
+  setSectionLoadingState(dom.adminStudentsView, true);
+  setAdminStudentsStatus('Loading global student registry...');
+  renderAdminStudentsSkeletonRows();
+  renderAdminStudentsPagination({ isLoading: true });
+
+  try {
+    const [studentRecords, classMap] = await Promise.all([
+      fetchAllStudentsGlobal(),
+      fetchAdminClassNameMap()
+    ]);
+    const students = Array.isArray(studentRecords)
+      ? studentRecords
+        .filter((student) => student?.deleted !== true)
+        .map((student) => mapAdminStudentRecord(student, classMap))
+      : [];
+    state.adminStudentsRegistry = sortAdminStudentsRegistry(students);
+    state.adminStudentsRegistryLoaded = true;
+    updateAdminStudentsView();
+    markUpdatedNow();
+  } catch (error) {
+    console.error('Failed to load global student registry:', error);
+    state.adminStudentsRegistry = [];
+    state.adminStudentsRegistryLoaded = false;
+    state.adminStudentsRegistryPage = 1;
+    renderAdminStudentsTable([]);
+    renderAdminStudentsPagination();
+    if (isPermissionDeniedError(error)) {
+      setAdminStudentsStatus('Global student registry is unavailable due to permissions.', 'error');
+      showToast('Global student registry unavailable due to permissions', 'warning');
+      return;
+    }
+    setAdminStudentsStatus(`Failed to load global student registry: ${formatAuthError(error)}`, 'error');
+    showToast('Failed to load global student registry', 'error');
+  } finally {
+    setElementVisibility(dom.adminStudentsLoading, false);
+    setSectionLoadingState(dom.adminStudentsView, false);
+  }
+};
+
+const setAdminStudentsRegistryVisibility = (shouldShow) => {
+  const studentsView = dom.adminStudentsView;
+  const mainView = dom.adminMainView;
+  if (!studentsView || !mainView) {
+    return false;
+  }
+
+  studentsView.classList.toggle('hidden', !shouldShow);
+  mainView.classList.toggle('hidden', !!shouldShow);
+  return true;
+};
+
+const initAdminStudentsRegistryView = () => {
+  const totalStudentsCard = dom.totalStudents?.closest('.total-students-card') || document.querySelector('.total-students-card');
+
+  totalStudentsCard?.addEventListener('click', () => {
+    const didToggleView = setAdminStudentsRegistryVisibility(true);
+    if (!didToggleView) {
+      return;
+    }
+    loadAdminStudentsRegistry().catch((error) => {
+      console.error('Failed to open global student registry:', error);
+    });
+  });
+
+  dom.adminStudentsBackBtn?.addEventListener('click', () => {
+    const didToggleView = setAdminStudentsRegistryVisibility(false);
+    if (!didToggleView) {
+      return;
+    }
+    scrollToSidebarSection('overview', { smooth: false });
+  });
+
+  dom.adminStudentsSearchInput?.addEventListener('input', () => {
+    state.adminStudentsRegistryPage = 1;
+    updateAdminStudentsView();
+  });
+
+  dom.adminStudentsPrevPageBtn?.addEventListener('click', () => {
+    if (state.adminStudentsRegistryPage <= 1) {
+      return;
+    }
+    state.adminStudentsRegistryPage -= 1;
+    updateAdminStudentsView();
+  });
+
+  dom.adminStudentsNextPageBtn?.addEventListener('click', () => {
+    state.adminStudentsRegistryPage += 1;
+    updateAdminStudentsView();
+  });
+
+  dom.sidebarButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      setAdminStudentsRegistryVisibility(false);
+    }, true);
+  });
+
+  dom.refreshBtn?.addEventListener('click', () => {
+    state.adminStudentsRegistryLoaded = false;
+    state.adminStudentsRegistryPage = 1;
+    if (!dom.adminStudentsView?.classList.contains('hidden')) {
+      loadAdminStudentsRegistry().catch((error) => {
+        console.error('Failed to refresh global student registry:', error);
+      });
+    }
+  });
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+  initAdminStudentsRegistryView();
 });

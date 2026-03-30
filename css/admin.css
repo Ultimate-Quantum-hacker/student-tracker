@@ -1123,6 +1123,214 @@ body.admin-panel .table-helper-text {
   white-space: nowrap;
 }
 
+body.admin-panel .hidden {
+  display: none !important;
+}
+
+body.admin-panel .admin-main-view {
+  display: grid;
+  gap: 1rem;
+}
+
+body.admin-panel .admin-students-view {
+  display: grid;
+  gap: 0.75rem;
+}
+
+body.admin-panel .admin-students-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: end;
+}
+
+body.admin-panel .admin-students-actions > .admin-field {
+  min-width: 0;
+}
+
+body.admin-panel .admin-students-actions > .btn {
+  min-height: 58px;
+  width: 100%;
+}
+
+body.admin-panel .admin-students-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+body.admin-panel .admin-students-pagination-summary {
+  margin: 0;
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
+body.admin-panel .admin-students-pagination-controls {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+body.admin-panel .admin-students-page-indicator {
+  min-width: 108px;
+  text-align: center;
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: inherit;
+}
+
+body.admin-panel .admin-students-pagination .btn {
+  min-width: 118px;
+}
+
+body.admin-panel .total-students-card {
+  cursor: pointer;
+}
+
+body.admin-panel .stat-card.total-students-card:hover {
+  box-shadow: 0 10px 30px rgba(59, 130, 246, 0.15), 0 18px 34px rgba(37, 99, 235, 0.18);
+}
+
+body.admin-panel .stat-card.total-students-card:active {
+  transform: scale(0.98);
+}
+
+body.admin-panel .card-subtext {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 6px;
+  transition: all 0.2s ease;
+}
+
+body.admin-panel.light-mode .card-subtext {
+  color: rgba(71, 85, 105, 0.68);
+}
+
+body.admin-panel .total-students-card:hover .card-subtext {
+  color: #3b82f6;
+  transform: translateX(4px);
+}
+
+body.admin-panel .admin-student-meta {
+  display: grid;
+  gap: 0.15rem;
+}
+
+body.admin-panel .admin-student-meta strong {
+  font-size: 0.92rem;
+  color: inherit;
+}
+
+body.admin-panel .admin-student-meta span {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+body.admin-panel .admin-students-empty {
+  gap: 0.45rem;
+  padding: 1rem 0;
+}
+
+body.admin-panel .admin-students-empty strong {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: inherit;
+}
+
+body.admin-panel .admin-students-empty p {
+  max-width: 34ch;
+  margin: 0;
+  color: inherit;
+  opacity: 0.88;
+}
+
+body.admin-panel .admin-students-group-row td {
+  padding: 0.75rem 1rem;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(6px);
+  box-shadow: inset 0 -1px 0 rgba(96, 165, 250, 0.16);
+  color: #bfdbfe;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+body.admin-panel.light-mode .admin-students-group-row td {
+  background: rgba(248, 250, 252, 0.96);
+  color: #1d4ed8;
+}
+
+body.admin-panel .admin-students-table tbody tr.fade-in {
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+body.admin-panel .admin-students-table tbody tr.fade-in:hover {
+  background: rgba(59, 130, 246, 0.08);
+  cursor: pointer;
+}
+
+body.admin-panel.light-mode .admin-students-table tbody tr.fade-in:hover {
+  background: rgba(219, 234, 254, 0.72);
+}
+
+body.admin-panel .admin-students-table tbody tr.fade-in:active {
+  transform: translateY(1px);
+}
+
+body.admin-panel .admin-students-row-skeleton:hover,
+body.admin-panel .admin-students-group-row-skeleton:hover {
+  background: transparent;
+}
+
+body.admin-panel .admin-students-skeleton-stack {
+  display: grid;
+  gap: 0.45rem;
+}
+
+body.admin-panel .admin-students-skeleton {
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.05));
+  animation: adminRegistryShimmer 1.2s infinite linear;
+}
+
+body.admin-panel.light-mode .admin-students-skeleton {
+  background: linear-gradient(90deg, rgba(226, 232, 240, 0.72), rgba(255, 255, 255, 0.96), rgba(226, 232, 240, 0.72));
+}
+
+body.admin-panel .admin-students-skeleton-title {
+  width: 72%;
+  height: 16px;
+}
+
+body.admin-panel .admin-students-skeleton-copy {
+  width: 48%;
+  height: 12px;
+}
+
+body.admin-panel .admin-students-skeleton-group {
+  width: 9rem;
+  height: 12px;
+}
+
+@keyframes adminRegistryShimmer {
+  0% {
+    background-position: -200px 0;
+  }
+
+  100% {
+    background-position: 200px 0;
+  }
+}
+
 body.admin-panel .stat-card {
   position: relative;
   overflow: hidden;
@@ -1266,10 +1474,29 @@ body.admin-panel .stat-card:hover .stat-card-icon svg {
     min-width: 0;
   }
 
+  body.admin-panel .admin-students-actions {
+    grid-template-columns: 1fr;
+  }
+
   body.admin-panel #admin-section-users .users-table th:last-child,
   body.admin-panel #admin-section-users .users-table td:last-child {
     text-align: left;
     width: auto;
+  }
+
+  body.admin-panel .admin-students-pagination {
+    align-items: stretch;
+  }
+
+  body.admin-panel .admin-students-pagination-controls {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  body.admin-panel .admin-students-pagination-controls .btn,
+  body.admin-panel .admin-students-page-indicator {
+    flex: 1 1 100%;
+    width: 100%;
   }
 
   body.admin-panel .table-actions-cell {
