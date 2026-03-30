@@ -97,6 +97,13 @@ const domIds = {
   deleteConfirmMsg: 'delete-confirm-msg',
   deleteConfirmBtn: 'delete-confirm-btn',
   deleteCancelBtn: 'delete-cancel-btn',
+  bulkClassDeleteModal: 'bulk-class-delete-modal',
+  bulkClassDeleteList: 'bulk-class-delete-list',
+  bulkClassDeleteSummary: 'bulk-class-delete-summary',
+  bulkClassDeleteConfirmBtn: 'bulk-class-delete-confirm-btn',
+  bulkClassDeleteCancelBtn: 'bulk-class-delete-cancel-btn',
+  bulkClassDeleteSelectAllBtn: 'bulk-class-delete-select-all-btn',
+  bulkClassDeleteClearBtn: 'bulk-class-delete-clear-btn',
   bulkImportBtn: 'bulk-import-btn',
   bulkImportModal: 'bulk-import-modal',
   bulkImportTextarea: 'bulk-import-textarea',
@@ -157,6 +164,7 @@ const ui = {
     hasPromptedForMissingClass: false,
     hasBoundClassDropdownEvents: false,
     hasBoundAccessGuardEvents: false,
+    bulkClassDeleteSelection: [],
     toastTimer: null,
     readOnlyToastTimer: null,
     trashRetentionDays: 3,
@@ -168,7 +176,7 @@ const ui = {
         app.applyTheme();
       }
     },
-    
+
     initDOM: function () {
       console.log("Initializing DOM references...");
       Object.keys(domIds).forEach(k => {
@@ -794,6 +802,130 @@ const ui = {
       return `${className} (Teacher: ${ownerName})`;
     },
 
+    getBulkClassDeleteSelection: function () {
+      return [...new Set((Array.isArray(this.bulkClassDeleteSelection) ? this.bulkClassDeleteSelection : [])
+        .map(classId => String(classId || '').trim())
+        .filter(Boolean))];
+    },
+
+    renderBulkClassDeleteModal: function () {
+      if (!app.dom.bulkClassDeleteList || !app.dom.bulkClassDeleteSummary || !app.dom.bulkClassDeleteConfirmBtn) {
+        return;
+      }
+
+      const classes = Array.isArray(app.state.classes)
+        ? app.state.classes.filter((entry) => String(entry?.id || '').trim())
+        : [];
+      const availableIds = new Set(classes.map(entry => String(entry?.id || '').trim()));
+      const selectedIds = this.getBulkClassDeleteSelection().filter(classId => availableIds.has(classId));
+      this.bulkClassDeleteSelection = selectedIds;
+
+      if (!classes.length) {
+        app.dom.bulkClassDeleteList.innerHTML = '<div class="bulk-class-delete-empty">No classes available</div>';
+        app.dom.bulkClassDeleteSummary.textContent = 'No classes available';
+        app.dom.bulkClassDeleteConfirmBtn.disabled = true;
+        if (app.dom.bulkClassDeleteSelectAllBtn) app.dom.bulkClassDeleteSelectAllBtn.disabled = true;
+        if (app.dom.bulkClassDeleteClearBtn) app.dom.bulkClassDeleteClearBtn.disabled = true;
+        return;
+      }
+
+      app.dom.bulkClassDeleteList.innerHTML = classes.map((entry) => {
+        const classId = String(entry?.id || '').trim();
+        const className = String(entry?.name || 'My Class').trim() || 'My Class';
+        const ownerLabel = this.formatClassOwnerLabel(entry);
+        const isSelected = selectedIds.includes(classId);
+        return `
+          <label class="bulk-class-delete-item">
+            <input type="checkbox" class="bulk-class-delete-checkbox" value="${app.utils.esc(classId)}" ${isSelected ? 'checked' : ''}>
+            <span class="bulk-class-delete-item-copy">
+              <span class="bulk-class-delete-item-name">${app.utils.esc(className)}</span>
+              ${ownerLabel ? `<span class="bulk-class-delete-item-owner">${app.utils.esc(ownerLabel)}</span>` : ''}
+            </span>
+          </label>`;
+      }).join('');
+
+      const selectedCount = selectedIds.length;
+      const allSelected = selectedCount === classes.length;
+      app.dom.bulkClassDeleteSummary.textContent = selectedCount
+        ? `${selectedCount} class${selectedCount === 1 ? '' : 'es'} selected${allSelected ? ' (all)' : ''}`
+        : 'No classes selected';
+      app.dom.bulkClassDeleteConfirmBtn.disabled = selectedCount === 0;
+      if (app.dom.bulkClassDeleteSelectAllBtn) app.dom.bulkClassDeleteSelectAllBtn.disabled = allSelected;
+      if (app.dom.bulkClassDeleteClearBtn) app.dom.bulkClassDeleteClearBtn.disabled = selectedCount === 0;
+    },
+
+    openBulkClassDeleteModal: function () {
+      const classes = Array.isArray(app.state.classes) ? app.state.classes : [];
+      if (!classes.length || !app.dom.bulkClassDeleteModal) {
+        return;
+      }
+
+      const currentClassId = String(app.state.currentClassId || '').trim();
+      const hasCurrentClass = classes.some((entry) => String(entry?.id || '').trim() === currentClassId);
+      this.bulkClassDeleteSelection = hasCurrentClass ? [currentClassId] : [];
+      this.renderBulkClassDeleteModal();
+      app.dom.bulkClassDeleteModal.classList.add('active');
+    },
+
+    closeBulkClassDeleteModal: function () {
+      this.bulkClassDeleteSelection = [];
+      if (app.dom.bulkClassDeleteModal) {
+        app.dom.bulkClassDeleteModal.classList.remove('active');
+      }
+    },
+
+    updateBulkClassDeleteSelection: function (classId, isSelected) {
+      const normalizedClassId = String(classId || '').trim();
+      if (!normalizedClassId) {
+        return;
+      }
+
+      const selectedIds = new Set(this.getBulkClassDeleteSelection());
+      if (isSelected) {
+        selectedIds.add(normalizedClassId);
+      } else {
+        selectedIds.delete(normalizedClassId);
+      }
+      this.bulkClassDeleteSelection = Array.from(selectedIds);
+      this.renderBulkClassDeleteModal();
+    },
+
+    confirmBulkClassDelete: async function () {
+      if (!this.ensureWritableAction('Class deletion')) return;
+
+      const selectedIds = this.getBulkClassDeleteSelection();
+      if (!selectedIds.length) {
+        this.showToast('Select at least one class');
+        return;
+      }
+
+      try {
+        if (app.dom.bulkClassDeleteConfirmBtn) {
+          app.dom.bulkClassDeleteConfirmBtn.disabled = true;
+        }
+        this.setClassControlsBusy(true);
+        const deletedEntries = await app.deleteClasses(selectedIds);
+        this.closeBulkClassDeleteModal();
+        this.refreshUI();
+
+        if (deletedEntries.length === 1) {
+          const deletedEntry = deletedEntries[0] || {};
+          this.showUndoDeleteToast(deletedEntry.id || selectedIds[0], deletedEntry.name || 'Class', 'class');
+        } else {
+          this.showToast(`${deletedEntries.length} classes moved to Trash`);
+        }
+      } catch (error) {
+        console.error('Failed to delete classes:', error);
+        this.showToast(error?.message || 'Failed to delete classes');
+      } finally {
+        if (app.dom.bulkClassDeleteModal?.classList.contains('active')) {
+          this.renderBulkClassDeleteModal();
+        }
+        this.renderClassControls();
+        this.applyReadOnlyRoleState();
+      }
+    },
+
     getStatusToneClass: function (statusType) {
       if (statusType === 'strong') return 'total-tone-strong';
       if (statusType === 'good') return 'total-tone-good';
@@ -953,7 +1085,7 @@ const ui = {
         app.dom.createClassBtn.disabled = !canManageClasses;
       }
       if (app.dom.deleteClassBtn) {
-        app.dom.deleteClassBtn.disabled = !canManageClasses || classes.length <= 1 || !resolvedClassId;
+        app.dom.deleteClassBtn.disabled = !canManageClasses || !classes.length;
       }
 
       const disableArrows = classes.length <= 1 || !resolvedClassId;
@@ -989,7 +1121,7 @@ const ui = {
         app.dom.classDropdownValue.textContent = 'No classes available';
       }
 
-      if (!classes.length && canManageClasses && !app.state.isLoading && !this.hasPromptedForMissingClass) {
+      if (!classes.length && canManageClasses && !app.state.allowEmptyClassCatalog && !app.state.isLoading && !this.hasPromptedForMissingClass) {
         this.hasPromptedForMissingClass = true;
         setTimeout(async () => {
           if (!this.ensureWritableAction('Class creation')) {
@@ -1012,7 +1144,7 @@ const ui = {
             this.showToast('Failed to create class');
           }
         }, 0);
-      } else if (classes.length) {
+      } else if (classes.length || app.state.allowEmptyClassCatalog) {
         this.hasPromptedForMissingClass = false;
       }
     },
@@ -1394,7 +1526,7 @@ const ui = {
           : (app.state.exams[0]?.id || '');
         app.state.selectedBulkExamId = app.dom.bulkMockSelect.value || '';
       }
-      
+
       const sOps = '<option value="">— Select Student —</option>' + app.state.students.map(s => `<option value="${s.id}">${app.utils.esc(s.name)}</option>`).join('');
       if (app.dom.scoreStudentSelect) {
         app.dom.scoreStudentSelect.innerHTML = sOps;
@@ -1428,7 +1560,7 @@ const ui = {
       }))
         .filter(s => s.name.toLowerCase().includes(app.state.searchTerm.toLowerCase()))
         .sort((a, b) => (b._overallAvg ?? -1) - (a._overallAvg ?? -1));
-      
+
       const subHeaders = app.state.exams.map((_, examIdx) => {
         const examGroupClass = examIdx % 2 === 1 ? ' exam-group-alt' : '';
         return app.state.subjects.map(sub => `<th class="exam-sub-col${examGroupClass}">${app.utils.esc(sub.name.slice(0, 3))}</th>`).join('') + `<th class="exam-total-col exam-group-end${examGroupClass}">Total</th>`;
@@ -1606,10 +1738,10 @@ const ui = {
     },
 
     renderClassSummary: function () {
-      if (!app.dom.classChart) return; 
+      if (!app.dom.classChart) return;
       const avgs = app.analytics.calcClassAverages();
       const hasData = avgs.some(v => v.overall !== null);
-      
+
       // Update Chart
       if (app.charts) app.charts.renderClassChart(avgs, hasData, app);
 
@@ -1659,14 +1791,14 @@ const ui = {
         const previous = avgs[avgs.length - 2];
         const currentOverall = this.toFiniteNumber(current?.overall);
         const previousOverall = this.toFiniteNumber(previous?.overall);
-        
+
         if (currentOverall !== null && previousOverall !== null) {
           const diff = currentOverall - previousOverall;
           const trendClass = diff >= 0 ? 'trend-up' : 'trend-down';
           const icon = diff >= 0 ? '↑' : '↓';
           const statusText = diff >= 0 ? 'improved overall' : 'declined slightly';
-          const trendMessage = diff >= 0 
-            ? 'Performance trend is upward' 
+          const trendMessage = diff >= 0
+            ? 'Performance trend is upward'
             : 'Performance trend is downward';
 
           app.dom.classInsightBox.innerHTML = `
@@ -2150,10 +2282,10 @@ const ui = {
 
     renderBulkTable: function () {
       if (!app.dom.bulkScoreHead || !app.dom.bulkScoreBody) return;
-      
+
       const headHtml = '<th>Student</th>' + app.state.subjects.map(s => `<th>${app.utils.esc(s.name)}</th>`).join('');
       app.dom.bulkScoreHead.innerHTML = `<tr>${headHtml}</tr>`;
-      
+
       const examId = app.dom.bulkMockSelect?.value || app.state.selectedBulkExamId || '';
       app.state.selectedBulkExamId = examId;
       const exam = app.state.exams.find(e => e.id === examId);
@@ -2165,7 +2297,7 @@ const ui = {
         const studentName = app.utils.esc(s.name);
         return `<tr><td class="sticky-col"><div class="bulk-student-cell"><span class="bulk-student-name">${studentName}</span><button type="button" class="bulk-row-reset-btn" data-reset-student-id="${s.id}" title="Clear all marks for ${studentName}" aria-label="Clear all marks for ${studentName}">&#8635;</button></div></td>${row}</tr>`;
       }).join('');
-      
+
       app.dom.bulkScoreBody.innerHTML = bodyHtml;
     },
 
@@ -2197,7 +2329,7 @@ const ui = {
         this.renderBulkTable();
         this.updateBackupStatus();
         this.applyReadOnlyRoleState();
-        
+
         // Render heatmap
         app.heatmap.renderHeatmap(app);
       } catch (e) {
@@ -2221,37 +2353,37 @@ const ui = {
         </div>`).join('');
     },
 
-    renameExam: async function (id, name) { 
+    renameExam: async function (id, name) {
       if (!this.ensureWritableAction('Exam updates')) {
         return;
       }
 
       try {
         await app.updateExam(id, { title: name.trim() });
-        this.refreshUI(); 
+        this.refreshUI();
       } catch (error) {
         console.error('Failed to rename exam:', error);
         app.ui.showToast('Failed to rename exam');
       }
     },
-    deleteExam: async function (id) { 
+    deleteExam: async function (id) {
       if (!this.ensureWritableAction('Exam deletion')) {
         return;
       }
 
-      if (confirm("Delete exam?")) { 
+      if (confirm("Delete exam?")) {
         try {
           const examName = app.state.exams.find(item => item.id === id)?.title
             || app.state.exams.find(item => item.id === id)?.name
             || 'Exam';
           const deletedEntry = await app.deleteExam(id);
-          this.refreshUI(); 
+          this.refreshUI();
           this.showUndoDeleteToast(deletedEntry?.id || id, deletedEntry?.name || examName, 'exam');
         } catch (error) {
           console.error('Failed to delete exam:', error);
           app.ui.showToast('Failed to delete exam');
         }
-      } 
+      }
     },
     renameSubject: async function (id, n) {
       if (!this.ensureWritableAction('Subject updates')) {
@@ -2344,7 +2476,7 @@ const ui = {
         if (app.sidebar && app.sidebar.init) {
           app.sidebar.init();
         }
-        
+
         if (app.dom.form) {
           app.dom.form.onsubmit = async (e) => {
             e.preventDefault();
@@ -2415,21 +2547,9 @@ const ui = {
           };
         }
         if (app.dom.deleteClassBtn) {
-          app.dom.deleteClassBtn.onclick = async () => {
+          app.dom.deleteClassBtn.onclick = () => {
             if (!this.ensureWritableAction('Class deletion')) return;
-
-            const activeClassName = app.state.currentClassName || 'this class';
-            const shouldDelete = confirm(`Move ${activeClassName} to Trash? You can restore it later from Trash.`);
-            if (!shouldDelete) return;
-
-            try {
-              const deletedEntry = await app.deleteClass(app.state.currentClassId);
-              this.refreshUI();
-              this.showUndoDeleteToast(deletedEntry?.id || app.state.currentClassId, deletedEntry?.name || activeClassName, 'class');
-            } catch (error) {
-              console.error('Failed to delete class:', error);
-              this.showToast(error?.message || 'Failed to delete class');
-            }
+            this.openBulkClassDeleteModal();
           };
         }
         if (app.dom.createSnapshotBtn) app.dom.createSnapshotBtn.onclick = () => {
@@ -2499,6 +2619,37 @@ const ui = {
           app.dom.resetModal.classList.remove('active');
         };
         if (app.dom.resetCancelBtn) app.dom.resetCancelBtn.onclick = () => app.dom.resetModal.classList.remove('active');
+        if (app.dom.bulkClassDeleteSelectAllBtn) {
+          app.dom.bulkClassDeleteSelectAllBtn.onclick = () => {
+            const allClassIds = (app.state.classes || []).map(entry => String(entry?.id || '').trim()).filter(Boolean);
+            this.bulkClassDeleteSelection = [...new Set(allClassIds)];
+            this.renderBulkClassDeleteModal();
+          };
+        }
+        if (app.dom.bulkClassDeleteClearBtn) {
+          app.dom.bulkClassDeleteClearBtn.onclick = () => {
+            this.bulkClassDeleteSelection = [];
+            this.renderBulkClassDeleteModal();
+          };
+        }
+        if (app.dom.bulkClassDeleteList) {
+          app.dom.bulkClassDeleteList.onchange = (event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLInputElement) || !target.classList.contains('bulk-class-delete-checkbox')) {
+              return;
+            }
+            this.updateBulkClassDeleteSelection(target.value, target.checked);
+          };
+        }
+        if (app.dom.bulkClassDeleteConfirmBtn) app.dom.bulkClassDeleteConfirmBtn.onclick = async () => this.confirmBulkClassDelete();
+        if (app.dom.bulkClassDeleteCancelBtn) app.dom.bulkClassDeleteCancelBtn.onclick = () => this.closeBulkClassDeleteModal();
+        if (app.dom.bulkClassDeleteModal) {
+          app.dom.bulkClassDeleteModal.onclick = (event) => {
+            if (event.target === app.dom.bulkClassDeleteModal) {
+              this.closeBulkClassDeleteModal();
+            }
+          };
+        }
         if (app.dom.bulkImportBtn) app.dom.bulkImportBtn.onclick = () => {
           if (!this.requireAccess('bulkImport')) return;
           app.dom.bulkImportModal.classList.add('active');
@@ -2548,34 +2699,34 @@ const ui = {
           if (!confirm('Save all entered scores for this exam?')) return;
           app.students.saveBulkScores(app.dom.bulkMockSelect.value, app.dom.bulkScoreBody.querySelectorAll('.bulk-score-input'), app, this);
         };
-        if (app.dom.addMockForm) app.dom.addMockForm.onsubmit = async (e) => { 
-          e.preventDefault(); 
+        if (app.dom.addMockForm) app.dom.addMockForm.onsubmit = async (e) => {
+          e.preventDefault();
           if (!this.ensureWritableClassAction('Exam creation', 'add exam')) return;
-          if (app.dom.mockNameInput.value.trim()) { 
+          if (app.dom.mockNameInput.value.trim()) {
             try {
               await app.addExam({ title: app.dom.mockNameInput.value.trim(), date: new Date().toISOString() });
-              this.refreshUI(); 
+              this.refreshUI();
               app.ui.showToast('Exam added');
             } catch (error) {
               console.error('Failed to add exam:', error);
               app.ui.showToast(this.resolveClassContextErrorMessage(error, 'Failed to add exam'));
             }
-          } 
-          app.dom.mockNameInput.value = ''; 
+          }
+          app.dom.mockNameInput.value = '';
         };
-        if (app.dom.addSubjectForm) app.dom.addSubjectForm.onsubmit = async (e) => { 
-          e.preventDefault(); 
+        if (app.dom.addSubjectForm) app.dom.addSubjectForm.onsubmit = async (e) => {
+          e.preventDefault();
           if (!this.ensureWritableClassAction('Subject creation', 'add subject')) return;
-          if (app.dom.subjectNameInput.value.trim()) { 
+          if (app.dom.subjectNameInput.value.trim()) {
             try {
               await app.addSubject({ name: app.dom.subjectNameInput.value.trim() });
-              this.refreshUI(); 
+              this.refreshUI();
             } catch (error) {
               console.error('Failed to add subject:', error);
               app.ui.showToast(this.resolveClassContextErrorMessage(error, 'Failed to add subject'));
             }
-          } 
-          app.dom.subjectNameInput.value = ''; 
+          }
+          app.dom.subjectNameInput.value = '';
         };
         if (app.dom.saveScoresBtn) app.dom.saveScoresBtn.onclick = () => {
           if (!this.ensureWritableAction('Score save')) return;

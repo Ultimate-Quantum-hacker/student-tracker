@@ -58,12 +58,17 @@ let globalClassCatalogCache = {
   loadedAt: 0
 };
 const GLOBAL_CLASS_CACHE_TTL_MS = 60 * 1000;
+const ALLOW_EMPTY_CLASS_CATALOG_FIELD = 'allowEmptyClassCatalog';
 
 const createDefaultRawData = () => ({
   students: [],
   subjects: [],
   exams: []
 });
+
+const inferAllowEmptyClassCatalog = (classes = [], trashClasses = []) => {
+  return asArray(classes).length === 0 && asArray(trashClasses).length > 0;
+};
 
 let writeChain = Promise.resolve();
 
@@ -1466,6 +1471,15 @@ const updateMigrationState = async (userId, status, extra = {}) => {
   }, { merge: true });
 };
 
+const readUserRootData = async (userId) => {
+  if (!isFirebaseConfigured || !db || !userId) {
+    return {};
+  }
+
+  const snapshot = await getDoc(getUserRootRef(userId));
+  return snapshot.exists() ? (snapshot.data() || {}) : {};
+};
+
 const ensureDefaultClassDocument = async (userId) => {
   const existingCatalog = await readClassCatalogFromFirestore(userId);
   const activeClasses = existingCatalog.classes || [];
@@ -1493,6 +1507,7 @@ const ensureDefaultClassDocument = async (userId) => {
   await setDoc(getUserRootRef(userId), {
     uid: userId,
     activeClassId: classId,
+    [ALLOW_EMPTY_CLASS_CATALOG_FIELD]: false,
     updatedAt: createdAt
   }, { merge: true });
 
@@ -2004,17 +2019,25 @@ const ensureClassCatalog = async (userId) => {
   const role = getCurrentUserRoleContext();
   const authUserId = getAuthenticatedUserId() || userId;
   const scopeKey = role === 'admin' ? `${authUserId}:admin-global` : authUserId;
+  let allowEmptyClassCatalog = false;
 
   if (role !== 'admin') {
-    await ensureClassMigration(authUserId);
-    await ensureDefaultClassDocument(authUserId);
+    const userRootData = await readUserRootData(authUserId);
+    allowEmptyClassCatalog = userRootData?.[ALLOW_EMPTY_CLASS_CATALOG_FIELD] === true;
+    if (!allowEmptyClassCatalog) {
+      await ensureClassMigration(authUserId);
+      await ensureDefaultClassDocument(authUserId);
+    }
   }
 
   const catalog = role === 'admin'
     ? await readGlobalClassCatalogFromFirestore(authUserId)
     : await readClassCatalogFromFirestore(authUserId);
   writeClassCatalogCache(scopeKey, catalog.classes, catalog.trashClasses);
-  return catalog;
+  return {
+    ...catalog,
+    allowEmptyClassCatalog
+  };
 };
 
 const ensureActiveClassContext = async (userId, options = {}) => {
@@ -2026,6 +2049,7 @@ const ensureActiveClassContext = async (userId, options = {}) => {
   if (!isFirebaseConfigured || !db) {
     const classes = readClassCatalogCache(scopeKey);
     const trashClasses = readClassTrashCache(scopeKey);
+    const allowEmptyClassCatalog = inferAllowEmptyClassCatalog(classes, trashClasses);
 
     const { classId, className } = resolveActiveClassModel(authUserId, classes);
     const persistedSelection = readPersistedClassSelection(authUserId);
@@ -2048,7 +2072,8 @@ const ensureActiveClassContext = async (userId, options = {}) => {
       classId,
       className,
       classOwnerId,
-      classOwnerName
+      classOwnerName,
+      allowEmptyClassCatalog
     };
   }
 
@@ -2076,7 +2101,8 @@ const ensureActiveClassContext = async (userId, options = {}) => {
     classId,
     className,
     classOwnerId,
-    classOwnerName
+    classOwnerName,
+    allowEmptyClassCatalog: Boolean(catalog?.allowEmptyClassCatalog)
   };
 };
 
@@ -2935,7 +2961,8 @@ export const fetchAllData = async () => {
       source: 'default',
       offline: false,
       error,
-      errorType: 'unauthenticated'
+      errorType: 'unauthenticated',
+      allowEmptyClassCatalog: false
     };
   }
 
@@ -2944,6 +2971,7 @@ export const fetchAllData = async () => {
     const cacheScopeKey = getScopeKey();
     const cachedClasses = readClassCatalogCache(cacheScopeKey);
     const cachedTrashClasses = readClassTrashCache(cacheScopeKey);
+    const allowEmptyClassCatalog = inferAllowEmptyClassCatalog(cachedClasses, cachedTrashClasses);
     const { classId, className } = resolveActiveClassModel(authUserId || userId, cachedClasses);
     const cached = readCachedData(classId);
     if (cached?.data) {
@@ -2959,7 +2987,8 @@ export const fetchAllData = async () => {
         source: 'cache',
         offline: false,
         error: null,
-        errorType: 'config'
+        errorType: 'config',
+        allowEmptyClassCatalog
       };
     }
 
@@ -2977,7 +3006,8 @@ export const fetchAllData = async () => {
       source: 'default',
       offline: false,
       error: null,
-      errorType: 'config'
+      errorType: 'config',
+      allowEmptyClassCatalog
     };
   }
 
@@ -3007,7 +3037,8 @@ export const fetchAllData = async () => {
           source: 'firebase',
           offline: false,
           error: null,
-          errorType: null
+          errorType: null,
+          allowEmptyClassCatalog: Boolean(classContext?.allowEmptyClassCatalog)
         };
       }
 
@@ -3033,7 +3064,8 @@ export const fetchAllData = async () => {
         source: 'firebase',
         offline: false,
         error: null,
-        errorType: null
+        errorType: null,
+        allowEmptyClassCatalog: Boolean(classContext?.allowEmptyClassCatalog)
       };
     } catch (error) {
       lastError = error;
@@ -3058,6 +3090,7 @@ export const fetchAllData = async () => {
   const cacheScopeKey = getScopeKey();
   const cachedClasses = readClassCatalogCache(cacheScopeKey);
   const cachedTrashClasses = readClassTrashCache(cacheScopeKey);
+  const allowEmptyClassCatalog = inferAllowEmptyClassCatalog(cachedClasses, cachedTrashClasses);
   const { classId, className } = resolveActiveClassModel(authUserId || userId, cachedClasses);
   const cached = readCachedData(classId);
 
@@ -3074,7 +3107,8 @@ export const fetchAllData = async () => {
       source: 'cache',
       offline,
       error: lastError,
-      errorType: lastErrorType
+      errorType: lastErrorType,
+      allowEmptyClassCatalog
     };
   }
 
@@ -3092,7 +3126,8 @@ export const fetchAllData = async () => {
     source: 'default',
     offline,
     error: lastError,
-    errorType: lastErrorType
+    errorType: lastErrorType,
+    allowEmptyClassCatalog
   };
 };
 
@@ -3112,6 +3147,7 @@ export const fetchClassCatalog = async () => {
   if (!isFirebaseConfigured || !db) {
     const cachedClasses = readClassCatalogCache(cacheScopeKey);
     const cachedTrashClasses = readClassTrashCache(cacheScopeKey);
+    const allowEmptyClassCatalog = inferAllowEmptyClassCatalog(cachedClasses, cachedTrashClasses);
     const { classId, className } = resolveActiveClassModel(userId, cachedClasses);
     const persistedSelection = readPersistedClassSelection(userId);
     const activeClass = findClassEntryBySelection(cachedClasses, classId, currentClassOwnerId || persistedSelection.ownerId || '') || null;
@@ -3123,7 +3159,8 @@ export const fetchClassCatalog = async () => {
       classes: cachedClasses,
       trashClasses: cachedTrashClasses,
       currentClassId: classId,
-      currentClassName: className
+      currentClassName: className,
+      allowEmptyClassCatalog
     };
   }
 
@@ -3143,7 +3180,8 @@ export const fetchClassCatalog = async () => {
     classes,
     trashClasses,
     currentClassId: classId,
-    currentClassName: className
+    currentClassName: className,
+    allowEmptyClassCatalog: Boolean(catalog?.allowEmptyClassCatalog)
   };
 };
 
@@ -3186,6 +3224,7 @@ export const createClass = async (className) => {
   await setDoc(getUserRootRef(userId), {
     userId,
     activeClassId: classId,
+    [ALLOW_EMPTY_CLASS_CATALOG_FIELD]: false,
     updatedAt: createdAt
   }, { merge: true });
 
@@ -3193,69 +3232,83 @@ export const createClass = async (className) => {
     class: toClassModel(classId, { name: normalizedName, createdAt, ownerId: userId, ownerName }),
     classes: nextClasses,
     currentClassId: classId,
-    currentClassName: normalizedName
+    currentClassName: normalizedName,
+    allowEmptyClassCatalog: false
   };
 };
 
-export const deleteClass = async (classId) => {
-  assertWritableRole('delete class');
-  const userId = await ensureAuthenticatedUserId('delete class');
-  const normalizedClassId = normalizeClassId(classId);
-  if (!normalizedClassId) {
-    throw new Error('Class id is required');
+const deleteClassesInternal = async (classIds = [], options = {}) => {
+  const operationLabel = String(options?.operationLabel || 'delete class');
+  const allowEmptyCatalog = options?.allowEmptyCatalog === true;
+
+  assertWritableRole(operationLabel);
+  const userId = await ensureAuthenticatedUserId(operationLabel);
+  const normalizedClassIds = [...new Set(asArray(classIds).map(classId => normalizeClassId(classId)).filter(Boolean))];
+  if (!normalizedClassIds.length) {
+    throw new Error('Select at least one class');
   }
 
   const catalog = await ensureClassCatalog(userId);
   const classes = catalog.classes || [];
   const trashClasses = catalog.trashClasses || [];
-  const classEntry = classes.find(entry => entry.id === normalizedClassId);
-  if (!classEntry) {
-    throw new Error('Class not found');
+  const selectedClasses = normalizedClassIds.map((normalizedClassId) => {
+    return classes.find(entry => entry.id === normalizedClassId) || null;
+  });
+
+  if (selectedClasses.some(entry => !entry)) {
+    throw new Error('One or more selected classes are unavailable');
   }
 
-  if (classes.length <= 1) {
+  const remainingClasses = sortClasses(classes.filter(entry => !normalizedClassIds.includes(entry.id)));
+  if (!allowEmptyCatalog && remainingClasses.length === 0) {
     throw new Error('At least one class is required');
   }
 
   const updatedAt = new Date().toISOString();
-  const classOwnerId = normalizeUserId(classEntry.ownerId || '');
-  if (!classOwnerId) {
-    throw createContextError(ERROR_CODES.MISSING_OWNER_ID, 'Class owner metadata is missing');
-  }
+  const deletedEntries = selectedClasses.map((classEntry) => {
+    const classOwnerId = normalizeUserId(classEntry?.ownerId || '');
+    if (!classOwnerId) {
+      throw createContextError(ERROR_CODES.MISSING_OWNER_ID, 'Class owner metadata is missing');
+    }
 
-  await setDoc(getClassDocRef(classOwnerId, normalizedClassId), {
-    id: normalizedClassId,
-    name: classEntry.name,
-    createdAt: classEntry.createdAt || null,
-    deleted: true,
-    deletedAt: serverTimestamp(),
-    updatedAt,
-    userId: classOwnerId,
-    ownerId: classOwnerId,
-    ownerName: classEntry.ownerName || getAuthenticatedUserDisplayName()
-  }, { merge: true });
+    return {
+      id: normalizeClassId(classEntry?.id || ''),
+      name: classEntry?.name,
+      createdAt: classEntry?.createdAt || null,
+      deletedAt: updatedAt,
+      ownerId: classOwnerId,
+      ownerName: classEntry?.ownerName || getAuthenticatedUserDisplayName()
+    };
+  });
 
-  const remainingClasses = sortClasses(classes.filter(entry => entry.id !== normalizedClassId));
-  const deletedEntry = {
-    id: normalizedClassId,
-    name: classEntry.name,
-    createdAt: classEntry.createdAt || null,
-    deletedAt: new Date().toISOString(),
-    ownerId: classOwnerId,
-    ownerName: classEntry.ownerName || getAuthenticatedUserDisplayName()
-  };
+  await Promise.all(deletedEntries.map((classEntry) => {
+    return setDoc(getClassDocRef(classEntry.ownerId, classEntry.id), {
+      id: classEntry.id,
+      name: classEntry.name,
+      createdAt: classEntry.createdAt || null,
+      deleted: true,
+      deletedAt: serverTimestamp(),
+      updatedAt,
+      userId: classEntry.ownerId,
+      ownerId: classEntry.ownerId,
+      ownerName: classEntry.ownerName || getAuthenticatedUserDisplayName()
+    }, { merge: true });
+  }));
+
   const nextTrashClasses = sortClassTrashEntries([
-    deletedEntry,
-    ...trashClasses.filter(entry => entry.id !== normalizedClassId)
+    ...deletedEntries,
+    ...trashClasses.filter(entry => !normalizedClassIds.includes(entry.id))
   ]);
   writeClassCatalogCache(userId, remainingClasses, nextTrashClasses);
   globalClassCatalogCache.loadedAt = 0;
 
   const { classId: nextClassId, className: nextClassName } = resolveActiveClassModel(userId, remainingClasses);
+  const allowEmptyClassCatalog = remainingClasses.length === 0;
 
   await setDoc(getUserRootRef(userId), {
     userId,
     activeClassId: nextClassId,
+    [ALLOW_EMPTY_CLASS_CATALOG_FIELD]: allowEmptyClassCatalog,
     updatedAt
   }, { merge: true });
 
@@ -3264,8 +3317,28 @@ export const deleteClass = async (classId) => {
     trashClasses: nextTrashClasses,
     currentClassId: nextClassId,
     currentClassName: nextClassName,
-    trashEntry: deletedEntry
+    deletedEntries,
+    allowEmptyClassCatalog
   };
+};
+
+export const deleteClass = async (classId) => {
+  const result = await deleteClassesInternal([classId], {
+    allowEmptyCatalog: false,
+    operationLabel: 'delete class'
+  });
+
+  return {
+    ...result,
+    trashEntry: result.deletedEntries?.[0] || null
+  };
+};
+
+export const deleteClasses = async (classIds = []) => {
+  return deleteClassesInternal(classIds, {
+    allowEmptyCatalog: true,
+    operationLabel: 'delete classes'
+  });
 };
 
 export const restoreClass = async (classId) => {
@@ -3320,6 +3393,7 @@ export const restoreClass = async (classId) => {
   await setDoc(getUserRootRef(userId), {
     userId,
     activeClassId: nextClassId,
+    [ALLOW_EMPTY_CLASS_CATALOG_FIELD]: false,
     updatedAt
   }, { merge: true });
 
@@ -3327,7 +3401,8 @@ export const restoreClass = async (classId) => {
     classes: nextClasses,
     trashClasses: nextTrashClasses,
     currentClassId: nextClassId,
-    currentClassName: nextClassName
+    currentClassName: nextClassName,
+    allowEmptyClassCatalog: false
   };
 };
 
@@ -3367,6 +3442,7 @@ export const permanentlyDeleteClass = async (classId) => {
   await setDoc(getUserRootRef(userId), {
     userId,
     activeClassId: nextClassId,
+    [ALLOW_EMPTY_CLASS_CATALOG_FIELD]: classes.length === 0,
     updatedAt
   }, { merge: true });
 
@@ -3374,7 +3450,8 @@ export const permanentlyDeleteClass = async (classId) => {
     classes,
     trashClasses: nextTrashClasses,
     currentClassId: nextClassId,
-    currentClassName: nextClassName
+    currentClassName: nextClassName,
+    allowEmptyClassCatalog: classes.length === 0
   };
 };
 

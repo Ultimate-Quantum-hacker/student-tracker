@@ -38,7 +38,8 @@ window.TrackerApp = window.TrackerApp || {};
     isLoading: false,
     error: null,
     selectedBulkExamId: '',
-    selectedPerformanceCategory: 'strong'
+    selectedPerformanceCategory: 'strong',
+    allowEmptyClassCatalog: false
   };
 
   const OFFLINE_CACHE_MESSAGE = 'Offline mode: using cached data';
@@ -146,8 +147,8 @@ window.TrackerApp = window.TrackerApp || {};
     app.state.currentClassOwnerId = String(classEntry?.ownerId || app.state.currentClassOwnerId || getAuthenticatedOwnerFallback() || '').trim();
     app.state.currentClassOwnerName = String(classEntry?.ownerName || app.state.currentClassOwnerName || '').trim() || 'Teacher';
 
-    if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
-      dataService.setCurrentClassId(app.state.currentClassId);
+    if (typeof dataService.setCurrentClassId === 'function') {
+      dataService.setCurrentClassId(app.state.currentClassId || '');
     }
     app.setCurrentClassOwnerContext();
     persistCurrentClassContext(app.state.currentClassId, app.state.currentClassOwnerId);
@@ -736,8 +737,8 @@ window.TrackerApp = window.TrackerApp || {};
         app.state.currentClassOwnerId = persistedContext.ownerId;
       }
 
-      if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
-        dataService.setCurrentClassId(app.state.currentClassId);
+      if (typeof dataService.setCurrentClassId === 'function') {
+        dataService.setCurrentClassId(app.state.currentClassId || '');
       }
 
       if (typeof dataService.setCurrentUserRoleContext === 'function') {
@@ -772,6 +773,7 @@ window.TrackerApp = window.TrackerApp || {};
       app.state.currentClassName = validatedClassContext.className;
       app.state.currentClassOwnerId = validatedClassContext.ownerId;
       app.state.currentClassOwnerName = validatedClassContext.ownerName;
+      app.state.allowEmptyClassCatalog = remoteResult?.allowEmptyClassCatalog === true;
       persistCurrentClassContext(app.state.currentClassId, app.state.currentClassOwnerId);
       app.syncDataContext();
 
@@ -786,8 +788,8 @@ window.TrackerApp = window.TrackerApp || {};
       console.log('Current Class ID:', app.state.currentClassId || '(none)');
       console.log('User ID:', app.getCurrentClassOwnerId() || '(none)');
 
-      if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
-        dataService.setCurrentClassId(app.state.currentClassId);
+      if (typeof dataService.setCurrentClassId === 'function') {
+        dataService.setCurrentClassId(app.state.currentClassId || '');
       }
 
       const remoteData = app.migrateToRawData(remoteResult?.data || createDefaultRawData());
@@ -888,6 +890,7 @@ window.TrackerApp = window.TrackerApp || {};
       app.state.classes = normalizeClassCatalogEntries(app.state.classes);
       app.state.currentClassId = String(result?.currentClassId || '').trim();
       app.state.currentClassName = String(result?.currentClassName || nextName).trim() || nextName;
+      app.state.allowEmptyClassCatalog = false;
       const currentClassEntry = (app.state.classes || []).find((entry) => String(entry?.id || '').trim() === app.state.currentClassId) || null;
       app.state.currentClassOwnerId = String(currentClassEntry?.ownerId || '').trim();
       app.state.currentClassOwnerName = String(currentClassEntry?.ownerName || '').trim() || 'Teacher';
@@ -897,8 +900,8 @@ window.TrackerApp = window.TrackerApp || {};
       console.log('Current Class ID:', app.state.currentClassId || '(none)');
       console.log('User ID:', app.getCurrentClassOwnerId() || '(none)');
 
-      if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
-        dataService.setCurrentClassId(app.state.currentClassId);
+      if (typeof dataService.setCurrentClassId === 'function') {
+        dataService.setCurrentClassId(app.state.currentClassId || '');
       }
 
       await app.load();
@@ -976,6 +979,7 @@ window.TrackerApp = window.TrackerApp || {};
       app.state.currentClassId = String(result?.currentClassId || '').trim();
       app.state.currentClassName = String(result?.currentClassName || '').trim() || 'My Class';
       app.state.classTrash = sortTrashEntriesNewestFirst(Array.isArray(result?.trashClasses) ? result.trashClasses : app.state.classTrash || []);
+      app.state.allowEmptyClassCatalog = Boolean(result?.allowEmptyClassCatalog);
       const currentClassEntry = (app.state.classes || []).find((entry) => String(entry?.id || '').trim() === app.state.currentClassId) || null;
       app.state.currentClassOwnerId = String(currentClassEntry?.ownerId || '').trim();
       app.state.currentClassOwnerName = String(currentClassEntry?.ownerName || '').trim() || 'Teacher';
@@ -985,8 +989,8 @@ window.TrackerApp = window.TrackerApp || {};
       console.log('Current Class ID:', app.state.currentClassId || '(none)');
       console.log('User ID:', app.getCurrentClassOwnerId() || '(none)');
 
-      if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
-        dataService.setCurrentClassId(app.state.currentClassId);
+      if (typeof dataService.setCurrentClassId === 'function') {
+        dataService.setCurrentClassId(app.state.currentClassId || '');
       }
 
       await app.load();
@@ -995,6 +999,34 @@ window.TrackerApp = window.TrackerApp || {};
         name: targetClass?.name || 'Class',
         deletedAt: new Date().toISOString()
       };
+    });
+  };
+
+  app.deleteClasses = async function (classIds = []) {
+    return enqueueStateWrite(async () => {
+      const targetClassIds = [...new Set((Array.isArray(classIds) ? classIds : []).map(id => normalizeLabel(id)).filter(Boolean))];
+      if (!targetClassIds.length) {
+        throw new Error('Select at least one class');
+      }
+
+      const result = await dataService.deleteClasses(targetClassIds);
+      app.state.classes = normalizeClassCatalogEntries(Array.isArray(result?.classes) ? result.classes : []);
+      app.state.currentClassId = String(result?.currentClassId || '').trim();
+      app.state.currentClassName = String(result?.currentClassName || '').trim() || 'My Class';
+      app.state.classTrash = sortTrashEntriesNewestFirst(Array.isArray(result?.trashClasses) ? result.trashClasses : app.state.classTrash || []);
+      app.state.allowEmptyClassCatalog = Boolean(result?.allowEmptyClassCatalog);
+      const currentClassEntry = (app.state.classes || []).find((entry) => String(entry?.id || '').trim() === app.state.currentClassId) || null;
+      app.state.currentClassOwnerId = String(currentClassEntry?.ownerId || '').trim();
+      app.state.currentClassOwnerName = String(currentClassEntry?.ownerName || '').trim() || 'Teacher';
+      persistCurrentClassContext(app.state.currentClassId, app.state.currentClassOwnerId);
+      app.syncDataContext();
+
+      if (typeof dataService.setCurrentClassId === 'function') {
+        dataService.setCurrentClassId(app.state.currentClassId || '');
+      }
+
+      await app.load();
+      return Array.isArray(result?.deletedEntries) ? result.deletedEntries : [];
     });
   };
 
@@ -1015,14 +1047,15 @@ window.TrackerApp = window.TrackerApp || {};
       app.state.classTrash = sortTrashEntriesNewestFirst(Array.isArray(result?.trashClasses) ? result.trashClasses : app.state.classTrash || []);
       app.state.currentClassId = String(result?.currentClassId || app.state.currentClassId || '').trim();
       app.state.currentClassName = String(result?.currentClassName || app.state.currentClassName || 'My Class').trim() || 'My Class';
+      app.state.allowEmptyClassCatalog = Boolean(result?.allowEmptyClassCatalog);
       const currentClassEntry = (app.state.classes || []).find((entry) => String(entry?.id || '').trim() === app.state.currentClassId) || null;
       app.state.currentClassOwnerId = String(currentClassEntry?.ownerId || '').trim();
       app.state.currentClassOwnerName = String(currentClassEntry?.ownerName || '').trim() || 'Teacher';
       persistCurrentClassContext(app.state.currentClassId, app.state.currentClassOwnerId);
       app.syncDataContext();
 
-      if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
-        dataService.setCurrentClassId(app.state.currentClassId);
+      if (typeof dataService.setCurrentClassId === 'function') {
+        dataService.setCurrentClassId(app.state.currentClassId || '');
       }
 
       await app.load();
@@ -1047,14 +1080,15 @@ window.TrackerApp = window.TrackerApp || {};
       app.state.classTrash = sortTrashEntriesNewestFirst(Array.isArray(result?.trashClasses) ? result.trashClasses : app.state.classTrash || []);
       app.state.currentClassId = String(result?.currentClassId || app.state.currentClassId || '').trim();
       app.state.currentClassName = String(result?.currentClassName || app.state.currentClassName || 'My Class').trim() || 'My Class';
+      app.state.allowEmptyClassCatalog = Boolean(result?.allowEmptyClassCatalog);
       const currentClassEntry = (app.state.classes || []).find((entry) => String(entry?.id || '').trim() === app.state.currentClassId) || null;
       app.state.currentClassOwnerId = String(currentClassEntry?.ownerId || '').trim();
       app.state.currentClassOwnerName = String(currentClassEntry?.ownerName || '').trim() || 'Teacher';
       persistCurrentClassContext(app.state.currentClassId, app.state.currentClassOwnerId);
       app.syncDataContext();
 
-      if (typeof dataService.setCurrentClassId === 'function' && app.state.currentClassId) {
-        dataService.setCurrentClassId(app.state.currentClassId);
+      if (typeof dataService.setCurrentClassId === 'function') {
+        dataService.setCurrentClassId(app.state.currentClassId || '');
       }
 
       await app.load();

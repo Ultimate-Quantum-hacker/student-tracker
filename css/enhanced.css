@@ -2178,6 +2178,80 @@ body.dark-mode .dashboard-chart-y-axis{
   font-size:.84rem;
 }
 
+.bulk-class-delete-modal{
+  width:min(100%,520px);
+}
+
+.bulk-class-delete-note{
+  margin:.25rem 0 .9rem;
+  color:var(--text-secondary);
+  font-size:.92rem;
+}
+
+.bulk-class-delete-toolbar{
+  display:flex;
+  gap:.55rem;
+  flex-wrap:wrap;
+  margin-bottom:.75rem;
+}
+
+.bulk-class-delete-summary{
+  margin:0 0 .75rem;
+  font-size:.88rem;
+  color:var(--text-secondary);
+}
+
+.bulk-class-delete-list{
+  display:flex;
+  flex-direction:column;
+  gap:.65rem;
+  max-height:46vh;
+  overflow:auto;
+  padding-right:.15rem;
+}
+
+.bulk-class-delete-item{
+  display:flex;
+  align-items:flex-start;
+  gap:.75rem;
+  padding:.8rem .85rem;
+  border:1px solid var(--border);
+  border-radius:14px;
+  background:var(--surface-secondary);
+  cursor:pointer;
+}
+
+.bulk-class-delete-checkbox{
+  margin-top:.18rem;
+  accent-color:var(--primary);
+}
+
+.bulk-class-delete-item-copy{
+  display:flex;
+  flex-direction:column;
+  gap:.2rem;
+  min-width:0;
+}
+
+.bulk-class-delete-item-name{
+  font-weight:700;
+  color:var(--text);
+}
+
+.bulk-class-delete-item-owner{
+  font-size:.84rem;
+  color:var(--text-secondary);
+}
+
+.bulk-class-delete-empty{
+  padding:1rem;
+  border:1px dashed var(--border);
+  border-radius:14px;
+  text-align:center;
+  color:var(--text-secondary);
+  background:var(--surface-secondary);
+}
+
 .snapshot-list{
   display:flex;
   flex-direction:column;

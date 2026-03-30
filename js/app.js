@@ -105,6 +105,9 @@ const clearLoadedDataForLogout = () => {
   app.state.classes = [];
   app.state.currentClassId = '';
   app.state.currentClassName = 'My Class';
+  app.state.currentClassOwnerId = '';
+  app.state.currentClassOwnerName = 'Teacher';
+  app.state.allowEmptyClassCatalog = false;
   if (typeof app.applyRawData === 'function') {
     app.applyRawData(emptyData);
   } else {
@@ -297,7 +300,7 @@ function hideLoadingState() {
     setTimeout(() => {
       splash.style.display = 'none';
     }, 300);
-    
+
     // Enable UI interactions
     document.body.style.pointerEvents = '';
   }
