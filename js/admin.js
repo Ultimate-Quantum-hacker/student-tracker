@@ -70,6 +70,7 @@ const dom = {
   confirmCancelBtn: document.getElementById('admin-confirm-cancel-btn'),
   confirmOkBtn: document.getElementById('admin-confirm-ok-btn'),
   totalUsers: document.getElementById('admin-total-users'),
+  totalStudentsCard: document.getElementById('admin-total-students-card'),
   totalStudents: document.getElementById('admin-total-students'),
   totalExams: document.getElementById('admin-total-exams'),
   adminMainView: document.querySelector('.admin-main-view'),
@@ -1680,21 +1681,40 @@ const setAdminStudentsRegistryVisibility = (shouldShow) => {
 
   studentsView.classList.toggle('hidden', !shouldShow);
   mainView.classList.toggle('hidden', !!shouldShow);
+  dom.totalStudentsCard?.setAttribute('aria-expanded', shouldShow ? 'true' : 'false');
+  if (shouldShow) {
+    window.requestAnimationFrame(() => {
+      studentsView.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    });
+  }
   return true;
 };
 
-const initAdminStudentsRegistryView = () => {
-  const totalStudentsCard = dom.totalStudents?.closest('.total-students-card') || document.querySelector('.total-students-card');
+const openAdminStudentsRegistryView = () => {
+  const didToggleView = setAdminStudentsRegistryVisibility(true);
+  if (!didToggleView) {
+    return;
+  }
+  loadAdminStudentsRegistry().catch((error) => {
+    console.error('Failed to open global student registry:', error);
+  });
+};
 
-  totalStudentsCard?.addEventListener('click', () => {
-    const didToggleView = setAdminStudentsRegistryVisibility(true);
-    if (!didToggleView) {
+const initAdminStudentsRegistryView = () => {
+  const totalStudentsCard = dom.totalStudentsCard || dom.totalStudents?.closest('[data-open-admin-students-registry="true"]') || document.querySelector('[data-open-admin-students-registry="true"]');
+
+  const handleOpenRegistryTrigger = (event) => {
+    if (event?.type === 'keydown' && event.key !== 'Enter' && event.key !== ' ') {
       return;
     }
-    loadAdminStudentsRegistry().catch((error) => {
-      console.error('Failed to open global student registry:', error);
-    });
-  });
+    if (event?.type === 'keydown') {
+      event.preventDefault();
+    }
+    openAdminStudentsRegistryView();
+  };
+
+  totalStudentsCard?.addEventListener('click', handleOpenRegistryTrigger);
+  totalStudentsCard?.addEventListener('keydown', handleOpenRegistryTrigger);
 
   dom.adminStudentsBackBtn?.addEventListener('click', () => {
     const didToggleView = setAdminStudentsRegistryVisibility(false);

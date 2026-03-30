@@ -1189,6 +1189,11 @@ body.admin-panel .admin-students-pagination .btn {
 
 body.admin-panel .total-students-card {
   cursor: pointer;
+  outline: none;
+}
+
+body.admin-panel .total-students-card:focus-visible {
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.24), 0 18px 34px rgba(37, 99, 235, 0.18);
 }
 
 body.admin-panel .stat-card.total-students-card:hover {
