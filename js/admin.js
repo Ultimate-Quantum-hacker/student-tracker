@@ -699,11 +699,13 @@ const getActionTone = (action = '') => {
 
 const formatTargetLabel = (entry = {}) => {
   const targetType = normalizeDisplayText(entry.targetType || 'record', 'record').toLowerCase();
+  const targetLabel = normalizeDisplayText(entry.targetLabel || '', '');
   const targetId = formatTargetIdentifier(entry.targetId || '');
   const readableType = targetType
     .replace(/[_-]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim() || 'record';
+  if (targetLabel) return `${readableType}: ${targetLabel}`;
   if (!targetId) return readableType;
   return `${readableType}: ${targetId}`;
 };

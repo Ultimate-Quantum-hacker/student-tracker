@@ -2710,7 +2710,8 @@ const buildActivityLogRow = (entry) => {
     userEmail: normalizeLogScalar(payload.userEmail || payload.email || '').toLowerCase(),
     userRole: normalizeRole(payload.userRole || payload.role || 'teacher'),
     action: normalizeLogScalar(payload.action || payload.event || payload.type || '').toLowerCase(),
-    targetId: normalizeLogScalar(payload.targetId || payload.target?.id || payload.targetName || payload.target || ''),
+    targetLabel: normalizeLogScalar(payload.targetLabel || payload.target?.label || payload.target?.name || payload.targetName || ''),
+    targetId: normalizeLogScalar(payload.targetId || payload.target?.id || payload.target || ''),
     targetType: normalizeLogScalar(payload.targetType || payload.entity || payload.target?.type || 'record', 'record').toLowerCase(),
     dataOwnerUserId: normalizeLogScalar(payload.dataOwnerUserId || payload.ownerId || payload.dataOwnerId || ''),
     classId: normalizeLogScalar(payload.classId || payload.class?.id || ''),
@@ -2770,6 +2771,7 @@ export const logActivity = async (action, targetId, targetType, options = {}) =>
       userRole,
       action: normalizedAction,
       targetId: String(targetId || '').trim(),
+      targetLabel: String(options?.targetLabel || options?.targetName || '').trim(),
       targetType: normalizedTargetType,
       dataOwnerUserId: String(options?.dataOwnerUserId || ownerId || '').trim(),
       classId,
@@ -3854,6 +3856,7 @@ export const deleteAdminRegistryStudent = async ({ ownerId = '', studentId = '',
   await logActivity('student_deleted', normalizedStudentId, 'student', {
     ownerId: normalizedOwnerId,
     dataOwnerUserId: normalizedOwnerId,
+    targetLabel: normalizedStudentName,
     userRole: actorRole
   });
 

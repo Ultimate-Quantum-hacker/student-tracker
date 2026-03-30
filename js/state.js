@@ -1123,7 +1123,8 @@ window.TrackerApp = window.TrackerApp || {};
           classId: classContext.classId,
           ownerId: classContext.ownerId,
           className: classContext.className,
-          ownerName: classContext.ownerName
+          ownerName: classContext.ownerName,
+          targetLabel: newStudent.name || 'Student'
         });
         await app.refreshDashboardStudentCount();
         return newStudent;
@@ -1273,7 +1274,8 @@ window.TrackerApp = window.TrackerApp || {};
         ]);
 
         await logTrackedActivity('student_deleted', studentId, 'student', {
-          classId: app.state.currentClassId
+          classId: app.state.currentClassId,
+          targetLabel: existingStudent.name || deletedEntry.name || 'Student'
         });
 
         await app.refreshDashboardStudentCount();
