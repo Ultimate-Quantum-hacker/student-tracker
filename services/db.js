@@ -1871,6 +1871,117 @@ const readModularRawData = async (ownerId, classId) => {
   );
 };
 
+const getLegacyStudentsForSelectedClass = (legacyRawData, options = {}) => {
+  const normalized = normalizeRawData(legacyRawData);
+  const normalizedClassId = normalizeClassId(options?.classId || '');
+  const normalizedClassName = normalizeClassName(options?.className || '', '').toLowerCase();
+  const classes = Array.isArray(options?.classes) ? options.classes : [];
+
+  if (!normalized.students.length) {
+    return [];
+  }
+
+  if (classes.length <= 1) {
+    return normalized.students;
+  }
+
+  return normalized.students.filter((student) => {
+    const studentClass = normalizeClassName(student?.class || '', '').toLowerCase();
+    const studentClassId = normalizeClassId(student?.class || '');
+    if (!studentClass && !studentClassId) {
+      return false;
+    }
+
+    return (normalizedClassName && studentClass === normalizedClassName)
+      || (normalizedClassId && studentClassId === normalizedClassId);
+  });
+};
+
+const repairLegacyStudentsIntoClassScope = async (ownerId, classId, className, classes = [], modularResult = null) => {
+  const normalizedOwnerId = normalizeUserId(ownerId);
+  const normalizedClassId = normalizeClassId(classId);
+  const normalizedClassName = normalizeClassName(className || '', '');
+  const authenticatedUserId = normalizeUserId(getAuthenticatedUserId() || '');
+
+  if (!normalizedOwnerId || !normalizedClassId) {
+    return modularResult;
+  }
+
+  if (!canRoleWrite() || !authenticatedUserId || authenticatedUserId !== normalizedOwnerId) {
+    return modularResult;
+  }
+
+  try {
+    const modularData = normalizeRawData(modularResult?.data || createDefaultRawData());
+    if (modularData.students.length > 0) {
+      return modularResult;
+    }
+
+    const legacyRawData = await readLegacyRawData(normalizedOwnerId);
+    const legacyStudents = getLegacyStudentsForSelectedClass(legacyRawData, {
+      classId: normalizedClassId,
+      className: normalizedClassName,
+      classes
+    });
+
+    if (!legacyStudents.length) {
+      return modularResult;
+    }
+
+    const existingIds = new Set([
+      ...modularData.students.map((student) => String(student?.id || '').trim()),
+      ...(Array.isArray(modularResult?.trashStudents) ? modularResult.trashStudents.map((student) => String(student?.id || '').trim()) : [])
+    ].filter(Boolean));
+    const missingStudents = legacyStudents.filter((student) => {
+      const studentId = String(student?.id || '').trim();
+      return Boolean(studentId) && !existingIds.has(studentId);
+    });
+
+    if (!missingStudents.length) {
+      return modularResult;
+    }
+
+    const updatedAt = new Date().toISOString();
+    const nextOrder = modularData.students.length;
+
+    await Promise.all(missingStudents.map((student, index) => {
+      const studentId = String(student?.id || '').trim();
+      return setDoc(getStudentDocRef(normalizedOwnerId, studentId, normalizedClassId), {
+        id: studentId,
+        name: String(student?.name || '').trim(),
+        notes: student?.notes || '',
+        class: student?.class || normalizedClassName,
+        scores: student?.scores && typeof student.scores === 'object' ? clone(student.scores) : {},
+        deleted: false,
+        deletedAt: null,
+        order: nextOrder + index,
+        userId: normalizedOwnerId,
+        ownerId: normalizedOwnerId,
+        classId: normalizedClassId,
+        updatedAt
+      }, { merge: false });
+    }));
+
+    await setDoc(getClassDocRef(normalizedOwnerId, normalizedClassId), {
+      id: normalizedClassId,
+      updatedAt,
+      userId: normalizedOwnerId,
+      ownerId: normalizedOwnerId
+    }, { merge: true });
+
+    await setDoc(getUserRootRef(normalizedOwnerId), {
+      userId: normalizedOwnerId,
+      activeClassId: normalizedClassId,
+      updatedAt
+    }, { merge: true });
+
+    return readModularRawData(normalizedOwnerId, normalizedClassId);
+  } catch (error) {
+    console.warn('Skipping legacy student class repair during fetch data:', error);
+    return modularResult;
+  }
+};
+
 const normalizeClassOwnerMetadata = async (ownerId = '', classId = '', payload = {}, classRef = null) => {
   if (!ownerId || !classId || !classRef || !isFirebaseConfigured || !db) {
     return;
@@ -3113,7 +3224,14 @@ export const fetchAllData = async () => {
         throw createContextError(ERROR_CODES.MISSING_OWNER_ID, 'Missing class owner context for fetch data');
       }
 
-      const modularResult = await readModularRawData(scopedOwnerId, scopedClassId);
+      let modularResult = await readModularRawData(scopedOwnerId, scopedClassId);
+      modularResult = await repairLegacyStudentsIntoClassScope(
+        scopedOwnerId,
+        scopedClassId,
+        scopedClassName,
+        scopedClasses,
+        modularResult
+      );
       writeClassCatalogCache(cacheScopeKey, scopedClasses, scopedTrashClasses);
 
       const nextData = modularResult?.data || createDefaultRawData();
