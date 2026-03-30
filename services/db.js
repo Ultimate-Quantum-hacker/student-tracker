@@ -2629,6 +2629,97 @@ export const fetchRoleScopedStudentCount = async (role = 'teacher') => {
   }
 };
 
+const parseGlobalStudentRefPath = (path = '') => {
+  const segments = String(path || '').split('/').filter(Boolean);
+  const studentsIndex = segments.lastIndexOf(STUDENTS_SUBCOLLECTION);
+  const isClassScoped = studentsIndex >= 2 && segments[studentsIndex - 2] === CLASSES_SUBCOLLECTION;
+
+  return {
+    ownerId: getOwnerIdFromClassRefPath(path),
+    classId: isClassScoped ? normalizeClassId(segments[studentsIndex - 1]) : '',
+    studentDocId: studentsIndex >= 0 ? String(segments[studentsIndex + 1] || '').trim() : '',
+    isClassScoped
+  };
+};
+
+const buildGlobalStudentIdentityKey = (ownerId = '', studentId = '') => {
+  const normalizedOwnerId = normalizeUserId(ownerId);
+  const normalizedStudentId = String(studentId || '').trim();
+  if (!normalizedOwnerId || !normalizedStudentId) {
+    return '';
+  }
+
+  return `${normalizedOwnerId}::${normalizedStudentId}`;
+};
+
+const pickPreferredGlobalStudentRecord = (current = null, candidate = null) => {
+  if (!candidate) {
+    return current;
+  }
+
+  if (!current) {
+    return candidate;
+  }
+
+  if (candidate.isClassScoped && !current.isClassScoped) {
+    return candidate;
+  }
+
+  if (current.isClassScoped && !candidate.isClassScoped) {
+    return current;
+  }
+
+  if (!current.classId && candidate.classId) {
+    return candidate;
+  }
+
+  if (!current.className && candidate.className) {
+    return candidate;
+  }
+
+  return current;
+};
+
+const fetchGlobalActiveStudentRecords = async () => {
+  if (!isFirebaseConfigured || !db) {
+    return [];
+  }
+
+  const snapshot = await getDocs(collectionGroup(db, STUDENTS_SUBCOLLECTION));
+  const dedupedRecords = new Map();
+
+  snapshot.forEach((entry) => {
+    const payload = entry.data() || {};
+    if (payload.deleted === true) return;
+
+    const parsedPath = parseGlobalStudentRefPath(entry.ref?.path);
+    const userId = normalizeUserId(payload.ownerId || payload.userId || parsedPath.ownerId || '');
+    const classId = normalizeClassId(payload.classId || parsedPath.classId || '');
+    const className = normalizeClassName(payload.className || payload.class || '', '');
+    const id = String(payload.id || parsedPath.studentDocId || entry.id || '').trim();
+    const name = String(payload.name || '').trim() || 'Student';
+    const identityKey = buildGlobalStudentIdentityKey(userId, id);
+    if (!identityKey) return;
+
+    const candidate = {
+      id,
+      name,
+      classId,
+      className,
+      userId,
+      isClassScoped: Boolean(classId || parsedPath.isClassScoped)
+    };
+
+    const current = dedupedRecords.get(identityKey) || null;
+    dedupedRecords.set(identityKey, pickPreferredGlobalStudentRecord(current, candidate));
+  });
+
+  return Array.from(dedupedRecords.values()).map((record) => {
+    const { isClassScoped, ...nextRecord } = record;
+    return nextRecord;
+  });
+};
+
 export const fetchAdminGlobalStats = async () => {
   await ensureAuthenticatedUserId('read admin statistics');
   if (!isFirebaseConfigured || !db) {
@@ -2639,15 +2730,15 @@ export const fetchAdminGlobalStats = async () => {
     };
   }
 
-  const [usersSnapshot, studentsSnapshot, examsSnapshot] = await Promise.all([
+  const [usersSnapshot, activeStudents, examsSnapshot] = await Promise.all([
     getDocs(collection(db, USERS_COLLECTION)),
-    getDocs(collectionGroup(db, STUDENTS_SUBCOLLECTION)),
+    fetchGlobalActiveStudentRecords(),
     getDocs(collectionGroup(db, EXAMS_SUBCOLLECTION))
   ]);
 
   return {
     totalUsers: usersSnapshot.size,
-    totalStudents: countActiveCollectionEntries(studentsSnapshot),
+    totalStudents: Array.isArray(activeStudents) ? activeStudents.length : 0,
     totalExams: countActiveCollectionEntries(examsSnapshot)
   };
 };
@@ -2706,31 +2797,7 @@ export const fetchGlobalStudentSearchIndex = async () => {
     return [];
   }
 
-  const snapshot = await getDocs(collectionGroup(db, STUDENTS_SUBCOLLECTION));
-  const rows = [];
-  const seen = new Set();
-
-  snapshot.forEach((entry) => {
-    const payload = entry.data() || {};
-    if (payload.deleted === true) return;
-
-    const userId = normalizeUserId(payload.ownerId || payload.userId || getOwnerIdFromClassRefPath(entry.ref?.path));
-    const classId = normalizeClassId(payload.classId || '');
-    const id = String(payload.id || entry.id || '').trim();
-    const name = String(payload.name || '').trim() || 'Student';
-    if (!userId || !classId || !id) return;
-
-    const key = `${userId}::${classId}::${id}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-
-    rows.push({
-      id,
-      name,
-      classId,
-      userId
-    });
-  });
+  const rows = await fetchGlobalActiveStudentRecords();
 
   rows.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
   return rows;

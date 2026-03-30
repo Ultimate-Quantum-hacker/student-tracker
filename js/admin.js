@@ -1004,6 +1004,11 @@ const buildGlobalSearchIndex = async () => {
     rows.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
     state.globalSearchIndex = rows;
     state.globalSearchResults = [];
+    state.globalStats = {
+      ...state.globalStats,
+      totalStudents: rows.length
+    };
+    renderStats();
     setGlobalSearchStatus(`Indexed ${rows.length} student${rows.length === 1 ? '' : 's'} for global search.`, 'success');
     renderGlobalSearchResults([]);
     markUpdatedNow();
@@ -1316,19 +1321,87 @@ async function fetchAllStudentsGlobal() {
     return [];
   }
   const snapshot = await getDocs(collectionGroup(db, 'students'));
-  return snapshot.docs.map((doc) => {
-    const data = doc.data() || {};
-    const path = String(doc.ref?.path || '').split('/');
-    const ownerId = normalizeDisplayText(path[1], '');
-    const classId = normalizeDisplayText(path[3], '');
+  const dedupedStudents = new Map();
 
-    return {
+  snapshot.forEach((entry) => {
+    const data = entry.data() || {};
+    const parsedPath = parseAdminRegistryStudentPath(entry.ref?.path);
+    const ownerId = normalizeDisplayText(data.ownerId || data.userId || parsedPath.ownerId || '', '');
+    const classId = normalizeDisplayText(data.classId || parsedPath.classId || '', '');
+    const className = normalizeDisplayText(data.className || data.class || '', '');
+    const studentId = normalizeDisplayText(data.id || parsedPath.studentDocId || '', '');
+    const identityKey = buildAdminRegistryStudentIdentityKey(ownerId, studentId);
+    if (!identityKey) {
+      return;
+    }
+
+    const candidate = {
       ...data,
       ownerId,
-      classId
+      classId,
+      className,
+      isClassScoped: Boolean(classId || parsedPath.isClassScoped)
     };
+    const current = dedupedStudents.get(identityKey) || null;
+    dedupedStudents.set(identityKey, pickPreferredAdminRegistryStudentRecord(current, candidate));
+  });
+
+  return Array.from(dedupedStudents.values()).map((student) => {
+    const { isClassScoped, ...nextStudent } = student;
+    return nextStudent;
   });
 }
+
+const parseAdminRegistryStudentPath = (path = '') => {
+  const segments = String(path || '').split('/').filter(Boolean);
+  const studentsIndex = segments.lastIndexOf('students');
+  const isClassScoped = studentsIndex >= 2 && segments[studentsIndex - 2] === 'classes';
+
+  return {
+    ownerId: normalizeDisplayText(segments[0] === 'users' ? segments[1] : '', ''),
+    classId: isClassScoped ? normalizeDisplayText(segments[studentsIndex - 1], '') : '',
+    studentDocId: studentsIndex >= 0 ? normalizeDisplayText(segments[studentsIndex + 1], '') : '',
+    isClassScoped
+  };
+};
+
+const buildAdminRegistryStudentIdentityKey = (ownerId = '', studentId = '') => {
+  const normalizedOwnerId = normalizeDisplayText(ownerId, '');
+  const normalizedStudentId = normalizeDisplayText(studentId, '');
+  if (!normalizedOwnerId || !normalizedStudentId) {
+    return '';
+  }
+
+  return `${normalizedOwnerId}::${normalizedStudentId}`;
+};
+
+const pickPreferredAdminRegistryStudentRecord = (current = null, candidate = null) => {
+  if (!candidate) {
+    return current;
+  }
+
+  if (!current) {
+    return candidate;
+  }
+
+  if (candidate.isClassScoped && !current.isClassScoped) {
+    return candidate;
+  }
+
+  if (current.isClassScoped && !candidate.isClassScoped) {
+    return current;
+  }
+
+  if (!current.classId && candidate.classId) {
+    return candidate;
+  }
+
+  if (!current.className && candidate.className) {
+    return candidate;
+  }
+
+  return current;
+};
 
 const buildAdminRegistryClassKey = (ownerId = '', classId = '') => {
   const normalizedOwnerId = normalizeDisplayText(ownerId, '');
@@ -1338,6 +1411,16 @@ const buildAdminRegistryClassKey = (ownerId = '', classId = '') => {
   }
 
   return `${normalizedOwnerId}::${normalizedClassId}`;
+};
+
+const buildAdminRegistryFallbackClassKey = (ownerId = '', className = '') => {
+  const normalizedOwnerId = normalizeDisplayText(ownerId, '');
+  const normalizedClassName = normalizeDisplayText(className, '').toLowerCase();
+  if (!normalizedOwnerId || !normalizedClassName) {
+    return '';
+  }
+
+  return `${normalizedOwnerId}::fallback::${normalizedClassName}`;
 };
 
 const resolveAdminRegistryTeacherName = (ownerId = '', classInfo = null, student = {}) => {
@@ -1362,9 +1445,9 @@ async function fetchAdminClassNameMap() {
       return;
     }
 
-    const path = String(entry.ref?.path || '').split('/');
-    const ownerId = normalizeDisplayText(path[1], '');
-    const classId = normalizeDisplayText(entry.id || '', '');
+    const path = String(entry.ref?.path || '').split('/').filter(Boolean);
+    const ownerId = normalizeDisplayText(path[0] === 'users' ? path[1] : '', '');
+    const classId = normalizeDisplayText(path[2] === 'classes' ? path[3] : entry.id || '', '');
     const classKey = buildAdminRegistryClassKey(ownerId, classId);
     if (!classKey) {
       return;
@@ -1381,18 +1464,60 @@ async function fetchAdminClassNameMap() {
   return classMap;
 }
 
+const resolveAdminRegistryClassInfoByName = (classMap = new Map(), ownerId = '', className = '') => {
+  const normalizedOwnerId = normalizeDisplayText(ownerId, '');
+  const normalizedClassName = normalizeDisplayText(className, '').toLowerCase();
+  if (!(classMap instanceof Map) || !normalizedOwnerId || !normalizedClassName) {
+    return {
+      classKey: '',
+      classInfo: null
+    };
+  }
+
+  for (const [classKey, classInfo] of classMap.entries()) {
+    if (normalizeDisplayText(classInfo?.ownerId, '') !== normalizedOwnerId) {
+      continue;
+    }
+
+    if (normalizeDisplayText(classInfo?.name, '').toLowerCase() !== normalizedClassName) {
+      continue;
+    }
+
+    return {
+      classKey,
+      classInfo
+    };
+  }
+
+  return {
+    classKey: '',
+    classInfo: null
+  };
+};
+
 const mapAdminStudentRecord = (student = {}, classMap = new Map()) => {
   const ownerId = normalizeDisplayText(student.ownerId || student.userId || '', '');
+  const studentClassName = normalizeDisplayText(student.className || student.class || '', '');
   const classId = normalizeDisplayText(student.classId || '', '');
-  const classKey = buildAdminRegistryClassKey(ownerId, classId);
-  const classInfo = classMap.get(classKey) || null;
+  let classKey = buildAdminRegistryClassKey(ownerId, classId);
+  let classInfo = classMap.get(classKey) || null;
+
+  if (!classInfo && ownerId && studentClassName) {
+    const resolvedClass = resolveAdminRegistryClassInfoByName(classMap, ownerId, studentClassName);
+    if (resolvedClass.classInfo) {
+      classKey = resolvedClass.classKey;
+      classInfo = resolvedClass.classInfo;
+    }
+  }
+
+  classKey = classKey || buildAdminRegistryFallbackClassKey(ownerId, studentClassName);
 
   return {
     name: normalizeDisplayText(student.name, 'Unnamed'),
     ownerId,
     classId,
     classKey,
-    className: normalizeDisplayText(classInfo?.name || student.className || '', 'Unknown Class'),
+    className: normalizeDisplayText(classInfo?.name || studentClassName || '', 'Unknown Class'),
     teacherName: resolveAdminRegistryTeacherName(ownerId, classInfo, student)
   };
 };
@@ -1466,6 +1591,10 @@ const renderAdminStudentsFilterOptions = (classMap = new Map(), students = []) =
 
   if (classMap instanceof Map) {
     classMap.forEach((classInfo, classKey) => {
+      if (!shouldIncludeGlobalSearchOwner(classInfo?.ownerId)) {
+        return;
+      }
+
       registerEntry({
         classKey,
         className: classInfo?.name,
@@ -1824,9 +1953,15 @@ const loadAdminStudentsRegistry = async () => {
       ? studentRecords
         .filter((student) => student?.deleted !== true)
         .map((student) => mapAdminStudentRecord(student, classMap))
+        .filter((student) => shouldIncludeGlobalSearchOwner(student.ownerId))
       : [];
     state.adminStudentsRegistry = students;
     state.adminStudentsRegistryLoaded = true;
+    state.globalStats = {
+      ...state.globalStats,
+      totalStudents: students.length
+    };
+    renderStats();
     renderAdminStudentsFilterOptions(classMap, students);
     updateAdminStudentsView();
     markUpdatedNow();
