@@ -2787,7 +2787,7 @@ const findStudentDocumentRefsByIdentity = async (ownerId = '', studentId = '') =
     }
 
     const parsedPath = parseGlobalStudentRefPath(entry.ref?.path);
-    const entryOwnerId = normalizeUserId(payload.ownerId || payload.userId || parsedPath.ownerId || '');
+    const entryOwnerId = normalizeUserId(parsedPath.ownerId || payload.ownerId || payload.userId || '');
     const entryStudentId = String(payload.id || parsedPath.studentDocId || entry.id || '').trim();
     if (entryOwnerId !== normalizedOwnerId || entryStudentId !== normalizedStudentId) {
       return;
@@ -2795,7 +2795,7 @@ const findStudentDocumentRefsByIdentity = async (ownerId = '', studentId = '') =
 
     matches.push({
       ref: entry.ref,
-      classId: normalizeClassId(payload.classId || parsedPath.classId || '')
+      classId: normalizeClassId(parsedPath.classId || payload.classId || '')
     });
   });
 
@@ -2843,8 +2843,8 @@ const fetchGlobalActiveStudentRecords = async () => {
     if (payload.deleted === true) return;
 
     const parsedPath = parseGlobalStudentRefPath(entry.ref?.path);
-    const userId = normalizeUserId(payload.ownerId || payload.userId || parsedPath.ownerId || '');
-    const classId = normalizeClassId(payload.classId || parsedPath.classId || '');
+    const userId = normalizeUserId(parsedPath.ownerId || payload.ownerId || payload.userId || '');
+    const classId = normalizeClassId(parsedPath.classId || payload.classId || '');
     const className = normalizeClassName(payload.className || payload.class || '', '');
     const id = String(payload.id || parsedPath.studentDocId || entry.id || '').trim();
     const name = String(payload.name || '').trim() || 'Student';
@@ -3756,7 +3756,7 @@ export const deleteAdminRegistryStudent = async ({ ownerId = '', studentId = '',
   }));
 
   const uniqueClassIds = Array.from(new Set(matches.map((entry) => normalizeClassId(entry?.classId || '')).filter(Boolean)));
-  await Promise.all([
+  const metadataResults = await Promise.allSettled([
     ...uniqueClassIds.map((classId) => setDoc(getClassDocRef(normalizedOwnerId, classId), {
       id: classId,
       updatedAt,
@@ -3766,13 +3766,18 @@ export const deleteAdminRegistryStudent = async ({ ownerId = '', studentId = '',
     setDoc(getUserRootRef(normalizedOwnerId), {
       userId: normalizedOwnerId,
       updatedAt
-    }, { merge: true }),
-    logActivity('student_deleted', normalizedStudentId, 'student', {
-      ownerId: normalizedOwnerId,
-      dataOwnerUserId: normalizedOwnerId,
-      userRole: actorRole
-    })
+    }, { merge: true })
   ]);
+  metadataResults.forEach((result) => {
+    if (result.status === 'rejected') {
+      console.warn('Ignoring admin registry metadata sync failure:', result.reason);
+    }
+  });
+  await logActivity('student_deleted', normalizedStudentId, 'student', {
+    ownerId: normalizedOwnerId,
+    dataOwnerUserId: normalizedOwnerId,
+    userRole: actorRole
+  });
 
   return {
     ownerId: normalizedOwnerId,

@@ -1330,8 +1330,8 @@ async function fetchAllStudentsGlobal() {
   snapshot.forEach((entry) => {
     const data = entry.data() || {};
     const parsedPath = parseAdminRegistryStudentPath(entry.ref?.path);
-    const ownerId = normalizeDisplayText(data.ownerId || data.userId || parsedPath.ownerId || '', '');
-    const classId = normalizeDisplayText(data.classId || parsedPath.classId || '', '');
+    const ownerId = normalizeDisplayText(parsedPath.ownerId || data.ownerId || data.userId || '', '');
+    const classId = normalizeDisplayText(parsedPath.classId || data.classId || '', '');
     const className = normalizeDisplayText(data.className || data.class || '', '');
     const studentId = normalizeDisplayText(data.id || parsedPath.studentDocId || '', '');
     const identityKey = buildAdminRegistryStudentIdentityKey(ownerId, studentId);
