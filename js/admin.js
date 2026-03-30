@@ -699,9 +699,69 @@ const getActionTone = (action = '') => {
   return { className: 'activity-add', verb: 'added' };
 };
 
+const resolveLegacyActivityStudentName = (entry = {}) => {
+  const targetType = normalizeDisplayText(entry.targetType || '', '').toLowerCase();
+  const action = normalizeDisplayText(entry.action || '', '').toLowerCase();
+  if (targetType && targetType !== 'student' && !action.includes('student')) {
+    return '';
+  }
+
+  const studentId = normalizeDisplayText(entry.studentId || entry.targetId || '', '');
+  if (!studentId) {
+    return '';
+  }
+
+  const ownerId = normalizeDisplayText(entry.ownerId || entry.dataOwnerUserId || '', '');
+  const classId = normalizeDisplayText(entry.classId || '', '');
+
+  const searchMatch = state.globalSearchIndex.find((candidate) => {
+    const candidateId = normalizeDisplayText(candidate?.id || '', '');
+    if (!candidateId || candidateId !== studentId) {
+      return false;
+    }
+
+    const candidateOwnerId = normalizeDisplayText(candidate?.userId || candidate?.ownerId || '', '');
+    if (ownerId && candidateOwnerId && candidateOwnerId !== ownerId) {
+      return false;
+    }
+
+    const candidateClassId = normalizeDisplayText(candidate?.classId || '', '');
+    if (classId && candidateClassId && candidateClassId !== classId) {
+      return false;
+    }
+
+    return true;
+  });
+  if (searchMatch?.name) {
+    return normalizeDisplayText(searchMatch.name, '');
+  }
+
+  const registryMatch = state.adminStudentsRegistry.find((candidate) => {
+    const candidateId = normalizeDisplayText(candidate?.studentId || candidate?.id || '', '');
+    if (!candidateId || candidateId !== studentId) {
+      return false;
+    }
+
+    const candidateOwnerId = normalizeDisplayText(candidate?.ownerId || '', '');
+    if (ownerId && candidateOwnerId && candidateOwnerId !== ownerId) {
+      return false;
+    }
+
+    const candidateClassId = normalizeDisplayText(candidate?.classId || '', '');
+    if (classId && candidateClassId && candidateClassId !== classId) {
+      return false;
+    }
+
+    return true;
+  });
+
+  return normalizeDisplayText(registryMatch?.studentName || registryMatch?.name || '', '');
+};
+
 const formatTargetLabel = (entry = {}) => {
   const targetType = normalizeDisplayText(entry.targetType || 'record', 'record').toLowerCase();
-  const targetLabel = normalizeDisplayText(entry.targetLabel || '', '');
+  const resolvedStudentName = resolveLegacyActivityStudentName(entry);
+  const targetLabel = normalizeDisplayText(entry.targetLabel || entry.studentName || resolvedStudentName || '', '');
   const targetId = formatTargetIdentifier(entry.targetId || '');
   const readableType = targetType
     .replace(/[_-]+/g, ' ')

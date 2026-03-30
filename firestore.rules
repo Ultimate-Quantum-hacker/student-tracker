@@ -5,19 +5,33 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function requesterRole() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+          ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+          : 'teacher';
+    }
+
+    function isDeveloperEmail() {
+      return isSignedIn()
+        && request.auth.token.email is string
+        && request.auth.token.email.matches('^[Pp][Oo][Kk][Uu][Mm][Ii][Kk][Ee]2@gmail\\.com$');
+    }
+
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    function isAdminRole() {
+      return requesterRole() == 'admin';
+    }
+
+    function isDeveloperRole() {
+      return isDeveloperEmail() || requesterRole() == 'developer';
+    }
+
     function isPrivilegedUser() {
-      return isSignedIn() && (
-        request.auth.token.email == 'pokumike2@gmail.com' || (
-          exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
-            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'developer'
-          )
-        )
-      );
+      return isAdminRole() || isDeveloperRole();
     }
 
     function isPrivilegedUserMetadataTouch(userId) {
@@ -45,19 +59,19 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isSignedIn();
-      allow create, delete: if isOwner(userId);
-      allow update: if isOwner(userId) || isPrivilegedUserMetadataTouch(userId);
+      allow create, delete: if isOwner(userId) || isDeveloperRole();
+      allow update: if isOwner(userId) || isDeveloperRole() || isPrivilegedUserMetadataTouch(userId);
     }
 
     match /users/{userId}/classes/{classId} {
       allow read: if isSignedIn();
-      allow create, delete: if isOwner(userId);
-      allow update: if isOwner(userId) || isPrivilegedClassMetadataTouch(userId, classId);
+      allow create, delete: if isOwner(userId) || isDeveloperRole();
+      allow update: if isOwner(userId) || isDeveloperRole() || isPrivilegedClassMetadataTouch(userId, classId);
     }
 
     match /users/{userId}/classes/{classId}/{collection}/{docId} {
       allow read: if isSignedIn();
-      allow write: if isOwner(userId);
+      allow write: if isOwner(userId) || isDeveloperRole();
       allow update: if collection == 'students'
         && request.resource.data.classId == classId
         && isPrivilegedStudentSoftDelete(userId);
@@ -65,16 +79,18 @@ service cloud.firestore {
 
     match /users/{userId}/students/{docId} {
       allow read: if isSignedIn();
-      allow write: if isOwner(userId);
+      allow write: if isOwner(userId) || isDeveloperRole();
       allow update: if isPrivilegedStudentSoftDelete(userId);
     }
 
     match /users/{userId}/subjects/{docId} {
       allow read: if isSignedIn();
+      allow write: if isOwner(userId) || isDeveloperRole();
     }
 
     match /users/{userId}/exams/{docId} {
       allow read: if isSignedIn();
+      allow write: if isOwner(userId) || isDeveloperRole();
     }
 
     match /{path=**}/students/{docId} {
