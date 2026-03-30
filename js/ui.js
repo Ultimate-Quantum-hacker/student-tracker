@@ -235,6 +235,10 @@ const ui = {
       return false;
     },
 
+    normalizeStudentNameInputValue: function (value) {
+      return String(value || '').toUpperCase();
+    },
+
     isReadOnlyRoleContext: function () {
       return typeof app.isReadOnlyRoleContext === 'function' && app.isReadOnlyRoleContext();
     },
@@ -2488,6 +2492,14 @@ const ui = {
             }
           };
         }
+        if (app.dom.nameInput) {
+          app.dom.nameInput.oninput = (event) => {
+            const nextValue = this.normalizeStudentNameInputValue(event.target.value);
+            if (event.target.value !== nextValue) {
+              event.target.value = nextValue;
+            }
+          };
+        }
         if (app.dom.classDropdownToggle) {
           app.dom.classDropdownToggle.onclick = (e) => {
             e.preventDefault();
@@ -2666,6 +2678,14 @@ const ui = {
           if (!this.ensureWritableAction('Student updates')) return;
           app.students.saveEdit(app, this);
         };
+        if (app.dom.editInput) {
+          app.dom.editInput.oninput = (event) => {
+            const nextValue = this.normalizeStudentNameInputValue(event.target.value);
+            if (event.target.value !== nextValue) {
+              event.target.value = nextValue;
+            }
+          };
+        }
         if (app.dom.editCancelBtn) {
           app.dom.editCancelBtn.onclick = () => {
             app.state.editingId = null;

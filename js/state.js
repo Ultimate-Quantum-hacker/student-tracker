@@ -349,6 +349,17 @@ window.TrackerApp = window.TrackerApp || {};
   });
 
   const normalizeLabel = (value) => String(value || '').trim();
+  const normalizeStudentName = (value, fallback = '') => {
+    const normalized = String(value || '').trim().replace(/\s+/g, ' ').toUpperCase();
+    return normalized || fallback;
+  };
+  const normalizeStudentUpdate = (studentData = {}) => {
+    const nextStudentData = studentData && typeof studentData === 'object' ? { ...studentData } : {};
+    if (Object.prototype.hasOwnProperty.call(nextStudentData, 'name')) {
+      nextStudentData.name = normalizeStudentName(nextStudentData.name);
+    }
+    return nextStudentData;
+  };
   const createId = (prefix, name, index) => {
     const base = normalizeLabel(name)
       .toLowerCase()
@@ -615,7 +626,7 @@ window.TrackerApp = window.TrackerApp || {};
 
     app.state.students = (data.students || []).map((student, idx) => ({
       id: student.id || createId('st', student.name || `student-${idx + 1}`, idx),
-      name: normalizeLabel(student.name) || `Student ${idx + 1}`,
+      name: normalizeStudentName(student.name, `STUDENT ${idx + 1}`),
       notes: student.notes || '',
       class: student.class || '',
       scores: student.scores && typeof student.scores === 'object' ? student.scores : {}
@@ -637,7 +648,7 @@ window.TrackerApp = window.TrackerApp || {};
     const students = (legacyData.students || []).map((student, idx) => {
       const rawStudent = {
         id: student.id || createId('st', student.name || `student-${idx + 1}`, idx),
-        name: normalizeLabel(student.name),
+        name: normalizeStudentName(student.name),
         notes: student.notes || '',
         class: student.class || '',
         scores: {}
@@ -1101,12 +1112,13 @@ window.TrackerApp = window.TrackerApp || {};
     return enqueueStateWrite(async () => {
       try {
         const classContext = ensureResolvedClassContext('add student');
+        const normalizedStudentData = normalizeStudentUpdate(studentData);
         const newStudent = {
           id: app.utils.uuid(),
-          name: normalizeLabel(studentData.name),
-          class: studentData.class || '',
-          notes: studentData.notes || '',
-          scores: studentData.scores && typeof studentData.scores === 'object' ? studentData.scores : {},
+          name: normalizeStudentName(normalizedStudentData.name),
+          class: normalizedStudentData.class || '',
+          notes: normalizedStudentData.notes || '',
+          scores: normalizedStudentData.scores && typeof normalizedStudentData.scores === 'object' ? normalizedStudentData.scores : {},
           classId: classContext.classId,
           ownerId: classContext.ownerId,
           userId: classContext.ownerId
@@ -1232,12 +1244,13 @@ window.TrackerApp = window.TrackerApp || {};
         const nextStudents = deepClone(app.state.students || []);
         const nextSubjects = deepClone(app.state.subjects || []);
         const nextExams = deepClone(app.state.exams || []);
+        const normalizedStudentData = normalizeStudentUpdate(studentData);
         const index = nextStudents.findIndex(s => s.id === studentId);
         if (index !== -1) {
-          nextStudents[index] = { ...nextStudents[index], ...studentData };
+          nextStudents[index] = { ...nextStudents[index], ...normalizedStudentData };
         }
 
-        const saveResult = await dataService.updateStudent(app.getRawData(), studentId, studentData);
+        const saveResult = await dataService.updateStudent(app.getRawData(), studentId, normalizedStudentData);
         syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult, 'update student');
         return nextStudents[index];
       } catch (error) {
@@ -1275,6 +1288,9 @@ window.TrackerApp = window.TrackerApp || {};
 
         await logTrackedActivity('student_deleted', studentId, 'student', {
           classId: app.state.currentClassId,
+          className: app.state.currentClassName,
+          ownerId: app.getCurrentClassOwnerId(),
+          ownerName: app.getCurrentClassOwnerName(),
           targetLabel: existingStudent.name || deletedEntry.name || 'Student'
         });
 

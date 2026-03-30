@@ -17,6 +17,7 @@ import {
   fetchActivityLogs,
   fetchAdminUsers,
   deleteAdminRegistryStudent,
+  clearActivityLogs,
   updateAdminUserRole,
   fetchGlobalStudentSearchIndex,
   setCurrentUserRoleContext
@@ -103,6 +104,7 @@ const dom = {
   activityActionFilter: document.getElementById('activity-action-filter'),
   activitySortFilter: document.getElementById('activity-sort-filter'),
   refreshActivityBtn: document.getElementById('refresh-activity-btn'),
+  clearActivityBtn: document.getElementById('clear-activity-btn'),
   overviewSection: document.getElementById('admin-section-overview'),
   usersSection: document.getElementById('admin-section-users'),
   searchSection: document.getElementById('admin-section-search'),
@@ -1064,7 +1066,7 @@ const loadActivityLogs = async () => {
     let entries = await fetchActivityLogs({
       userId: selectedUserId,
       sort: selectedSort,
-      maxEntries: 250
+      maxEntries: 100
     });
 
     if (selectedAction) {
@@ -1093,6 +1095,50 @@ const loadActivityLogs = async () => {
     }
     setActivityStatus(`Failed to load activity logs: ${formatAuthError(error)}`, 'error');
     showToast('Failed to load activity logs', 'error');
+  } finally {
+    setElementVisibility(dom.activityLoading, false);
+    setSectionLoadingState(dom.activitySection, false);
+  }
+};
+
+const handleClearActivityLogs = async () => {
+  const shouldContinue = await requestConfirmation({
+    message: 'Clear all activity logs? This permanently removes the current log history.',
+    confirmLabel: 'Clear Logs',
+    dangerous: true
+  });
+
+  if (!shouldContinue) {
+    setActivityStatus('Log clear canceled.', 'warning');
+    return;
+  }
+
+  setElementVisibility(dom.activityLoading, true);
+  setSectionLoadingState(dom.activitySection, true);
+  setActivityStatus('Clearing activity logs...');
+
+  try {
+    const clearedCount = await clearActivityLogs();
+    state.activityLogs = [];
+    renderActivityLogTable([]);
+    populateActivityClassFilter([]);
+    setActivityStatus(
+      clearedCount
+        ? `Cleared ${clearedCount} log entr${clearedCount === 1 ? 'y' : 'ies'}.`
+        : 'No activity logs to clear.',
+      clearedCount ? 'success' : 'warning'
+    );
+    showToast(clearedCount ? 'Activity logs cleared' : 'No activity logs to clear', clearedCount ? 'success' : 'warning');
+    markUpdatedNow();
+  } catch (error) {
+    console.error('Failed to clear activity logs:', error);
+    if (isPermissionDeniedError(error)) {
+      setActivityStatus('Access denied. You do not have permission to clear activity logs.', 'error');
+      showToast('Permission denied', 'error');
+      return;
+    }
+    setActivityStatus(`Failed to clear activity logs: ${formatAuthError(error)}`, 'error');
+    showToast('Failed to clear activity logs', 'error');
   } finally {
     setElementVisibility(dom.activityLoading, false);
     setSectionLoadingState(dom.activitySection, false);
@@ -1210,6 +1256,10 @@ const bindEvents = () => {
 
   dom.refreshActivityBtn?.addEventListener('click', async () => {
     await loadActivityLogs();
+  });
+
+  dom.clearActivityBtn?.addEventListener('click', async () => {
+    await handleClearActivityLogs();
   });
 
   dom.activityUserFilter?.addEventListener('change', async () => {

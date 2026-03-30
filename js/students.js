@@ -44,6 +44,12 @@ const resolveClassContextErrorMessage = (error, fallback = 'Failed to add studen
   }
   return fallback;
 };
+const normalizeStudentName = (value) => String(value || '').trim().replace(/\s+/g, ' ').toUpperCase();
+const STUDENT_NAME_PATTERN = /^[A-Z\s]+$/;
+const isValidStudentName = (value) => {
+  const normalized = normalizeStudentName(value);
+  return Boolean(normalized) && STUDENT_NAME_PATTERN.test(normalized);
+};
 
 const students = {
   addStudent: async function (name, runtimeApp, runtimeUi) {
@@ -51,9 +57,13 @@ const students = {
     const uiRef = resolveUi(runtimeUi, appRef);
     if (!ensureWritable(appRef, uiRef)) return false;
 
-    const n = name.trim();
+    const n = normalizeStudentName(name);
     if (!n) {
       uiRef?.showToast?.('Enter a student name first');
+      return false;
+    }
+    if (!isValidStudentName(n)) {
+      uiRef?.showToast?.('Student names can only contain letters and spaces');
       return false;
     }
     
@@ -173,10 +183,17 @@ const students = {
     const uid = appRef.state.editingId;
     if (!uid) return;
     
-    const newName = appRef.dom.editInput.value.trim();
+    const newName = normalizeStudentName(appRef.dom.editInput.value);
     if (!newName) {
       uiRef?.showToast?.('Student name cannot be empty');
       return;
+    }
+    if (!isValidStudentName(newName)) {
+      uiRef?.showToast?.('Student names can only contain letters and spaces');
+      return;
+    }
+    if (appRef.dom.editInput) {
+      appRef.dom.editInput.value = newName;
     }
     
     try {
@@ -198,21 +215,28 @@ const students = {
 
     const lines = csv.trim().split('\n');
     const newStudents = [];
+    let skippedInvalidRows = 0;
     
     lines.forEach(line => {
       const parts = line.split(',').map(p => p.trim());
-      if (parts[0]) {
+      const normalizedName = normalizeStudentName(parts[0]);
+      if (normalizedName && isValidStudentName(normalizedName)) {
         newStudents.push({
-          name: parts[0],
+          name: normalizedName,
           class: parts[1] || '',
           notes: parts[2] || ''
         });
+      } else if (parts[0]) {
+        skippedInvalidRows += 1;
       }
     });
     
     if (newStudents.length === 0) {
-      ui.showToast('No valid students found');
+      ui.showToast(skippedInvalidRows ? 'Student names can only contain letters and spaces' : 'No valid students found');
       return;
+    }
+    if (skippedInvalidRows) {
+      ui.showToast(`${skippedInvalidRows} invalid row${skippedInvalidRows === 1 ? '' : 's'} skipped`);
     }
     
     if (!window.confirm(`Import ${newStudents.length} students into the active class?`)) {
@@ -236,7 +260,7 @@ const students = {
       ui.showToast(`${studentsData.length} students imported`);
     } catch (error) {
       console.error('Failed to import students:', error);
-      ui.showToast(isReadOnlyError(error) ? getReadOnlyMessage(app) : 'Failed to import students');
+      ui.showToast(isReadOnlyError(error) ? getReadOnlyMessage(app) : resolveClassContextErrorMessage(error, String(error?.message || 'Failed to import students')));
     }
   },
 

@@ -94,7 +94,7 @@ service cloud.firestore {
     }
 
     match /activityLogs/{logId} {
-      allow create, read: if isSignedIn();
+      allow create, read, delete: if isSignedIn();
     }
 
     match /{document=**} {
