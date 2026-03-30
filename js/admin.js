@@ -1329,11 +1329,15 @@ async function fetchAllStudentsGlobal() {
 
   snapshot.forEach((entry) => {
     const data = entry.data() || {};
+    if (data.deleted === true) {
+      return;
+    }
     const parsedPath = parseAdminRegistryStudentPath(entry.ref?.path);
     if (!parsedPath.isSupportedPath) {
       return;
     }
     const ownerId = normalizeDisplayText(parsedPath.ownerId || data.ownerId || data.userId || '', '');
+
     const classId = normalizeDisplayText(parsedPath.classId || data.classId || '', '');
     const className = normalizeDisplayText(data.className || data.class || '', '');
     const studentId = normalizeDisplayText(data.id || parsedPath.studentDocId || '', '');

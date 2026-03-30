@@ -65,6 +65,7 @@ service cloud.firestore {
 
     match /users/{userId}/students/{docId} {
       allow read: if isSignedIn();
+      allow write: if isOwner(userId);
       allow update: if isPrivilegedStudentSoftDelete(userId);
     }
 

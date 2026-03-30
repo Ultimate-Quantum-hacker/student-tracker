@@ -159,6 +159,12 @@ const persistStudentRestoreById = async (studentId, nextData) => {
         classId
       });
 
+      try {
+        await cleanupLegacyStudentCompanionDoc(userId, normalizedStudentId, 'purge');
+      } catch (error) {
+        console.warn('Ignoring legacy root student restore cleanup failure:', error);
+      }
+
       await setDoc(getClassDocRef(userId, classId), {
         id: classId,
         updatedAt,
@@ -853,6 +859,12 @@ const persistStudentHardDeleteById = async (studentId, nextData) => {
 
       await deleteDoc(getStudentDocRef(userId, normalizedStudentId, classId));
 
+      try {
+        await cleanupLegacyStudentCompanionDoc(userId, normalizedStudentId, 'purge');
+      } catch (error) {
+        console.warn('Ignoring legacy root student purge failure:', error);
+      }
+
       await setDoc(getClassDocRef(userId, classId), {
         id: classId,
         updatedAt,
@@ -1395,11 +1407,53 @@ const getStudentsCollectionRef = (userId, classId = getCurrentClassContext()) =>
 const getSubjectsCollectionRef = (userId, classId = getCurrentClassContext()) => getClassSubjectsCollectionRef(userId, normalizeClassId(classId));
 const getExamsCollectionRef = (userId, classId = getCurrentClassContext()) => getClassExamsCollectionRef(userId, normalizeClassId(classId));
 const getStudentDocRef = (userId, studentId, classId = getCurrentClassContext()) => getClassStudentDocRef(userId, normalizeClassId(classId), studentId);
+const getLegacyStudentDocRef = (userId, studentId) => doc(db, USERS_COLLECTION, userId, STUDENTS_SUBCOLLECTION, studentId);
 const getSubjectDocRef = (userId, subjectId, classId = getCurrentClassContext()) => getClassSubjectDocRef(userId, normalizeClassId(classId), subjectId);
 const getExamDocRef = (userId, examId, classId = getCurrentClassContext()) => getClassExamDocRef(userId, normalizeClassId(classId), examId);
 const getLegacyStudentsCollectionRef = (userId) => collection(db, USERS_COLLECTION, userId, STUDENTS_SUBCOLLECTION);
 const getLegacySubjectsCollectionRef = (userId) => collection(db, USERS_COLLECTION, userId, SUBJECTS_SUBCOLLECTION);
 const getLegacyExamsCollectionRef = (userId) => collection(db, USERS_COLLECTION, userId, EXAMS_SUBCOLLECTION);
+
+const cleanupLegacyStudentCompanionDoc = async (userId, studentId, action = 'soft-delete', options = {}) => {
+  const normalizedUserId = normalizeUserId(userId);
+  const normalizedStudentId = String(studentId || '').trim();
+  const normalizedAction = String(action || '').trim().toLowerCase();
+  if (!normalizedUserId || !normalizedStudentId || !isFirebaseConfigured || !db) {
+    return false;
+  }
+
+  const legacyStudentRef = getLegacyStudentDocRef(normalizedUserId, normalizedStudentId);
+  const updatedAt = String(options?.updatedAt || '').trim() || new Date().toISOString();
+  const classId = normalizeClassId(options?.classId || '');
+
+  try {
+    if (normalizedAction === 'purge') {
+      await deleteDoc(legacyStudentRef);
+      return true;
+    }
+
+    const patch = {
+      deleted: true,
+      deletedAt: serverTimestamp(),
+      updatedAt,
+      userId: normalizedUserId,
+      ownerId: normalizedUserId
+    };
+    if (classId) {
+      patch.classId = classId;
+    }
+
+    await updateDoc(legacyStudentRef, patch);
+    return true;
+  } catch (error) {
+    const code = String(error?.code || '').toLowerCase();
+    const message = String(error?.message || '').toLowerCase();
+    if (code.includes('not-found') || message.includes('no document to update')) {
+      return false;
+    }
+    throw error;
+  }
+};
 
 const readLegacyRawData = async (userId) => {
   if (!isFirebaseConfigured || !db || !userId) {
@@ -2473,6 +2527,15 @@ const persistStudentDeleteById = async (studentId, nextData, studentMeta = {}) =
         ownerId: userId,
         classId
       });
+
+      try {
+        await cleanupLegacyStudentCompanionDoc(userId, normalizedStudentId, 'soft-delete', {
+          updatedAt,
+          classId
+        });
+      } catch (error) {
+        console.warn('Ignoring legacy root student delete cleanup failure:', error);
+      }
 
       await setDoc(getClassDocRef(userId, classId), {
         id: classId,
