@@ -1330,11 +1330,15 @@ async function fetchAllStudentsGlobal() {
   snapshot.forEach((entry) => {
     const data = entry.data() || {};
     const parsedPath = parseAdminRegistryStudentPath(entry.ref?.path);
+    if (!parsedPath.isSupportedPath) {
+      return;
+    }
     const ownerId = normalizeDisplayText(parsedPath.ownerId || data.ownerId || data.userId || '', '');
     const classId = normalizeDisplayText(parsedPath.classId || data.classId || '', '');
     const className = normalizeDisplayText(data.className || data.class || '', '');
     const studentId = normalizeDisplayText(data.id || parsedPath.studentDocId || '', '');
     const identityKey = buildAdminRegistryStudentIdentityKey(ownerId, studentId);
+
     if (!identityKey) {
       return;
     }
@@ -1360,14 +1364,28 @@ async function fetchAllStudentsGlobal() {
 
 const parseAdminRegistryStudentPath = (path = '') => {
   const segments = String(path || '').split('/').filter(Boolean);
-  const studentsIndex = segments.lastIndexOf('students');
-  const isClassScoped = studentsIndex >= 2 && segments[studentsIndex - 2] === 'classes';
+  const isLegacyRootScoped = segments.length === 4
+    && segments[0] === 'users'
+    && segments[2] === 'students';
+  const isClassScoped = segments.length === 6
+    && segments[0] === 'users'
+    && segments[2] === 'classes'
+    && segments[4] === 'students';
+  const isSupportedPath = isLegacyRootScoped || isClassScoped;
 
   return {
-    ownerId: normalizeDisplayText(segments[0] === 'users' ? segments[1] : '', ''),
-    classId: isClassScoped ? normalizeDisplayText(segments[studentsIndex - 1], '') : '',
-    studentDocId: studentsIndex >= 0 ? normalizeDisplayText(segments[studentsIndex + 1], '') : '',
-    isClassScoped
+    ownerId: normalizeDisplayText(isSupportedPath ? segments[1] : '', ''),
+    classId: isClassScoped ? normalizeDisplayText(segments[3], '') : '',
+    studentDocId: normalizeDisplayText(
+      isLegacyRootScoped
+        ? segments[3]
+        : isClassScoped
+          ? segments[5]
+          : '',
+      ''
+    ),
+    isClassScoped,
+    isSupportedPath
   };
 };
 

@@ -2750,14 +2750,25 @@ export const fetchRoleScopedStudentCount = async (role = 'teacher') => {
 
 const parseGlobalStudentRefPath = (path = '') => {
   const segments = String(path || '').split('/').filter(Boolean);
-  const studentsIndex = segments.lastIndexOf(STUDENTS_SUBCOLLECTION);
-  const isClassScoped = studentsIndex >= 2 && segments[studentsIndex - 2] === CLASSES_SUBCOLLECTION;
+  const isLegacyRootScoped = segments.length === 4
+    && segments[0] === USERS_COLLECTION
+    && segments[2] === STUDENTS_SUBCOLLECTION;
+  const isClassScoped = segments.length === 6
+    && segments[0] === USERS_COLLECTION
+    && segments[2] === CLASSES_SUBCOLLECTION
+    && segments[4] === STUDENTS_SUBCOLLECTION;
+  const isSupportedPath = isLegacyRootScoped || isClassScoped;
 
   return {
-    ownerId: getOwnerIdFromClassRefPath(path),
-    classId: isClassScoped ? normalizeClassId(segments[studentsIndex - 1]) : '',
-    studentDocId: studentsIndex >= 0 ? String(segments[studentsIndex + 1] || '').trim() : '',
-    isClassScoped
+    ownerId: isSupportedPath ? normalizeUserId(segments[1] || '') : '',
+    classId: isClassScoped ? normalizeClassId(segments[3] || '') : '',
+    studentDocId: isLegacyRootScoped
+      ? String(segments[3] || '').trim()
+      : isClassScoped
+        ? String(segments[5] || '').trim()
+        : '',
+    isClassScoped,
+    isSupportedPath
   };
 };
 
@@ -2787,6 +2798,9 @@ const findStudentDocumentRefsByIdentity = async (ownerId = '', studentId = '') =
     }
 
     const parsedPath = parseGlobalStudentRefPath(entry.ref?.path);
+    if (!parsedPath.isSupportedPath) {
+      return;
+    }
     const entryOwnerId = normalizeUserId(parsedPath.ownerId || payload.ownerId || payload.userId || '');
     const entryStudentId = String(payload.id || parsedPath.studentDocId || entry.id || '').trim();
     if (entryOwnerId !== normalizedOwnerId || entryStudentId !== normalizedStudentId) {
@@ -2843,6 +2857,7 @@ const fetchGlobalActiveStudentRecords = async () => {
     if (payload.deleted === true) return;
 
     const parsedPath = parseGlobalStudentRefPath(entry.ref?.path);
+    if (!parsedPath.isSupportedPath) return;
     const userId = normalizeUserId(parsedPath.ownerId || payload.ownerId || payload.userId || '');
     const classId = normalizeClassId(parsedPath.classId || payload.classId || '');
     const className = normalizeClassName(payload.className || payload.class || '', '');
