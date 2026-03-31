@@ -143,6 +143,10 @@ const normalizeDeletedAtValue = (value) => {
   return parsed.toISOString();
 };
 
+const isDeletedClassPayload = (payload = {}) => {
+  return payload?.deleted === true || Boolean(normalizeDeletedAtValue(payload?.deletedAt));
+};
+
 const toIsoDateString = (value) => {
   if (!value) return null;
   if (typeof value?.toDate === 'function') {
@@ -445,7 +449,7 @@ const ensureValidClassContext = async (operationLabel = 'access class data', opt
     classPayload = classSnapshot.data() || {};
   }
 
-  if (!classPayload || classPayload.deleted === true) {
+  if (!classPayload || isDeletedClassPayload(classPayload)) {
     throw createContextError(ERROR_CODES.CLASS_NOT_FOUND, `Class not found for ${operationLabel}`);
   }
 
@@ -2088,7 +2092,7 @@ const readClassCatalogFromFirestore = async (userId) => {
       userId: ownerId
     };
 
-    if (payload.deleted === true) {
+    if (isDeletedClassPayload(normalizedPayload)) {
       trashClasses.push(toClassTrashEntry(entry.id, normalizedPayload));
       return;
     }
@@ -2138,7 +2142,7 @@ const readGlobalClassCatalogFromFirestore = async (requesterUserId = '') => {
   const metadataPatchTasks = [];
   classesSnapshot.forEach((entry) => {
     const payload = entry.data() || {};
-    if (payload.deleted === true) return;
+    if (isDeletedClassPayload(payload)) return;
 
     const classId = normalizeClassId(entry.id);
     const ownerId = normalizeUserId(payload.ownerId || payload.userId || getOwnerIdFromClassRefPath(entry.ref?.path));
