@@ -21,6 +21,7 @@ import {
   fetchGlobalStudentSearchIndex,
   setCurrentUserRoleContext
 } from '../services/db.js';
+import { createRuntimeCache } from './admin-runtime-cache.js';
 
 const DASHBOARD_PATH = '/index.html';
 const LOGIN_PATH = '/login.html';
@@ -119,73 +120,13 @@ const dom = {
   scrollSections: Array.from(document.querySelectorAll('.admin-scroll-section'))
 };
 
-const createAdminRuntimeCacheEntry = () => {
-  return {
-    key: '',
-    value: null,
-    loadedAt: 0
-  };
-};
-
-const adminRuntimeCache = {
-  users: createAdminRuntimeCacheEntry(),
-  globalStats: createAdminRuntimeCacheEntry(),
-  globalSearchIndex: createAdminRuntimeCacheEntry(),
-  activityLogs: createAdminRuntimeCacheEntry()
-};
-
-const cloneAdminRuntimeCacheValue = (value) => {
-  if (Array.isArray(value)) {
-    return value.slice();
-  }
-  if (value && typeof value === 'object') {
-    return { ...value };
-  }
-  return value ?? null;
-};
-
-const readAdminRuntimeCache = (cacheName, key = '') => {
-  const entry = adminRuntimeCache[cacheName];
-  const normalizedKey = normalizeText(key);
-  if (!entry) {
-    return null;
-  }
-
-  const isFresh = (Date.now() - Number(entry.loadedAt || 0)) < ADMIN_RUNTIME_CACHE_TTL_MS;
-  if (!isFresh) {
-    return null;
-  }
-
-  if (normalizedKey && entry.key !== normalizedKey) {
-    return null;
-  }
-
-  return cloneAdminRuntimeCacheValue(entry.value);
-};
-
-const writeAdminRuntimeCache = (cacheName, value, key = '') => {
-  if (!(cacheName in adminRuntimeCache)) {
-    return value;
-  }
-
-  adminRuntimeCache[cacheName] = {
-    key: normalizeText(key),
-    value: cloneAdminRuntimeCacheValue(value),
-    loadedAt: Date.now()
-  };
-
-  return value;
-};
-
-const invalidateAdminRuntimeCache = (...cacheNames) => {
-  const names = cacheNames.length ? cacheNames : Object.keys(adminRuntimeCache);
-  names.forEach((cacheName) => {
-    if (!(cacheName in adminRuntimeCache)) {
-      return;
-    }
-    adminRuntimeCache[cacheName] = createAdminRuntimeCacheEntry();
-  });
-};
+const adminRuntimeCache = createRuntimeCache({
+  cacheNames: ['users', 'globalStats', 'globalSearchIndex', 'activityLogs'],
+  ttlMs: ADMIN_RUNTIME_CACHE_TTL_MS
+});
+const readAdminRuntimeCache = adminRuntimeCache.read;
+const writeAdminRuntimeCache = adminRuntimeCache.write;
+const invalidateAdminRuntimeCache = adminRuntimeCache.invalidate;
 
 const redirectToDashboard = () => {
   if (window.location.pathname.endsWith(DASHBOARD_PATH)) return;
