@@ -61,6 +61,14 @@ import {
   buildAdminStudentsSkeletonMarkup,
   buildAdminStudentsTableMarkup
 } from './admin-student-registry-markup.js';
+import {
+  findAdminUserRecord,
+  getVisibleAdminUsers,
+  getFilteredAdminUsers,
+  canEditAdminUserRole,
+  getVisibleAdminActivityEntries,
+  shouldIncludeAdminOwner
+} from './admin-user-utils.js';
 
 const DASHBOARD_PATH = '/index.html';
 const LOGIN_PATH = '/login.html';
@@ -313,7 +321,6 @@ const animateCountValue = (element, nextValue) => {
 
 const isPermissionDeniedError = (error) => String(error?.code || '').toLowerCase().includes('permission-denied');
 const canManageRoles = () => state.currentRole === ROLE_DEVELOPER;
-const isAdminOnlyRole = () => state.currentRole === ROLE_ADMIN;
 const canDeleteAdminStudents = () => state.currentRole === ROLE_ADMIN || state.currentRole === ROLE_DEVELOPER;
 
 const updateLastUpdatedIndicator = () => {
@@ -425,36 +432,26 @@ const requestConfirmation = ({ message = 'Are you sure?', confirmLabel = 'Confir
 };
 
 const findUserRecord = (uid = '') => {
-  const normalizedUid = normalizeText(uid);
-  return state.users.find((entry) => entry.uid === normalizedUid) || null;
+  return findAdminUserRecord(state.users, uid);
 };
 
 const getVisibleUsers = () => {
-  if (!isAdminOnlyRole()) {
-    return state.users.slice();
-  }
-  return state.users.filter((entry) => normalizeUserRole(entry.role) !== ROLE_DEVELOPER);
+  return getVisibleAdminUsers(state.users, {
+    currentRole: state.currentRole
+  });
 };
 
 const getFilteredUsers = () => {
-  const searchTerm = normalizeText(dom.searchInput?.value || '').toLowerCase();
-  const source = getVisibleUsers();
-  if (!searchTerm) {
-    return source;
-  }
-  return source.filter((record) => {
-    const name = String(record.name || '').toLowerCase();
-    const email = String(record.email || '').toLowerCase();
-    return name.includes(searchTerm) || email.includes(searchTerm);
+  return getFilteredAdminUsers(state.users, {
+    currentRole: state.currentRole,
+    searchTerm: dom.searchInput?.value || ''
   });
 };
 
 const canEditRole = (record) => {
-  if (!canManageRoles()) return false;
-  const normalizedRole = normalizeUserRole(record?.role);
-  if (!record?.uid) return false;
-  if (normalizedRole === ROLE_DEVELOPER) return false;
-  return true;
+  return canEditAdminUserRole(record, {
+    currentRole: state.currentRole
+  });
 };
 
 const buildRoleSelect = (record) => {
@@ -658,15 +655,8 @@ const formatTargetLabel = (entry = {}) => {
 };
 
 const getVisibleActivityEntries = (entries = []) => {
-  if (!isAdminOnlyRole()) {
-    return entries;
-  }
-  return entries.filter((entry) => {
-    const actor = findUserRecord(entry.userId);
-    const owner = findUserRecord(entry.dataOwnerUserId);
-    const actorRole = normalizeUserRole(actor?.role);
-    const ownerRole = normalizeUserRole(owner?.role);
-    return actorRole !== ROLE_DEVELOPER && ownerRole !== ROLE_DEVELOPER;
+  return getVisibleAdminActivityEntries(entries, state.users, {
+    currentRole: state.currentRole
   });
 };
 
@@ -887,17 +877,9 @@ const loadGlobalStats = async () => {
 };
 
 const shouldIncludeGlobalSearchOwner = (userId = '') => {
-  const normalizedUserId = normalizeText(userId);
-  if (!normalizedUserId) {
-    return false;
-  }
-
-  if (!isAdminOnlyRole()) {
-    return true;
-  }
-
-  const owner = findUserRecord(normalizedUserId);
-  return normalizeUserRole(owner?.role) !== ROLE_DEVELOPER;
+  return shouldIncludeAdminOwner(userId, state.users, {
+    currentRole: state.currentRole
+  });
 };
 
 const buildGlobalSearchIndex = async () => {
