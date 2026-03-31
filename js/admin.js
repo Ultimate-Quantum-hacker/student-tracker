@@ -53,7 +53,9 @@ import {
   buildAdminRegistryClassKey,
   buildAdminRegistryFallbackClassKey,
   resolveAdminRegistryClassInfo,
-  sortAdminStudentsRegistry
+  sortAdminStudentsRegistry,
+  groupAdminStudentsRegistry,
+  getAdminStudentsPagination
 } from './admin-student-registry-utils.js';
 
 const DASHBOARD_PATH = '/index.html';
@@ -1708,85 +1710,6 @@ const renderAdminStudentsSkeletonRows = (rowCount = 6) => {
   dom.adminStudentsTableBody.innerHTML = skeletonMarkup;
 };
 
-const groupAdminStudentsRegistry = (students = []) => {
-  const classNameCounts = new Map();
-  students.forEach((student) => {
-    const classLabel = normalizeDisplayText(student.className, 'Unknown Class');
-    const nameKey = classLabel.toLowerCase();
-    classNameCounts.set(nameKey, (classNameCounts.get(nameKey) || 0) + 1);
-  });
-
-  const groups = [];
-  students.forEach((student) => {
-    const classLabel = normalizeDisplayText(student.className, 'Unknown Class');
-    const teacherLabel = normalizeDisplayText(student.teacherName, 'Unknown Teacher');
-    const classKey = normalizeDisplayText(student.classKey, `${classLabel.toLowerCase()}::${teacherLabel.toLowerCase()}`);
-    const duplicateCount = classNameCounts.get(classLabel.toLowerCase()) || 0;
-    const groupLabel = duplicateCount > 1 ? `${classLabel} — ${teacherLabel}` : classLabel;
-    const lastGroup = groups[groups.length - 1];
-
-    if (!lastGroup || lastGroup.key !== classKey) {
-      groups.push({
-        key: classKey,
-        label: groupLabel,
-        students: [student]
-      });
-      return;
-    }
-
-    lastGroup.students.push(student);
-  });
-
-  return groups;
-};
-
-const getAdminStudentsPagination = (groups = []) => {
-  const totalItems = Array.isArray(groups)
-    ? groups.reduce((count, group) => count + (Array.isArray(group?.students) ? group.students.length : 0), 0)
-    : 0;
-  const totalPages = Math.max(1, Math.ceil(totalItems / ADMIN_STUDENTS_PAGE_SIZE));
-  const requestedPage = Math.max(1, Number.parseInt(state.adminStudentsRegistryPage, 10) || 1);
-  const currentPage = totalItems ? Math.min(requestedPage, totalPages) : 1;
-  const startIndex = totalItems ? (currentPage - 1) * ADMIN_STUDENTS_PAGE_SIZE : 0;
-  const endIndex = Math.min(startIndex + ADMIN_STUDENTS_PAGE_SIZE, totalItems);
-
-  const pageGroups = [];
-  let studentCursor = 0;
-  groups.forEach((group) => {
-    const groupStudents = Array.isArray(group?.students) ? group.students : [];
-    const nextCursor = studentCursor + groupStudents.length;
-
-    if (nextCursor <= startIndex || studentCursor >= endIndex) {
-      studentCursor = nextCursor;
-      return;
-    }
-
-    const sliceStart = Math.max(0, startIndex - studentCursor);
-    const sliceEnd = Math.min(groupStudents.length, endIndex - studentCursor);
-    const slicedStudents = groupStudents.slice(sliceStart, sliceEnd);
-    if (slicedStudents.length) {
-      pageGroups.push({
-        key: group?.key || `${pageGroups.length}`,
-        label: normalizeDisplayText(group?.label, 'Unknown Class'),
-        students: slicedStudents
-      });
-    }
-
-    studentCursor = nextCursor;
-  });
-
-  state.adminStudentsRegistryPage = currentPage;
-
-  return {
-    groups: pageGroups,
-    totalItems,
-    totalPages,
-    currentPage,
-    startIndex,
-    endIndex
-  };
-};
-
 const renderAdminStudentsPagination = ({
   totalItems = 0,
   totalPages = 1,
@@ -1876,7 +1799,11 @@ const updateAdminStudentsView = () => {
   const groupedStudents = groupAdminStudentsRegistry(filteredStudents);
   const totalLoadedStudents = Array.isArray(state.adminStudentsRegistry) ? state.adminStudentsRegistry.length : 0;
   const { hasActiveCriteria } = getAdminStudentsFilterState();
-  const pagination = getAdminStudentsPagination(groupedStudents);
+  const pagination = getAdminStudentsPagination(groupedStudents, {
+    requestedPage: state.adminStudentsRegistryPage,
+    pageSize: ADMIN_STUDENTS_PAGE_SIZE
+  });
+  state.adminStudentsRegistryPage = pagination.currentPage;
   const visibleRange = filteredStudents.length ? `${pagination.startIndex + 1}-${pagination.endIndex}` : '0';
 
   renderAdminStudentsTable(pagination.groups, pagination.startIndex);

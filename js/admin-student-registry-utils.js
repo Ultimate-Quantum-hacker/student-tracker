@@ -187,3 +187,84 @@ export const sortAdminStudentsRegistry = (students = []) => {
   });
   return sortedStudents;
 };
+
+export const groupAdminStudentsRegistry = (students = []) => {
+  const classNameCounts = new Map();
+  students.forEach((student) => {
+    const classLabel = normalizeDisplayText(student.className, 'Unknown Class');
+    const nameKey = classLabel.toLowerCase();
+    classNameCounts.set(nameKey, (classNameCounts.get(nameKey) || 0) + 1);
+  });
+
+  const groups = [];
+  students.forEach((student) => {
+    const classLabel = normalizeDisplayText(student.className, 'Unknown Class');
+    const teacherLabel = normalizeDisplayText(student.teacherName, 'Unknown Teacher');
+    const classKey = normalizeDisplayText(student.classKey, `${classLabel.toLowerCase()}::${teacherLabel.toLowerCase()}`);
+    const duplicateCount = classNameCounts.get(classLabel.toLowerCase()) || 0;
+    const groupLabel = duplicateCount > 1 ? `${classLabel} — ${teacherLabel}` : classLabel;
+    const lastGroup = groups[groups.length - 1];
+
+    if (!lastGroup || lastGroup.key !== classKey) {
+      groups.push({
+        key: classKey,
+        label: groupLabel,
+        students: [student]
+      });
+      return;
+    }
+
+    lastGroup.students.push(student);
+  });
+
+  return groups;
+};
+
+export const getAdminStudentsPagination = (groups = [], {
+  requestedPage = 1,
+  pageSize = 50
+} = {}) => {
+  const normalizedPageSize = Math.max(1, Number.parseInt(pageSize, 10) || 1);
+  const totalItems = Array.isArray(groups)
+    ? groups.reduce((count, group) => count + (Array.isArray(group?.students) ? group.students.length : 0), 0)
+    : 0;
+  const totalPages = Math.max(1, Math.ceil(totalItems / normalizedPageSize));
+  const normalizedRequestedPage = Math.max(1, Number.parseInt(requestedPage, 10) || 1);
+  const currentPage = totalItems ? Math.min(normalizedRequestedPage, totalPages) : 1;
+  const startIndex = totalItems ? (currentPage - 1) * normalizedPageSize : 0;
+  const endIndex = Math.min(startIndex + normalizedPageSize, totalItems);
+
+  const pageGroups = [];
+  let studentCursor = 0;
+  groups.forEach((group) => {
+    const groupStudents = Array.isArray(group?.students) ? group.students : [];
+    const nextCursor = studentCursor + groupStudents.length;
+
+    if (nextCursor <= startIndex || studentCursor >= endIndex) {
+      studentCursor = nextCursor;
+      return;
+    }
+
+    const sliceStart = Math.max(0, startIndex - studentCursor);
+    const sliceEnd = Math.min(groupStudents.length, endIndex - studentCursor);
+    const slicedStudents = groupStudents.slice(sliceStart, sliceEnd);
+    if (slicedStudents.length) {
+      pageGroups.push({
+        key: group?.key || `${pageGroups.length}`,
+        label: normalizeDisplayText(group?.label, 'Unknown Class'),
+        students: slicedStudents
+      });
+    }
+
+    studentCursor = nextCursor;
+  });
+
+  return {
+    groups: pageGroups,
+    totalItems,
+    totalPages,
+    currentPage,
+    startIndex,
+    endIndex
+  };
+};
