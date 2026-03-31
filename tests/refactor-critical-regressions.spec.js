@@ -754,9 +754,14 @@ test.describe('Class refactor critical regressions', () => {
   });
 
   test('migration path verifies count mismatch and fails safely', async () => {
+    const authSource = readWorkspaceFile('js/auth.js');
+    const appSource = readWorkspaceFile('js/app.js');
+    const uiRoleSource = readWorkspaceFile('js/ui.js');
+    const adminSource = readWorkspaceFile('js/admin.js');
     const dbSource = readWorkspaceFile('services/db.js');
     const stateSource = readWorkspaceFile('js/state.js');
     const rulesSource = readWorkspaceFile('firestore.rules');
+    const hardcodedDeveloperSource = [authSource, appSource, uiRoleSource, adminSource, dbSource, rulesSource].join('\n');
 
     expect(dbSource).toContain('const getRawDataCounts = (rawData) =>');
     expect(dbSource).toContain("if (classifyFirebaseError(error) === 'permission') {");
@@ -775,22 +780,30 @@ test.describe('Class refactor critical regressions', () => {
     expect(dbSource).toContain("console.log('CAN WRITE:', canRoleWrite(role));");
     expect(dbSource).toContain('await ensureDefaultClassDocument(authUserId);');
     expect(dbSource).toContain('return normalizeUserId(currentClassOwnerId) || getAuthenticatedUserId();');
+    expect(dbSource).toContain("assertAdminOrDeveloperRole('read activity logs');");
+    expect(dbSource).toContain("if (userRole === 'admin' || userRole === 'developer') {");
     expect(stateSource).toContain('app.canCurrentRoleWrite = function () {');
     expect(stateSource).toContain("console.log('CAN WRITE:', app.state.currentUserRole !== ROLE_ADMIN);");
     expect(stateSource).toContain("const getAuthenticatedOwnerFallback = () => String(app.state.authUser?.uid || '').trim();");
     expect(rulesSource).toContain('function isSignedIn() {');
     expect(rulesSource).toContain('function isOwner(userId) {');
-    expect(rulesSource).toContain('allow write: if isOwner(userId);');
+    expect(rulesSource).toContain('function requesterRole() {');
+    expect(rulesSource).toContain('function canReadOwnerScopedData(userId) {');
+    expect(rulesSource).toContain('function ownerCanCreateOwnUserDoc(userId) {');
     expect(rulesSource).toContain('match /users/{userId}/students/{docId} {');
     expect(rulesSource).toContain('match /users/{userId}/subjects/{docId} {');
     expect(rulesSource).toContain('match /users/{userId}/exams/{docId} {');
+    expect(rulesSource).toContain('match /users/{userId}/classes/{classId}/{collection}/{docId} {');
     expect(rulesSource).toContain('match /{path=**}/classes/{classId} {');
-    expect(rulesSource).toContain('allow read: if isSignedIn();');
+    expect(rulesSource).toContain('allow read: if canReadOwnerScopedData(userId);');
+    expect(rulesSource).toContain('allow read: if isPrivilegedUser();');
     expect(rulesSource).toContain('match /activityLogs/{logId} {');
-    expect(rulesSource).toContain('allow create, read: if isSignedIn();');
-    expect(rulesSource).not.toContain('get(/databases/$(database)/documents/users/$(request.auth.uid))');
-    expect(rulesSource).not.toContain('function requesterRole() {');
-    expect(rulesSource).not.toContain('function isAdminOrDeveloperRole() {');
+    expect(rulesSource).toContain('allow create: if isSignedIn();');
+    expect(rulesSource).toContain('allow read, delete: if isPrivilegedUser();');
+    expect(rulesSource).toContain('get(/databases/$(database)/documents/users/$(request.auth.uid))');
+    expect(hardcodedDeveloperSource).not.toContain('pokumike2@gmail.com');
+    expect(hardcodedDeveloperSource).not.toContain('isDeveloperAccountEmail');
+    expect(hardcodedDeveloperSource).not.toContain('isDeveloperAccountEmailValue');
   });
 
   test('stale deleted class selection has validated fallback path', async () => {

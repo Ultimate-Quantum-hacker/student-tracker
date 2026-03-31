@@ -9,8 +9,7 @@ import {
   resolveUserRole,
   normalizeUserRole,
   logoutUser,
-  formatAuthError,
-  isDeveloperAccountEmail
+  formatAuthError
 } from './auth.js';
 import {
   fetchAdminGlobalStats,
@@ -632,12 +631,12 @@ const canEditRole = (record) => {
   const normalizedRole = normalizeUserRole(record?.role);
   if (!record?.uid) return false;
   if (normalizedRole === ROLE_DEVELOPER) return false;
-  if (isDeveloperAccountEmail(record?.email)) return false;
   return true;
 };
 
 const buildRoleSelect = (record) => {
   const normalizedRole = normalizeUserRole(record?.role);
+
   const select = document.createElement('select');
   select.className = 'role-select';
   select.dataset.userId = record.uid;
@@ -963,7 +962,7 @@ const renderActivityLogTable = (entries = []) => {
     const owner = findUserRecord(entry.dataOwnerUserId);
     const actorLabel = normalizeDisplayText(actor?.name || actor?.email || entry.userEmail || entry.userId || '', 'Unknown user');
     const ownerLabel = normalizeDisplayText(owner?.name || owner?.email || entry.ownerName || entry.dataOwnerUserId || '', 'Unknown owner');
-    const actorRole = normalizeUserRole(actor?.role || entry.userRole);
+    const actorRole = normalizeUserRole(actor?.role);
     const ownerRole = normalizeUserRole(owner?.role || entry.ownerRole || 'teacher');
     const actionTone = getActionTone(entry.action);
     const groupKey = getDateGroupKey(entry.timestamp);
@@ -1387,16 +1386,6 @@ const updateUserRole = async (uid, nextRole) => {
     return;
   }
 
-  if (isDeveloperAccountEmail(record.email) && normalizedNextRole !== ROLE_DEVELOPER) {
-    setPanelStatus('Developer account role cannot be downgraded.', 'error');
-    return;
-  }
-
-  if (record.uid === state.authUser?.uid && currentRole === ROLE_DEVELOPER && normalizedNextRole !== ROLE_DEVELOPER) {
-    setPanelStatus('You cannot remove your own developer role.', 'error');
-    return;
-  }
-
   if (currentRole === normalizedNextRole) {
     setPanelStatus('No role changes to apply.', 'warning');
     return;
@@ -1449,7 +1438,7 @@ const ensurePanelAccess = async () => {
 
   state.authUser = authUser;
   const resolvedRole = normalizeUserRole(await resolveUserRole(authUser));
-  state.currentRole = isDeveloperAccountEmail(authUser?.email) ? ROLE_DEVELOPER : resolvedRole;
+  state.currentRole = resolvedRole;
   if (typeof setCurrentUserRoleContext === 'function') {
     setCurrentUserRoleContext(state.currentRole);
   }

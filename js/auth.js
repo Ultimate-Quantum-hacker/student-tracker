@@ -16,7 +16,6 @@ import {
 
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
 const normalizeName = (name) => String(name || '').trim();
-const DEVELOPER_EMAIL = 'pokumike2@gmail.com';
 const ROLE_TEACHER = 'teacher';
 const LEGACY_ROLE_USER = 'user';
 const ROLE_ADMIN = 'admin';
@@ -57,8 +56,6 @@ const withTimeout = async (task, timeoutMs, code, message) => {
   }
 };
 
-export const isDeveloperAccountEmail = (email) => normalizeEmail(email) === DEVELOPER_EMAIL;
-
 export const normalizeUserRole = (role) => {
   const normalized = String(role || '').trim().toLowerCase();
   if (normalized === LEGACY_ROLE_USER) {
@@ -69,15 +66,13 @@ export const normalizeUserRole = (role) => {
 
 const getUserProfileRef = (uid) => doc(db, 'users', String(uid || '').trim());
 
-const resolveProfileRole = (authUser, existingRole = '') => {
-  const resolvedEmail = String(authUser?.email || auth?.currentUser?.email || '').trim();
-  if (isDeveloperAccountEmail(resolvedEmail)) {
-    return ROLE_DEVELOPER;
-  }
-
+const resolveProfileRole = (_authUser, existingRole = '') => {
   const normalizedExistingRole = normalizeUserRole(existingRole);
   if (normalizedExistingRole === ROLE_ADMIN) {
     return ROLE_ADMIN;
+  }
+  if (normalizedExistingRole === ROLE_DEVELOPER) {
+    return ROLE_DEVELOPER;
   }
 
   return ROLE_TEACHER;
@@ -191,22 +186,11 @@ const ensureUserProfileDocument = async (authUser) => {
 };
 
 export const resolveUserRole = async (authUser) => {
-  const resolvedEmail = normalizeEmail(authUser?.email || auth?.currentUser?.email);
-  const isDeveloperEmail = isDeveloperAccountEmail(resolvedEmail);
-
   try {
     const profile = await ensureUserProfileDocument(authUser);
-    const normalizedRole = normalizeUserRole(profile?.role);
-    if (isDeveloperEmail) {
-      return ROLE_DEVELOPER;
-    }
-    return normalizedRole;
+    return normalizeUserRole(profile?.role);
   } catch (error) {
     console.error('Failed to resolve user role. Falling back to teacher:', error);
-    if (isDeveloperEmail) {
-      console.log('Assigned role:', ROLE_DEVELOPER);
-      return ROLE_DEVELOPER;
-    }
     return DEFAULT_USER_ROLE;
   }
 };

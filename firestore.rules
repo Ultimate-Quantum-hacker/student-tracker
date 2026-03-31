@@ -12,12 +12,6 @@ service cloud.firestore {
           : 'teacher';
     }
 
-    function isDeveloperEmail() {
-      return isSignedIn()
-        && request.auth.token.email is string
-        && request.auth.token.email.matches('^[Pp][Oo][Kk][Uu][Mm][Ii][Kk][Ee]2@gmail\\.com$');
-    }
-
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
@@ -27,11 +21,74 @@ service cloud.firestore {
     }
 
     function isDeveloperRole() {
-      return isDeveloperEmail() || requesterRole() == 'developer';
+      return requesterRole() == 'developer';
     }
 
     function isPrivilegedUser() {
       return isAdminRole() || isDeveloperRole();
+    }
+
+    function canReadOwnerScopedData(userId) {
+      return isOwner(userId) || isPrivilegedUser();
+    }
+
+    function ownerCanCreateOwnUserDoc(userId) {
+      return isOwner(userId)
+        && request.resource.data.uid == userId
+        && (!('userId' in request.resource.data) || request.resource.data.userId == userId)
+        && request.resource.data.role == 'teacher'
+        && request.resource.data.email == request.auth.token.email;
+    }
+
+    function ownerCanUpdateOwnUserDoc(userId) {
+      return isOwner(userId)
+        && (!('uid' in request.resource.data) || request.resource.data.uid == userId)
+        && (!('userId' in request.resource.data) || request.resource.data.userId == userId)
+        && (!('email' in request.resource.data) || request.resource.data.email == request.auth.token.email)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'uid',
+          'userId',
+          'name',
+          'email',
+          'role',
+          'updatedAt',
+          'activeClassId',
+          'allowEmptyClassCatalog',
+          'classMigrationStatus',
+          'classMigrationVersion',
+          'classMigrationComplete',
+          'classMigrationUpdatedAt',
+          'classMigrationStartedAt',
+          'classMigrationError',
+          'classMigrationCountsLegacy',
+          'classMigrationCountsClass'
+        ])
+        && (
+          request.resource.data.role == resource.data.role
+          || (!('role' in resource.data) && request.resource.data.role == 'teacher')
+        );
+    }
+
+    function ownerCanWriteOwnClassDoc(userId, classId) {
+      return isOwner(userId)
+        && request.resource.data.id == classId
+        && request.resource.data.userId == userId
+        && request.resource.data.ownerId == userId;
+    }
+
+    function isSupportedClassChildCollection(collection) {
+      return collection == 'students'
+        || collection == 'subjects'
+        || collection == 'exams';
+    }
+
+    function ownerCanWriteOwnClassChildDoc(userId, classId, docId, collection) {
+      return isSupportedClassChildCollection(collection)
+        && isOwner(userId)
+        && request.resource.data.id == docId
+        && request.resource.data.userId == userId
+        && request.resource.data.ownerId == userId
+        && request.resource.data.classId == classId;
     }
 
     function isPrivilegedUserMetadataTouch(userId) {
@@ -58,59 +115,65 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if isSignedIn();
-      allow create, delete: if isOwner(userId) || isDeveloperRole();
-      allow update: if isOwner(userId) || isDeveloperRole() || isPrivilegedUserMetadataTouch(userId);
+      allow read: if canReadOwnerScopedData(userId);
+      allow create: if ownerCanCreateOwnUserDoc(userId) || isDeveloperRole();
+      allow delete: if isOwner(userId) || isDeveloperRole();
+      allow update: if ownerCanUpdateOwnUserDoc(userId) || isDeveloperRole() || isPrivilegedUserMetadataTouch(userId);
     }
 
     match /users/{userId}/classes/{classId} {
-      allow read: if isSignedIn();
-      allow create, delete: if isOwner(userId) || isDeveloperRole();
-      allow update: if isOwner(userId) || isDeveloperRole() || isPrivilegedClassMetadataTouch(userId, classId);
+      allow read: if canReadOwnerScopedData(userId);
+      allow create: if ownerCanWriteOwnClassDoc(userId, classId) || isDeveloperRole();
+      allow delete: if isOwner(userId) || isDeveloperRole();
+      allow update: if ownerCanWriteOwnClassDoc(userId, classId) || isDeveloperRole() || isPrivilegedClassMetadataTouch(userId, classId);
     }
 
     match /users/{userId}/classes/{classId}/{collection}/{docId} {
-      allow read: if isSignedIn();
-      allow write: if isOwner(userId) || isDeveloperRole();
-      allow update: if collection == 'students'
-        && request.resource.data.classId == classId
-        && isPrivilegedStudentSoftDelete(userId);
+      allow read: if isSupportedClassChildCollection(collection) && canReadOwnerScopedData(userId);
+      allow create: if ownerCanWriteOwnClassChildDoc(userId, classId, docId, collection) || isDeveloperRole();
+      allow delete: if isSupportedClassChildCollection(collection) && (isOwner(userId) || isDeveloperRole());
+      allow update: if ownerCanWriteOwnClassChildDoc(userId, classId, docId, collection)
+        || isDeveloperRole()
+        || (collection == 'students'
+          && request.resource.data.classId == classId
+          && isPrivilegedStudentSoftDelete(userId));
     }
 
     match /users/{userId}/students/{docId} {
-      allow read: if isSignedIn();
-      allow write: if isOwner(userId) || isDeveloperRole();
-      allow update: if isPrivilegedStudentSoftDelete(userId);
+      allow read: if canReadOwnerScopedData(userId);
+      allow create, delete: if isOwner(userId) || isDeveloperRole();
+      allow update: if isOwner(userId) || isDeveloperRole() || isPrivilegedStudentSoftDelete(userId);
     }
 
     match /users/{userId}/subjects/{docId} {
-      allow read: if isSignedIn();
+      allow read: if canReadOwnerScopedData(userId);
       allow write: if isOwner(userId) || isDeveloperRole();
     }
 
     match /users/{userId}/exams/{docId} {
-      allow read: if isSignedIn();
+      allow read: if canReadOwnerScopedData(userId);
       allow write: if isOwner(userId) || isDeveloperRole();
     }
 
     match /{path=**}/students/{docId} {
-      allow read: if isSignedIn();
+      allow read: if isPrivilegedUser();
     }
 
     match /{path=**}/subjects/{docId} {
-      allow read: if isSignedIn();
+      allow read: if isPrivilegedUser();
     }
 
     match /{path=**}/exams/{docId} {
-      allow read: if isSignedIn();
+      allow read: if isPrivilegedUser();
     }
 
     match /{path=**}/classes/{classId} {
-      allow read: if isSignedIn();
+      allow read: if isPrivilegedUser();
     }
 
     match /activityLogs/{logId} {
-      allow create, read, delete: if isSignedIn();
+      allow create: if isSignedIn();
+      allow read, delete: if isPrivilegedUser();
     }
 
     match /{document=**} {

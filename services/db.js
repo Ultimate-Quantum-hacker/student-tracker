@@ -37,7 +37,6 @@ const TRASH_RETENTION_DAYS = 3;
 const MAX_ACTIVITY_LOGS = 100;
 const ACTIVITY_LOG_FETCH_LIMIT = MAX_ACTIVITY_LOGS;
 const CLASS_MIGRATION_VERSION = 2;
-const DEVELOPER_ACCOUNT_EMAIL = 'pokumike2@gmail.com';
 
 const ERROR_CODES = {
   READ_ONLY_MODE: 'READ_ONLY_MODE',
@@ -129,8 +128,6 @@ const normalizeRole = (value) => {
   if (normalized === 'developer') return 'developer';
   return 'teacher';
 };
-const isDeveloperAccountEmailValue = (value = '') => String(value || '').trim().toLowerCase() === DEVELOPER_ACCOUNT_EMAIL;
-
 const normalizeDeletedAtValue = (value) => {
   if (!value) return null;
   if (typeof value?.toDate === 'function') {
@@ -468,7 +465,7 @@ const ensureValidClassContext = async (operationLabel = 'access class data', opt
   }
 
   const className = normalizeClassName(classPayload?.name || classContext?.className || DEFAULT_CLASS_NAME);
-  const ownerName = normalizeDisplayName(classPayload?.ownerName || classContext?.classOwnerName || 'Teacher', 'Teacher');
+  const ownerName = normalizeDisplayName(classPayload?.ownerName || classContext?.classOwnerName || 'Teacher');
   setCurrentClassContext(classId, actorUserId, ownerId, ownerName);
 
   return {
@@ -2712,10 +2709,12 @@ export const logActivity = async (action, targetId, targetType, options = {}) =>
       createdAt: serverTimestamp()
     });
 
-    try {
-      await trimActivityLogCollection();
-    } catch (error) {
-      console.warn('Failed to trim activity logs:', error);
+    if (userRole === 'admin' || userRole === 'developer') {
+      try {
+        await trimActivityLogCollection();
+      } catch (error) {
+        console.warn('Failed to trim activity logs:', error);
+      }
     }
 
     return true;
@@ -2727,8 +2726,15 @@ export const logActivity = async (action, targetId, targetType, options = {}) =>
 
 export const fetchActivityLogs = async ({ userId = '', sort = 'desc', maxEntries = MAX_ACTIVITY_LOGS } = {}) => {
   await ensureAuthenticatedUserId('read activity logs');
+  assertAdminOrDeveloperRole('read activity logs');
   if (!isFirebaseConfigured || !db) {
     return [];
+  }
+
+  try {
+    await trimActivityLogCollection();
+  } catch (error) {
+    console.warn('Failed to trim activity logs during privileged read:', error);
   }
 
   const normalizedUserId = String(userId || '').trim();
@@ -3403,6 +3409,8 @@ export const fetchClassCatalog = async () => {
   const activeClass = findClassEntryBySelection(classes, classId, currentClassOwnerId || persistedSelection.ownerId || '') || null;
   setCurrentClassContext(classId, userId, activeClass?.ownerId || '', activeClass?.ownerName || '');
   writeClassCatalogCache(cacheScopeKey, classes, trashClasses);
+  globalClassCatalogCache.loadedAt = 0;
+
   console.log('Classes:', classes.length);
   console.log('Selected class:', classId || '(none)');
   console.log('Owner ID:', activeClass?.ownerId || '(none)');
@@ -3434,9 +3442,7 @@ export const fetchAdminUsers = async () => {
     }
 
     const email = String(payload.email || '').trim().toLowerCase();
-    const role = isDeveloperAccountEmailValue(email)
-      ? 'developer'
-      : normalizeRole(payload.role || 'teacher');
+    const role = normalizeRole(payload.role || 'teacher');
 
     users.push({
       uid,
@@ -3470,7 +3476,6 @@ export const fetchGlobalStudentSearchIndex = async () => {
     if (payload.deleted === true) {
       return;
     }
-
     const parsedPath = parseGlobalStudentRefPath(entry.ref?.path);
     if (!parsedPath.isSupportedPath) {
       return;
@@ -3554,9 +3559,7 @@ export const updateAdminUserRole = async ({ uid = '', name = '', email = '', rol
     throw new Error('User id is required');
   }
 
-  const normalizedRole = isDeveloperAccountEmailValue(normalizedEmail)
-    ? 'developer'
-    : normalizeRole(role);
+  const normalizedRole = normalizeRole(role);
   const updatedAt = new Date().toISOString();
 
   await setDoc(getUserRootRef(normalizedUid), {
