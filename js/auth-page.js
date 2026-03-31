@@ -20,6 +20,8 @@ const isValidEmail = (email) => {
 const setLoadingState = (button, isLoading, defaultLabel) => {
   if (!button) return;
   button.disabled = isLoading;
+  button.dataset.loading = isLoading ? 'true' : 'false';
+  button.setAttribute('aria-busy', isLoading ? 'true' : 'false');
   button.textContent = isLoading ? 'Please wait...' : defaultLabel;
 };
 
@@ -29,6 +31,41 @@ const setError = (errorEl, message) => {
 };
 
 const getMode = () => document.body?.dataset?.authMode === 'signup' ? 'signup' : 'login';
+
+const syncPasswordToggleState = (toggle, passwordInput) => {
+  if (!toggle || !passwordInput) return;
+  const isVisible = passwordInput.type === 'text';
+  const label = isVisible ? 'Hide password' : 'Show password';
+  const iconEl = toggle.querySelector('.auth-password-toggle-icon');
+  const textEl = toggle.querySelector('.auth-password-toggle-text');
+
+  toggle.setAttribute('aria-pressed', isVisible ? 'true' : 'false');
+  toggle.setAttribute('aria-label', label);
+
+  if (iconEl) {
+    iconEl.textContent = isVisible ? '🙈' : '👁';
+  }
+
+  if (textEl) {
+    textEl.textContent = isVisible ? 'Hide' : 'Show';
+  }
+};
+
+const initPasswordToggle = () => {
+  const toggle = document.getElementById('togglePassword');
+  const passwordInput = document.getElementById('login-password');
+
+  if (!toggle || !passwordInput) {
+    return;
+  }
+
+  syncPasswordToggleState(toggle, passwordInput);
+
+  toggle.addEventListener('click', () => {
+    passwordInput.type = passwordInput.type === 'password' ? 'text' : 'password';
+    syncPasswordToggleState(toggle, passwordInput);
+  });
+};
 
 const validatePayload = (mode, payload) => {
   if (!isValidEmail(payload.email)) {
@@ -111,6 +148,8 @@ const initAuthPage = async () => {
   } catch (error) {
     console.error('Unable to resolve initial authentication state:', error);
   }
+
+  initPasswordToggle();
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();

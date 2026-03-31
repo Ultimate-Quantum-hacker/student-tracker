@@ -11,18 +11,32 @@
 <body class="auth-page" data-auth-mode="login">
   <main class="auth-shell">
     <section class="auth-card" aria-labelledby="login-title">
-      <h1 id="login-title" class="auth-title">Welcome back</h1>
-      <p class="auth-subtitle">Sign in to continue to Student Performance Tracker.</p>
+      <div class="auth-card-header">
+        <span class="auth-badge">Secure access</span>
+        <div class="auth-brand-lockup">
+          <div class="auth-logo" aria-hidden="true">ST</div>
+          <div class="auth-heading-group">
+            <h1 id="login-title" class="auth-title">Welcome back</h1>
+            <p class="auth-subtitle">Sign in to continue to Student Performance Tracker.</p>
+          </div>
+        </div>
+      </div>
 
       <form id="login-form" class="auth-form" novalidate>
         <div class="auth-field">
           <label for="login-email">Email</label>
-          <input id="login-email" name="email" type="email" autocomplete="email" required>
+          <input id="login-email" name="email" type="email" autocomplete="email" inputmode="email" spellcheck="false" autocapitalize="none" placeholder="you@example.com" required autofocus>
         </div>
 
         <div class="auth-field">
           <label for="login-password">Password</label>
-          <input id="login-password" name="password" type="password" autocomplete="current-password" required minlength="6">
+          <div class="auth-password-field">
+            <input id="login-password" name="password" type="password" autocomplete="current-password" placeholder="Enter your password" required minlength="6">
+            <button id="togglePassword" class="auth-password-toggle" type="button" aria-controls="login-password" aria-label="Show password" aria-pressed="false">
+              <span class="auth-password-toggle-icon" aria-hidden="true">👁</span>
+              <span class="auth-password-toggle-text">Show</span>
+            </button>
+          </div>
         </div>
 
         <p id="auth-error" class="auth-error" aria-live="polite"></p>
@@ -30,7 +44,7 @@
         <button id="auth-submit" class="auth-btn" type="submit">Login</button>
 
         <div class="auth-row">
-          <span></span>
+          <span class="auth-row-copy">New here?</span>
           <a class="auth-link" href="signup.html">Create account</a>
         </div>
       </form>
