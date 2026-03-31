@@ -63,6 +63,8 @@ const domIds = {
   classSummaryCards: 'class-summary-cards',
   classInsightBox: 'class-insight-box',
   toast: 'toast',
+  globalLoader: 'global-loader',
+  globalLoaderText: 'global-loader-text',
   mockList: 'mockList',
   addMockForm: 'addMockForm',
   mockNameInput: 'mockNameInput',
@@ -166,6 +168,8 @@ const ui = {
     hasBoundAccessGuardEvents: false,
     bulkClassDeleteSelection: [],
     toastTimer: null,
+    loaderHideTimer: null,
+    loaderRequestCount: 0,
     readOnlyToastTimer: null,
     trashRetentionDays: 3,
 
@@ -186,6 +190,71 @@ const ui = {
         }
         app.dom[k] = el;
       });
+    },
+
+    getGlobalLoaderElements: function () {
+      const overlay = app.dom.globalLoader || document.getElementById('global-loader');
+      const text = app.dom.globalLoaderText || document.getElementById('global-loader-text');
+      if (!app.dom.globalLoader && overlay) {
+        app.dom.globalLoader = overlay;
+      }
+      if (!app.dom.globalLoaderText && text) {
+        app.dom.globalLoaderText = text;
+      }
+      return { overlay, text };
+    },
+
+    showLoader: function (message = 'Processing...') {
+      const { overlay, text } = this.getGlobalLoaderElements();
+      if (!overlay) {
+        return;
+      }
+      if (this.loaderHideTimer) {
+        clearTimeout(this.loaderHideTimer);
+        this.loaderHideTimer = null;
+      }
+      if (text) {
+        text.textContent = String(message || 'Processing...');
+      }
+      overlay.classList.remove('hidden');
+      overlay.setAttribute('aria-hidden', 'false');
+      document.body.classList.add('loader-active');
+    },
+
+    hideLoader: function (delay = 300) {
+      const { overlay } = this.getGlobalLoaderElements();
+      if (!overlay) {
+        return;
+      }
+      if (this.loaderHideTimer) {
+        clearTimeout(this.loaderHideTimer);
+      }
+      const timeoutMs = Number.isFinite(Number(delay)) && Number(delay) >= 0 ? Number(delay) : 0;
+      this.loaderHideTimer = window.setTimeout(() => {
+        if (this.loaderRequestCount > 0) {
+          return;
+        }
+        overlay.classList.add('hidden');
+        overlay.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('loader-active');
+        this.loaderHideTimer = null;
+      }, timeoutMs);
+    },
+
+    withLoader: async function (task, { message = 'Processing...', delay = 300 } = {}) {
+      if (typeof task !== 'function') {
+        return null;
+      }
+      this.loaderRequestCount += 1;
+      this.showLoader(message);
+      try {
+        return await task();
+      } finally {
+        this.loaderRequestCount = Math.max(this.loaderRequestCount - 1, 0);
+        if (this.loaderRequestCount === 0) {
+          this.hideLoader(delay);
+        }
+      }
     },
 
     getCurrentRole: function () {
@@ -610,7 +679,9 @@ const ui = {
         actionButton.addEventListener('click', async () => {
           actionButton.disabled = true;
           try {
-            await options.onAction();
+            await this.withLoader(() => options.onAction(), {
+              message: String(options?.loaderMessage || 'Processing...')
+            });
           } catch (error) {
             console.error('Toast action failed:', error);
           }
@@ -645,6 +716,7 @@ const ui = {
       this.showToast(`${itemName} moved to Trash`, {
         actionLabel: 'Undo',
         duration: 5000,
+        loaderMessage: `Restoring ${typeLabel.toLowerCase()}...`,
         onAction: async () => {
           try {
             if (normalizedType === 'class') {
@@ -903,31 +975,35 @@ const ui = {
         return;
       }
 
-      try {
-        if (app.dom.bulkClassDeleteConfirmBtn) {
-          app.dom.bulkClassDeleteConfirmBtn.disabled = true;
-        }
-        this.setClassControlsBusy(true);
-        const deletedEntries = await app.deleteClasses(selectedIds);
-        this.closeBulkClassDeleteModal();
-        this.refreshUI();
+      await this.withLoader(async () => {
+        try {
+          if (app.dom.bulkClassDeleteConfirmBtn) {
+            app.dom.bulkClassDeleteConfirmBtn.disabled = true;
+          }
+          this.setClassControlsBusy(true);
+          const deletedEntries = await app.deleteClasses(selectedIds);
+          this.closeBulkClassDeleteModal();
+          this.refreshUI();
 
-        if (deletedEntries.length === 1) {
-          const deletedEntry = deletedEntries[0] || {};
-          this.showUndoDeleteToast(deletedEntry.id || selectedIds[0], deletedEntry.name || 'Class', 'class');
-        } else {
-          this.showToast(`${deletedEntries.length} classes moved to Trash`);
+          if (deletedEntries.length === 1) {
+            const deletedEntry = deletedEntries[0] || {};
+            this.showUndoDeleteToast(deletedEntry.id || selectedIds[0], deletedEntry.name || 'Class', 'class');
+          } else {
+            this.showToast(`${deletedEntries.length} classes moved to Trash`);
+          }
+        } catch (error) {
+          console.error('Failed to delete classes:', error);
+          this.showToast(error?.message || 'Failed to delete classes');
+        } finally {
+          if (app.dom.bulkClassDeleteModal?.classList.contains('active')) {
+            this.renderBulkClassDeleteModal();
+          }
+          this.renderClassControls();
+          this.applyReadOnlyRoleState();
         }
-      } catch (error) {
-        console.error('Failed to delete classes:', error);
-        this.showToast(error?.message || 'Failed to delete classes');
-      } finally {
-        if (app.dom.bulkClassDeleteModal?.classList.contains('active')) {
-          this.renderBulkClassDeleteModal();
-        }
-        this.renderClassControls();
-        this.applyReadOnlyRoleState();
-      }
+      }, {
+        message: selectedIds.length === 1 ? 'Deleting class...' : 'Deleting classes...'
+      });
     },
 
     getStatusToneClass: function (statusType) {
@@ -978,19 +1054,23 @@ const ui = {
       const nextOwnerId = String(ownerId || '').trim();
       if (!nextClassId) return;
 
-      try {
-        this.closeClassDropdown();
-        this.setClassControlsBusy(true);
-        await app.switchClass(nextClassId, nextOwnerId);
-        this.refreshUI();
-        this.showToast('Class switched');
-      } catch (error) {
-        console.error('Failed to switch class:', error);
-        this.showToast('Failed to switch class');
-      } finally {
-        this.renderClassControls();
-        this.applyReadOnlyRoleState();
-      }
+      await this.withLoader(async () => {
+        try {
+          this.closeClassDropdown();
+          this.setClassControlsBusy(true);
+          await app.switchClass(nextClassId, nextOwnerId);
+          this.refreshUI();
+          this.showToast('Class switched');
+        } catch (error) {
+          console.error('Failed to switch class:', error);
+          this.showToast('Failed to switch class');
+        } finally {
+          this.renderClassControls();
+          this.applyReadOnlyRoleState();
+        }
+      }, {
+        message: 'Switching class...'
+      });
     },
 
     cycleClass: async function (step = 1) {
@@ -1140,7 +1220,9 @@ const ui = {
           }
 
           try {
-            await app.createClass(normalizedName);
+            await this.withLoader(() => app.createClass(normalizedName), {
+              message: 'Creating class...'
+            });
             this.refreshUI();
             this.showToast('Class created');
           } catch (error) {
@@ -1160,19 +1242,23 @@ const ui = {
       if (!this.ensureWritableAction('Data reset')) {
         return;
       }
-      try {
-        if (app.snapshots && typeof app.snapshots.saveSnapshot === 'function') {
-          app.snapshots.saveSnapshot('Auto Backup Before Reset');
+      await this.withLoader(async () => {
+        try {
+          if (app.snapshots && typeof app.snapshots.saveSnapshot === 'function') {
+            app.snapshots.saveSnapshot('Auto Backup Before Reset');
+          }
+          await app.importData({ students: [], subjects: [], exams: [] });
+          app.state.selectedBulkExamId = '';
+          app.state.selectedPerformanceCategory = 'strong';
+          this.refreshUI();
+          this.showToast('All data cleared');
+        } catch (error) {
+          console.error('Failed to clear data:', error);
+          this.showToast('Failed to clear data');
         }
-        await app.importData({ students: [], subjects: [], exams: [] });
-        app.state.selectedBulkExamId = '';
-        app.state.selectedPerformanceCategory = 'strong';
-        this.refreshUI();
-        this.showToast('All data cleared');
-      } catch (error) {
-        console.error('Failed to clear data:', error);
-        this.showToast('Failed to clear data');
-      }
+      }, {
+        message: 'Clearing data...'
+      });
     },
 
     createSnapshot: function (name = 'Manual Restore Point', refreshList = false) {
@@ -1839,17 +1925,21 @@ const ui = {
         return;
       }
 
-      try {
-        const s = app.state.students.find(x => x.id === app.state.notesId);
-        if (s) {
-          await app.updateStudent(s.id, { notes: app.dom.notesTextarea.value });
-          this.refreshUI();
+      await this.withLoader(async () => {
+        try {
+          const s = app.state.students.find(x => x.id === app.state.notesId);
+          if (s) {
+            await app.updateStudent(s.id, { notes: app.dom.notesTextarea.value });
+            this.refreshUI();
+          }
+        } catch (error) {
+          console.error('Failed to save notes:', error);
+          this.showToast('Failed to save notes');
         }
-      } catch (error) {
-        console.error('Failed to save notes:', error);
-        this.showToast('Failed to save notes');
-      }
-      if (app.dom.notesModal) app.dom.notesModal.classList.remove('active');
+        if (app.dom.notesModal) app.dom.notesModal.classList.remove('active');
+      }, {
+        message: 'Saving notes...'
+      });
     },
 
     getExportDateStamp: function () {
@@ -2362,13 +2452,17 @@ const ui = {
         return;
       }
 
-      try {
-        await app.updateExam(id, { title: name.trim() });
-        this.refreshUI();
-      } catch (error) {
-        console.error('Failed to rename exam:', error);
-        app.ui.showToast('Failed to rename exam');
-      }
+      await this.withLoader(async () => {
+        try {
+          await app.updateExam(id, { title: name.trim() });
+          this.refreshUI();
+        } catch (error) {
+          console.error('Failed to rename exam:', error);
+          app.ui.showToast('Failed to rename exam');
+        }
+      }, {
+        message: 'Saving exam...'
+      });
     },
     deleteExam: async function (id) {
       if (!this.ensureWritableAction('Exam deletion')) {
@@ -2376,17 +2470,21 @@ const ui = {
       }
 
       if (confirm("Delete exam?")) {
-        try {
-          const examName = app.state.exams.find(item => item.id === id)?.title
-            || app.state.exams.find(item => item.id === id)?.name
-            || 'Exam';
-          const deletedEntry = await app.deleteExam(id);
-          this.refreshUI();
-          this.showUndoDeleteToast(deletedEntry?.id || id, deletedEntry?.name || examName, 'exam');
-        } catch (error) {
-          console.error('Failed to delete exam:', error);
-          app.ui.showToast('Failed to delete exam');
-        }
+        await this.withLoader(async () => {
+          try {
+            const examName = app.state.exams.find(item => item.id === id)?.title
+              || app.state.exams.find(item => item.id === id)?.name
+              || 'Exam';
+            const deletedEntry = await app.deleteExam(id);
+            this.refreshUI();
+            this.showUndoDeleteToast(deletedEntry?.id || id, deletedEntry?.name || examName, 'exam');
+          } catch (error) {
+            console.error('Failed to delete exam:', error);
+            app.ui.showToast('Failed to delete exam');
+          }
+        }, {
+          message: 'Deleting exam...'
+        });
       }
     },
     renameSubject: async function (id, n) {
@@ -2394,13 +2492,17 @@ const ui = {
         return;
       }
 
-      try {
-        await app.updateSubject(id, { name: n.trim() });
-        this.refreshUI();
-      } catch (error) {
-        console.error('Failed to rename subject:', error);
-        app.ui.showToast('Failed to rename subject');
-      }
+      await this.withLoader(async () => {
+        try {
+          await app.updateSubject(id, { name: n.trim() });
+          this.refreshUI();
+        } catch (error) {
+          console.error('Failed to rename subject:', error);
+          app.ui.showToast('Failed to rename subject');
+        }
+      }, {
+        message: 'Saving subject...'
+      });
     },
     deleteSubject: async function (id) {
       if (!this.ensureWritableAction('Subject deletion')) {
@@ -2408,15 +2510,19 @@ const ui = {
       }
 
       if (confirm("Delete subject?")) {
-        try {
-          const subjectName = app.state.subjects.find(item => item.id === id)?.name || 'Subject';
-          const deletedEntry = await app.deleteSubject(id);
-          this.refreshUI();
-          this.showUndoDeleteToast(deletedEntry?.id || id, deletedEntry?.name || subjectName, 'subject');
-        } catch (error) {
-          console.error('Failed to delete subject:', error);
-          app.ui.showToast('Failed to delete subject');
-        }
+        await this.withLoader(async () => {
+          try {
+            const subjectName = app.state.subjects.find(item => item.id === id)?.name || 'Subject';
+            const deletedEntry = await app.deleteSubject(id);
+            this.refreshUI();
+            this.showUndoDeleteToast(deletedEntry?.id || id, deletedEntry?.name || subjectName, 'subject');
+          } catch (error) {
+            console.error('Failed to delete subject:', error);
+            app.ui.showToast('Failed to delete subject');
+          }
+        }, {
+          message: 'Deleting subject...'
+        });
       }
     },
 
@@ -2485,7 +2591,9 @@ const ui = {
           app.dom.form.onsubmit = async (e) => {
             e.preventDefault();
             if (!this.ensureWritableClassAction('Student creation', 'add student')) return;
-            const didAddStudent = await app.students.addStudent(app.dom.nameInput.value, app, this);
+            const didAddStudent = await this.withLoader(() => app.students.addStudent(app.dom.nameInput.value, app, this), {
+              message: 'Adding student...'
+            });
             if (didAddStudent && app.dom.nameInput) {
               app.dom.nameInput.value = '';
               app.dom.nameInput.focus();
@@ -2549,7 +2657,9 @@ const ui = {
             if (!normalizedName) return;
 
             try {
-              await app.createClass(normalizedName);
+              await this.withLoader(() => app.createClass(normalizedName), {
+                message: 'Creating class...'
+              });
               this.refreshUI();
               this.showToast('Class created');
             } catch (error) {
@@ -2666,17 +2776,20 @@ const ui = {
           if (!this.requireAccess('bulkImport')) return;
           app.dom.bulkImportModal.classList.add('active');
         };
-        if (app.dom.bulkImportConfirmBtn) app.dom.bulkImportConfirmBtn.onclick = () => {
+        if (app.dom.bulkImportConfirmBtn) app.dom.bulkImportConfirmBtn.onclick = async () => {
           if (!this.requireAccess('bulkImport')) return;
           if (!this.ensureWritableAction('Bulk add')) return;
-          if (!confirm('Import all listed students into the active class?')) return;
-          app.students.bulkImport(app.dom.bulkImportTextarea.value, app, this);
-          app.dom.bulkImportModal.classList.remove('active');
+          const importResult = await app.students.bulkImport(app.dom.bulkImportTextarea.value, app, this);
+          if (importResult !== false) {
+            app.dom.bulkImportModal.classList.remove('active');
+          }
         };
         if (app.dom.bulkImportCancelBtn) app.dom.bulkImportCancelBtn.onclick = () => app.dom.bulkImportModal.classList.remove('active');
-        if (app.dom.editSaveBtn) app.dom.editSaveBtn.onclick = () => {
+        if (app.dom.editSaveBtn) app.dom.editSaveBtn.onclick = async () => {
           if (!this.ensureWritableAction('Student updates')) return;
-          app.students.saveEdit(app, this);
+          await this.withLoader(() => app.students.saveEdit(app, this), {
+            message: 'Saving student...'
+          });
         };
         if (app.dom.editInput) {
           app.dom.editInput.oninput = (event) => {
@@ -2692,9 +2805,11 @@ const ui = {
             app.dom.editModal.classList.remove('active');
           };
         }
-        if (app.dom.deleteConfirmBtn) app.dom.deleteConfirmBtn.onclick = () => {
+        if (app.dom.deleteConfirmBtn) app.dom.deleteConfirmBtn.onclick = async () => {
           if (!this.ensureWritableAction('Student deletion')) return;
-          app.students.confirmDelete(app, this);
+          await this.withLoader(() => app.students.confirmDelete(app, this), {
+            message: 'Deleting student...'
+          });
         };
         if (app.dom.deleteCancelBtn) {
           app.dom.deleteCancelBtn.onclick = () => {
@@ -2703,10 +2818,12 @@ const ui = {
           };
         }
         if (app.dom.editInput) {
-          app.dom.editInput.onkeydown = (e) => {
+          app.dom.editInput.onkeydown = async (e) => {
             if (e.key === 'Enter') {
               e.preventDefault();
-              app.students.saveEdit(app, this);
+              await this.withLoader(() => app.students.saveEdit(app, this), {
+                message: 'Saving student...'
+              });
             }
           };
         }
@@ -2714,17 +2831,21 @@ const ui = {
         if (app.dom.notesCancelBtn) app.dom.notesCancelBtn.onclick = () => app.dom.notesModal.classList.remove('active');
         if (app.dom.bulkScoreBtn) app.dom.bulkScoreBtn.onclick = () => { app.dom.bulkScoreModal.classList.add('active'); this.renderBulkTable(); };
         if (app.dom.bulkScoreCancelBtn) app.dom.bulkScoreCancelBtn.onclick = () => app.dom.bulkScoreModal.classList.remove('active');
-        if (app.dom.bulkScoreSaveBtn) app.dom.bulkScoreSaveBtn.onclick = () => {
+        if (app.dom.bulkScoreSaveBtn) app.dom.bulkScoreSaveBtn.onclick = async () => {
           if (!this.ensureWritableAction('Bulk score save')) return;
           if (!confirm('Save all entered scores for this exam?')) return;
-          app.students.saveBulkScores(app.dom.bulkMockSelect.value, app.dom.bulkScoreBody.querySelectorAll('.bulk-score-input'), app, this);
+          await this.withLoader(() => app.students.saveBulkScores(app.dom.bulkMockSelect.value, app.dom.bulkScoreBody.querySelectorAll('.bulk-score-input'), app, this), {
+            message: 'Saving class scores...'
+          });
         };
         if (app.dom.addMockForm) app.dom.addMockForm.onsubmit = async (e) => {
           e.preventDefault();
           if (!this.ensureWritableClassAction('Exam creation', 'add exam')) return;
           if (app.dom.mockNameInput.value.trim()) {
             try {
-              await app.addExam({ title: app.dom.mockNameInput.value.trim(), date: new Date().toISOString() });
+              await this.withLoader(() => app.addExam({ title: app.dom.mockNameInput.value.trim(), date: new Date().toISOString() }), {
+                message: 'Adding exam...'
+              });
               this.refreshUI();
               app.ui.showToast('Exam added');
             } catch (error) {
@@ -2739,7 +2860,9 @@ const ui = {
           if (!this.ensureWritableClassAction('Subject creation', 'add subject')) return;
           if (app.dom.subjectNameInput.value.trim()) {
             try {
-              await app.addSubject({ name: app.dom.subjectNameInput.value.trim() });
+              await this.withLoader(() => app.addSubject({ name: app.dom.subjectNameInput.value.trim() }), {
+                message: 'Adding subject...'
+              });
               this.refreshUI();
             } catch (error) {
               console.error('Failed to add subject:', error);
@@ -2748,7 +2871,7 @@ const ui = {
           }
           app.dom.subjectNameInput.value = '';
         };
-        if (app.dom.saveScoresBtn) app.dom.saveScoresBtn.onclick = () => {
+        if (app.dom.saveScoresBtn) app.dom.saveScoresBtn.onclick = async () => {
           if (!this.ensureWritableAction('Score save')) return;
           const sid = app.dom.scoreStudentSelect.value, mid = app.dom.scoreMockSelect.value;
           const scores = {};
@@ -2758,7 +2881,9 @@ const ui = {
               scores[subjectName] = app.normalizeScore(f.value);
             }
           });
-          app.students.saveScores(sid, mid, scores, app, this);
+          await this.withLoader(() => app.students.saveScores(sid, mid, scores, app, this), {
+            message: 'Saving scores...'
+          });
         };
         if (app.dom.scoreStudentSelect) app.dom.scoreStudentSelect.onchange = () => this.loadScoreFields();
         if (app.dom.scoreMockSelect) app.dom.scoreMockSelect.onchange = () => { this.loadScoreFields(); this.refreshUI(); };
@@ -2811,17 +2936,21 @@ const ui = {
             try {
               if (action === 'restore') {
                 if (!this.ensureWritableAction('Trash restore')) return;
-                if (itemType === 'class') {
-                  await app.restoreClass(itemId);
-                } else if (itemType === 'exam') {
-                  await app.restoreExam(itemId);
-                } else if (itemType === 'subject') {
-                  await app.restoreSubject(itemId);
-                } else {
-                  await app.restoreStudent(itemId);
-                }
-                this.refreshUI();
-                this.showToast(`${typeLabel.charAt(0).toUpperCase() + typeLabel.slice(1)} restored`);
+                await this.withLoader(async () => {
+                  if (itemType === 'class') {
+                    await app.restoreClass(itemId);
+                  } else if (itemType === 'exam') {
+                    await app.restoreExam(itemId);
+                  } else if (itemType === 'subject') {
+                    await app.restoreSubject(itemId);
+                  } else {
+                    await app.restoreStudent(itemId);
+                  }
+                  this.refreshUI();
+                  this.showToast(`${typeLabel.charAt(0).toUpperCase() + typeLabel.slice(1)} restored`);
+                }, {
+                  message: `Restoring ${typeLabel}...`
+                });
                 return;
               }
 
@@ -2831,17 +2960,21 @@ const ui = {
                   return;
                 }
 
-                if (itemType === 'class') {
-                  await app.permanentlyDeleteClass(itemId);
-                } else if (itemType === 'exam') {
-                  await app.permanentlyDeleteExam(itemId);
-                } else if (itemType === 'subject') {
-                  await app.permanentlyDeleteSubject(itemId);
-                } else {
-                  await app.permanentlyDeleteStudent(itemId);
-                }
-                this.refreshUI();
-                this.showToast(`${typeLabel.charAt(0).toUpperCase() + typeLabel.slice(1)} permanently deleted`);
+                await this.withLoader(async () => {
+                  if (itemType === 'class') {
+                    await app.permanentlyDeleteClass(itemId);
+                  } else if (itemType === 'exam') {
+                    await app.permanentlyDeleteExam(itemId);
+                  } else if (itemType === 'subject') {
+                    await app.permanentlyDeleteSubject(itemId);
+                  } else {
+                    await app.permanentlyDeleteStudent(itemId);
+                  }
+                  this.refreshUI();
+                  this.showToast(`${typeLabel.charAt(0).toUpperCase() + typeLabel.slice(1)} permanently deleted`);
+                }, {
+                  message: `Deleting ${typeLabel}...`
+                });
               }
             } catch (error) {
               console.error('Trash action failed:', error);
@@ -2855,17 +2988,21 @@ const ui = {
           app.dom.trashRestoreAllBtn.addEventListener('click', async () => {
             if (!this.ensureWritableAction('Trash restore')) return;
             if (!confirm('Restore all items from Trash?')) return;
-            try {
-              app.dom.trashRestoreAllBtn.disabled = true;
-              const restoredCount = await app.restoreAllStudentsFromTrash();
-              this.refreshUI();
-              if (restoredCount > 0) {
-                this.showToast(`${restoredCount} item${restoredCount === 1 ? '' : 's'} restored`);
+            await this.withLoader(async () => {
+              try {
+                app.dom.trashRestoreAllBtn.disabled = true;
+                const restoredCount = await app.restoreAllStudentsFromTrash();
+                this.refreshUI();
+                if (restoredCount > 0) {
+                  this.showToast(`${restoredCount} item${restoredCount === 1 ? '' : 's'} restored`);
+                }
+              } catch (error) {
+                console.error('Failed to restore all trash items:', error);
+                this.showToast('Failed to restore trash items');
               }
-            } catch (error) {
-              console.error('Failed to restore all trash items:', error);
-              this.showToast('Failed to restore trash items');
-            }
+            }, {
+              message: 'Restoring items...'
+            });
           });
         }
         if (app.dom.trashEmptyBtn) {
@@ -2875,17 +3012,21 @@ const ui = {
               return;
             }
 
-            try {
-              app.dom.trashEmptyBtn.disabled = true;
-              const deletedCount = await app.emptyStudentTrash();
-              this.refreshUI();
-              if (deletedCount > 0) {
-                this.showToast(`${deletedCount} item${deletedCount === 1 ? '' : 's'} permanently deleted`);
+            await this.withLoader(async () => {
+              try {
+                app.dom.trashEmptyBtn.disabled = true;
+                const deletedCount = await app.emptyStudentTrash();
+                this.refreshUI();
+                if (deletedCount > 0) {
+                  this.showToast(`${deletedCount} item${deletedCount === 1 ? '' : 's'} permanently deleted`);
+                }
+              } catch (error) {
+                console.error('Failed to empty trash:', error);
+                this.showToast('Failed to empty trash');
               }
-            } catch (error) {
-              console.error('Failed to empty trash:', error);
-              this.showToast('Failed to empty trash');
-            }
+            }, {
+              message: 'Deleting items...'
+            });
           });
         }
         if (app.dom.reportCloseBtn) app.dom.reportCloseBtn.onclick = () => app.dom.reportModal.classList.remove('active');

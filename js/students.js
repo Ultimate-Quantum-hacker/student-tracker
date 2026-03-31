@@ -66,7 +66,7 @@ const students = {
       uiRef?.showToast?.('Student names can only contain letters and spaces');
       return false;
     }
-    
+
     try {
       await appRef.addStudent({ name: n, class: '', notes: '', scores: {} });
       uiRef?.refreshUI?.();
@@ -103,7 +103,7 @@ const students = {
     if (!uid) return;
     const student = appRef.state.students.find(x => x.id === uid);
     const studentName = student?.name || 'Student';
-    
+
     try {
       console.log('Deleting student:', uid);
       console.log('Class Owner:', appRef.getCurrentClassOwnerId?.() || 'unknown');
@@ -182,7 +182,7 @@ const students = {
 
     const uid = appRef.state.editingId;
     if (!uid) return;
-    
+
     const newName = normalizeStudentName(appRef.dom.editInput.value);
     if (!newName) {
       uiRef?.showToast?.('Student name cannot be empty');
@@ -195,7 +195,7 @@ const students = {
     if (appRef.dom.editInput) {
       appRef.dom.editInput.value = newName;
     }
-    
+
     try {
       console.log('Editing student:', uid);
       console.log('User:', auth?.currentUser?.uid || 'unknown');
@@ -211,12 +211,12 @@ const students = {
   },
 
   bulkImport: function (csv, app, ui) {
-    if (!ensureWritable(app, ui)) return;
+    if (!ensureWritable(app, ui)) return false;
 
     const lines = csv.trim().split('\n');
     const newStudents = [];
     let skippedInvalidRows = 0;
-    
+
     lines.forEach(line => {
       const parts = line.split(',').map(p => p.trim());
       const normalizedName = normalizeStudentName(parts[0]);
@@ -230,20 +230,26 @@ const students = {
         skippedInvalidRows += 1;
       }
     });
-    
+
     if (newStudents.length === 0) {
       ui.showToast(skippedInvalidRows ? 'Student names can only contain letters and spaces' : 'No valid students found');
-      return;
+      return false;
     }
     if (skippedInvalidRows) {
       ui.showToast(`${skippedInvalidRows} invalid row${skippedInvalidRows === 1 ? '' : 's'} skipped`);
     }
-    
+
     if (!window.confirm(`Import ${newStudents.length} students into the active class?`)) {
-      return;
+      return false;
     }
 
-    this.importStudents(newStudents, app, ui);
+    if (typeof ui?.withLoader === 'function') {
+      return ui.withLoader(() => this.importStudents(newStudents, app, ui), {
+        message: 'Importing students...'
+      });
+    }
+
+    return this.importStudents(newStudents, app, ui);
   },
 
   importStudents: async function (studentsData, app, ui) {
@@ -316,7 +322,7 @@ const students = {
         const studentId = input.dataset.sid;
         const subject = input.dataset.sub;
         const score = app.analytics.normalizeScore(input.value);
-        
+
         if (studentId && subject) {
           const stateStudent = app.state.students.find(s => s.id === studentId);
           if (!stateStudent) return;
