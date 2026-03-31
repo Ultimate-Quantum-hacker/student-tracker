@@ -2995,7 +2995,6 @@ export const fetchAllData = async () => {
   }
 
   const offline = isOfflineError(lastErrorType);
-  const cacheScopeKey = getScopeKey();
   const cachedClasses = readClassCatalogCache(cacheScopeKey);
   const cachedTrashClasses = readClassTrashCache(cacheScopeKey);
   const allowEmptyClassCatalog = inferAllowEmptyClassCatalog(cachedClasses, cachedTrashClasses);
