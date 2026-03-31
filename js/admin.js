@@ -33,18 +33,25 @@ const UPDATABLE_ROLES = [ROLE_TEACHER, ROLE_ADMIN];
 const THEME_STORAGE_KEY = 'theme';
 const ADMIN_STUDENTS_PAGE_SIZE = 50;
 const ADMIN_STUDENTS_TABLE_COLUMN_COUNT = 4;
+const ADMIN_RUNTIME_CACHE_TTL_MS = 30 * 1000;
 
 const state = {
   authUser: null,
   currentRole: ROLE_TEACHER,
   users: [],
+  usersLoaded: false,
   activityLogs: [],
+  activityLogsLoaded: false,
   globalSearchIndex: [],
+  globalSearchIndexLoaded: false,
   globalSearchResults: [],
   adminStudentsRegistry: [],
   adminStudentsRegistryLoaded: false,
   adminStudentsRegistryPage: 1,
   toastTimer: null,
+  userSearchDebounceTimer: null,
+  globalSearchDebounceTimer: null,
+  adminStudentsSearchDebounceTimer: null,
   pendingConfirmResolver: null,
   pendingConfirmAction: null,
   lastUpdatedAt: null,
@@ -111,6 +118,74 @@ const dom = {
   activitySection: document.getElementById('admin-section-logs'),
   sidebarButtons: Array.from(document.querySelectorAll('.admin-sidebar-btn')),
   scrollSections: Array.from(document.querySelectorAll('.admin-scroll-section'))
+};
+
+const createAdminRuntimeCacheEntry = () => {
+  return {
+    key: '',
+    value: null,
+    loadedAt: 0
+  };
+};
+
+const adminRuntimeCache = {
+  users: createAdminRuntimeCacheEntry(),
+  globalStats: createAdminRuntimeCacheEntry(),
+  globalSearchIndex: createAdminRuntimeCacheEntry(),
+  activityLogs: createAdminRuntimeCacheEntry()
+};
+
+const cloneAdminRuntimeCacheValue = (value) => {
+  if (Array.isArray(value)) {
+    return value.slice();
+  }
+  if (value && typeof value === 'object') {
+    return { ...value };
+  }
+  return value ?? null;
+};
+
+const readAdminRuntimeCache = (cacheName, key = '') => {
+  const entry = adminRuntimeCache[cacheName];
+  const normalizedKey = normalizeText(key);
+  if (!entry) {
+    return null;
+  }
+
+  const isFresh = (Date.now() - Number(entry.loadedAt || 0)) < ADMIN_RUNTIME_CACHE_TTL_MS;
+  if (!isFresh) {
+    return null;
+  }
+
+  if (normalizedKey && entry.key !== normalizedKey) {
+    return null;
+  }
+
+  return cloneAdminRuntimeCacheValue(entry.value);
+};
+
+const writeAdminRuntimeCache = (cacheName, value, key = '') => {
+  if (!(cacheName in adminRuntimeCache)) {
+    return value;
+  }
+
+  adminRuntimeCache[cacheName] = {
+    key: normalizeText(key),
+    value: cloneAdminRuntimeCacheValue(value),
+    loadedAt: Date.now()
+  };
+
+  return value;
+};
+
+const invalidateAdminRuntimeCache = (...cacheNames) => {
+  const names = cacheNames.length ? cacheNames : Object.keys(adminRuntimeCache);
+  names.forEach((cacheName) => {
+    if (!(cacheName in adminRuntimeCache)) {
+      return;
+    }
+    adminRuntimeCache[cacheName] = createAdminRuntimeCacheEntry();
+  });
 };
 
 const redirectToDashboard = () => {
@@ -994,14 +1069,29 @@ const fetchUsers = async () => {
   setPanelStatus('Loading users...');
 
   try {
+    const cachedRecords = readAdminRuntimeCache('users');
+    if (Array.isArray(cachedRecords)) {
+      state.users = cachedRecords;
+      state.usersLoaded = true;
+      renderUsersTable();
+      populateActivityUserFilter();
+      setPanelStatus(`Loaded ${getVisibleUsers().length} user${getVisibleUsers().length === 1 ? '' : 's'}.`, 'success');
+      markUpdatedNow();
+      return state.users;
+    }
+
     const records = await fetchAdminUsers();
     state.users = Array.isArray(records) ? records : [];
+    state.usersLoaded = true;
+    writeAdminRuntimeCache('users', state.users);
     renderUsersTable();
     populateActivityUserFilter();
     setPanelStatus(`Loaded ${getVisibleUsers().length} user${getVisibleUsers().length === 1 ? '' : 's'}.`, 'success');
     markUpdatedNow();
   } catch (error) {
     console.error('Failed to fetch users:', error);
+    state.usersLoaded = false;
+    invalidateAdminRuntimeCache('users');
     if (isPermissionDeniedError(error)) {
       setPanelStatus('Permission denied while loading users.', 'error');
       showToast('Permission denied', 'error');
@@ -1018,12 +1108,24 @@ const fetchUsers = async () => {
 const loadGlobalStats = async () => {
   setSectionLoadingState(dom.overviewSection, true);
   try {
+    const cachedStats = readAdminRuntimeCache('globalStats');
+    if (cachedStats && typeof cachedStats === 'object') {
+      state.globalStats = {
+        totalUsers: normalizeCount(cachedStats.totalUsers),
+        totalStudents: normalizeCount(cachedStats.totalStudents),
+        totalExams: normalizeCount(cachedStats.totalExams)
+      };
+      renderStats();
+      return state.globalStats;
+    }
+
     const stats = await fetchAdminGlobalStats();
     state.globalStats = {
       totalUsers: normalizeCount(stats?.totalUsers),
       totalStudents: normalizeCount(stats?.totalStudents),
       totalExams: normalizeCount(stats?.totalExams)
     };
+    writeAdminRuntimeCache('globalStats', state.globalStats);
   } catch (error) {
     console.error('Failed to fetch admin stats:', error);
     state.globalStats = {
@@ -1031,6 +1133,7 @@ const loadGlobalStats = async () => {
       totalStudents: 0,
       totalExams: 0
     };
+    invalidateAdminRuntimeCache('globalStats');
     showToast('Failed to load global stats', 'error');
   } finally {
     renderStats();
@@ -1055,6 +1158,7 @@ const shouldIncludeGlobalSearchOwner = (userId = '') => {
 const buildGlobalSearchIndex = async () => {
   if (!isFirebaseConfigured) {
     state.globalSearchIndex = [];
+    state.globalSearchIndexLoaded = false;
     renderGlobalSearchResults([]);
     setGlobalSearchStatus('Global search unavailable: Firebase is not configured.', 'error');
     setSectionLoadingState(dom.searchSection, false);
@@ -1066,12 +1170,33 @@ const buildGlobalSearchIndex = async () => {
   setGlobalSearchStatus('Building global search index...');
 
   try {
+    if (!state.usersLoaded) {
+      await fetchUsers();
+    }
+
+    const cachedRows = readAdminRuntimeCache('globalSearchIndex');
+    if (Array.isArray(cachedRows)) {
+      state.globalSearchIndex = cachedRows;
+      state.globalSearchIndexLoaded = true;
+      state.globalStats = {
+        ...state.globalStats,
+        totalStudents: cachedRows.length
+      };
+      renderStats();
+      setGlobalSearchStatus(`Indexed ${cachedRows.length} student${cachedRows.length === 1 ? '' : 's'} for global search.`, 'success');
+      renderGlobalSearchResults([]);
+      markUpdatedNow();
+      return state.globalSearchIndex;
+    }
+
     let rows = await fetchGlobalStudentSearchIndex();
     rows = Array.isArray(rows)
       ? rows.filter((entry) => shouldIncludeGlobalSearchOwner(entry?.userId))
       : [];
     rows.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
     state.globalSearchIndex = rows;
+    state.globalSearchIndexLoaded = true;
+    writeAdminRuntimeCache('globalSearchIndex', rows);
     state.globalStats = {
       ...state.globalStats,
       totalStudents: rows.length
@@ -1083,6 +1208,8 @@ const buildGlobalSearchIndex = async () => {
   } catch (error) {
     console.error('Failed to build global search index:', error);
     state.globalSearchIndex = [];
+    state.globalSearchIndexLoaded = false;
+    invalidateAdminRuntimeCache('globalSearchIndex');
     renderGlobalSearchResults([]);
     if (isPermissionDeniedError(error)) {
       setGlobalSearchStatus('Search unavailable due to permissions.', 'error');
@@ -1095,6 +1222,28 @@ const buildGlobalSearchIndex = async () => {
     setElementVisibility(dom.globalSearchLoading, false);
     setSectionLoadingState(dom.searchSection, false);
   }
+};
+
+const ensureGlobalSearchIndexLoaded = async ({ force = false } = {}) => {
+  if (!force && state.globalSearchIndexLoaded) {
+    return state.globalSearchIndex;
+  }
+  return buildGlobalSearchIndex();
+};
+
+const scheduleGlobalSearch = () => {
+  const term = normalizeText(dom.globalSearchInput?.value || '');
+  if (!term) {
+    state.globalSearchResults = [];
+    renderGlobalSearchResults([]);
+    setGlobalSearchStatus(state.globalSearchIndexLoaded ? 'Search by student name to see results.' : 'Search by student name to load results.');
+    return;
+  }
+
+  debounceAdminTask('globalSearchDebounceTimer', async () => {
+    await ensureGlobalSearchIndexLoaded();
+    runGlobalSearch();
+  });
 };
 
 const runGlobalSearch = () => {
@@ -1117,17 +1266,26 @@ const loadActivityLogs = async () => {
   const selectedClassKey = normalizeText(dom.activityClassFilter?.value || '');
   const selectedAction = normalizeText(dom.activityActionFilter?.value || '').toLowerCase();
   const selectedSort = normalizeText(dom.activitySortFilter?.value || 'desc').toLowerCase() === 'asc' ? 'asc' : 'desc';
+  const activityLogsCacheKey = buildActivityLogsCacheKey({ userId: selectedUserId, sort: selectedSort });
 
   setElementVisibility(dom.activityLoading, true);
   setSectionLoadingState(dom.activitySection, true);
   setActivityStatus('Loading activity logs...');
 
   try {
-    let entries = await fetchActivityLogs({
-      userId: selectedUserId,
-      sort: selectedSort,
-      maxEntries: 100
-    });
+    if (!state.usersLoaded) {
+      await fetchUsers();
+    }
+
+    let entries = readAdminRuntimeCache('activityLogs', activityLogsCacheKey);
+    if (!Array.isArray(entries)) {
+      entries = await fetchActivityLogs({
+        userId: selectedUserId,
+        sort: selectedSort,
+        maxEntries: 100
+      });
+      writeAdminRuntimeCache('activityLogs', Array.isArray(entries) ? entries : [], activityLogsCacheKey);
+    }
 
     if (selectedAction) {
       entries = entries.filter((entry) => String(entry.action || '').trim().toLowerCase() === selectedAction);
@@ -1140,6 +1298,7 @@ const loadActivityLogs = async () => {
     }
 
     state.activityLogs = entries;
+    state.activityLogsLoaded = true;
     renderActivityLogTable(entries);
     const visibleCount = getVisibleActivityEntries(entries).length;
     setActivityStatus(`Loaded ${visibleCount} log entr${visibleCount === 1 ? 'y' : 'ies'}.`, 'success');
@@ -1147,6 +1306,8 @@ const loadActivityLogs = async () => {
   } catch (error) {
     console.error('Failed to load activity logs:', error);
     state.activityLogs = [];
+    state.activityLogsLoaded = false;
+    invalidateAdminRuntimeCache('activityLogs');
     renderActivityLogTable([]);
     if (isPermissionDeniedError(error)) {
       setActivityStatus('Access denied. You do not have permission to read activity logs.', 'error');
@@ -1180,6 +1341,8 @@ const handleClearActivityLogs = async () => {
   try {
     const clearedCount = await clearActivityLogs();
     state.activityLogs = [];
+    state.activityLogsLoaded = false;
+    invalidateAdminRuntimeCache('activityLogs');
     renderActivityLogTable([]);
     populateActivityClassFilter([]);
     setActivityStatus(
@@ -1302,19 +1465,54 @@ const ensurePanelAccess = async () => {
   return true;
 };
 
+const debounceAdminTask = (timerKey, callback, waitMs = 300) => {
+  if (typeof state[timerKey] === 'number') {
+    window.clearTimeout(state[timerKey]);
+  }
+
+  state[timerKey] = window.setTimeout(() => {
+    state[timerKey] = null;
+    Promise.resolve(callback()).catch((error) => {
+      console.error('Deferred admin task failed:', error);
+    });
+  }, waitMs);
+};
+
+const buildActivityLogsCacheKey = ({ userId = '', sort = 'desc' } = {}) => {
+  const normalizedUserId = normalizeText(userId);
+  const normalizedSort = normalizeText(sort).toLowerCase() === 'asc' ? 'asc' : 'desc';
+  return `${normalizedUserId}::${normalizedSort}`;
+};
+
 const bindEvents = () => {
-  dom.searchInput?.addEventListener('input', () => renderUsersTable());
+  dom.searchInput?.addEventListener('input', () => {
+    debounceAdminTask('userSearchDebounceTimer', () => renderUsersTable());
+  });
   dom.themeBtn?.addEventListener('click', () => togglePanelTheme());
 
   dom.refreshBtn?.addEventListener('click', async () => {
-    await fetchUsers();
-    await loadGlobalStats();
-    await buildGlobalSearchIndex();
-    await loadActivityLogs();
+    invalidateAdminRuntimeCache('users', 'globalStats');
+    const refreshTasks = [
+      fetchUsers(),
+      loadGlobalStats()
+    ];
+
+    if (state.globalSearchIndexLoaded) {
+      invalidateAdminRuntimeCache('globalSearchIndex');
+      refreshTasks.push(buildGlobalSearchIndex());
+    }
+
+    if (state.activityLogsLoaded) {
+      invalidateAdminRuntimeCache('activityLogs');
+      refreshTasks.push(loadActivityLogs());
+    }
+
+    await Promise.allSettled(refreshTasks);
     showToast('Panel refreshed', 'success');
   });
 
   dom.refreshActivityBtn?.addEventListener('click', async () => {
+    invalidateAdminRuntimeCache('activityLogs');
     await loadActivityLogs();
   });
 
@@ -1338,14 +1536,33 @@ const bindEvents = () => {
     await loadActivityLogs();
   });
 
-  dom.globalSearchInput?.addEventListener('input', () => runGlobalSearch());
+  dom.globalSearchInput?.addEventListener('input', () => {
+    scheduleGlobalSearch();
+  });
 
   dom.globalSearchClearBtn?.addEventListener('click', () => {
     if (dom.globalSearchInput) {
       dom.globalSearchInput.value = '';
       dom.globalSearchInput.focus();
     }
-    runGlobalSearch();
+    scheduleGlobalSearch();
+  });
+
+  dom.sidebarButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      const target = normalizeText(button.dataset.target);
+      if (target === 'search' && !state.globalSearchIndexLoaded) {
+        buildGlobalSearchIndex().catch((error) => {
+          console.error('Failed to lazy load global search index:', error);
+        });
+        return;
+      }
+      if (target === 'logs' && !state.activityLogsLoaded) {
+        loadActivityLogs().catch((error) => {
+          console.error('Failed to lazy load activity logs:', error);
+        });
+      }
+    });
   });
 
   dom.dashboardBtn?.addEventListener('click', () => {
@@ -1414,10 +1631,21 @@ const init = async () => {
     const canAccessPanel = await ensurePanelAccess();
     if (!canAccessPanel) return;
 
-    await fetchUsers();
-    await loadGlobalStats();
-    await buildGlobalSearchIndex();
-    await loadActivityLogs();
+    await Promise.all([
+      fetchUsers(),
+      loadGlobalStats()
+    ]);
+
+    if (!state.globalSearchIndexLoaded) {
+      renderGlobalSearchResults([]);
+      setGlobalSearchStatus('Search by student name to load results.');
+    }
+
+    if (!state.activityLogsLoaded) {
+      renderActivityLogTable([]);
+      populateActivityClassFilter([]);
+      setActivityStatus('Open this section or use refresh to load activity logs.');
+    }
 
     showToast('Admin panel ready', 'success');
   } catch (error) {
@@ -2276,10 +2504,15 @@ const handleAdminRegistryStudentDelete = async ({ ownerId = '', studentId = '', 
       studentName: normalizedStudentName
     });
     const removedCount = removeAdminRegistryStudentFromState(normalizedOwnerId, normalizedStudentId);
+    const shouldRefreshSearchIndex = state.globalSearchIndexLoaded;
+    const shouldRefreshActivityLogs = state.activityLogsLoaded;
+    invalidateAdminRuntimeCache('globalStats', 'globalSearchIndex', 'activityLogs');
+    state.globalSearchIndexLoaded = false;
+    state.activityLogsLoaded = false;
     await Promise.allSettled([
       loadGlobalStats(),
-      buildGlobalSearchIndex(),
-      loadActivityLogs()
+      shouldRefreshSearchIndex ? buildGlobalSearchIndex() : Promise.resolve(null),
+      shouldRefreshActivityLogs ? loadActivityLogs() : Promise.resolve(null)
     ]);
 
     if (Number(result?.deletedCount || 0) > 0) {
@@ -2370,7 +2603,9 @@ const initAdminStudentsRegistryView = () => {
     }
   };
 
-  dom.adminStudentsSearchInput?.addEventListener('input', handleAdminStudentsCriteriaChange);
+  dom.adminStudentsSearchInput?.addEventListener('input', () => {
+    debounceAdminTask('adminStudentsSearchDebounceTimer', handleAdminStudentsCriteriaChange);
+  });
   dom.adminStudentsClassFilter?.addEventListener('change', handleAdminStudentsCriteriaChange);
   dom.adminStudentsTeacherFilter?.addEventListener('change', handleAdminStudentsCriteriaChange);
 

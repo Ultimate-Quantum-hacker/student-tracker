@@ -733,6 +733,10 @@ window.TrackerApp = window.TrackerApp || {};
   app.load = async function () {
     const loadStartedAt = Date.now();
     let firebaseDataLoaded = false;
+    const syncDashboardStudentCountFromState = () => {
+      app.state.dashboardStudentCount = Array.isArray(app.state.students) ? app.state.students.length : 0;
+      return app.state.dashboardStudentCount;
+    };
 
     const scheduleOfflineGraceCheck = () => {
       const elapsed = Date.now() - loadStartedAt;
@@ -818,6 +822,7 @@ window.TrackerApp = window.TrackerApp || {};
       app.state.classTrash = sortTrashEntriesNewestFirst(Array.isArray(remoteResult?.trashClasses) ? remoteResult.trashClasses : []);
       app.state.subjectTrash = sortTrashEntriesNewestFirst(Array.isArray(remoteResult?.trashSubjects) ? remoteResult.trashSubjects : []);
       app.state.examTrash = sortTrashEntriesNewestFirst(Array.isArray(remoteResult?.trashExams) ? remoteResult.trashExams : []);
+      syncDashboardStudentCountFromState();
       app.writeCachedData(remoteData, app.state.currentClassId);
 
       if (remoteResult?.source === 'firebase') {
@@ -864,6 +869,7 @@ window.TrackerApp = window.TrackerApp || {};
         app.state.classTrash = sortTrashEntriesNewestFirst([]);
         app.state.subjectTrash = sortTrashEntriesNewestFirst([]);
         app.state.examTrash = sortTrashEntriesNewestFirst([]);
+        syncDashboardStudentCountFromState();
       } else {
         const fallback = createDefaultRawData();
         app.applyRawData(fallback);
@@ -871,10 +877,10 @@ window.TrackerApp = window.TrackerApp || {};
         app.state.classTrash = sortTrashEntriesNewestFirst([]);
         app.state.subjectTrash = sortTrashEntriesNewestFirst([]);
         app.state.examTrash = sortTrashEntriesNewestFirst([]);
+        syncDashboardStudentCountFromState();
         app.writeCachedData(fallback);
       }
     } finally {
-      await app.refreshDashboardStudentCount();
       app.state.isLoading = false;
     }
   };

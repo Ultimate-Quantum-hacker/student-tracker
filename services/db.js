@@ -60,7 +60,15 @@ let globalClassCatalogCache = {
   loadedAt: 0
 };
 const GLOBAL_CLASS_CACHE_TTL_MS = 60 * 1000;
+const FETCH_RESULT_CACHE_TTL_MS = 30 * 1000;
 const ALLOW_EMPTY_CLASS_CATALOG_FIELD = 'allowEmptyClassCatalog';
+let recentFetchAllDataCache = {
+  scopeKey: '',
+  classId: '',
+  ownerId: '',
+  payload: null,
+  loadedAt: 0
+};
 
 const createDefaultRawData = () => ({
   students: [],
@@ -76,6 +84,45 @@ let writeChain = Promise.resolve();
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const asArray = (value) => Array.isArray(value) ? value : [];
+const invalidateRecentFetchAllDataCache = () => {
+  recentFetchAllDataCache = {
+    scopeKey: '',
+    classId: '',
+    ownerId: '',
+    payload: null,
+    loadedAt: 0
+  };
+};
+const readRecentFetchAllDataCache = ({ scopeKey = '', classId = '', ownerId = '' } = {}) => {
+  const normalizedScopeKey = String(scopeKey || '').trim();
+  const normalizedClassId = String(classId || '').trim();
+  const normalizedOwnerId = String(ownerId || '').trim();
+  const isFresh = (Date.now() - Number(recentFetchAllDataCache.loadedAt || 0)) < FETCH_RESULT_CACHE_TTL_MS;
+  if (!normalizedScopeKey || !isFresh || recentFetchAllDataCache.scopeKey !== normalizedScopeKey || !recentFetchAllDataCache.payload) {
+    return null;
+  }
+  if (normalizedClassId && recentFetchAllDataCache.classId !== normalizedClassId) {
+    return null;
+  }
+  if (normalizedOwnerId && recentFetchAllDataCache.ownerId !== normalizedOwnerId) {
+    return null;
+  }
+  return clone(recentFetchAllDataCache.payload);
+};
+const writeRecentFetchAllDataCache = ({ scopeKey = '', classId = '', ownerId = '', payload = null } = {}) => {
+  const normalizedScopeKey = String(scopeKey || '').trim();
+  if (!normalizedScopeKey || !payload) {
+    return payload;
+  }
+  recentFetchAllDataCache = {
+    scopeKey: normalizedScopeKey,
+    classId: String(classId || '').trim(),
+    ownerId: String(ownerId || '').trim(),
+    payload: clone(payload),
+    loadedAt: Date.now()
+  };
+  return payload;
+};
 const normalizeRole = (value) => {
   const normalized = String(value || '').trim().toLowerCase();
   if (normalized === 'admin') return 'admin';
@@ -1548,6 +1595,7 @@ const getClassCatalogCacheKeyForUser = (userId) => `${CACHE_KEY_PREFIX}:classes:
 
 const writeClassCatalogCache = (userId, classes = [], trashClasses = []) => {
   if (!userId || typeof localStorage === 'undefined') return;
+  invalidateRecentFetchAllDataCache();
   const payload = {
     classes: sortClasses(classes)
       .map(entry => toClassModel(entry.id, entry))
@@ -2708,6 +2756,24 @@ export const writeCacheCopy = (rawData, classId = '') => {
   const scopedClassId = normalizeClassId(classId) || getCurrentClassContext() || normalizeClassId(persistedSelection.classId || '');
   const cacheEnvelope = withTimestamp(rawData);
   localStorage.setItem(getCacheKeyForUser(userId, scopedClassId), JSON.stringify(cacheEnvelope));
+  const currentScopeKey = getScopeKey();
+  if (
+    recentFetchAllDataCache.payload
+    && recentFetchAllDataCache.scopeKey === currentScopeKey
+    && recentFetchAllDataCache.classId === scopedClassId
+  ) {
+    recentFetchAllDataCache = {
+      ...recentFetchAllDataCache,
+      ownerId: normalizeUserId(currentClassOwnerId || recentFetchAllDataCache.ownerId || ''),
+      payload: {
+        ...recentFetchAllDataCache.payload,
+        data: normalizeRawData(rawData)
+      },
+      loadedAt: Date.now()
+    };
+  } else {
+    invalidateRecentFetchAllDataCache();
+  }
   return {
     ...cacheEnvelope,
     classId: scopedClassId
@@ -2784,16 +2850,29 @@ export const fetchAllData = async () => {
     };
   }
 
+  const cacheScopeKey = getScopeKey();
+  const persistedSelection = readPersistedClassSelection(authUserId || userId);
+  const requestedClassId = normalizeClassId(currentClassId || persistedSelection.classId || '');
+  const requestedOwnerId = normalizeUserId(currentClassOwnerId || persistedSelection.ownerId || '');
+  const recentFetch = readRecentFetchAllDataCache({
+    scopeKey: cacheScopeKey,
+    classId: requestedClassId,
+    ownerId: requestedOwnerId
+  });
+  if (recentFetch) {
+    console.log('Using in-memory data cache for scope:', cacheScopeKey);
+    return recentFetch;
+  }
+
   if (!isFirebaseConfigured || !db) {
     console.warn('Firebase unavailable. Falling back to cache/default data.');
-    const cacheScopeKey = getScopeKey();
     const cachedClasses = readClassCatalogCache(cacheScopeKey);
     const cachedTrashClasses = readClassTrashCache(cacheScopeKey);
     const allowEmptyClassCatalog = inferAllowEmptyClassCatalog(cachedClasses, cachedTrashClasses);
     const { classId, className } = resolveActiveClassModel(authUserId || userId, cachedClasses);
     const cached = readCachedData(classId);
     if (cached?.data) {
-      return {
+      const result = {
         data: cached.data,
         trashStudents: [],
         trashSubjects: [],
@@ -2808,11 +2887,12 @@ export const fetchAllData = async () => {
         errorType: 'config',
         allowEmptyClassCatalog
       };
+      return writeRecentFetchAllDataCache({ scopeKey: cacheScopeKey, classId, ownerId: requestedOwnerId, payload: result });
     }
 
     const fallback = createDefaultRawData();
     writeCacheCopy(fallback, classId);
-    return {
+    const result = {
       data: fallback,
       trashStudents: [],
       trashSubjects: [],
@@ -2827,6 +2907,7 @@ export const fetchAllData = async () => {
       errorType: 'config',
       allowEmptyClassCatalog
     };
+    return writeRecentFetchAllDataCache({ scopeKey: cacheScopeKey, classId, ownerId: requestedOwnerId, payload: result });
   }
 
   let lastError = null;
@@ -2843,7 +2924,7 @@ export const fetchAllData = async () => {
       const cacheScopeKey = getScopeKey();
 
       if (!scopedClassId) {
-        return {
+        const result = {
           data: createDefaultRawData(),
           trashStudents: [],
           trashSubjects: [],
@@ -2858,6 +2939,7 @@ export const fetchAllData = async () => {
           errorType: null,
           allowEmptyClassCatalog: Boolean(classContext?.allowEmptyClassCatalog)
         };
+        return writeRecentFetchAllDataCache({ scopeKey: cacheScopeKey, classId: '', ownerId: '', payload: result });
       }
 
       if (!scopedOwnerId) {
@@ -2877,7 +2959,7 @@ export const fetchAllData = async () => {
       const nextData = modularResult?.data || createDefaultRawData();
       writeCacheCopy(nextData, scopedClassId);
       console.log('Synced from Firebase (modular)');
-      return {
+      const result = {
         data: nextData,
         trashStudents: Array.isArray(modularResult?.trashStudents) ? modularResult.trashStudents : [],
         trashSubjects: Array.isArray(modularResult?.trashSubjects) ? modularResult.trashSubjects : [],
@@ -2892,6 +2974,7 @@ export const fetchAllData = async () => {
         errorType: null,
         allowEmptyClassCatalog: Boolean(classContext?.allowEmptyClassCatalog)
       };
+      return writeRecentFetchAllDataCache({ scopeKey: cacheScopeKey, classId: scopedClassId, ownerId: scopedOwnerId, payload: result });
     } catch (error) {
       lastError = error;
       lastErrorType = classifyFirebaseError(error);

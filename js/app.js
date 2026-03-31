@@ -26,20 +26,9 @@ import {
 
 app._initialized = app._initialized || false;
 let authSubscriptionCleanup = null;
+let hasReceivedInitialAuthSubscription = false;
 
 const LOGIN_PAGE_PATH = '/login.html';
-
-const refreshDashboardStudentCount = async () => {
-  if (typeof app.refreshDashboardStudentCount !== 'function') {
-    return;
-  }
-
-  try {
-    await app.refreshDashboardStudentCount();
-  } catch (error) {
-    console.warn('Unable to refresh dashboard student count:', error);
-  }
-};
 
 const redirectToLogin = () => {
   if (window.location.pathname.endsWith(LOGIN_PAGE_PATH)) return;
@@ -144,7 +133,6 @@ const ensureAuthenticatedSession = async () => {
     if (typeof app.syncDataContext === 'function') {
       app.syncDataContext();
     }
-    await refreshDashboardStudentCount();
     console.log('Auth UID:', String(authUser.uid || '').trim() || '(none)');
     console.log('Role:', app.getCurrentUserRole());
     console.log('Active UID:', app.getEffectiveUserId() || '(none)');
@@ -172,7 +160,6 @@ const handleAuthUserChange = async (authUser) => {
   if (typeof app.syncDataContext === 'function') {
     app.syncDataContext();
   }
-  await refreshDashboardStudentCount();
   console.log('Auth UID:', String(authUser.uid || '').trim() || '(none)');
   console.log('Role:', app.getCurrentUserRole());
   console.log('Active UID:', app.getEffectiveUserId() || '(none)');
@@ -189,7 +176,6 @@ const handleAuthUserChange = async (authUser) => {
   if (typeof app.syncDataContext === 'function') {
     app.syncDataContext();
   }
-  await refreshDashboardStudentCount();
 
   try {
     await app.load();
@@ -264,7 +250,18 @@ const bindAuthStateWatcher = () => {
     authSubscriptionCleanup = null;
   }
 
+  hasReceivedInitialAuthSubscription = false;
+
   authSubscriptionCleanup = subscribeAuthState((authUser) => {
+    if (!hasReceivedInitialAuthSubscription) {
+      hasReceivedInitialAuthSubscription = true;
+      const currentUid = String(app.state.authUser?.uid || '').trim();
+      const nextUid = String(authUser?.uid || '').trim();
+      if (currentUid && currentUid === nextUid) {
+        return;
+      }
+    }
+
     handleAuthUserChange(authUser).catch((error) => {
       console.error('Auth state handler failed:', error);
     });
