@@ -22,6 +22,14 @@ import {
   setCurrentUserRoleContext
 } from '../services/db.js';
 import { createRuntimeCache } from './admin-runtime-cache.js';
+import {
+  escapeHtml,
+  normalizeText,
+  normalizeDisplayText,
+  normalizeCount,
+  prefersReducedMotion,
+  buildIdentityMarkup
+} from './admin-display-utils.js';
 
 const DASHBOARD_PATH = '/index.html';
 const LOGIN_PATH = '/login.html';
@@ -237,97 +245,6 @@ const initSidebarNavigation = () => {
 
   const defaultTarget = normalizeText(dom.sidebarButtons[0]?.dataset.target || 'overview');
   setActiveSidebarTarget(defaultTarget);
-};
-
-const escapeHtml = (value) => String(value ?? '')
-  .replace(/&/g, '&amp;')
-  .replace(/</g, '&lt;')
-  .replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;')
-  .replace(/'/g, '&#39;');
-
-const normalizeText = (value) => String(value || '').trim();
-const normalizeDisplayText = (value, fallback = '') => {
-  const normalized = normalizeText(value);
-  if (!normalized) return fallback;
-
-  const lower = normalized.toLowerCase();
-  if (lower === 'undefined' || lower === 'null' || lower === 'nan' || lower === 'infinity' || normalized === '[object Object]') {
-    return fallback;
-  }
-
-  return normalized;
-};
-const normalizeCount = (value) => {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    return 0;
-  }
-  return Math.floor(parsed);
-};
-
-const prefersReducedMotion = () => {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-    return false;
-  }
-  return Boolean(window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-};
-
-const getInitials = (value = '', fallback = 'NA') => {
-  const normalized = normalizeDisplayText(value, '');
-  if (!normalized) return fallback;
-
-  const parts = normalized
-    .replace(/[^a-zA-Z0-9\s]/g, ' ')
-    .split(/\s+/)
-    .filter(Boolean);
-
-  if (!parts.length) {
-    return normalized.slice(0, 2).toUpperCase();
-  }
-
-  return parts
-    .slice(0, 2)
-    .map((part) => part.charAt(0))
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
-};
-
-const getAvatarToneClass = (role = '') => {
-  const normalized = normalizeText(role).toLowerCase();
-  if (normalized === ROLE_DEVELOPER) return 'role-developer';
-  if (normalized === ROLE_ADMIN) return 'role-admin';
-  if (normalized === ROLE_TEACHER) return 'role-teacher';
-  if (normalized === ROLE_STUDENT) return 'role-student';
-  return 'role-default';
-};
-
-const buildAvatarMarkup = (label = '', role = '') => {
-  const initials = getInitials(label, 'NA');
-  return `<span class="avatar ${getAvatarToneClass(role)}" aria-hidden="true">${escapeHtml(initials)}</span>`;
-};
-
-const buildIdentityMarkup = ({
-  label = 'Unknown',
-  secondary = '',
-  role = '',
-  avatarLabel = '',
-  containerClass = 'identity-cell',
-  copyClass = 'identity-copy'
-} = {}) => {
-  const safeLabel = normalizeDisplayText(label, 'Unknown');
-  const safeSecondary = normalizeDisplayText(secondary, '');
-  const safeAvatarLabel = normalizeDisplayText(avatarLabel, '');
-  return `
-    <div class="${containerClass}">
-      ${buildAvatarMarkup(safeAvatarLabel || safeLabel, role)}
-      <div class="${copyClass}">
-        <strong>${escapeHtml(safeLabel)}</strong>
-        ${safeSecondary ? `<span>${escapeHtml(safeSecondary)}</span>` : ''}
-      </div>
-    </div>
-  `;
 };
 
 const animateCountValue = (element, nextValue) => {
