@@ -44,6 +44,7 @@ window.TrackerApp = window.TrackerApp || {};
 
   const OFFLINE_CACHE_MESSAGE = 'Offline mode: using cached data';
   const OFFLINE_GRACE_PERIOD_MS = 3000;
+  const DATA_LOAD_TIMEOUT_MS = 15000;
   const CURRENT_CLASS_STORAGE_KEY = 'currentClassId';
   const CURRENT_CLASS_OWNER_STORAGE_KEY = 'currentClassOwnerId';
   const ROLE_TEACHER = 'teacher';
@@ -55,6 +56,37 @@ window.TrackerApp = window.TrackerApp || {};
   const LEGACY_DEFAULT_EXAMS = ['Mock 1'];
   let stateWriteChain = Promise.resolve();
   let hasShownOfflineToast = false;
+
+  const createLoadTimeoutError = (operationLabel = 'load app data') => {
+    const error = new Error(`Timed out while trying to ${operationLabel}`);
+    error.code = 'app/data-load-timeout';
+    return error;
+  };
+
+  const withOperationTimeout = async (task, timeoutMs = DATA_LOAD_TIMEOUT_MS, operationLabel = 'load app data') => {
+    const normalizedTimeoutMs = Number.isFinite(Number(timeoutMs)) && Number(timeoutMs) > 0
+      ? Number(timeoutMs)
+      : 0;
+    if (!normalizedTimeoutMs) {
+      return typeof task === 'function' ? task() : task;
+    }
+
+    let timeoutId = null;
+    try {
+      return await Promise.race([
+        Promise.resolve().then(() => (typeof task === 'function' ? task() : task)),
+        new Promise((_, reject) => {
+          timeoutId = globalThis.setTimeout(() => {
+            reject(createLoadTimeoutError(operationLabel));
+          }, normalizedTimeoutMs);
+        })
+      ]);
+    } finally {
+      if (timeoutId !== null) {
+        globalThis.clearTimeout(timeoutId);
+      }
+    }
+  };
 
   const normalizeClassStorageId = (value) => String(value || '').trim();
   const normalizeRole = (value) => {
@@ -774,13 +806,13 @@ window.TrackerApp = window.TrackerApp || {};
       console.log('Role:', app.getCurrentUserRole());
       console.log('Active UID:', app.getEffectiveUserId() || '(none)');
 
-      const remoteResult = await dataService.fetchAllData();
+      const remoteResult = await withOperationTimeout(() => dataService.fetchAllData(), DATA_LOAD_TIMEOUT_MS, 'load app data');
       let nextClasses = normalizeClassCatalogEntries(remoteResult?.classes || []);
       let requestedClassId = String(remoteResult?.currentClassId || app.state.currentClassId || '').trim();
 
       if (!nextClasses.length && app.isAdminRole() && typeof dataService.fetchClassCatalog === 'function') {
         try {
-          const adminCatalog = await dataService.fetchClassCatalog();
+          const adminCatalog = await withOperationTimeout(() => dataService.fetchClassCatalog(), DATA_LOAD_TIMEOUT_MS, 'load class catalog');
           nextClasses = normalizeClassCatalogEntries(adminCatalog?.classes || []);
           if (!requestedClassId) {
             requestedClassId = String(adminCatalog?.currentClassId || '').trim();
@@ -849,6 +881,10 @@ window.TrackerApp = window.TrackerApp || {};
       } else if ((Date.now() - loadStartedAt) >= OFFLINE_GRACE_PERIOD_MS) {
         clearTimeout(offlineGraceTimer);
         setOfflineStatus();
+      }
+
+      if (String(error?.code || '').trim().toLowerCase() === 'app/data-load-timeout' && !isNavigatorOffline()) {
+        app.state.error = 'Live data is taking too long to load. Showing cached data if available.';
       }
 
       const fallbackCache = app.readCachedData();

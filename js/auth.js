@@ -23,6 +23,39 @@ const ROLE_ADMIN = 'admin';
 const ROLE_DEVELOPER = 'developer';
 const USER_ROLES = [ROLE_TEACHER, ROLE_ADMIN, ROLE_DEVELOPER, LEGACY_ROLE_USER];
 const DEFAULT_USER_ROLE = ROLE_TEACHER;
+const INITIAL_AUTH_STATE_TIMEOUT_MS = 10000;
+const PROFILE_RESOLUTION_TIMEOUT_MS = 10000;
+
+const createTimeoutError = (code, message) => {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+};
+
+const withTimeout = async (task, timeoutMs, code, message) => {
+  const normalizedTimeoutMs = Number.isFinite(Number(timeoutMs)) && Number(timeoutMs) > 0
+    ? Number(timeoutMs)
+    : 0;
+  if (!normalizedTimeoutMs) {
+    return typeof task === 'function' ? task() : task;
+  }
+
+  let timeoutId = null;
+  try {
+    return await Promise.race([
+      Promise.resolve().then(() => (typeof task === 'function' ? task() : task)),
+      new Promise((_, reject) => {
+        timeoutId = globalThis.setTimeout(() => {
+          reject(createTimeoutError(code, message));
+        }, normalizedTimeoutMs);
+      })
+    ]);
+  } finally {
+    if (timeoutId !== null) {
+      globalThis.clearTimeout(timeoutId);
+    }
+  }
+};
 
 export const isDeveloperAccountEmail = (email) => normalizeEmail(email) === DEVELOPER_EMAIL;
 
@@ -78,7 +111,12 @@ const ensureUserProfileDocument = async (authUser) => {
   }
 
   const profileRef = getUserProfileRef(uid);
-  const profileSnapshot = await getDoc(profileRef);
+  const profileSnapshot = await withTimeout(
+    () => getDoc(profileRef),
+    PROFILE_RESOLUTION_TIMEOUT_MS,
+    'auth/profile-timeout',
+    'Timed out while loading your account profile.'
+  );
 
   if (!profileSnapshot.exists()) {
     const payload = sanitizeProfilePayload({
@@ -86,7 +124,12 @@ const ensureUserProfileDocument = async (authUser) => {
       name: normalizeName(authUser?.name),
       email: normalizedEmail
     });
-    await setDoc(profileRef, payload, { merge: true });
+    await withTimeout(
+      () => setDoc(profileRef, payload, { merge: true }),
+      PROFILE_RESOLUTION_TIMEOUT_MS,
+      'auth/profile-timeout',
+      'Timed out while saving your account profile.'
+    );
     console.log('Firestore role:', undefined);
     console.log('Assigned role:', payload.role);
     console.log('Final role:', payload.role);
@@ -127,7 +170,12 @@ const ensureUserProfileDocument = async (authUser) => {
   }
 
   if (Object.keys(patch).length) {
-    await setDoc(profileRef, patch, { merge: true });
+    await withTimeout(
+      () => setDoc(profileRef, patch, { merge: true }),
+      PROFILE_RESOLUTION_TIMEOUT_MS,
+      'auth/profile-timeout',
+      'Timed out while updating your account profile.'
+    );
   }
 
   console.log('Assigned role:', resolvedRole);
@@ -193,25 +241,74 @@ export const formatAuthError = (error) => {
   return error?.message || 'Authentication failed. Please try again.';
 };
 
-export const waitForInitialAuthState = async () => {
-  await authReadyPromise;
+export const waitForInitialAuthState = async ({ timeoutMs = INITIAL_AUTH_STATE_TIMEOUT_MS } = {}) => {
+  await withTimeout(
+    authReadyPromise,
+    timeoutMs,
+    'auth/persistence-timeout',
+    'Timed out while initializing authentication.'
+  );
 
   if (!auth) {
     return null;
   }
 
+  if (auth.currentUser) {
+    return toAuthUser(auth.currentUser);
+  }
+
+  const normalizedTimeoutMs = Number.isFinite(Number(timeoutMs)) && Number(timeoutMs) > 0
+    ? Number(timeoutMs)
+    : INITIAL_AUTH_STATE_TIMEOUT_MS;
+
   return new Promise((resolve, reject) => {
-    const unsubscribe = onAuthStateChanged(
+    let settled = false;
+    let timeoutId = null;
+    let unsubscribe = null;
+    let shouldCleanupAfterSubscribe = false;
+
+    const cleanup = () => {
+      if (typeof unsubscribe === 'function') {
+        const activeUnsubscribe = unsubscribe;
+        unsubscribe = null;
+        activeUnsubscribe();
+        return;
+      }
+      shouldCleanupAfterSubscribe = true;
+    };
+
+    const finish = (resolver, value) => {
+      if (settled) return;
+      settled = true;
+      if (timeoutId !== null) {
+        globalThis.clearTimeout(timeoutId);
+      }
+      cleanup();
+      resolver(value);
+    };
+
+    timeoutId = globalThis.setTimeout(() => {
+      const fallbackUser = auth.currentUser ? toAuthUser(auth.currentUser) : null;
+      if (fallbackUser) {
+        finish(resolve, fallbackUser);
+        return;
+      }
+      finish(reject, createTimeoutError('auth/state-timeout', 'Timed out while resolving your sign-in state.'));
+    }, normalizedTimeoutMs);
+
+    unsubscribe = onAuthStateChanged(
       auth,
       (user) => {
-        unsubscribe();
-        resolve(toAuthUser(user));
+        finish(resolve, toAuthUser(user));
       },
       (error) => {
-        unsubscribe();
-        reject(error);
+        finish(reject, error);
       }
     );
+
+    if (shouldCleanupAfterSubscribe) {
+      cleanup();
+    }
   });
 };
 
