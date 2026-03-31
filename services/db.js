@@ -2662,7 +2662,7 @@ const trimActivityLogCollection = async () => {
   return overflowEntries.length;
 };
 
-const logActivity = async (action, targetId, targetType, options = {}) => {
+export const logActivity = async (action, targetId, targetType, options = {}) => {
   try {
     if (!isFirebaseConfigured || !db) {
       return false;
