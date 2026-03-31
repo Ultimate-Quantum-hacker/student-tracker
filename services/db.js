@@ -1191,6 +1191,17 @@ const getCurrentUserId = () => {
   return getActiveUserId();
 };
 
+const getFetchScopeKey = (userId = getAuthenticatedUserId() || getCurrentUserId(), role = getCurrentUserRoleContext()) => {
+  const normalizedUserId = normalizeUserId(userId);
+  const normalizedRole = normalizeRole(role);
+  if (!normalizedUserId) {
+    return '';
+  }
+  return normalizedRole === 'admin' || normalizedRole === 'developer'
+    ? `${normalizedUserId}:admin-global`
+    : normalizedUserId;
+};
+
 export const setCurrentUserRoleContext = (role = 'teacher') => {
   currentUserRoleContext = normalizeRole(role);
   return currentUserRoleContext;
@@ -2520,6 +2531,28 @@ const readRawDataFromCollectionRefs = async (studentsRef, subjectsRef, examsRef,
   };
 };
 
+const readModularRawData = async (ownerId, classId) => {
+  const normalizedOwnerId = normalizeUserId(ownerId);
+  const normalizedClassId = normalizeClassId(classId);
+  if (!normalizedOwnerId || !normalizedClassId || !isFirebaseConfigured || !db) {
+    return {
+      data: createDefaultRawData(),
+      hasData: false,
+      trashStudents: [],
+      trashSubjects: [],
+      trashExams: []
+    };
+  }
+
+  return readRawDataFromCollectionRefs(
+    getStudentsCollectionRef(normalizedOwnerId, normalizedClassId),
+    getSubjectsCollectionRef(normalizedOwnerId, normalizedClassId),
+    getExamsCollectionRef(normalizedOwnerId, normalizedClassId),
+    normalizedOwnerId,
+    normalizedClassId
+  );
+};
+
 const buildActivityLogRow = (entry) => {
   const normalizeLogScalar = (value, fallback = '') => {
     if (value === null || value === undefined) {
@@ -2756,7 +2789,7 @@ export const writeCacheCopy = (rawData, classId = '') => {
   const scopedClassId = normalizeClassId(classId) || getCurrentClassContext() || normalizeClassId(persistedSelection.classId || '');
   const cacheEnvelope = withTimestamp(rawData);
   localStorage.setItem(getCacheKeyForUser(userId, scopedClassId), JSON.stringify(cacheEnvelope));
-  const currentScopeKey = getScopeKey();
+  const currentScopeKey = getFetchScopeKey(getAuthenticatedUserId() || userId);
   if (
     recentFetchAllDataCache.payload
     && recentFetchAllDataCache.scopeKey === currentScopeKey
