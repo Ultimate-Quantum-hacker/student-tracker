@@ -215,38 +215,39 @@ body.auth-page::after {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(15, 23, 42, 0.18);
   border-radius: 0.5rem;
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.78);
-  padding: 0.3rem 0.5rem;
+  background: rgba(15, 23, 42, 0.68);
+  color: rgba(255, 255, 255, 0.96);
+  padding: 0.34rem 0.55rem;
   font: inherit;
-  font-size: 0.8125rem;
-  font-weight: 500;
+  font-size: 0.85rem;
+  font-weight: 600;
   line-height: 1;
   cursor: pointer;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.24);
   transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .auth-password-toggle:hover {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(15, 23, 42, 0.82);
+  border-color: rgba(15, 23, 42, 0.28);
   color: #ffffff;
 }
 
 .auth-password-toggle:focus-visible {
   outline: 2px solid rgba(96, 165, 250, 0.6);
   outline-offset: 2px;
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(96, 165, 250, 0.38);
+  background: rgba(15, 23, 42, 0.82);
+  border-color: rgba(96, 165, 250, 0.45);
   color: #ffffff;
 }
 
 .auth-password-toggle[aria-pressed='true'] {
-  background: rgba(59, 130, 246, 0.18);
-  border-color: rgba(96, 165, 250, 0.3);
-  color: #93c5fd;
+  background: rgba(37, 99, 235, 0.88);
+  border-color: rgba(147, 197, 253, 0.5);
+  color: #eff6ff;
 }
 
 .auth-password-toggle-icon {
