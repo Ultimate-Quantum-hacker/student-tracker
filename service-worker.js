@@ -34,6 +34,16 @@ const CORE_ASSETS = [
   '/icons/launchericon-512x512.png'
 ];
 
+const canCacheRequest = request => {
+  try {
+    const url = new URL(request?.url || '');
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch (_error) {
+    console.warn('Skipping cache for unsupported request:', request?.url || '');
+    return false;
+  }
+};
+
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => cache.addAll(CORE_ASSETS))
@@ -65,7 +75,9 @@ self.addEventListener('fetch', event => {
           if (networkRes && networkRes.status === 200) {
             const resClone = networkRes.clone();
             caches.open(CACHE_NAME).then(cache => {
-              cache.put(req, resClone);
+              if (canCacheRequest(req)) {
+                cache.put(req, resClone);
+              }
 
               const reqUrl = new URL(req.url);
               if (reqUrl.pathname === '/') {
@@ -96,7 +108,9 @@ self.addEventListener('fetch', event => {
           ) {
             const resClone = networkRes.clone();
             caches.open(CACHE_NAME).then(cache => {
-              cache.put(req, resClone);
+              if (canCacheRequest(req)) {
+                cache.put(req, resClone);
+              }
             });
           }
           return networkRes;
