@@ -57,13 +57,16 @@ import {
   groupAdminStudentsRegistry,
   getAdminStudentsPagination
 } from './admin-student-registry-utils.js';
+import {
+  buildAdminStudentsSkeletonMarkup,
+  buildAdminStudentsTableMarkup
+} from './admin-student-registry-markup.js';
 
 const DASHBOARD_PATH = '/index.html';
 const LOGIN_PATH = '/login.html';
 const ROLE_TEACHER = 'teacher';
 const ROLE_ADMIN = 'admin';
 const ROLE_DEVELOPER = 'developer';
-const ROLE_STUDENT = 'student';
 const UPDATABLE_ROLES = [ROLE_TEACHER, ROLE_ADMIN];
 const THEME_STORAGE_KEY = 'theme';
 const ADMIN_STUDENTS_PAGE_SIZE = 50;
@@ -1636,78 +1639,12 @@ const getFilteredAdminStudents = () => {
   return sortAdminStudentsRegistry(filteredStudents);
 };
 
-const buildAdminStudentsActionMarkup = (student = {}) => {
-  const ownerId = normalizeDisplayText(student?.ownerId, '');
-  const studentId = normalizeDisplayText(student?.studentId, '');
-  const studentName = normalizeDisplayText(student?.name, 'Student');
-  const isDisabled = !canDeleteAdminStudents() || !ownerId || !studentId;
-  const buttonTitle = !canDeleteAdminStudents()
-    ? 'Only admins and developers can delete registry students.'
-    : !ownerId || !studentId
-      ? 'This registry row is missing the student identity needed for deletion.'
-      : `Delete ${studentName} from the registry`;
-
-  return `
-    <div class="table-actions-cell admin-student-row-actions">
-      <button
-        class="btn btn-danger admin-student-delete-btn"
-        type="button"
-        data-admin-student-delete="true"
-        data-owner-id="${escapeHtml(ownerId)}"
-        data-student-id="${escapeHtml(studentId)}"
-        data-student-name="${escapeHtml(studentName)}"
-        aria-label="${escapeHtml(buttonTitle)}"
-        title="${escapeHtml(buttonTitle)}"
-        ${isDisabled ? 'disabled' : ''}
-      >Delete</button>
-    </div>
-  `;
-};
-
-const buildAdminStudentsEmptyStateMarkup = ({
-  icon = '🎓',
-  title = 'No student records found.',
-  detail = 'There are no active student entries to display in the registry right now.'
-} = {}) => {
-  return `<tr><td colspan="${ADMIN_STUDENTS_TABLE_COLUMN_COUNT}" class="empty-row"><div class="smart-empty admin-students-empty"><span>${escapeHtml(icon)}</span><strong>${escapeHtml(title)}</strong><p>${escapeHtml(detail)}</p></div></td></tr>`;
-};
-
 const renderAdminStudentsSkeletonRows = (rowCount = 6) => {
   if (!dom.adminStudentsTableBody) return;
-
-  const skeletonMarkup = Array.from({ length: rowCount }, (_, index) => {
-    const shouldRenderClassGroup = index === 0 || index % 3 === 0;
-    return `
-      ${shouldRenderClassGroup ? `<tr class="admin-students-group-row admin-students-group-row-skeleton" aria-hidden="true"><td colspan="${ADMIN_STUDENTS_TABLE_COLUMN_COUNT}"><div class="admin-students-skeleton admin-students-skeleton-group"></div></td></tr>` : ''}
-      <tr class="admin-students-row-skeleton" aria-hidden="true">
-        <td>
-          <div class="admin-students-skeleton-stack">
-            <div class="admin-students-skeleton admin-students-skeleton-title"></div>
-            <div class="admin-students-skeleton admin-students-skeleton-copy"></div>
-          </div>
-        </td>
-        <td>
-          <div class="admin-students-skeleton-stack">
-            <div class="admin-students-skeleton admin-students-skeleton-title"></div>
-            <div class="admin-students-skeleton admin-students-skeleton-copy"></div>
-          </div>
-        </td>
-        <td>
-          <div class="admin-students-skeleton-stack">
-            <div class="admin-students-skeleton admin-students-skeleton-title"></div>
-            <div class="admin-students-skeleton admin-students-skeleton-copy"></div>
-          </div>
-        </td>
-        <td>
-          <div class="admin-students-row-actions">
-            <div class="admin-students-skeleton admin-students-skeleton-action"></div>
-          </div>
-        </td>
-      </tr>
-    `;
-  }).join('');
-
-  dom.adminStudentsTableBody.innerHTML = skeletonMarkup;
+  dom.adminStudentsTableBody.innerHTML = buildAdminStudentsSkeletonMarkup({
+    rowCount,
+    columnCount: ADMIN_STUDENTS_TABLE_COLUMN_COUNT
+  });
 };
 
 const renderAdminStudentsPagination = ({
@@ -1749,49 +1686,12 @@ const renderAdminStudentsPagination = ({
 const renderAdminStudentsTable = (groups = [], startIndex = 0) => {
   if (!dom.adminStudentsTableBody) return;
   const { hasActiveCriteria } = getAdminStudentsFilterState();
-  if (!groups.length) {
-    dom.adminStudentsTableBody.innerHTML = hasActiveCriteria
-      ? buildAdminStudentsEmptyStateMarkup({
-        icon: '🔎',
-        title: 'No students match your filters.',
-        detail: 'Try adjusting the search, class, or teacher filters.'
-      })
-      : buildAdminStudentsEmptyStateMarkup({
-        icon: '🎓',
-        title: 'No student records found.',
-        detail: 'The global registry does not have any active student entries to show yet.'
-      });
-    return;
-  }
-
-  let studentNumber = Math.max(0, Number(startIndex) || 0);
-  dom.adminStudentsTableBody.innerHTML = groups.map((group) => {
-    const groupLabel = normalizeDisplayText(group?.label, 'Unknown Class');
-    const rows = (Array.isArray(group?.students) ? group.students : []).map((student) => {
-      studentNumber += 1;
-      const classLabel = normalizeDisplayText(student.className, 'Unknown Class');
-      return `
-        <tr class="fade-in">
-          <td>${buildIdentityMarkup({ label: student.name, role: ROLE_STUDENT, avatarLabel: String(studentNumber) })}</td>
-          <td>
-            <div class="admin-student-meta">
-              <strong>${escapeHtml(classLabel)}</strong>
-              <span>Class assignment</span>
-            </div>
-          </td>
-          <td>
-            <div class="admin-student-meta">
-              <strong>${escapeHtml(student.teacherName)}</strong>
-              <span>Teacher</span>
-            </div>
-          </td>
-          <td>${buildAdminStudentsActionMarkup(student)}</td>
-        </tr>
-      `;
-    }).join('');
-
-    return `<tr class="admin-students-group-row"><td colspan="${ADMIN_STUDENTS_TABLE_COLUMN_COUNT}">${escapeHtml(groupLabel)}</td></tr>${rows}`;
-  }).join('');
+  dom.adminStudentsTableBody.innerHTML = buildAdminStudentsTableMarkup(groups, {
+    startIndex,
+    hasActiveCriteria,
+    canDelete: canDeleteAdminStudents(),
+    columnCount: ADMIN_STUDENTS_TABLE_COLUMN_COUNT
+  });
 };
 
 const updateAdminStudentsView = () => {
