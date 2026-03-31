@@ -1,3 +1,5 @@
+import { normalizeUserRole } from './auth.js';
+
 const ROLE_TEACHER = 'teacher';
 const ROLE_ADMIN = 'admin';
 const ROLE_DEVELOPER = 'developer';
@@ -95,3 +97,68 @@ export const buildIdentityMarkup = ({
     </div>
   `;
 };
+
+ export const formatRoleLabel = (role) => {
+   const rawRole = normalizeText(role).toLowerCase();
+   if (rawRole === ROLE_STUDENT) return 'Student';
+   const normalized = normalizeUserRole(role);
+   if (normalized === ROLE_DEVELOPER) return 'Developer';
+   if (normalized === ROLE_ADMIN) return 'Admin';
+   return 'Teacher';
+ };
+
+ export const getRoleBadgeClass = (role) => {
+   const rawRole = normalizeText(role).toLowerCase();
+   if (rawRole === ROLE_STUDENT) return 'role-student';
+   const normalized = normalizeUserRole(role);
+   if (normalized === ROLE_DEVELOPER) return 'role-developer';
+   if (normalized === ROLE_ADMIN) return 'role-admin';
+   return 'role-teacher';
+ };
+
+ export const formatCreatedAt = (value) => {
+   if (!value) return '—';
+   if (typeof value?.toDate === 'function') {
+     return value.toDate().toLocaleString();
+   }
+   const parsed = new Date(value);
+   if (Number.isNaN(parsed.getTime())) return '—';
+   return parsed.toLocaleString();
+ };
+
+ export const formatTimeOfDay = (value) => {
+   if (!value) return '—';
+   const parsed = typeof value?.toDate === 'function' ? value.toDate() : new Date(value);
+   if (Number.isNaN(parsed.getTime())) return '—';
+   return parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+ };
+
+ export const formatTargetIdentifier = (value = '') => {
+   const target = normalizeDisplayText(value, '');
+   if (!target) return '';
+
+   if (/^\d{12,}$/.test(target)) {
+     const asNumber = Number(target);
+     if (Number.isFinite(asNumber) && asNumber > 946684800000) {
+       const asDate = new Date(asNumber);
+       if (!Number.isNaN(asDate.getTime())) {
+         return asDate.toLocaleString();
+       }
+     }
+   }
+
+   if (target.length > 28) {
+     return `${target.slice(0, 10)}…${target.slice(-6)}`;
+   }
+
+   return target;
+ };
+
+ export const formatActionLabel = (action = '') => {
+   const normalized = normalizeDisplayText(action, '').toLowerCase();
+   if (!normalized) return 'updated';
+   return normalized
+     .replace(/[_-]+/g, ' ')
+     .replace(/\s+/g, ' ')
+     .trim();
+ };
