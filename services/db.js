@@ -129,7 +129,7 @@ const normalizeRawData = (rawData) => {
 
 };
 
-const parseCache = (raw) => {
+function parseCache(raw) {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw);
@@ -149,6 +149,27 @@ const parseCache = (raw) => {
     return null;
   }
   return null;
+}
+
+const safeParseCache = (raw) => {
+  if (typeof parseCache === 'function') {
+    return parseCache(raw);
+  }
+  if (!raw) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') {
+      return null;
+    }
+    return {
+      data: normalizeRawData(parsed.data || parsed),
+      lastUpdated: parsed.lastUpdated || null
+    };
+  } catch (_error) {
+    return null;
+  }
 };
 
 const withTimestamp = (data) => ({
@@ -161,7 +182,7 @@ const enqueueWrite = (task) => {
   return writeChain;
 };
 
-const RETRY_ATTEMPTS = 2;
+const RETRY_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 700;
 
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -2658,13 +2679,13 @@ export const fetchActivityLogs = async ({ userId = '', sort = 'desc', maxEntries
 
 export const readCachedData = (classId = '') => {
   const userId = getCurrentUserId();
-  if (!userId) {
+  if (!userId || typeof localStorage === 'undefined') {
     return null;
   }
 
   const persistedSelection = readPersistedClassSelection(userId);
   const scopedClassId = normalizeClassId(classId) || getCurrentClassContext() || normalizeClassId(persistedSelection.classId || '');
-  const cached = parseCache(localStorage.getItem(getCacheKeyForUser(userId, scopedClassId)));
+  const cached = safeParseCache(localStorage.getItem(getCacheKeyForUser(userId, scopedClassId)));
   if (cached?.data) {
     console.log('Loaded from cache');
   }
@@ -2679,7 +2700,7 @@ export const readCachedData = (classId = '') => {
 
 export const writeCacheCopy = (rawData, classId = '') => {
   const userId = getCurrentUserId();
-  if (!userId) {
+  if (!userId || typeof localStorage === 'undefined') {
     return null;
   }
 
@@ -2691,6 +2712,44 @@ export const writeCacheCopy = (rawData, classId = '') => {
     ...cacheEnvelope,
     classId: scopedClassId
   };
+};
+
+export const fetchRoleScopedStudentCount = async (role = '') => {
+  const normalizedRole = normalizeRole(role || getCurrentUserRoleContext());
+  const getCachedCount = (classId = '') => {
+    const cached = readCachedData(classId);
+    return Array.isArray(cached?.data?.students) ? cached.data.students.length : 0;
+  };
+
+  try {
+    const classScope = await ensureValidClassContext('read dashboard student count', { requireClass: false });
+    const ownerId = normalizeUserId(classScope?.ownerId || '');
+    const classId = normalizeClassId(classScope?.classId || '');
+
+    if (!ownerId || !classId || !isFirebaseConfigured || !db) {
+      return getCachedCount(classId);
+    }
+
+    const snapshot = await getDocs(getStudentsCollectionRef(ownerId, classId));
+    let totalStudents = 0;
+    snapshot.forEach((entry) => {
+      const payload = entry.data() || {};
+      if (payload.deleted === true) {
+        return;
+      }
+      const payloadOwnerId = normalizeUserId(payload.ownerId || payload.userId || ownerId);
+      const payloadClassId = normalizeClassId(payload.classId || classId);
+      if (payloadOwnerId !== ownerId || payloadClassId !== classId) {
+        return;
+      }
+      totalStudents += 1;
+    });
+
+    return totalStudents;
+  } catch (error) {
+    console.warn(`Failed to fetch ${normalizedRole} dashboard student count:`, error);
+    return getCachedCount(getCurrentClassContext());
+  }
 };
 
 export const fetchAllData = async () => {

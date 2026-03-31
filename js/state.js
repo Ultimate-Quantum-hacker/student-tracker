@@ -192,10 +192,15 @@ window.TrackerApp = window.TrackerApp || {};
     console.log('Active UID:', activeUserId || '(none)');
 
     try {
+      if (typeof dataService.fetchRoleScopedStudentCount !== 'function') {
+        console.warn('Fallback: student count unavailable');
+        app.state.dashboardStudentCount = Array.isArray(app.state.students) ? app.state.students.length : 0;
+        return app.state.dashboardStudentCount;
+      }
       app.state.dashboardStudentCount = await dataService.fetchRoleScopedStudentCount(app.getCurrentUserRole());
     } catch (error) {
       console.warn('Failed to refresh dashboard student count:', error);
-      app.state.dashboardStudentCount = null;
+      app.state.dashboardStudentCount = Array.isArray(app.state.students) ? app.state.students.length : null;
     }
     return app.state.dashboardStudentCount;
   };
@@ -205,6 +210,10 @@ window.TrackerApp = window.TrackerApp || {};
   };
 
   app.fetchUserScopedData = function (userId = '') {
+    if (typeof dataService.fetchUserScopedData !== 'function') {
+      console.warn('Fallback: user scoped data unavailable');
+      return Promise.resolve(null);
+    }
     return dataService.fetchUserScopedData(userId);
   };
 
