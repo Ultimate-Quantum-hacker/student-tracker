@@ -103,6 +103,28 @@ export const buildActivityLogsQueryState = ({
   };
 };
 
+export const filterAdminActivityEntries = (entries = [], {
+  selectedAction = '',
+  selectedClassKey = ''
+} = {}) => {
+  const normalizedEntries = Array.isArray(entries) ? entries : [];
+  const normalizedSelectedAction = normalizeText(selectedAction).toLowerCase();
+  const normalizedSelectedClassKey = normalizeText(selectedClassKey);
+
+  const entriesForClassFilter = normalizedSelectedAction
+    ? normalizedEntries.filter((entry) => String(entry?.action || '').trim().toLowerCase() === normalizedSelectedAction)
+    : normalizedEntries.slice();
+
+  const filteredEntries = normalizedSelectedClassKey
+    ? entriesForClassFilter.filter((entry) => getEntryClassFilterKey(entry) === normalizedSelectedClassKey)
+    : entriesForClassFilter;
+
+  return {
+    entriesForClassFilter,
+    filteredEntries
+  };
+};
+
 export const buildActivityLogsCacheKey = ({ userId = '', sort = 'desc' } = {}) => {
   const normalizedUserId = normalizeText(userId);
   const normalizedSort = normalizeText(sort).toLowerCase() === 'asc' ? 'asc' : 'desc';

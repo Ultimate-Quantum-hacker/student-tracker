@@ -37,7 +37,6 @@ import {
 } from './admin-display-utils.js';
 import {
   getActionTone,
-  getEntryClassFilterKey,
   formatClassDisplayLabel,
   formatActivityTargetLabel,
   toDateValue,
@@ -74,7 +73,8 @@ import {
 import {
   buildActivityClassFilterState,
   buildActivityUserFilterState,
-  buildActivityLogsQueryState
+  buildActivityLogsQueryState,
+  filterAdminActivityEntries
 } from './admin-activity-filter-utils.js';
 
 const DASHBOARD_PATH = '/index.html';
@@ -947,15 +947,17 @@ const loadActivityLogs = async () => {
       writeAdminRuntimeCache('activityLogs', Array.isArray(entries) ? entries : [], activityLogsCacheKey);
     }
 
-    if (selectedAction) {
-      entries = entries.filter((entry) => String(entry.action || '').trim().toLowerCase() === selectedAction);
-    }
+    const {
+      entriesForClassFilter,
+      filteredEntries
+    } = filterAdminActivityEntries(entries, {
+      selectedAction,
+      selectedClassKey
+    });
 
-    populateActivityClassFilter(entries);
+    populateActivityClassFilter(entriesForClassFilter);
 
-    if (selectedClassKey) {
-      entries = entries.filter((entry) => getEntryClassFilterKey(entry) === selectedClassKey);
-    }
+    entries = filteredEntries;
 
     state.activityLogs = entries;
     state.activityLogsLoaded = true;
