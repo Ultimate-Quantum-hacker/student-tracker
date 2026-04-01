@@ -34,6 +34,25 @@ export const normalizeCount = (value) => {
   return Math.floor(parsed);
 };
 
+export const formatLastUpdatedLabel = (lastUpdatedAt = null, {
+  now = Date.now()
+} = {}) => {
+  const normalizedLastUpdatedAt = Number(lastUpdatedAt);
+  const normalizedNow = Number(now);
+  if (!Number.isFinite(normalizedLastUpdatedAt) || !Number.isFinite(normalizedNow)) {
+    return 'Last updated: just now';
+  }
+
+  const diffMinutes = Math.floor((normalizedNow - normalizedLastUpdatedAt) / 60000);
+  if (diffMinutes <= 0) {
+    return 'Last updated: just now';
+  }
+  if (diffMinutes === 1) {
+    return 'Last updated: 1 minute ago';
+  }
+  return `Last updated: ${diffMinutes} minutes ago`;
+};
+
 export const prefersReducedMotion = () => {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
     return false;

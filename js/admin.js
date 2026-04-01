@@ -27,6 +27,7 @@ import {
   normalizeText,
   normalizeDisplayText,
   normalizeCount,
+  formatLastUpdatedLabel,
   prefersReducedMotion,
   buildIdentityMarkup,
   formatRoleLabel,
@@ -332,22 +333,7 @@ const isPermissionDeniedError = (error) => String(error?.code || '').toLowerCase
 
 const updateLastUpdatedIndicator = () => {
   if (!dom.lastUpdated) return;
-  if (!state.lastUpdatedAt) {
-    dom.lastUpdated.textContent = 'Last updated: just now';
-    return;
-  }
-
-  const diffMs = Date.now() - state.lastUpdatedAt;
-  const diffMinutes = Math.floor(diffMs / 60000);
-  if (diffMinutes <= 0) {
-    dom.lastUpdated.textContent = 'Last updated: just now';
-    return;
-  }
-  if (diffMinutes === 1) {
-    dom.lastUpdated.textContent = 'Last updated: 1 minute ago';
-    return;
-  }
-  dom.lastUpdated.textContent = `Last updated: ${diffMinutes} minutes ago`;
+  dom.lastUpdated.textContent = formatLastUpdatedLabel(state.lastUpdatedAt);
 };
 
 const markUpdatedNow = () => {
