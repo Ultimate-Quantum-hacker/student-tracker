@@ -50,7 +50,7 @@ import {
   buildAdminRegistryStudentRecords,
   removeAdminRegistryStudentEntries,
   mapAdminRegistryClassRecord,
-  mapAdminRegistryStudentRecord,
+  buildAdminStudentsRegistryRecords,
   buildAdminStudentsFilterState,
   buildAdminStudentsFilterOptionsState,
   buildAdminStudentsPaginationViewState,
@@ -1513,14 +1513,10 @@ const loadAdminStudentsRegistry = async () => {
       fetchAllStudentsGlobal(),
       fetchAdminClassNameMap()
     ]);
-    const students = Array.isArray(studentRecords)
-      ? studentRecords
-        .filter((student) => student?.deleted !== true)
-        .map((student) => mapAdminRegistryStudentRecord(student, classMap, {
-          users: state.users
-        }))
-        .filter((student) => shouldIncludeGlobalSearchOwner(student.ownerId))
-      : [];
+    const students = buildAdminStudentsRegistryRecords(studentRecords, classMap, {
+      users: state.users,
+      shouldIncludeOwner: shouldIncludeGlobalSearchOwner
+    });
     state.adminStudentsRegistry = students;
     state.adminStudentsRegistryLoaded = true;
     state.globalStats = {

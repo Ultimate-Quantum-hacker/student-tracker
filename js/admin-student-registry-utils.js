@@ -327,6 +327,23 @@ export const mapAdminRegistryStudentRecord = (student = {}, classMap = new Map()
   };
 };
 
+export const buildAdminStudentsRegistryRecords = (studentRecords = [], classMap = new Map(), {
+  users = [],
+  shouldIncludeOwner = () => true
+} = {}) => {
+  const normalizedStudentRecords = Array.isArray(studentRecords) ? studentRecords : [];
+  const includeOwner = typeof shouldIncludeOwner === 'function'
+    ? shouldIncludeOwner
+    : () => true;
+
+  return normalizedStudentRecords
+    .filter((student) => student?.deleted !== true)
+    .map((student) => mapAdminRegistryStudentRecord(student, classMap, {
+      users
+    }))
+    .filter((student) => includeOwner(student?.ownerId));
+};
+
 const buildAdminStudentsFilterOptionMarkup = (options = [], {
   emptyLabel = 'All options'
 } = {}) => {
