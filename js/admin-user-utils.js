@@ -5,7 +5,11 @@ const ROLE_ADMIN = 'admin';
 const ROLE_DEVELOPER = 'developer';
 
 const isAdminOnlyViewerRole = (currentRole = '') => normalizeUserRole(currentRole) === ROLE_ADMIN;
-const canManageAdminRoles = (currentRole = '') => normalizeUserRole(currentRole) === ROLE_DEVELOPER;
+export const canManageAdminRoles = (currentRole = '') => normalizeUserRole(currentRole) === ROLE_DEVELOPER;
+export const canDeleteAdminRegistryStudents = (currentRole = '') => {
+  const normalizedCurrentRole = normalizeUserRole(currentRole);
+  return normalizedCurrentRole === ROLE_ADMIN || normalizedCurrentRole === ROLE_DEVELOPER;
+};
 
 export const findAdminUserRecord = (users = [], uid = '') => {
   const records = Array.isArray(users) ? users : [];

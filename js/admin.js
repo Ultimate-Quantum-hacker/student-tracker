@@ -65,6 +65,8 @@ import {
   findAdminUserRecord,
   getVisibleAdminUsers,
   getFilteredAdminUsers,
+  canManageAdminRoles,
+  canDeleteAdminRegistryStudents,
   canEditAdminUserRole,
   getVisibleAdminActivityEntries,
   shouldIncludeAdminOwner
@@ -325,8 +327,6 @@ const animateCountValue = (element, nextValue) => {
 };
 
 const isPermissionDeniedError = (error) => String(error?.code || '').toLowerCase().includes('permission-denied');
-const canManageRoles = () => state.currentRole === ROLE_DEVELOPER;
-const canDeleteAdminStudents = () => state.currentRole === ROLE_ADMIN || state.currentRole === ROLE_DEVELOPER;
 
 const updateLastUpdatedIndicator = () => {
   if (!dom.lastUpdated) return;
@@ -553,7 +553,7 @@ const renderUsersTable = () => {
     const actionWrap = document.createElement('div');
     actionWrap.className = 'table-actions-cell';
 
-    if (canManageRoles()) {
+    if (canManageAdminRoles(state.currentRole)) {
       const updateBtn = document.createElement('button');
       updateBtn.type = 'button';
       updateBtn.className = 'btn btn-primary';
@@ -1027,7 +1027,7 @@ const updateUserRole = async (uid, nextRole) => {
     setPanelStatus('Unable to find selected user.', 'error');
     return;
   }
-  if (!canManageRoles()) {
+  if (!canManageAdminRoles(state.currentRole)) {
     setPanelStatus('Only developers can update roles in this panel.', 'warning');
     return;
   }
@@ -1434,7 +1434,7 @@ const renderAdminStudentsTable = (groups = [], startIndex = 0, {
   dom.adminStudentsTableBody.innerHTML = buildAdminStudentsTableMarkup(groups, {
     startIndex,
     hasActiveCriteria,
-    canDelete: canDeleteAdminStudents(),
+    canDelete: canDeleteAdminRegistryStudents(state.currentRole),
     columnCount: ADMIN_STUDENTS_TABLE_COLUMN_COUNT
   });
 };
@@ -1565,7 +1565,7 @@ const removeAdminRegistryStudentFromState = (ownerId = '', studentId = '') => {
 };
 
 const handleAdminRegistryStudentDelete = async ({ ownerId = '', studentId = '', studentName = '' } = {}) => {
-  if (!canDeleteAdminStudents()) {
+  if (!canDeleteAdminRegistryStudents(state.currentRole)) {
     setAdminStudentsStatus('Only admins and developers can delete registry students.', 'warning');
     showToast('Student deletion unavailable', 'warning');
     return;
