@@ -49,6 +49,7 @@ import {
 import {
   parseAdminRegistryStudentPath,
   buildAdminRegistryStudentIdentityKey,
+  removeAdminRegistryStudentEntries,
   pickPreferredAdminRegistryStudentRecord,
   buildAdminRegistryClassKey,
   buildAdminRegistryFallbackClassKey,
@@ -1623,16 +1624,10 @@ const loadAdminStudentsRegistry = async () => {
 };
 
 const removeAdminRegistryStudentFromState = (ownerId = '', studentId = '') => {
-  const targetKey = buildAdminRegistryStudentIdentityKey(ownerId, studentId);
-  if (!targetKey) {
-    return 0;
-  }
-
-  const currentStudents = Array.isArray(state.adminStudentsRegistry) ? state.adminStudentsRegistry : [];
-  const nextStudents = currentStudents.filter((student) => {
-    return buildAdminRegistryStudentIdentityKey(student.ownerId, student.studentId) !== targetKey;
+  const { nextStudents, removedCount } = removeAdminRegistryStudentEntries(state.adminStudentsRegistry, {
+    ownerId,
+    studentId
   });
-  const removedCount = currentStudents.length - nextStudents.length;
   if (!removedCount) {
     return 0;
   }

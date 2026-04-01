@@ -41,6 +41,29 @@ export const buildAdminRegistryStudentIdentityKey = (ownerId = '', studentId = '
   return `${normalizedOwnerId}::${normalizedStudentId}`;
 };
 
+export const removeAdminRegistryStudentEntries = (students = [], {
+  ownerId = '',
+  studentId = ''
+} = {}) => {
+  const normalizedStudents = Array.isArray(students) ? students : [];
+  const targetKey = buildAdminRegistryStudentIdentityKey(ownerId, studentId);
+  if (!targetKey) {
+    return {
+      nextStudents: normalizedStudents.slice(),
+      removedCount: 0
+    };
+  }
+
+  const nextStudents = normalizedStudents.filter((student) => {
+    return buildAdminRegistryStudentIdentityKey(student?.ownerId, student?.studentId) !== targetKey;
+  });
+
+  return {
+    nextStudents,
+    removedCount: normalizedStudents.length - nextStudents.length
+  };
+};
+
 export const pickPreferredAdminRegistryStudentRecord = (current = null, candidate = null) => {
   if (!candidate) {
     return current;
