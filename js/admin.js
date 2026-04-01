@@ -53,10 +53,9 @@ import {
   buildAdminRegistryClassKey,
   buildAdminRegistryFallbackClassKey,
   resolveAdminRegistryClassInfo,
+  buildAdminStudentsFilterState,
   buildAdminStudentsFilterOptionsState,
-  getFilteredAdminStudentsRegistry,
-  groupAdminStudentsRegistry,
-  getAdminStudentsPagination
+  buildAdminStudentsRegistryViewState
 } from './admin-student-registry-utils.js';
 import {
   buildAdminStudentsSkeletonMarkup,
@@ -1404,17 +1403,11 @@ const mapAdminStudentRecord = (student = {}, classMap = new Map()) => {
 };
 
 const getAdminStudentsFilterState = () => {
-  const searchText = normalizeText(dom.adminStudentsSearchInput?.value || '');
-  const selectedClass = normalizeText(dom.adminStudentsClassFilter?.value || '');
-  const selectedTeacher = normalizeText(dom.adminStudentsTeacherFilter?.value || '');
-
-  return {
-    searchText,
-    searchTerm: searchText.toLowerCase(),
-    selectedClass,
-    selectedTeacher,
-    hasActiveCriteria: Boolean(searchText || selectedClass || selectedTeacher)
-  };
+  return buildAdminStudentsFilterState({
+    searchText: dom.adminStudentsSearchInput?.value || '',
+    selectedClass: dom.adminStudentsClassFilter?.value || '',
+    selectedTeacher: dom.adminStudentsTeacherFilter?.value || ''
+  });
 };
 
 const updateAdminStudentsFilterControls = () => {
@@ -1463,15 +1456,6 @@ const renderAdminStudentsFilterOptions = (classMap = new Map(), students = []) =
   updateAdminStudentsFilterControls();
 };
 
-const getFilteredAdminStudents = () => {
-  const { searchTerm, selectedClass, selectedTeacher } = getAdminStudentsFilterState();
-  return getFilteredAdminStudentsRegistry(state.adminStudentsRegistry, {
-    searchTerm,
-    selectedClass,
-    selectedTeacher
-  });
-};
-
 const renderAdminStudentsSkeletonRows = (rowCount = 6) => {
   if (!dom.adminStudentsTableBody) return;
   dom.adminStudentsTableBody.innerHTML = buildAdminStudentsSkeletonMarkup({
@@ -1516,9 +1500,10 @@ const renderAdminStudentsPagination = ({
   }
 };
 
-const renderAdminStudentsTable = (groups = [], startIndex = 0) => {
+const renderAdminStudentsTable = (groups = [], startIndex = 0, {
+  hasActiveCriteria = false
+} = {}) => {
   if (!dom.adminStudentsTableBody) return;
-  const { hasActiveCriteria } = getAdminStudentsFilterState();
   dom.adminStudentsTableBody.innerHTML = buildAdminStudentsTableMarkup(groups, {
     startIndex,
     hasActiveCriteria,
@@ -1528,39 +1513,28 @@ const renderAdminStudentsTable = (groups = [], startIndex = 0) => {
 };
 
 const updateAdminStudentsView = () => {
-  const filteredStudents = getFilteredAdminStudents();
-  const groupedStudents = groupAdminStudentsRegistry(filteredStudents);
-  const totalLoadedStudents = Array.isArray(state.adminStudentsRegistry) ? state.adminStudentsRegistry.length : 0;
-  const { hasActiveCriteria } = getAdminStudentsFilterState();
-  const pagination = getAdminStudentsPagination(groupedStudents, {
-    requestedPage: state.adminStudentsRegistryPage,
-    pageSize: ADMIN_STUDENTS_PAGE_SIZE
-  });
-  state.adminStudentsRegistryPage = pagination.currentPage;
-  const visibleRange = filteredStudents.length ? `${pagination.startIndex + 1}-${pagination.endIndex}` : '0';
+  const viewState = buildAdminStudentsRegistryViewState(
+    state.adminStudentsRegistry,
+    getAdminStudentsFilterState(),
+    {
+      requestedPage: state.adminStudentsRegistryPage,
+      pageSize: ADMIN_STUDENTS_PAGE_SIZE,
+      isLoaded: state.adminStudentsRegistryLoaded
+    }
+  );
 
-  renderAdminStudentsTable(pagination.groups, pagination.startIndex);
-  renderAdminStudentsPagination(pagination);
+  state.adminStudentsRegistryPage = viewState.pagination.currentPage;
+  renderAdminStudentsTable(viewState.pagination.groups, viewState.pagination.startIndex, {
+    hasActiveCriteria: viewState.filterState.hasActiveCriteria
+  });
+  renderAdminStudentsPagination(viewState.pagination);
   updateAdminStudentsFilterControls();
 
   if (!state.adminStudentsRegistryLoaded) {
     return;
   }
 
-  if (totalLoadedStudents === 0) {
-    setAdminStudentsStatus('No active student records were found in the global registry.', 'warning');
-    return;
-  }
-
-  if (!filteredStudents.length && hasActiveCriteria) {
-    setAdminStudentsStatus('No students match your filters.', 'warning');
-    return;
-  }
-
-  const message = hasActiveCriteria
-    ? `Page ${pagination.currentPage} of ${pagination.totalPages}. Showing ${visibleRange} of ${filteredStudents.length} matching student${filteredStudents.length === 1 ? '' : 's'}.`
-    : `Page ${pagination.currentPage} of ${pagination.totalPages}. Showing ${visibleRange} of ${filteredStudents.length} student${filteredStudents.length === 1 ? '' : 's'} in the registry.`;
-  setAdminStudentsStatus(message, filteredStudents.length ? 'success' : 'warning');
+  setAdminStudentsStatus(viewState.statusMessage, viewState.statusType);
 };
 
 const loadAdminStudentsRegistry = async () => {

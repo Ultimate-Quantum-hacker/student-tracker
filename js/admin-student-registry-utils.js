@@ -196,6 +196,24 @@ const buildAdminStudentsFilterOptionMarkup = (options = [], {
   return optionMarkup.join('');
 };
 
+export const buildAdminStudentsFilterState = ({
+  searchText = '',
+  selectedClass = '',
+  selectedTeacher = ''
+} = {}) => {
+  const normalizedSearchText = normalizeText(searchText);
+  const normalizedSelectedClass = normalizeText(selectedClass);
+  const normalizedSelectedTeacher = normalizeText(selectedTeacher);
+
+  return {
+    searchText: normalizedSearchText,
+    searchTerm: normalizedSearchText.toLowerCase(),
+    selectedClass: normalizedSelectedClass,
+    selectedTeacher: normalizedSelectedTeacher,
+    hasActiveCriteria: Boolean(normalizedSearchText || normalizedSelectedClass || normalizedSelectedTeacher)
+  };
+};
+
 export const buildAdminStudentsFilterOptionsState = (classMap = new Map(), students = [], {
   previousClass = '',
   previousTeacher = ''
@@ -310,20 +328,22 @@ export const getFilteredAdminStudentsRegistry = (students = [], {
   selectedTeacher = ''
 } = {}) => {
   const normalizedStudents = Array.isArray(students) ? students : [];
-  const normalizedSearchTerm = normalizeText(searchTerm).toLowerCase();
-  const normalizedSelectedClass = normalizeText(selectedClass);
-  const normalizedSelectedTeacher = normalizeText(selectedTeacher);
+  const normalizedFilterState = buildAdminStudentsFilterState({
+    searchText: searchTerm,
+    selectedClass,
+    selectedTeacher
+  });
 
-  const searchedStudents = normalizedSearchTerm
+  const searchedStudents = normalizedFilterState.searchTerm
     ? normalizedStudents.filter((student) => {
       return [student?.name, student?.className, student?.teacherName]
-        .some((value) => String(value || '').toLowerCase().includes(normalizedSearchTerm));
+        .some((value) => String(value || '').toLowerCase().includes(normalizedFilterState.searchTerm));
     })
     : normalizedStudents.slice();
 
   const filteredStudents = searchedStudents.filter((student) => {
-    const matchesClass = !normalizedSelectedClass || student?.classKey === normalizedSelectedClass;
-    const matchesTeacher = !normalizedSelectedTeacher || student?.ownerId === normalizedSelectedTeacher;
+    const matchesClass = !normalizedFilterState.selectedClass || student?.classKey === normalizedFilterState.selectedClass;
+    const matchesTeacher = !normalizedFilterState.selectedTeacher || student?.ownerId === normalizedFilterState.selectedTeacher;
     return matchesClass && matchesTeacher;
   });
 
@@ -408,5 +428,46 @@ export const getAdminStudentsPagination = (groups = [], {
     currentPage,
     startIndex,
     endIndex
+  };
+};
+
+export const buildAdminStudentsRegistryViewState = (students = [], filterState = {}, {
+  requestedPage = 1,
+  pageSize = 50,
+  isLoaded = false
+} = {}) => {
+  const normalizedStudents = Array.isArray(students) ? students : [];
+  const normalizedFilterState = buildAdminStudentsFilterState(filterState);
+  const filteredStudents = getFilteredAdminStudentsRegistry(normalizedStudents, normalizedFilterState);
+  const groupedStudents = groupAdminStudentsRegistry(filteredStudents);
+  const pagination = getAdminStudentsPagination(groupedStudents, {
+    requestedPage,
+    pageSize
+  });
+  const visibleRange = filteredStudents.length ? `${pagination.startIndex + 1}-${pagination.endIndex}` : '0';
+
+  let statusMessage = '';
+  let statusType = '';
+
+  if (isLoaded) {
+    if (normalizedStudents.length === 0) {
+      statusMessage = 'No active student records were found in the global registry.';
+      statusType = 'warning';
+    } else if (!filteredStudents.length && normalizedFilterState.hasActiveCriteria) {
+      statusMessage = 'No students match your filters.';
+      statusType = 'warning';
+    } else {
+      statusMessage = normalizedFilterState.hasActiveCriteria
+        ? `Page ${pagination.currentPage} of ${pagination.totalPages}. Showing ${visibleRange} of ${filteredStudents.length} matching student${filteredStudents.length === 1 ? '' : 's'}.`
+        : `Page ${pagination.currentPage} of ${pagination.totalPages}. Showing ${visibleRange} of ${filteredStudents.length} student${filteredStudents.length === 1 ? '' : 's'} in the registry.`;
+      statusType = filteredStudents.length ? 'success' : 'warning';
+    }
+  }
+
+  return {
+    filterState: normalizedFilterState,
+    pagination,
+    statusMessage,
+    statusType
   };
 };
