@@ -47,10 +47,8 @@ import {
   getDateGroupLabel
 } from './admin-activity-utils.js';
 import {
-  parseAdminRegistryStudentPath,
-  buildAdminRegistryStudentIdentityKey,
+  buildAdminRegistryStudentRecords,
   removeAdminRegistryStudentEntries,
-  pickPreferredAdminRegistryStudentRecord,
   mapAdminRegistryClassRecord,
   mapAdminRegistryStudentRecord,
   buildAdminStudentsFilterState,
@@ -1303,45 +1301,13 @@ async function fetchAllStudentsGlobal() {
     return [];
   }
   const snapshot = await getDocs(collectionGroup(db, 'students'));
-  const dedupedStudents = new Map();
 
-  snapshot.forEach((entry) => {
-    const data = entry.data() || {};
-    if (data.deleted === true) {
-      return;
-    }
-    const parsedPath = parseAdminRegistryStudentPath(entry.ref?.path);
-    if (!parsedPath.isSupportedPath) {
-      return;
-    }
-    const ownerId = normalizeDisplayText(parsedPath.ownerId || data.ownerId || data.userId || '', '');
-
-    const classId = normalizeDisplayText(parsedPath.classId || data.classId || '', '');
-    const className = normalizeDisplayText(data.className || data.class || '', '');
-    const studentId = normalizeDisplayText(data.id || parsedPath.studentDocId || '', '');
-    const identityKey = buildAdminRegistryStudentIdentityKey(ownerId, studentId);
-
-    if (!identityKey) {
-      return;
-    }
-
-    const candidate = {
-      ...data,
-      id: studentId,
-      ownerId,
-      classId,
-      className,
-      isClassScoped: Boolean(classId || parsedPath.isClassScoped)
+  return buildAdminRegistryStudentRecords(snapshot.docs.map((entry) => {
+    return {
+      payload: entry.data(),
+      path: entry.ref?.path
     };
-
-    const current = dedupedStudents.get(identityKey) || null;
-    dedupedStudents.set(identityKey, pickPreferredAdminRegistryStudentRecord(current, candidate));
-  });
-
-  return Array.from(dedupedStudents.values()).map((student) => {
-    const { isClassScoped, ...nextStudent } = student;
-    return nextStudent;
-  });
+  }));
 }
 
 async function fetchAdminClassNameMap() {

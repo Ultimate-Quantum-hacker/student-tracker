@@ -92,6 +92,49 @@ export const pickPreferredAdminRegistryStudentRecord = (current = null, candidat
   return current;
 };
 
+export const buildAdminRegistryStudentRecords = (entries = []) => {
+  const normalizedEntries = Array.isArray(entries) ? entries : [];
+  const dedupedStudents = new Map();
+
+  normalizedEntries.forEach((entry) => {
+    const payload = entry?.payload || {};
+    if (payload.deleted === true) {
+      return;
+    }
+
+    const parsedPath = parseAdminRegistryStudentPath(entry?.path);
+    if (!parsedPath.isSupportedPath) {
+      return;
+    }
+
+    const ownerId = normalizeDisplayText(parsedPath.ownerId || payload.ownerId || payload.userId || '', '');
+    const classId = normalizeDisplayText(parsedPath.classId || payload.classId || '', '');
+    const className = normalizeDisplayText(payload.className || payload.class || '', '');
+    const studentId = normalizeDisplayText(payload.id || parsedPath.studentDocId || '', '');
+    const identityKey = buildAdminRegistryStudentIdentityKey(ownerId, studentId);
+    if (!identityKey) {
+      return;
+    }
+
+    const candidate = {
+      ...payload,
+      id: studentId,
+      ownerId,
+      classId,
+      className,
+      isClassScoped: Boolean(classId || parsedPath.isClassScoped)
+    };
+
+    const current = dedupedStudents.get(identityKey) || null;
+    dedupedStudents.set(identityKey, pickPreferredAdminRegistryStudentRecord(current, candidate));
+  });
+
+  return Array.from(dedupedStudents.values()).map((student) => {
+    const { isClassScoped, ...nextStudent } = student;
+    return nextStudent;
+  });
+};
+
 export const buildAdminRegistryClassKey = (ownerId = '', classId = '') => {
   const normalizedOwnerId = normalizeDisplayText(ownerId, '');
   const normalizedClassId = normalizeDisplayText(classId, '');
