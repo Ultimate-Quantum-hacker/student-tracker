@@ -344,6 +344,29 @@ export const buildAdminStudentsRegistryRecords = (studentRecords = [], classMap 
     .filter((student) => includeOwner(student?.ownerId));
 };
 
+export const getVisibleAdminStudentsClassMap = (classMap = new Map(), {
+  shouldIncludeOwner = () => true
+} = {}) => {
+  const visibleClassMap = new Map();
+  const includeOwner = typeof shouldIncludeOwner === 'function'
+    ? shouldIncludeOwner
+    : () => true;
+
+  if (!(classMap instanceof Map)) {
+    return visibleClassMap;
+  }
+
+  classMap.forEach((classInfo, classKey) => {
+    if (!includeOwner(classInfo?.ownerId)) {
+      return;
+    }
+
+    visibleClassMap.set(classKey, classInfo);
+  });
+
+  return visibleClassMap;
+};
+
 const buildAdminStudentsFilterOptionMarkup = (options = [], {
   emptyLabel = 'All options'
 } = {}) => {

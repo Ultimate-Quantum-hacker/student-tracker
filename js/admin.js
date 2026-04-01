@@ -51,6 +51,7 @@ import {
   removeAdminRegistryStudentEntries,
   mapAdminRegistryClassRecord,
   buildAdminStudentsRegistryRecords,
+  getVisibleAdminStudentsClassMap,
   buildAdminStudentsFilterState,
   buildAdminStudentsFilterOptionsState,
   buildAdminStudentsPaginationViewState,
@@ -1349,16 +1350,9 @@ const updateAdminStudentsFilterControls = () => {
 };
 
 const renderAdminStudentsFilterOptions = (classMap = new Map(), students = []) => {
-  const visibleClassMap = new Map();
-  if (classMap instanceof Map) {
-    classMap.forEach((classInfo, classKey) => {
-      if (!shouldIncludeGlobalSearchOwner(classInfo?.ownerId)) {
-        return;
-      }
-
-      visibleClassMap.set(classKey, classInfo);
-    });
-  }
+  const visibleClassMap = getVisibleAdminStudentsClassMap(classMap, {
+    shouldIncludeOwner: shouldIncludeGlobalSearchOwner
+  });
 
   const {
     classOptionMarkup,
