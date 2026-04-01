@@ -7,6 +7,7 @@ import {
   formatClassDisplayLabel,
   getEntryClassFilterKey
 } from './admin-activity-utils.js';
+import { getVisibleAdminActivityEntries } from './admin-user-utils.js';
 
 const buildSelectOptionsMarkup = (options = [], {
   emptyLabel = 'All options'
@@ -49,6 +50,18 @@ export const buildActivityClassFilterState = (entries = [], {
     }),
     selectedValue: classOptions.has(normalizedPreviousSelection) ? normalizedPreviousSelection : ''
   };
+};
+
+export const buildVisibleActivityClassFilterState = (entries = [], users = [], {
+  currentRole = '',
+  previousSelection = ''
+} = {}) => {
+  const visibleEntries = getVisibleAdminActivityEntries(entries, users, {
+    currentRole
+  });
+  return buildActivityClassFilterState(visibleEntries, {
+    previousSelection
+  });
 };
 
 export const buildActivityUserFilterState = (users = [], {

@@ -71,7 +71,7 @@ import {
   shouldIncludeAdminOwner
 } from './admin-user-utils.js';
 import {
-  buildActivityClassFilterState,
+  buildVisibleActivityClassFilterState,
   buildActivityUserFilterState,
   buildActivityLogsQueryState,
   filterAdminActivityEntries
@@ -603,12 +603,10 @@ const getVisibleActivityEntries = (entries = []) => {
 const populateActivityClassFilter = (entries = []) => {
   if (!dom.activityClassFilter) return;
 
-  const { optionMarkup, selectedValue } = buildActivityClassFilterState(
-    getVisibleActivityEntries(entries),
-    {
-      previousSelection: dom.activityClassFilter.value || ''
-    }
-  );
+  const { optionMarkup, selectedValue } = buildVisibleActivityClassFilterState(entries, state.users, {
+    currentRole: state.currentRole,
+    previousSelection: dom.activityClassFilter.value || ''
+  });
 
   dom.activityClassFilter.innerHTML = optionMarkup;
   dom.activityClassFilter.value = selectedValue;
