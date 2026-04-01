@@ -51,8 +51,7 @@ import {
   buildAdminRegistryStudentIdentityKey,
   removeAdminRegistryStudentEntries,
   pickPreferredAdminRegistryStudentRecord,
-  buildAdminRegistryClassKey,
-  resolveAdminRegistryTeacherName,
+  mapAdminRegistryClassRecord,
   mapAdminRegistryStudentRecord,
   buildAdminStudentsFilterState,
   buildAdminStudentsFilterOptionsState,
@@ -1353,30 +1352,17 @@ async function fetchAdminClassNameMap() {
   const snapshot = await getDocs(collectionGroup(db, 'classes'));
   const classMap = new Map();
   snapshot.forEach((entry) => {
-    const payload = entry.data() || {};
-
-    if (payload.deleted === true) {
-      return;
-    }
-
-    const path = String(entry.ref?.path || '').split('/').filter(Boolean);
-    const ownerId = normalizeDisplayText(path[0] === 'users' ? path[1] : '', '');
-    const classId = normalizeDisplayText(path[2] === 'classes' ? path[3] : entry.id || '', '');
-    const classKey = buildAdminRegistryClassKey(ownerId, classId);
-    if (!classKey) {
-      return;
-    }
-
-    classMap.set(classKey, {
-      name: normalizeDisplayText(payload.name || payload.className || payload.title || '', 'Unnamed Class'),
-      ownerId,
-      ownerName: resolveAdminRegistryTeacherName(ownerId, {
-        student: {
-          ownerName: payload.ownerName || payload.teacherName || ''
-        },
-        users: state.users
-      })
+    const mappedClass = mapAdminRegistryClassRecord({
+      payload: entry.data(),
+      path: entry.ref?.path,
+      fallbackClassId: entry.id,
+      users: state.users
     });
+    if (!mappedClass) {
+      return;
+    }
+
+    classMap.set(mappedClass.classKey, mappedClass.classInfo);
   });
   return classMap;
 }

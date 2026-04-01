@@ -227,6 +227,39 @@ export const resolveAdminRegistryTeacherName = (ownerId = '', {
   );
 };
 
+export const mapAdminRegistryClassRecord = ({
+  payload = {},
+  path = '',
+  fallbackClassId = '',
+  users = []
+} = {}) => {
+  if (payload?.deleted === true) {
+    return null;
+  }
+
+  const segments = String(path || '').split('/').filter(Boolean);
+  const ownerId = normalizeDisplayText(segments[0] === 'users' ? segments[1] : '', '');
+  const classId = normalizeDisplayText(segments[2] === 'classes' ? segments[3] : fallbackClassId, '');
+  const classKey = buildAdminRegistryClassKey(ownerId, classId);
+  if (!classKey) {
+    return null;
+  }
+
+  return {
+    classKey,
+    classInfo: {
+      name: normalizeDisplayText(payload.name || payload.className || payload.title || '', 'Unnamed Class'),
+      ownerId,
+      ownerName: resolveAdminRegistryTeacherName(ownerId, {
+        student: {
+          ownerName: payload.ownerName || payload.teacherName || ''
+        },
+        users
+      })
+    }
+  };
+};
+
 export const mapAdminRegistryStudentRecord = (student = {}, classMap = new Map(), {
   users = []
 } = {}) => {
