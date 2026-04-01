@@ -203,6 +203,54 @@ export const resolveAdminRegistryClassInfo = (classMap = new Map(), ownerId = ''
   };
 };
 
+const findAdminRegistryOwnerRecord = (users = [], ownerId = '') => {
+  const normalizedUsers = Array.isArray(users) ? users : [];
+  const normalizedOwnerId = normalizeDisplayText(ownerId, '');
+  if (!normalizedOwnerId) {
+    return null;
+  }
+
+  return normalizedUsers.find((candidate) => {
+    return normalizeDisplayText(candidate?.uid, '') === normalizedOwnerId;
+  }) || null;
+};
+
+export const resolveAdminRegistryTeacherName = (ownerId = '', {
+  classInfo = null,
+  student = {},
+  users = []
+} = {}) => {
+  const ownerRecord = findAdminRegistryOwnerRecord(users, ownerId);
+  return normalizeDisplayText(
+    classInfo?.ownerName || student?.ownerName || student?.teacherName || ownerRecord?.name || ownerRecord?.email || '',
+    'Unknown Teacher'
+  );
+};
+
+export const mapAdminRegistryStudentRecord = (student = {}, classMap = new Map(), {
+  users = []
+} = {}) => {
+  const ownerId = normalizeDisplayText(student.ownerId || student.userId || '', '');
+  const studentClassName = normalizeDisplayText(student.className || student.class || '', '');
+  const classId = normalizeDisplayText(student.classId || '', '');
+  const resolvedClass = resolveAdminRegistryClassInfo(classMap, ownerId, classId, studentClassName);
+  const classKey = resolvedClass.classKey || buildAdminRegistryFallbackClassKey(ownerId, studentClassName || classId);
+
+  return {
+    name: normalizeDisplayText(student.name, 'Unnamed'),
+    ownerId,
+    studentId: normalizeDisplayText(student.id || '', ''),
+    classId,
+    classKey,
+    className: normalizeDisplayText(resolvedClass.classInfo?.name || studentClassName || '', 'Unknown Class'),
+    teacherName: resolveAdminRegistryTeacherName(ownerId, {
+      classInfo: resolvedClass.classInfo,
+      student,
+      users
+    })
+  };
+};
+
 const buildAdminStudentsFilterOptionMarkup = (options = [], {
   emptyLabel = 'All options'
 } = {}) => {

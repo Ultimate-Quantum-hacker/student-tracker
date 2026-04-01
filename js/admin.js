@@ -52,8 +52,8 @@ import {
   removeAdminRegistryStudentEntries,
   pickPreferredAdminRegistryStudentRecord,
   buildAdminRegistryClassKey,
-  buildAdminRegistryFallbackClassKey,
-  resolveAdminRegistryClassInfo,
+  resolveAdminRegistryTeacherName,
+  mapAdminRegistryStudentRecord,
   buildAdminStudentsFilterState,
   buildAdminStudentsFilterOptionsState,
   buildAdminStudentsPaginationViewState,
@@ -1345,14 +1345,6 @@ async function fetchAllStudentsGlobal() {
   });
 }
 
-const resolveAdminRegistryTeacherName = (ownerId = '', classInfo = null, student = {}) => {
-  const ownerRecord = findUserRecord(ownerId);
-  return normalizeDisplayText(
-    classInfo?.ownerName || student.ownerName || student.teacherName || ownerRecord?.name || ownerRecord?.email || '',
-    'Unknown Teacher'
-  );
-};
-
 async function fetchAdminClassNameMap() {
   if (!isFirebaseConfigured || !db) {
     return new Map();
@@ -1379,30 +1371,15 @@ async function fetchAdminClassNameMap() {
       name: normalizeDisplayText(payload.name || payload.className || payload.title || '', 'Unnamed Class'),
       ownerId,
       ownerName: resolveAdminRegistryTeacherName(ownerId, {
-        ownerName: payload.ownerName || payload.teacherName || ''
+        student: {
+          ownerName: payload.ownerName || payload.teacherName || ''
+        },
+        users: state.users
       })
     });
   });
   return classMap;
 }
-
-const mapAdminStudentRecord = (student = {}, classMap = new Map()) => {
-  const ownerId = normalizeDisplayText(student.ownerId || student.userId || '', '');
-  const studentClassName = normalizeDisplayText(student.className || student.class || '', '');
-  const classId = normalizeDisplayText(student.classId || '', '');
-  const resolvedClass = resolveAdminRegistryClassInfo(classMap, ownerId, classId, studentClassName);
-  const classKey = resolvedClass.classKey || buildAdminRegistryFallbackClassKey(ownerId, studentClassName || classId);
-
-  return {
-    name: normalizeDisplayText(student.name, 'Unnamed'),
-    ownerId,
-    studentId: normalizeDisplayText(student.id || '', ''),
-    classId,
-    classKey,
-    className: normalizeDisplayText(resolvedClass.classInfo?.name || studentClassName || '', 'Unknown Class'),
-    teacherName: resolveAdminRegistryTeacherName(ownerId, resolvedClass.classInfo, student)
-  };
-};
 
 const getAdminStudentsFilterState = () => {
   return buildAdminStudentsFilterState({
@@ -1587,7 +1564,9 @@ const loadAdminStudentsRegistry = async () => {
     const students = Array.isArray(studentRecords)
       ? studentRecords
         .filter((student) => student?.deleted !== true)
-        .map((student) => mapAdminStudentRecord(student, classMap))
+        .map((student) => mapAdminRegistryStudentRecord(student, classMap, {
+          users: state.users
+        }))
         .filter((student) => shouldIncludeGlobalSearchOwner(student.ownerId))
       : [];
     state.adminStudentsRegistry = students;
