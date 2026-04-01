@@ -38,7 +38,6 @@ import {
 } from './admin-display-utils.js';
 import {
   getActionTone,
-  getEntryClassFilterKey,
   formatClassDisplayLabel,
   toDateValue,
   formatDateLabel,
@@ -69,6 +68,11 @@ import {
   getVisibleAdminActivityEntries,
   shouldIncludeAdminOwner
 } from './admin-user-utils.js';
+import {
+  buildActivityClassFilterState,
+  buildActivityUserFilterState,
+  buildActivityLogsCacheKey
+} from './admin-activity-filter-utils.js';
 
 const DASHBOARD_PATH = '/index.html';
 const LOGIN_PATH = '/login.html';
@@ -663,25 +667,15 @@ const getVisibleActivityEntries = (entries = []) => {
 const populateActivityClassFilter = (entries = []) => {
   if (!dom.activityClassFilter) return;
 
-  const previousSelection = normalizeText(dom.activityClassFilter.value || '');
-  const classOptions = new Map();
-  getVisibleActivityEntries(entries).forEach((entry) => {
-    const classKey = getEntryClassFilterKey(entry);
-    if (!classKey) return;
-    if (classOptions.has(classKey)) return;
-    classOptions.set(classKey, formatClassDisplayLabel(entry));
-  });
+  const { optionMarkup, selectedValue } = buildActivityClassFilterState(
+    getVisibleActivityEntries(entries),
+    {
+      previousSelection: dom.activityClassFilter.value || ''
+    }
+  );
 
-  const sortedOptions = Array.from(classOptions.entries())
-    .sort((a, b) => String(a[1] || '').localeCompare(String(b[1] || '')));
-
-  const optionMarkup = ['<option value="">All classes</option>'];
-  sortedOptions.forEach(([key, label]) => {
-    optionMarkup.push(`<option value="${escapeHtml(key)}">${escapeHtml(label)}</option>`);
-  });
-
-  dom.activityClassFilter.innerHTML = optionMarkup.join('');
-  dom.activityClassFilter.value = classOptions.has(previousSelection) ? previousSelection : '';
+  dom.activityClassFilter.innerHTML = optionMarkup;
+  dom.activityClassFilter.value = selectedValue;
 };
 
 const renderActivityLogTable = (entries = []) => {
@@ -778,17 +772,13 @@ const renderGlobalSearchResults = (entries = []) => {
 
 const populateActivityUserFilter = () => {
   if (!dom.activityUserFilter) return;
-  const selectedValue = normalizeText(dom.activityUserFilter.value || '');
-  const options = ['<option value="">All users</option>'];
-
-  getVisibleUsers().forEach((record) => {
-    const label = `${record.name || record.email || 'Unknown user'} (${formatRoleLabel(record.role)})`;
-    options.push(`<option value="${escapeHtml(record.uid)}">${escapeHtml(label)}</option>`);
+  const visibleUsers = getVisibleUsers();
+  const { optionMarkup, selectedValue } = buildActivityUserFilterState(visibleUsers, {
+    previousSelection: dom.activityUserFilter.value || ''
   });
 
-  dom.activityUserFilter.innerHTML = options.join('');
-  const stillExists = getVisibleUsers().some((record) => record.uid === selectedValue);
-  dom.activityUserFilter.value = stillExists ? selectedValue : '';
+  dom.activityUserFilter.innerHTML = optionMarkup;
+  dom.activityUserFilter.value = selectedValue;
 };
 
 const fetchUsers = async () => {
@@ -1193,12 +1183,6 @@ const debounceAdminTask = (timerKey, callback, waitMs = 300) => {
       console.error('Deferred admin task failed:', error);
     });
   }, waitMs);
-};
-
-const buildActivityLogsCacheKey = ({ userId = '', sort = 'desc' } = {}) => {
-  const normalizedUserId = normalizeText(userId);
-  const normalizedSort = normalizeText(sort).toLowerCase() === 'asc' ? 'asc' : 'desc';
-  return `${normalizedUserId}::${normalizedSort}`;
 };
 
 const bindEvents = () => {
