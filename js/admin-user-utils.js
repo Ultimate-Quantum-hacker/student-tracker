@@ -108,3 +108,15 @@ export const buildVisibleAdminGlobalSearchRows = (rows = [], {
     .filter((entry) => includeOwner(entry?.userId))
     .sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
 };
+
+export const getFilteredAdminGlobalSearchRows = (rows = [], {
+  searchTerm = ''
+} = {}) => {
+  const normalizedRows = Array.isArray(rows) ? rows : [];
+  const normalizedSearchTerm = normalizeText(searchTerm).toLowerCase();
+  if (!normalizedSearchTerm) {
+    return normalizedRows.slice();
+  }
+
+  return normalizedRows.filter((entry) => String(entry?.name || '').toLowerCase().includes(normalizedSearchTerm));
+};

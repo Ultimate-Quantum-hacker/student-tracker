@@ -65,6 +65,7 @@ import {
   getVisibleAdminUsers,
   getFilteredAdminUsers,
   buildVisibleAdminGlobalSearchRows,
+  getFilteredAdminGlobalSearchRows,
   canManageAdminRoles,
   canDeleteAdminRegistryStudents,
   canEditAdminUserRole,
@@ -906,7 +907,9 @@ const runGlobalSearch = () => {
     return;
   }
 
-  const results = state.globalSearchIndex.filter((entry) => String(entry.name || '').toLowerCase().includes(term));
+  const results = getFilteredAdminGlobalSearchRows(state.globalSearchIndex, {
+    searchTerm: term
+  });
   state.globalSearchResults = results;
   renderGlobalSearchResults(results);
   setGlobalSearchStatus(`Found ${results.length} result${results.length === 1 ? '' : 's'}.`, results.length ? 'success' : 'warning');
