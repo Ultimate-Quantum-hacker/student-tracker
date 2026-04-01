@@ -120,3 +120,28 @@ export const getFilteredAdminGlobalSearchRows = (rows = [], {
 
   return normalizedRows.filter((entry) => String(entry?.name || '').toLowerCase().includes(normalizedSearchTerm));
 };
+
+export const buildAdminGlobalSearchFeedbackState = ({
+  searchTerm = '',
+  resultCount = 0
+} = {}) => {
+  const normalizedSearchTerm = normalizeText(searchTerm);
+  const parsedResultCount = Number(resultCount);
+  const normalizedResultCount = Number.isFinite(parsedResultCount) && parsedResultCount > 0
+    ? Math.floor(parsedResultCount)
+    : 0;
+
+  if (!normalizedSearchTerm) {
+    return {
+      emptyMessage: 'Search by student name to see results.',
+      statusMessage: 'Search by student name to see results.',
+      statusType: ''
+    };
+  }
+
+  return {
+    emptyMessage: 'No search results found.',
+    statusMessage: `Found ${normalizedResultCount} result${normalizedResultCount === 1 ? '' : 's'}.`,
+    statusType: normalizedResultCount ? 'success' : 'warning'
+  };
+};

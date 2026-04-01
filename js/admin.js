@@ -67,6 +67,7 @@ import {
   getFilteredAdminUsers,
   buildVisibleAdminGlobalSearchRows,
   getFilteredAdminGlobalSearchRows,
+  buildAdminGlobalSearchFeedbackState,
   canManageAdminRoles,
   canDeleteAdminRegistryStudents,
   canEditAdminUserRole,
@@ -662,9 +663,10 @@ const renderActivityLogTable = (entries = []) => {
 const renderGlobalSearchResults = (entries = []) => {
   if (!dom.globalSearchResultsBody) return;
   if (!entries.length) {
-    const emptyMessage = normalizeText(dom.globalSearchInput?.value || '')
-      ? 'No search results found.'
-      : 'Search by student name to see results.';
+    const { emptyMessage } = buildAdminGlobalSearchFeedbackState({
+      searchTerm: dom.globalSearchInput?.value || '',
+      resultCount: entries.length
+    });
     dom.globalSearchResultsBody.innerHTML = `<tr><td colspan="4" class="empty-row"><div class="smart-empty"><span>🔎</span><p>${escapeHtml(emptyMessage)}</p></div></td></tr>`;
     return;
   }
@@ -887,18 +889,26 @@ const scheduleGlobalSearch = () => {
 const runGlobalSearch = () => {
   const term = normalizeText(dom.globalSearchInput?.value || '').toLowerCase();
   if (!term) {
+    const { statusMessage, statusType } = buildAdminGlobalSearchFeedbackState({
+      searchTerm: term,
+      resultCount: 0
+    });
     state.globalSearchResults = [];
     renderGlobalSearchResults([]);
-    setGlobalSearchStatus('Search by student name to see results.');
+    setGlobalSearchStatus(statusMessage, statusType);
     return;
   }
 
   const results = getFilteredAdminGlobalSearchRows(state.globalSearchIndex, {
     searchTerm: term
   });
+  const { statusMessage, statusType } = buildAdminGlobalSearchFeedbackState({
+    searchTerm: term,
+    resultCount: results.length
+  });
   state.globalSearchResults = results;
   renderGlobalSearchResults(results);
-  setGlobalSearchStatus(`Found ${results.length} result${results.length === 1 ? '' : 's'}.`, results.length ? 'success' : 'warning');
+  setGlobalSearchStatus(statusMessage, statusType);
 };
 
 const loadActivityLogs = async () => {
