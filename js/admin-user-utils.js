@@ -95,3 +95,16 @@ export const shouldIncludeAdminOwner = (userId = '', users = [], {
   const owner = findAdminUserRecord(users, normalizedUserId);
   return normalizeUserRole(owner?.role) !== ROLE_DEVELOPER;
 };
+
+export const buildVisibleAdminGlobalSearchRows = (rows = [], {
+  shouldIncludeOwner = () => true
+} = {}) => {
+  const normalizedRows = Array.isArray(rows) ? rows : [];
+  const includeOwner = typeof shouldIncludeOwner === 'function'
+    ? shouldIncludeOwner
+    : () => true;
+
+  return normalizedRows
+    .filter((entry) => includeOwner(entry?.userId))
+    .sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
+};

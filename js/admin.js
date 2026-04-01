@@ -64,6 +64,7 @@ import {
   findAdminUserRecord,
   getVisibleAdminUsers,
   getFilteredAdminUsers,
+  buildVisibleAdminGlobalSearchRows,
   canManageAdminRoles,
   canDeleteAdminRegistryStudents,
   canEditAdminUserRole,
@@ -841,10 +842,9 @@ const buildGlobalSearchIndex = async () => {
     }
 
     let rows = await fetchGlobalStudentSearchIndex();
-    rows = Array.isArray(rows)
-      ? rows.filter((entry) => shouldIncludeGlobalSearchOwner(entry?.userId))
-      : [];
-    rows.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+    rows = buildVisibleAdminGlobalSearchRows(rows, {
+      shouldIncludeOwner: shouldIncludeGlobalSearchOwner
+    });
     state.globalSearchIndex = rows;
     state.globalSearchIndexLoaded = true;
     writeAdminRuntimeCache('globalSearchIndex', rows);
