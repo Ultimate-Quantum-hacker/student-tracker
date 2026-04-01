@@ -1,4 +1,8 @@
-import { normalizeText, normalizeDisplayText } from './admin-display-utils.js';
+import {
+  formatTargetIdentifier,
+  normalizeText,
+  normalizeDisplayText
+} from './admin-display-utils.js';
 
 export const getActionTone = (action = '') => {
   const normalized = normalizeText(action).toLowerCase();
@@ -30,6 +34,115 @@ export const formatClassDisplayLabel = (entry = {}) => {
     return `${baseClassLabel} — ${ownerName}`;
   }
   return baseClassLabel;
+};
+
+const getFirstDisplayText = (record = {}, keys = []) => {
+  const fieldNames = Array.isArray(keys) ? keys : [];
+  for (const key of fieldNames) {
+    const value = normalizeDisplayText(record?.[key] || '', '');
+    if (value) {
+      return value;
+    }
+  }
+  return '';
+};
+
+const findActivityStudentMatch = ({
+  studentId = '',
+  ownerId = '',
+  classId = ''
+} = {}, candidates = [], {
+  idKeys = [],
+  ownerKeys = [],
+  classKeys = []
+} = {}) => {
+  if (!studentId) {
+    return null;
+  }
+
+  const normalizedCandidates = Array.isArray(candidates) ? candidates : [];
+  const normalizedIdKeys = Array.isArray(idKeys) ? idKeys : [];
+  const normalizedOwnerKeys = Array.isArray(ownerKeys) ? ownerKeys : [];
+  const normalizedClassKeys = Array.isArray(classKeys) ? classKeys : [];
+
+  return normalizedCandidates.find((candidate) => {
+    const candidateId = getFirstDisplayText(candidate, normalizedIdKeys);
+    if (!candidateId || candidateId !== studentId) {
+      return false;
+    }
+
+    const candidateOwnerId = getFirstDisplayText(candidate, normalizedOwnerKeys);
+    if (ownerId && candidateOwnerId && candidateOwnerId !== ownerId) {
+      return false;
+    }
+
+    const candidateClassId = getFirstDisplayText(candidate, normalizedClassKeys);
+    if (classId && candidateClassId && candidateClassId !== classId) {
+      return false;
+    }
+
+    return true;
+  }) || null;
+};
+
+export const resolveLegacyActivityStudentName = (entry = {}, {
+  globalSearchIndex = [],
+  adminStudentsRegistry = []
+} = {}) => {
+  const targetType = normalizeDisplayText(entry.targetType || '', '').toLowerCase();
+  const action = normalizeDisplayText(entry.action || '', '').toLowerCase();
+  if (targetType && targetType !== 'student' && !action.includes('student')) {
+    return '';
+  }
+
+  const studentId = normalizeDisplayText(entry.studentId || entry.targetId || '', '');
+  if (!studentId) {
+    return '';
+  }
+
+  const studentContext = {
+    studentId,
+    ownerId: normalizeDisplayText(entry.ownerId || entry.dataOwnerUserId || '', ''),
+    classId: normalizeDisplayText(entry.classId || '', '')
+  };
+
+  const searchMatch = findActivityStudentMatch(studentContext, globalSearchIndex, {
+    idKeys: ['id'],
+    ownerKeys: ['userId', 'ownerId'],
+    classKeys: ['classId']
+  });
+  const searchName = getFirstDisplayText(searchMatch, ['name']);
+  if (searchName) {
+    return searchName;
+  }
+
+  const registryMatch = findActivityStudentMatch(studentContext, adminStudentsRegistry, {
+    idKeys: ['studentId', 'id'],
+    ownerKeys: ['ownerId'],
+    classKeys: ['classId']
+  });
+  return getFirstDisplayText(registryMatch, ['studentName', 'name']);
+};
+
+export const formatActivityTargetLabel = (entry = {}, {
+  globalSearchIndex = [],
+  adminStudentsRegistry = []
+} = {}) => {
+  const targetType = normalizeDisplayText(entry.targetType || 'record', 'record').toLowerCase();
+  const resolvedStudentName = resolveLegacyActivityStudentName(entry, {
+    globalSearchIndex,
+    adminStudentsRegistry
+  });
+  const targetLabel = normalizeDisplayText(entry.targetLabel || entry.studentName || resolvedStudentName || '', '');
+  const targetId = formatTargetIdentifier(entry.targetId || '');
+  const readableType = targetType
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim() || 'record';
+
+  if (targetLabel) return `${readableType}: ${targetLabel}`;
+  if (!targetId) return readableType;
+  return `${readableType}: ${targetId}`;
 };
 
 export const toDateValue = (value) => {
