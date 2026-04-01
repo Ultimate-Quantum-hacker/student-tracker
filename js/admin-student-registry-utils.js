@@ -431,6 +431,49 @@ export const getAdminStudentsPagination = (groups = [], {
   };
 };
 
+export const buildAdminStudentsPaginationViewState = ({
+  totalItems = 0,
+  totalPages = 1,
+  currentPage = 1,
+  startIndex = 0,
+  endIndex = 0,
+  isLoading = false
+} = {}) => {
+  const normalizedTotalItems = Math.max(0, Number.parseInt(totalItems, 10) || 0);
+  const normalizedTotalPages = Math.max(1, Number.parseInt(totalPages, 10) || 1);
+  const parsedCurrentPage = Number.parseInt(currentPage, 10);
+  const normalizedCurrentPage = Math.max(
+    1,
+    Math.min(Number.isFinite(parsedCurrentPage) ? parsedCurrentPage : 1, normalizedTotalPages)
+  );
+  const parsedStartIndex = Number.parseInt(startIndex, 10);
+  const normalizedStartIndex = normalizedTotalItems
+    ? Math.max(0, Number.isFinite(parsedStartIndex) ? parsedStartIndex : 0)
+    : 0;
+  const parsedEndIndex = Number.parseInt(endIndex, 10);
+  const normalizedEndIndex = normalizedTotalItems
+    ? Math.max(
+      normalizedStartIndex + 1,
+      Math.min(normalizedTotalItems, Number.isFinite(parsedEndIndex) ? parsedEndIndex : normalizedTotalItems)
+    )
+    : 0;
+
+  let summaryText = 'No pages to display.';
+  if (isLoading) {
+    summaryText = 'Preparing registry pages...';
+  } else if (normalizedTotalItems) {
+    summaryText = `Showing ${normalizedStartIndex + 1}-${normalizedEndIndex} of ${normalizedTotalItems} student${normalizedTotalItems === 1 ? '' : 's'}.`;
+  }
+
+  return {
+    shouldShow: Boolean(isLoading || normalizedTotalItems > 0),
+    summaryText,
+    pageIndicatorText: `Page ${normalizedCurrentPage} of ${normalizedTotalPages}`,
+    prevDisabled: Boolean(isLoading || normalizedCurrentPage <= 1 || normalizedTotalItems === 0),
+    nextDisabled: Boolean(isLoading || normalizedCurrentPage >= normalizedTotalPages || normalizedTotalItems === 0)
+  };
+};
+
 export const buildAdminStudentsRegistryViewState = (students = [], filterState = {}, {
   requestedPage = 1,
   pageSize = 50,

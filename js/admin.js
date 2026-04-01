@@ -55,6 +55,7 @@ import {
   resolveAdminRegistryClassInfo,
   buildAdminStudentsFilterState,
   buildAdminStudentsFilterOptionsState,
+  buildAdminStudentsPaginationViewState,
   buildAdminStudentsRegistryViewState
 } from './admin-student-registry-utils.js';
 import {
@@ -1474,29 +1475,31 @@ const renderAdminStudentsPagination = ({
 } = {}) => {
   if (!dom.adminStudentsPagination) return;
 
-  const shouldShow = Boolean(isLoading || totalItems > 0);
-  dom.adminStudentsPagination.classList.toggle('hidden', !shouldShow);
+  const paginationViewState = buildAdminStudentsPaginationViewState({
+    totalItems,
+    totalPages,
+    currentPage,
+    startIndex,
+    endIndex,
+    isLoading
+  });
+
+  dom.adminStudentsPagination.classList.toggle('hidden', !paginationViewState.shouldShow);
 
   if (dom.adminStudentsPaginationSummary) {
-    if (isLoading) {
-      dom.adminStudentsPaginationSummary.textContent = 'Preparing registry pages...';
-    } else if (!totalItems) {
-      dom.adminStudentsPaginationSummary.textContent = 'No pages to display.';
-    } else {
-      dom.adminStudentsPaginationSummary.textContent = `Showing ${startIndex + 1}-${endIndex} of ${totalItems} student${totalItems === 1 ? '' : 's'}.`;
-    }
+    dom.adminStudentsPaginationSummary.textContent = paginationViewState.summaryText;
   }
 
   if (dom.adminStudentsPageIndicator) {
-    dom.adminStudentsPageIndicator.textContent = `Page ${currentPage} of ${totalPages}`;
+    dom.adminStudentsPageIndicator.textContent = paginationViewState.pageIndicatorText;
   }
 
   if (dom.adminStudentsPrevPageBtn) {
-    dom.adminStudentsPrevPageBtn.disabled = isLoading || currentPage <= 1 || totalItems === 0;
+    dom.adminStudentsPrevPageBtn.disabled = paginationViewState.prevDisabled;
   }
 
   if (dom.adminStudentsNextPageBtn) {
-    dom.adminStudentsNextPageBtn.disabled = isLoading || currentPage >= totalPages || totalItems === 0;
+    dom.adminStudentsNextPageBtn.disabled = paginationViewState.nextDisabled;
   }
 };
 
