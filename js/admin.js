@@ -37,6 +37,7 @@ import {
 } from './admin-display-utils.js';
 import {
   getActionTone,
+  getEntryClassFilterKey,
   formatClassDisplayLabel,
   formatActivityTargetLabel,
   toDateValue,
@@ -52,7 +53,8 @@ import {
   buildAdminRegistryClassKey,
   buildAdminRegistryFallbackClassKey,
   resolveAdminRegistryClassInfo,
-  sortAdminStudentsRegistry,
+  buildAdminStudentsFilterOptionsState,
+  getFilteredAdminStudentsRegistry,
   groupAdminStudentsRegistry,
   getAdminStudentsPagination
 } from './admin-student-registry-utils.js';
@@ -1423,99 +1425,39 @@ const updateAdminStudentsFilterControls = () => {
 };
 
 const renderAdminStudentsFilterOptions = (classMap = new Map(), students = []) => {
-  const previousClass = normalizeText(dom.adminStudentsClassFilter?.value || '');
-  const previousTeacher = normalizeText(dom.adminStudentsTeacherFilter?.value || '');
-  const classEntries = new Map();
-  const teacherEntries = new Map();
-
-  const registerEntry = ({
-    classKey = '',
-    className = '',
-    ownerId = '',
-    teacherName = ''
-  } = {}) => {
-    const normalizedClassKey = normalizeDisplayText(classKey, '');
-    const normalizedClassName = normalizeDisplayText(className, 'Unnamed Class');
-    const normalizedOwnerId = normalizeDisplayText(ownerId, '');
-    const normalizedTeacherName = normalizeDisplayText(teacherName, 'Unknown Teacher');
-
-    if (normalizedClassKey && normalizedOwnerId && !classEntries.has(normalizedClassKey)) {
-      classEntries.set(normalizedClassKey, {
-        value: normalizedClassKey,
-        className: normalizedClassName,
-        ownerId: normalizedOwnerId,
-        teacherName: normalizedTeacherName
-      });
-    }
-
-    if (normalizedOwnerId && !teacherEntries.has(normalizedOwnerId)) {
-      teacherEntries.set(normalizedOwnerId, {
-        value: normalizedOwnerId,
-        label: normalizedTeacherName
-      });
-    }
-  };
-
+  const visibleClassMap = new Map();
   if (classMap instanceof Map) {
     classMap.forEach((classInfo, classKey) => {
       if (!shouldIncludeGlobalSearchOwner(classInfo?.ownerId)) {
         return;
       }
 
-      registerEntry({
-        classKey,
-        className: classInfo?.name,
-        ownerId: classInfo?.ownerId,
-        teacherName: classInfo?.ownerName
-      });
+      visibleClassMap.set(classKey, classInfo);
     });
   }
 
-  students.forEach((student) => {
-    registerEntry({
-      classKey: student.classKey,
-      className: student.className,
-      ownerId: student.ownerId,
-      teacherName: student.teacherName
-    });
-  });
-
-  const classNameCounts = new Map();
-  classEntries.forEach((entry) => {
-    const nameKey = String(entry.className || '').toLowerCase();
-    classNameCounts.set(nameKey, (classNameCounts.get(nameKey) || 0) + 1);
+  const {
+    classOptionMarkup,
+    classSelectedValue,
+    classDisabled,
+    teacherOptionMarkup,
+    teacherSelectedValue,
+    teacherDisabled
+  } = buildAdminStudentsFilterOptionsState(visibleClassMap, students, {
+    previousClass: dom.adminStudentsClassFilter?.value || '',
+    previousTeacher: dom.adminStudentsTeacherFilter?.value || ''
   });
 
   if (dom.adminStudentsClassFilter) {
-    const classOptions = ['<option value="">All classes</option>'];
-    Array.from(classEntries.values())
-      .sort((a, b) => {
-        const classCompare = String(a.className || '').localeCompare(String(b.className || ''), undefined, { sensitivity: 'base', numeric: true });
-        if (classCompare !== 0) return classCompare;
-        return String(a.teacherName || '').localeCompare(String(b.teacherName || ''), undefined, { sensitivity: 'base', numeric: true });
-      })
-      .forEach((entry) => {
-        const duplicateCount = classNameCounts.get(String(entry.className || '').toLowerCase()) || 0;
-        const label = duplicateCount > 1 ? `${entry.className} — ${entry.teacherName}` : entry.className;
-        classOptions.push(`<option value="${escapeHtml(entry.value)}">${escapeHtml(label)}</option>`);
-      });
-
-    dom.adminStudentsClassFilter.innerHTML = classOptions.join('');
-    dom.adminStudentsClassFilter.value = classEntries.has(previousClass) ? previousClass : '';
-    dom.adminStudentsClassFilter.disabled = classEntries.size === 0;
+    dom.adminStudentsClassFilter.innerHTML = classOptionMarkup;
+    dom.adminStudentsClassFilter.value = classSelectedValue;
+    dom.adminStudentsClassFilter.disabled = classDisabled;
   }
 
   if (dom.adminStudentsTeacherFilter) {
-    const teacherOptions = ['<option value="">All teachers</option>'];
-    Array.from(teacherEntries.values())
-      .sort((a, b) => String(a.label || '').localeCompare(String(b.label || ''), undefined, { sensitivity: 'base', numeric: true }))
-      .forEach((entry) => {
-        teacherOptions.push(`<option value="${escapeHtml(entry.value)}">${escapeHtml(entry.label)}</option>`);
-      });
-
-    dom.adminStudentsTeacherFilter.innerHTML = teacherOptions.join('');
-    dom.adminStudentsTeacherFilter.value = teacherEntries.has(previousTeacher) ? previousTeacher : '';
-    dom.adminStudentsTeacherFilter.disabled = teacherEntries.size === 0;
+    dom.adminStudentsTeacherFilter.innerHTML = teacherOptionMarkup;
+    dom.adminStudentsTeacherFilter.value = teacherSelectedValue;
+    dom.adminStudentsTeacherFilter.disabled = teacherDisabled;
   }
 
   updateAdminStudentsFilterControls();
@@ -1523,21 +1465,11 @@ const renderAdminStudentsFilterOptions = (classMap = new Map(), students = []) =
 
 const getFilteredAdminStudents = () => {
   const { searchTerm, selectedClass, selectedTeacher } = getAdminStudentsFilterState();
-  const students = Array.isArray(state.adminStudentsRegistry) ? state.adminStudentsRegistry : [];
-  const searchedStudents = searchTerm
-    ? students.filter((student) => {
-      return [student.name, student.className, student.teacherName]
-        .some((value) => String(value || '').toLowerCase().includes(searchTerm));
-    })
-    : students.slice();
-
-  const filteredStudents = searchedStudents.filter((student) => {
-    const matchesClass = !selectedClass || student.classKey === selectedClass;
-    const matchesTeacher = !selectedTeacher || student.ownerId === selectedTeacher;
-    return matchesClass && matchesTeacher;
+  return getFilteredAdminStudentsRegistry(state.adminStudentsRegistry, {
+    searchTerm,
+    selectedClass,
+    selectedTeacher
   });
-
-  return sortAdminStudentsRegistry(filteredStudents);
 };
 
 const renderAdminStudentsSkeletonRows = (rowCount = 6) => {

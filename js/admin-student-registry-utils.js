@@ -1,4 +1,8 @@
-import { normalizeDisplayText } from './admin-display-utils.js';
+import {
+  escapeHtml,
+  normalizeDisplayText,
+  normalizeText
+} from './admin-display-utils.js';
 
 export const parseAdminRegistryStudentPath = (path = '') => {
   const segments = String(path || '').split('/').filter(Boolean);
@@ -176,6 +180,118 @@ export const resolveAdminRegistryClassInfo = (classMap = new Map(), ownerId = ''
   };
 };
 
+const buildAdminStudentsFilterOptionMarkup = (options = [], {
+  emptyLabel = 'All options'
+} = {}) => {
+  const optionMarkup = [`<option value="">${escapeHtml(emptyLabel)}</option>`];
+  const normalizedOptions = Array.isArray(options) ? options : [];
+  normalizedOptions.forEach((option) => {
+    const value = normalizeText(option?.value || '');
+    if (!value) {
+      return;
+    }
+
+    optionMarkup.push(`<option value="${escapeHtml(value)}">${escapeHtml(option?.label || '')}</option>`);
+  });
+  return optionMarkup.join('');
+};
+
+export const buildAdminStudentsFilterOptionsState = (classMap = new Map(), students = [], {
+  previousClass = '',
+  previousTeacher = ''
+} = {}) => {
+  const classEntries = new Map();
+  const teacherEntries = new Map();
+
+  const registerEntry = ({
+    classKey = '',
+    className = '',
+    ownerId = '',
+    teacherName = ''
+  } = {}) => {
+    const normalizedClassKey = normalizeDisplayText(classKey, '');
+    const normalizedClassName = normalizeDisplayText(className, 'Unnamed Class');
+    const normalizedOwnerId = normalizeDisplayText(ownerId, '');
+    const normalizedTeacherName = normalizeDisplayText(teacherName, 'Unknown Teacher');
+
+    if (normalizedClassKey && normalizedOwnerId && !classEntries.has(normalizedClassKey)) {
+      classEntries.set(normalizedClassKey, {
+        value: normalizedClassKey,
+        className: normalizedClassName,
+        ownerId: normalizedOwnerId,
+        teacherName: normalizedTeacherName
+      });
+    }
+
+    if (normalizedOwnerId && !teacherEntries.has(normalizedOwnerId)) {
+      teacherEntries.set(normalizedOwnerId, {
+        value: normalizedOwnerId,
+        label: normalizedTeacherName
+      });
+    }
+  };
+
+  if (classMap instanceof Map) {
+    classMap.forEach((classInfo, classKey) => {
+      registerEntry({
+        classKey,
+        className: classInfo?.name,
+        ownerId: classInfo?.ownerId,
+        teacherName: classInfo?.ownerName
+      });
+    });
+  }
+
+  const normalizedStudents = Array.isArray(students) ? students : [];
+  normalizedStudents.forEach((student) => {
+    registerEntry({
+      classKey: student?.classKey,
+      className: student?.className,
+      ownerId: student?.ownerId,
+      teacherName: student?.teacherName
+    });
+  });
+
+  const classNameCounts = new Map();
+  classEntries.forEach((entry) => {
+    const nameKey = String(entry.className || '').toLowerCase();
+    classNameCounts.set(nameKey, (classNameCounts.get(nameKey) || 0) + 1);
+  });
+
+  const sortedClassOptions = Array.from(classEntries.values())
+    .sort((a, b) => {
+      const classCompare = String(a.className || '').localeCompare(String(b.className || ''), undefined, { sensitivity: 'base', numeric: true });
+      if (classCompare !== 0) return classCompare;
+      return String(a.teacherName || '').localeCompare(String(b.teacherName || ''), undefined, { sensitivity: 'base', numeric: true });
+    })
+    .map((entry) => {
+      const duplicateCount = classNameCounts.get(String(entry.className || '').toLowerCase()) || 0;
+      return {
+        value: entry.value,
+        label: duplicateCount > 1 ? `${entry.className} — ${entry.teacherName}` : entry.className
+      };
+    });
+
+  const sortedTeacherOptions = Array.from(teacherEntries.values())
+    .sort((a, b) => String(a.label || '').localeCompare(String(b.label || ''), undefined, { sensitivity: 'base', numeric: true }));
+
+  const normalizedPreviousClass = normalizeText(previousClass);
+  const normalizedPreviousTeacher = normalizeText(previousTeacher);
+
+  return {
+    classOptionMarkup: buildAdminStudentsFilterOptionMarkup(sortedClassOptions, {
+      emptyLabel: 'All classes'
+    }),
+    classSelectedValue: classEntries.has(normalizedPreviousClass) ? normalizedPreviousClass : '',
+    classDisabled: classEntries.size === 0,
+    teacherOptionMarkup: buildAdminStudentsFilterOptionMarkup(sortedTeacherOptions, {
+      emptyLabel: 'All teachers'
+    }),
+    teacherSelectedValue: teacherEntries.has(normalizedPreviousTeacher) ? normalizedPreviousTeacher : '',
+    teacherDisabled: teacherEntries.size === 0
+  };
+};
+
 export const sortAdminStudentsRegistry = (students = []) => {
   const sortedStudents = [...students];
   sortedStudents.sort((a, b) => {
@@ -186,6 +302,32 @@ export const sortAdminStudentsRegistry = (students = []) => {
     return String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base', numeric: true });
   });
   return sortedStudents;
+};
+
+export const getFilteredAdminStudentsRegistry = (students = [], {
+  searchTerm = '',
+  selectedClass = '',
+  selectedTeacher = ''
+} = {}) => {
+  const normalizedStudents = Array.isArray(students) ? students : [];
+  const normalizedSearchTerm = normalizeText(searchTerm).toLowerCase();
+  const normalizedSelectedClass = normalizeText(selectedClass);
+  const normalizedSelectedTeacher = normalizeText(selectedTeacher);
+
+  const searchedStudents = normalizedSearchTerm
+    ? normalizedStudents.filter((student) => {
+      return [student?.name, student?.className, student?.teacherName]
+        .some((value) => String(value || '').toLowerCase().includes(normalizedSearchTerm));
+    })
+    : normalizedStudents.slice();
+
+  const filteredStudents = searchedStudents.filter((student) => {
+    const matchesClass = !normalizedSelectedClass || student?.classKey === normalizedSelectedClass;
+    const matchesTeacher = !normalizedSelectedTeacher || student?.ownerId === normalizedSelectedTeacher;
+    return matchesClass && matchesTeacher;
+  });
+
+  return sortAdminStudentsRegistry(filteredStudents);
 };
 
 export const groupAdminStudentsRegistry = (students = []) => {
