@@ -74,7 +74,7 @@ import {
 import {
   buildActivityClassFilterState,
   buildActivityUserFilterState,
-  buildActivityLogsCacheKey
+  buildActivityLogsQueryState
 } from './admin-activity-filter-utils.js';
 
 const DASHBOARD_PATH = '/index.html';
@@ -915,11 +915,18 @@ const runGlobalSearch = () => {
 };
 
 const loadActivityLogs = async () => {
-  const selectedUserId = normalizeText(dom.activityUserFilter?.value || '');
-  const selectedClassKey = normalizeText(dom.activityClassFilter?.value || '');
-  const selectedAction = normalizeText(dom.activityActionFilter?.value || '').toLowerCase();
-  const selectedSort = normalizeText(dom.activitySortFilter?.value || 'desc').toLowerCase() === 'asc' ? 'asc' : 'desc';
-  const activityLogsCacheKey = buildActivityLogsCacheKey({ userId: selectedUserId, sort: selectedSort });
+  const {
+    selectedUserId,
+    selectedClassKey,
+    selectedAction,
+    selectedSort,
+    activityLogsCacheKey
+  } = buildActivityLogsQueryState({
+    userId: dom.activityUserFilter?.value || '',
+    classKey: dom.activityClassFilter?.value || '',
+    action: dom.activityActionFilter?.value || '',
+    sort: dom.activitySortFilter?.value || 'desc'
+  });
 
   setElementVisibility(dom.activityLoading, true);
   setSectionLoadingState(dom.activitySection, true);

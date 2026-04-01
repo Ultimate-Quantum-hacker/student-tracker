@@ -80,6 +80,29 @@ export const buildActivityUserFilterState = (users = [], {
   };
 };
 
+export const buildActivityLogsQueryState = ({
+  userId = '',
+  classKey = '',
+  action = '',
+  sort = 'desc'
+} = {}) => {
+  const normalizedUserId = normalizeText(userId);
+  const normalizedClassKey = normalizeText(classKey);
+  const normalizedAction = normalizeText(action).toLowerCase();
+  const normalizedSort = normalizeText(sort).toLowerCase() === 'asc' ? 'asc' : 'desc';
+
+  return {
+    selectedUserId: normalizedUserId,
+    selectedClassKey: normalizedClassKey,
+    selectedAction: normalizedAction,
+    selectedSort: normalizedSort,
+    activityLogsCacheKey: buildActivityLogsCacheKey({
+      userId: normalizedUserId,
+      sort: normalizedSort
+    })
+  };
+};
+
 export const buildActivityLogsCacheKey = ({ userId = '', sort = 'desc' } = {}) => {
   const normalizedUserId = normalizeText(userId);
   const normalizedSort = normalizeText(sort).toLowerCase() === 'asc' ? 'asc' : 'desc';
