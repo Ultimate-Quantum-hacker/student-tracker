@@ -55,7 +55,8 @@ import {
   buildAdminStudentsFilterState,
   buildAdminStudentsFilterOptionsState,
   buildAdminStudentsPaginationViewState,
-  buildAdminStudentsRegistryViewState
+  buildAdminStudentsRegistryViewState,
+  buildAdminRegistryStudentDeleteFeedbackState
 } from './admin-student-registry-utils.js';
 import {
   buildAdminStudentsSkeletonMarkup,
@@ -1623,22 +1624,16 @@ const handleAdminRegistryStudentDelete = async ({ ownerId = '', studentId = '', 
       shouldRefreshActivityLogs ? loadActivityLogs() : Promise.resolve(null)
     ]);
 
-    if (Number(result?.deletedCount || 0) > 0) {
-      setAdminStudentsStatus(`${normalizedStudentName} was removed from the registry.`, 'success');
-      showToast('Student removed from registry', 'success');
+    const deleteFeedbackState = buildAdminRegistryStudentDeleteFeedbackState({
+      studentName: normalizedStudentName,
+      deletedCount: result?.deletedCount,
+      removedCount
+    });
+    setAdminStudentsStatus(deleteFeedbackState.statusMessage, deleteFeedbackState.statusType);
+    showToast(deleteFeedbackState.toastMessage, deleteFeedbackState.toastType);
+    if (deleteFeedbackState.shouldMarkUpdated) {
       markUpdatedNow();
-      return;
     }
-
-    if (removedCount > 0) {
-      setAdminStudentsStatus(`${normalizedStudentName} was already cleared, so the registry view was refreshed.`, 'warning');
-      showToast('Registry refreshed', 'warning');
-      markUpdatedNow();
-      return;
-    }
-
-    setAdminStudentsStatus('No matching active student records were found for that registry entry.', 'warning');
-    showToast('Student record not found', 'warning');
   } catch (error) {
     console.error('Failed to delete registry student:', error);
     if (isPermissionDeniedError(error)) {

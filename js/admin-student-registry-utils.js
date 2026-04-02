@@ -701,3 +701,41 @@ export const buildAdminStudentsRegistryViewState = (students = [], filterState =
     statusType
   };
 };
+
+export const buildAdminRegistryStudentDeleteFeedbackState = ({
+  studentName = 'Student',
+  deletedCount = 0,
+  removedCount = 0
+} = {}) => {
+  const normalizedStudentName = normalizeDisplayText(studentName, 'Student');
+  const normalizedDeletedCount = Math.max(0, Number.parseInt(deletedCount, 10) || 0);
+  const normalizedRemovedCount = Math.max(0, Number.parseInt(removedCount, 10) || 0);
+
+  if (normalizedDeletedCount > 0) {
+    return {
+      statusMessage: `${normalizedStudentName} was removed from the registry.`,
+      statusType: 'success',
+      toastMessage: 'Student removed from registry',
+      toastType: 'success',
+      shouldMarkUpdated: true
+    };
+  }
+
+  if (normalizedRemovedCount > 0) {
+    return {
+      statusMessage: `${normalizedStudentName} was already cleared, so the registry view was refreshed.`,
+      statusType: 'warning',
+      toastMessage: 'Registry refreshed',
+      toastType: 'warning',
+      shouldMarkUpdated: true
+    };
+  }
+
+  return {
+    statusMessage: 'No matching active student records were found for that registry entry.',
+    statusType: 'warning',
+    toastMessage: 'Student record not found',
+    toastType: 'warning',
+    shouldMarkUpdated: false
+  };
+};
