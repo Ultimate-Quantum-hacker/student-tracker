@@ -134,6 +134,28 @@ export const buildAdminUserRoleUpdateFeedbackState = () => {
   };
 };
 
+export const buildAdminUserRoleUpdateErrorFeedbackState = ({
+  isPermissionDenied = false,
+  errorMessage = ''
+} = {}) => {
+  if (isPermissionDenied) {
+    return {
+      statusMessage: 'Access denied. You do not have permission.',
+      statusType: 'error',
+      toastMessage: 'Permission denied',
+      toastType: 'error'
+    };
+  }
+
+  const normalizedErrorMessage = normalizeText(errorMessage);
+  return {
+    statusMessage: normalizedErrorMessage ? `Failed to update role: ${normalizedErrorMessage}` : 'Failed to update role.',
+    statusType: 'error',
+    toastMessage: 'Failed to update role',
+    toastType: 'error'
+  };
+};
+
 export const getVisibleAdminActivityEntries = (entries = [], users = [], {
   currentRole = ''
 } = {}) => {

@@ -79,6 +79,7 @@ import {
   buildAdminGlobalSearchIndexFeedbackState,
   buildAdminUserRoleUpdateState,
   buildAdminUserRoleUpdateFeedbackState,
+  buildAdminUserRoleUpdateErrorFeedbackState,
   canManageAdminRoles,
   canDeleteAdminRegistryStudents,
   canEditAdminUserRole,
@@ -1109,13 +1110,17 @@ const updateUserRole = async (uid, nextRole) => {
     markUpdatedNow();
   } catch (error) {
     console.error('Failed to update role:', error);
+    const roleUpdateErrorFeedbackState = buildAdminUserRoleUpdateErrorFeedbackState({
+      isPermissionDenied: isPermissionDeniedError(error),
+      errorMessage: formatAuthError(error)
+    });
     if (isPermissionDeniedError(error)) {
-      setPanelStatus('Access denied. You do not have permission.', 'error');
-      showToast('Permission denied', 'error');
+      setPanelStatus(roleUpdateErrorFeedbackState.statusMessage, roleUpdateErrorFeedbackState.statusType);
+      showToast(roleUpdateErrorFeedbackState.toastMessage, roleUpdateErrorFeedbackState.toastType);
       return;
     }
-    setPanelStatus(`Failed to update role: ${formatAuthError(error)}`, 'error');
-    showToast('Failed to update role', 'error');
+    setPanelStatus(roleUpdateErrorFeedbackState.statusMessage, roleUpdateErrorFeedbackState.statusType);
+    showToast(roleUpdateErrorFeedbackState.toastMessage, roleUpdateErrorFeedbackState.toastType);
   }
 };
 
