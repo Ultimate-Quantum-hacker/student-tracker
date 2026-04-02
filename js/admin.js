@@ -75,6 +75,7 @@ import {
   buildVisibleAdminGlobalSearchRows,
   getFilteredAdminGlobalSearchRows,
   buildAdminGlobalSearchFeedbackState,
+  buildAdminGlobalSearchIndexFeedbackState,
   buildAdminUserRoleUpdateState,
   canManageAdminRoles,
   canDeleteAdminRegistryStudents,
@@ -828,12 +829,15 @@ const buildGlobalSearchIndex = async () => {
     if (Array.isArray(cachedRows)) {
       state.globalSearchIndex = cachedRows;
       state.globalSearchIndexLoaded = true;
+      const indexFeedbackState = buildAdminGlobalSearchIndexFeedbackState({
+        indexedCount: cachedRows.length
+      });
       state.globalStats = {
         ...state.globalStats,
         totalStudents: cachedRows.length
       };
       renderStats();
-      setGlobalSearchStatus(`Indexed ${cachedRows.length} student${cachedRows.length === 1 ? '' : 's'} for global search.`, 'success');
+      setGlobalSearchStatus(indexFeedbackState.statusMessage, indexFeedbackState.statusType);
       renderGlobalSearchResults([]);
       markUpdatedNow();
       return state.globalSearchIndex;
@@ -845,13 +849,16 @@ const buildGlobalSearchIndex = async () => {
     });
     state.globalSearchIndex = rows;
     state.globalSearchIndexLoaded = true;
+    const indexFeedbackState = buildAdminGlobalSearchIndexFeedbackState({
+      indexedCount: rows.length
+    });
     writeAdminRuntimeCache('globalSearchIndex', rows);
     state.globalStats = {
       ...state.globalStats,
       totalStudents: rows.length
     };
     renderStats();
-    setGlobalSearchStatus(`Indexed ${rows.length} student${rows.length === 1 ? '' : 's'} for global search.`, 'success');
+    setGlobalSearchStatus(indexFeedbackState.statusMessage, indexFeedbackState.statusType);
     renderGlobalSearchResults([]);
     markUpdatedNow();
   } catch (error) {

@@ -192,3 +192,17 @@ export const buildAdminGlobalSearchFeedbackState = ({
     statusType: normalizedResultCount ? 'success' : 'warning'
   };
 };
+
+export const buildAdminGlobalSearchIndexFeedbackState = ({
+  indexedCount = 0
+} = {}) => {
+  const parsedIndexedCount = Number(indexedCount);
+  const normalizedIndexedCount = Number.isFinite(parsedIndexedCount) && parsedIndexedCount > 0
+    ? Math.floor(parsedIndexedCount)
+    : 0;
+
+  return {
+    statusMessage: `Indexed ${normalizedIndexedCount} student${normalizedIndexedCount === 1 ? '' : 's'} for global search.`,
+    statusType: 'success'
+  };
+};
