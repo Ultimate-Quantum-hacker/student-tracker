@@ -56,8 +56,10 @@ import {
   buildAdminStudentsFilterOptionsState,
   buildAdminStudentsPaginationViewState,
   buildAdminStudentsRegistryViewState,
-  buildAdminRegistryStudentDeleteFeedbackState
+  buildAdminRegistryStudentDeleteFeedbackState,
+  buildAdminRegistryStudentDeleteRequestState
 } from './admin-student-registry-utils.js';
+
 import {
   buildAdminStudentsSkeletonMarkup,
   buildAdminStudentsTableMarkup
@@ -1577,23 +1579,21 @@ const removeAdminRegistryStudentFromState = (ownerId = '', studentId = '') => {
 };
 
 const handleAdminRegistryStudentDelete = async ({ ownerId = '', studentId = '', studentName = '' } = {}) => {
-  if (!canDeleteAdminRegistryStudents(state.currentRole)) {
-    setAdminStudentsStatus('Only admins and developers can delete registry students.', 'warning');
-    showToast('Student deletion unavailable', 'warning');
-    return;
-  }
+  const deleteRequestState = buildAdminRegistryStudentDeleteRequestState({
+    ownerId,
+    studentId,
+    studentName,
+    canDelete: canDeleteAdminRegistryStudents(state.currentRole)
+  });
 
-  const normalizedOwnerId = normalizeDisplayText(ownerId, '');
-  const normalizedStudentId = normalizeDisplayText(studentId, '');
-  const normalizedStudentName = normalizeDisplayText(studentName, 'Student');
-  if (!normalizedOwnerId || !normalizedStudentId) {
-    setAdminStudentsStatus('The selected registry row is missing the student identity needed for deletion.', 'warning');
-    showToast('Student cannot be deleted from registry', 'warning');
+  if (!deleteRequestState.canSubmitDelete) {
+    setAdminStudentsStatus(deleteRequestState.statusMessage, deleteRequestState.statusType);
+    showToast(deleteRequestState.toastMessage, deleteRequestState.toastType);
     return;
   }
 
   const shouldContinue = await requestConfirmation({
-    message: `Delete ${normalizedStudentName} from the registry? This moves every matching active student record for that teacher into Trash.`,
+    message: deleteRequestState.confirmationMessage,
     confirmLabel: 'Delete Student',
     dangerous: true
   });
@@ -1604,13 +1604,13 @@ const handleAdminRegistryStudentDelete = async ({ ownerId = '', studentId = '', 
   }
 
   try {
-    setAdminStudentsStatus(`Deleting ${normalizedStudentName} from the registry...`);
+    setAdminStudentsStatus(`Deleting ${deleteRequestState.normalizedStudentName} from the registry...`);
     const result = await deleteAdminRegistryStudent({
-      ownerId: normalizedOwnerId,
-      studentId: normalizedStudentId,
-      studentName: normalizedStudentName
+      ownerId: deleteRequestState.normalizedOwnerId,
+      studentId: deleteRequestState.normalizedStudentId,
+      studentName: deleteRequestState.normalizedStudentName
     });
-    const removedCount = removeAdminRegistryStudentFromState(normalizedOwnerId, normalizedStudentId);
+    const removedCount = removeAdminRegistryStudentFromState(deleteRequestState.normalizedOwnerId, deleteRequestState.normalizedStudentId);
     const shouldRefreshSearchIndex = state.globalSearchIndexLoaded;
     const shouldRefreshActivityLogs = state.activityLogsLoaded;
     invalidateAdminRuntimeCache('globalStats', 'globalSearchIndex', 'activityLogs');
@@ -1623,7 +1623,7 @@ const handleAdminRegistryStudentDelete = async ({ ownerId = '', studentId = '', 
     ]);
 
     const deleteFeedbackState = buildAdminRegistryStudentDeleteFeedbackState({
-      studentName: normalizedStudentName,
+      studentName: deleteRequestState.normalizedStudentName,
       deletedCount: result?.deletedCount,
       removedCount
     });

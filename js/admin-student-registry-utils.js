@@ -739,3 +739,54 @@ export const buildAdminRegistryStudentDeleteFeedbackState = ({
     shouldMarkUpdated: false
   };
 };
+
+export const buildAdminRegistryStudentDeleteRequestState = ({
+  ownerId = '',
+  studentId = '',
+  studentName = '',
+  canDelete = false
+} = {}) => {
+  const normalizedOwnerId = normalizeDisplayText(ownerId, '');
+  const normalizedStudentId = normalizeDisplayText(studentId, '');
+  const normalizedStudentName = normalizeDisplayText(studentName, 'Student');
+
+  if (!canDelete) {
+    return {
+      normalizedOwnerId,
+      normalizedStudentId,
+      normalizedStudentName,
+      canSubmitDelete: false,
+      statusMessage: 'Only admins and developers can delete registry students.',
+      statusType: 'warning',
+      toastMessage: 'Student deletion unavailable',
+      toastType: 'warning',
+      confirmationMessage: ''
+    };
+  }
+
+  if (!normalizedOwnerId || !normalizedStudentId) {
+    return {
+      normalizedOwnerId,
+      normalizedStudentId,
+      normalizedStudentName,
+      canSubmitDelete: false,
+      statusMessage: 'The selected registry row is missing the student identity needed for deletion.',
+      statusType: 'warning',
+      toastMessage: 'Student cannot be deleted from registry',
+      toastType: 'warning',
+      confirmationMessage: ''
+    };
+  }
+
+  return {
+    normalizedOwnerId,
+    normalizedStudentId,
+    normalizedStudentName,
+    canSubmitDelete: true,
+    statusMessage: '',
+    statusType: '',
+    toastMessage: '',
+    toastType: '',
+    confirmationMessage: `Delete ${normalizedStudentName} from the registry? This moves every matching active student record for that teacher into Trash.`
+  };
+};
