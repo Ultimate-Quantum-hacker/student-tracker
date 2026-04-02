@@ -210,6 +210,16 @@ export const buildActivityLogsClearFeedbackState = ({
   };
 };
 
+export const buildActivityLogsLoadFeedbackState = ({
+  visibleCount = 0
+} = {}) => {
+  const normalizedVisibleCount = Math.max(0, Number.parseInt(visibleCount, 10) || 0);
+  return {
+    statusMessage: `Loaded ${normalizedVisibleCount} log entr${normalizedVisibleCount === 1 ? 'y' : 'ies'}.`,
+    statusType: 'success'
+  };
+};
+
 export const buildActivityLogsClearRequestState = () => {
   return {
     confirmationMessage: 'Clear all activity logs? This permanently removes the current log history.',

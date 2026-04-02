@@ -46,7 +46,8 @@ import {
   getDateGroupKey,
   getDateGroupLabel,
   buildActivityLogsClearRequestState,
-  buildActivityLogsClearFeedbackState
+  buildActivityLogsClearFeedbackState,
+  buildActivityLogsLoadFeedbackState
 } from './admin-activity-utils.js';
 
 import {
@@ -974,7 +975,10 @@ const loadActivityLogs = async () => {
     state.activityLogsLoaded = true;
     renderActivityLogTable(entries);
     const visibleCount = getVisibleActivityEntries(entries).length;
-    setActivityStatus(`Loaded ${visibleCount} log entr${visibleCount === 1 ? 'y' : 'ies'}.`, 'success');
+    const loadFeedbackState = buildActivityLogsLoadFeedbackState({
+      visibleCount
+    });
+    setActivityStatus(loadFeedbackState.statusMessage, loadFeedbackState.statusType);
     markUpdatedNow();
   } catch (error) {
     console.error('Failed to load activity logs:', error);
