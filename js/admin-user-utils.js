@@ -1,5 +1,5 @@
 import { normalizeUserRole } from './auth.js';
-import { normalizeText } from './admin-display-utils.js';
+import { formatRoleLabel, normalizeText } from './admin-display-utils.js';
 
 const ROLE_ADMIN = 'admin';
 const ROLE_DEVELOPER = 'developer';
@@ -61,6 +61,49 @@ export const canEditAdminUserRole = (record = {}, {
   }
 
   return normalizeUserRole(record?.role) !== ROLE_DEVELOPER;
+};
+
+export const buildAdminUserRoleUpdateState = (record = {}, {
+  nextRole = '',
+  updatableRoles = []
+} = {}) => {
+  const currentRole = normalizeUserRole(record?.role);
+  const normalizedNextRole = normalizeUserRole(nextRole);
+  const normalizedUpdatableRoles = Array.isArray(updatableRoles)
+    ? updatableRoles.map((role) => normalizeUserRole(role))
+    : [];
+
+  if (!normalizedUpdatableRoles.includes(normalizedNextRole)) {
+    return {
+      currentRole,
+      normalizedNextRole,
+      canUpdate: false,
+      statusMessage: 'Only teacher and admin roles can be assigned in this panel.',
+      statusType: 'warning',
+      confirmationMessage: ''
+    };
+  }
+
+  if (currentRole === normalizedNextRole) {
+    return {
+      currentRole,
+      normalizedNextRole,
+      canUpdate: false,
+      statusMessage: 'No role changes to apply.',
+      statusType: 'warning',
+      confirmationMessage: ''
+    };
+  }
+
+  const targetLabel = normalizeText(record?.name || record?.email || '') || 'this user';
+  return {
+    currentRole,
+    normalizedNextRole,
+    canUpdate: true,
+    statusMessage: '',
+    statusType: '',
+    confirmationMessage: `Change role for ${targetLabel} from ${formatRoleLabel(currentRole)} to ${formatRoleLabel(normalizedNextRole)}?`
+  };
 };
 
 export const getVisibleAdminActivityEntries = (entries = [], users = [], {

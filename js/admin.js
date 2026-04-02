@@ -69,6 +69,7 @@ import {
   buildVisibleAdminGlobalSearchRows,
   getFilteredAdminGlobalSearchRows,
   buildAdminGlobalSearchFeedbackState,
+  buildAdminUserRoleUpdateState,
   canManageAdminRoles,
   canDeleteAdminRegistryStudents,
   canEditAdminUserRole,
@@ -1046,21 +1047,18 @@ const updateUserRole = async (uid, nextRole) => {
     return;
   }
 
-  const normalizedNextRole = normalizeUserRole(nextRole);
-  const currentRole = normalizeUserRole(record.role);
+  const roleUpdateState = buildAdminUserRoleUpdateState(record, {
+    nextRole,
+    updatableRoles: UPDATABLE_ROLES
+  });
 
-  if (!UPDATABLE_ROLES.includes(normalizedNextRole)) {
-    setPanelStatus('Only teacher and admin roles can be assigned in this panel.', 'warning');
-    return;
-  }
-
-  if (currentRole === normalizedNextRole) {
-    setPanelStatus('No role changes to apply.', 'warning');
+  if (!roleUpdateState.canUpdate) {
+    setPanelStatus(roleUpdateState.statusMessage, roleUpdateState.statusType);
     return;
   }
 
   const shouldContinue = await requestConfirmation({
-    message: `Change role for ${record.name || record.email || 'this user'} from ${formatRoleLabel(currentRole)} to ${formatRoleLabel(normalizedNextRole)}?`,
+    message: roleUpdateState.confirmationMessage,
     confirmLabel: 'Update Role',
     dangerous: true
   });
@@ -1076,10 +1074,10 @@ const updateUserRole = async (uid, nextRole) => {
       uid,
       name: normalizeText(record.name || ''),
       email: normalizeText(record.email || '').toLowerCase(),
-      role: normalizedNextRole
+      role: roleUpdateState.normalizedNextRole
     });
 
-    record.role = normalizedNextRole;
+    record.role = roleUpdateState.normalizedNextRole;
     renderUsersTable();
     populateActivityUserFilter();
     setPanelStatus('Role updated successfully.', 'success');
