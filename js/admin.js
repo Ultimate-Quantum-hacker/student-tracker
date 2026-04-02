@@ -1614,17 +1614,17 @@ const handleAdminRegistryStudentDelete = async ({ ownerId = '', studentId = '', 
 
   const shouldContinue = await requestConfirmation({
     message: deleteRequestState.confirmationMessage,
-    confirmLabel: 'Delete Student',
-    dangerous: true
+    confirmLabel: deleteRequestState.confirmLabel,
+    dangerous: deleteRequestState.dangerous
   });
 
   if (!shouldContinue) {
-    setAdminStudentsStatus('Student deletion canceled.', 'warning');
+    setAdminStudentsStatus(deleteRequestState.canceledStatusMessage, deleteRequestState.canceledStatusType);
     return;
   }
 
   try {
-    setAdminStudentsStatus(`Deleting ${deleteRequestState.normalizedStudentName} from the registry...`);
+    setAdminStudentsStatus(deleteRequestState.progressStatusMessage);
     const result = await deleteAdminRegistryStudent({
       ownerId: deleteRequestState.normalizedOwnerId,
       studentId: deleteRequestState.normalizedStudentId,

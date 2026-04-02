@@ -787,6 +787,11 @@ export const buildAdminRegistryStudentDeleteRequestState = ({
     statusType: '',
     toastMessage: '',
     toastType: '',
-    confirmationMessage: `Delete ${normalizedStudentName} from the registry? This moves every matching active student record for that teacher into Trash.`
+    confirmationMessage: `Delete ${normalizedStudentName} from the registry? This moves every matching active student record for that teacher into Trash.`,
+    confirmLabel: 'Delete Student',
+    dangerous: true,
+    canceledStatusMessage: 'Student deletion canceled.',
+    canceledStatusType: 'warning',
+    progressStatusMessage: `Deleting ${normalizedStudentName} from the registry...`
   };
 };
