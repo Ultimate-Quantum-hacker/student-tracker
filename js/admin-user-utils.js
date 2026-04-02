@@ -125,6 +125,15 @@ export const buildAdminUserRoleUpdateState = (record = {}, {
   };
 };
 
+export const buildAdminUserRoleUpdateFeedbackState = () => {
+  return {
+    statusMessage: 'Role updated successfully.',
+    statusType: 'success',
+    toastMessage: 'Role updated successfully',
+    toastType: 'success'
+  };
+};
+
 export const getVisibleAdminActivityEntries = (entries = [], users = [], {
   currentRole = ''
 } = {}) => {

@@ -78,6 +78,7 @@ import {
   buildAdminGlobalSearchFeedbackState,
   buildAdminGlobalSearchIndexFeedbackState,
   buildAdminUserRoleUpdateState,
+  buildAdminUserRoleUpdateFeedbackState,
   canManageAdminRoles,
   canDeleteAdminRegistryStudents,
   canEditAdminUserRole,
@@ -1102,8 +1103,9 @@ const updateUserRole = async (uid, nextRole) => {
     record.role = roleUpdateState.normalizedNextRole;
     renderUsersTable();
     populateActivityUserFilter();
-    setPanelStatus('Role updated successfully.', 'success');
-    showToast('Role updated successfully', 'success');
+    const roleUpdateFeedbackState = buildAdminUserRoleUpdateFeedbackState();
+    setPanelStatus(roleUpdateFeedbackState.statusMessage, roleUpdateFeedbackState.statusType);
+    showToast(roleUpdateFeedbackState.toastMessage, roleUpdateFeedbackState.toastType);
     markUpdatedNow();
   } catch (error) {
     console.error('Failed to update role:', error);
