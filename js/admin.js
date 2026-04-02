@@ -45,6 +45,7 @@ import {
   getActionIcon,
   getDateGroupKey,
   getDateGroupLabel,
+  buildActivityLogsClearRequestState,
   buildActivityLogsClearFeedbackState
 } from './admin-activity-utils.js';
 
@@ -995,20 +996,21 @@ const loadActivityLogs = async () => {
 };
 
 const handleClearActivityLogs = async () => {
+  const clearRequestState = buildActivityLogsClearRequestState();
   const shouldContinue = await requestConfirmation({
-    message: 'Clear all activity logs? This permanently removes the current log history.',
-    confirmLabel: 'Clear Logs',
-    dangerous: true
+    message: clearRequestState.confirmationMessage,
+    confirmLabel: clearRequestState.confirmLabel,
+    dangerous: clearRequestState.dangerous
   });
 
   if (!shouldContinue) {
-    setActivityStatus('Log clear canceled.', 'warning');
+    setActivityStatus(clearRequestState.canceledStatusMessage, clearRequestState.canceledStatusType);
     return;
   }
 
   setElementVisibility(dom.activityLoading, true);
   setSectionLoadingState(dom.activitySection, true);
-  setActivityStatus('Clearing activity logs...');
+  setActivityStatus(clearRequestState.progressStatusMessage);
 
   try {
     const clearedCount = await clearActivityLogs();

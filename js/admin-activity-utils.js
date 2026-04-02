@@ -209,3 +209,14 @@ export const buildActivityLogsClearFeedbackState = ({
     toastType: 'warning'
   };
 };
+
+export const buildActivityLogsClearRequestState = () => {
+  return {
+    confirmationMessage: 'Clear all activity logs? This permanently removes the current log history.',
+    confirmLabel: 'Clear Logs',
+    dangerous: true,
+    canceledStatusMessage: 'Log clear canceled.',
+    canceledStatusType: 'warning',
+    progressStatusMessage: 'Clearing activity logs...'
+  };
+};
