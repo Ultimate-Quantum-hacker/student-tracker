@@ -49,6 +49,20 @@ export const getFilteredAdminUsers = (users = [], {
   });
 };
 
+export const buildAdminUsersLoadFeedbackState = ({
+  visibleCount = 0
+} = {}) => {
+  const parsedVisibleCount = Number(visibleCount);
+  const normalizedVisibleCount = Number.isFinite(parsedVisibleCount) && parsedVisibleCount > 0
+    ? Math.floor(parsedVisibleCount)
+    : 0;
+
+  return {
+    statusMessage: `Loaded ${normalizedVisibleCount} user${normalizedVisibleCount === 1 ? '' : 's'}.`,
+    statusType: 'success'
+  };
+};
+
 export const canEditAdminUserRole = (record = {}, {
   currentRole = ''
 } = {}) => {

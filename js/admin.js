@@ -72,6 +72,7 @@ import {
   findAdminUserRecord,
   getVisibleAdminUsers,
   getFilteredAdminUsers,
+  buildAdminUsersLoadFeedbackState,
   buildVisibleAdminGlobalSearchRows,
   getFilteredAdminGlobalSearchRows,
   buildAdminGlobalSearchFeedbackState,
@@ -732,9 +733,12 @@ const fetchUsers = async () => {
     if (Array.isArray(cachedRecords)) {
       state.users = cachedRecords;
       state.usersLoaded = true;
+      const usersLoadFeedbackState = buildAdminUsersLoadFeedbackState({
+        visibleCount: getVisibleUsers().length
+      });
       renderUsersTable();
       populateActivityUserFilter();
-      setPanelStatus(`Loaded ${getVisibleUsers().length} user${getVisibleUsers().length === 1 ? '' : 's'}.`, 'success');
+      setPanelStatus(usersLoadFeedbackState.statusMessage, usersLoadFeedbackState.statusType);
       markUpdatedNow();
       return state.users;
     }
@@ -742,10 +746,13 @@ const fetchUsers = async () => {
     const records = await fetchAdminUsers();
     state.users = Array.isArray(records) ? records : [];
     state.usersLoaded = true;
+    const usersLoadFeedbackState = buildAdminUsersLoadFeedbackState({
+      visibleCount: getVisibleUsers().length
+    });
     writeAdminRuntimeCache('users', state.users);
     renderUsersTable();
     populateActivityUserFilter();
-    setPanelStatus(`Loaded ${getVisibleUsers().length} user${getVisibleUsers().length === 1 ? '' : 's'}.`, 'success');
+    setPanelStatus(usersLoadFeedbackState.statusMessage, usersLoadFeedbackState.statusType);
     markUpdatedNow();
   } catch (error) {
     console.error('Failed to fetch users:', error);
