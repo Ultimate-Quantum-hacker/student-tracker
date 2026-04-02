@@ -63,6 +63,28 @@ export const buildAdminUsersLoadFeedbackState = ({
   };
 };
 
+export const buildAdminUsersLoadErrorFeedbackState = ({
+  isPermissionDenied = false,
+  errorMessage = ''
+} = {}) => {
+  if (isPermissionDenied) {
+    return {
+      statusMessage: 'Permission denied while loading users.',
+      statusType: 'error',
+      toastMessage: 'Permission denied',
+      toastType: 'error'
+    };
+  }
+
+  const normalizedErrorMessage = normalizeText(errorMessage);
+  return {
+    statusMessage: normalizedErrorMessage ? `Failed to load users: ${normalizedErrorMessage}` : 'Failed to load users.',
+    statusType: 'error',
+    toastMessage: 'Failed to load users',
+    toastType: 'error'
+  };
+};
+
 export const canEditAdminUserRole = (record = {}, {
   currentRole = ''
 } = {}) => {

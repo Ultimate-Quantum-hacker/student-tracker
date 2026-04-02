@@ -73,6 +73,7 @@ import {
   getVisibleAdminUsers,
   getFilteredAdminUsers,
   buildAdminUsersLoadFeedbackState,
+  buildAdminUsersLoadErrorFeedbackState,
   buildVisibleAdminGlobalSearchRows,
   getFilteredAdminGlobalSearchRows,
   buildAdminGlobalSearchFeedbackState,
@@ -760,13 +761,17 @@ const fetchUsers = async () => {
     console.error('Failed to fetch users:', error);
     state.usersLoaded = false;
     invalidateAdminRuntimeCache('users');
+    const usersLoadErrorFeedbackState = buildAdminUsersLoadErrorFeedbackState({
+      isPermissionDenied: isPermissionDeniedError(error),
+      errorMessage: formatAuthError(error)
+    });
     if (isPermissionDeniedError(error)) {
-      setPanelStatus('Permission denied while loading users.', 'error');
-      showToast('Permission denied', 'error');
+      setPanelStatus(usersLoadErrorFeedbackState.statusMessage, usersLoadErrorFeedbackState.statusType);
+      showToast(usersLoadErrorFeedbackState.toastMessage, usersLoadErrorFeedbackState.toastType);
       return;
     }
-    setPanelStatus(`Failed to load users: ${formatAuthError(error)}`, 'error');
-    showToast('Failed to load users', 'error');
+    setPanelStatus(usersLoadErrorFeedbackState.statusMessage, usersLoadErrorFeedbackState.statusType);
+    showToast(usersLoadErrorFeedbackState.toastMessage, usersLoadErrorFeedbackState.toastType);
   } finally {
     setElementVisibility(dom.usersLoading, false);
     setSectionLoadingState(dom.usersSection, false);
