@@ -116,7 +116,12 @@ export const buildAdminUserRoleUpdateState = (record = {}, {
     canUpdate: true,
     statusMessage: '',
     statusType: '',
-    confirmationMessage: `Change role for ${targetLabel} from ${formatRoleLabel(currentRole)} to ${formatRoleLabel(normalizedNextRole)}?`
+    confirmationMessage: `Change role for ${targetLabel} from ${formatRoleLabel(currentRole)} to ${formatRoleLabel(normalizedNextRole)}?`,
+    confirmLabel: 'Update Role',
+    dangerous: true,
+    canceledStatusMessage: 'Role change canceled.',
+    canceledStatusType: 'warning',
+    progressStatusMessage: 'Updating role...'
   };
 };
 

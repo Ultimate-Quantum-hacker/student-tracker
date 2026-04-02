@@ -1081,17 +1081,17 @@ const updateUserRole = async (uid, nextRole) => {
 
   const shouldContinue = await requestConfirmation({
     message: roleUpdateState.confirmationMessage,
-    confirmLabel: 'Update Role',
-    dangerous: true
+    confirmLabel: roleUpdateState.confirmLabel,
+    dangerous: roleUpdateState.dangerous
   });
 
   if (!shouldContinue) {
-    setPanelStatus('Role change canceled.', 'warning');
+    setPanelStatus(roleUpdateState.canceledStatusMessage, roleUpdateState.canceledStatusType);
     return;
   }
 
   try {
-    setPanelStatus('Updating role...');
+    setPanelStatus(roleUpdateState.progressStatusMessage);
     await updateAdminUserRole({
       uid,
       name: normalizeText(record.name || ''),
