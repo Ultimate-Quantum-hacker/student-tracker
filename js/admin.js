@@ -44,8 +44,10 @@ import {
   formatDateLabel,
   getActionIcon,
   getDateGroupKey,
-  getDateGroupLabel
+  getDateGroupLabel,
+  buildActivityLogsClearFeedbackState
 } from './admin-activity-utils.js';
+
 import {
   buildAdminRegistryStudentRecords,
   removeAdminRegistryStudentEntries,
@@ -1015,13 +1017,11 @@ const handleClearActivityLogs = async () => {
     invalidateAdminRuntimeCache('activityLogs');
     renderActivityLogTable([]);
     populateActivityClassFilter([]);
-    setActivityStatus(
+    const clearFeedbackState = buildActivityLogsClearFeedbackState({
       clearedCount
-        ? `Cleared ${clearedCount} log entr${clearedCount === 1 ? 'y' : 'ies'}.`
-        : 'No activity logs to clear.',
-      clearedCount ? 'success' : 'warning'
-    );
-    showToast(clearedCount ? 'Activity logs cleared' : 'No activity logs to clear', clearedCount ? 'success' : 'warning');
+    });
+    setActivityStatus(clearFeedbackState.statusMessage, clearFeedbackState.statusType);
+    showToast(clearFeedbackState.toastMessage, clearFeedbackState.toastType);
     markUpdatedNow();
   } catch (error) {
     console.error('Failed to clear activity logs:', error);

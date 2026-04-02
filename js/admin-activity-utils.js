@@ -188,3 +188,24 @@ export const getDateGroupLabel = (key) => {
   if (key === 'yesterday') return 'Yesterday';
   return 'Earlier';
 };
+
+export const buildActivityLogsClearFeedbackState = ({
+  clearedCount = 0
+} = {}) => {
+  const normalizedClearedCount = Math.max(0, Number.parseInt(clearedCount, 10) || 0);
+  if (normalizedClearedCount > 0) {
+    return {
+      statusMessage: `Cleared ${normalizedClearedCount} log entr${normalizedClearedCount === 1 ? 'y' : 'ies'}.`,
+      statusType: 'success',
+      toastMessage: 'Activity logs cleared',
+      toastType: 'success'
+    };
+  }
+
+  return {
+    statusMessage: 'No activity logs to clear.',
+    statusType: 'warning',
+    toastMessage: 'No activity logs to clear',
+    toastType: 'warning'
+  };
+};
