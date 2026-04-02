@@ -123,7 +123,8 @@ export const getFilteredAdminGlobalSearchRows = (rows = [], {
 
 export const buildAdminGlobalSearchFeedbackState = ({
   searchTerm = '',
-  resultCount = 0
+  resultCount = 0,
+  isIndexLoaded = true
 } = {}) => {
   const normalizedSearchTerm = normalizeText(searchTerm);
   const parsedResultCount = Number(resultCount);
@@ -132,9 +133,12 @@ export const buildAdminGlobalSearchFeedbackState = ({
     : 0;
 
   if (!normalizedSearchTerm) {
+    const idleMessage = isIndexLoaded
+      ? 'Search by student name to see results.'
+      : 'Search by student name to load results.';
     return {
-      emptyMessage: 'Search by student name to see results.',
-      statusMessage: 'Search by student name to see results.',
+      emptyMessage: idleMessage,
+      statusMessage: idleMessage,
       statusType: ''
     };
   }

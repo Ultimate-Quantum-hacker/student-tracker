@@ -665,7 +665,8 @@ const renderGlobalSearchResults = (entries = []) => {
   if (!entries.length) {
     const { emptyMessage } = buildAdminGlobalSearchFeedbackState({
       searchTerm: dom.globalSearchInput?.value || '',
-      resultCount: entries.length
+      resultCount: entries.length,
+      isIndexLoaded: state.globalSearchIndexLoaded
     });
     dom.globalSearchResultsBody.innerHTML = `<tr><td colspan="4" class="empty-row"><div class="smart-empty"><span>🔎</span><p>${escapeHtml(emptyMessage)}</p></div></td></tr>`;
     return;
@@ -874,9 +875,14 @@ const ensureGlobalSearchIndexLoaded = async ({ force = false } = {}) => {
 const scheduleGlobalSearch = () => {
   const term = normalizeText(dom.globalSearchInput?.value || '');
   if (!term) {
+    const { statusMessage, statusType } = buildAdminGlobalSearchFeedbackState({
+      searchTerm: term,
+      resultCount: 0,
+      isIndexLoaded: state.globalSearchIndexLoaded
+    });
     state.globalSearchResults = [];
     renderGlobalSearchResults([]);
-    setGlobalSearchStatus(state.globalSearchIndexLoaded ? 'Search by student name to see results.' : 'Search by student name to load results.');
+    setGlobalSearchStatus(statusMessage, statusType);
     return;
   }
 
@@ -891,7 +897,8 @@ const runGlobalSearch = () => {
   if (!term) {
     const { statusMessage, statusType } = buildAdminGlobalSearchFeedbackState({
       searchTerm: term,
-      resultCount: 0
+      resultCount: 0,
+      isIndexLoaded: state.globalSearchIndexLoaded
     });
     state.globalSearchResults = [];
     renderGlobalSearchResults([]);
