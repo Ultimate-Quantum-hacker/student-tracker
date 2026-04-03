@@ -117,6 +117,17 @@ export const buildIdentityMarkup = ({
   `;
 };
 
+export const buildEmptyTableRowMarkup = ({
+  columnCount = 1,
+  icon = 'ℹ️',
+  message = 'No items found.'
+} = {}) => {
+  const normalizedColumnCount = Math.max(1, Number.parseInt(columnCount, 10) || 1);
+  const normalizedIcon = normalizeDisplayText(icon, 'ℹ️');
+  const normalizedMessage = normalizeDisplayText(message, 'No items found.');
+  return `<tr><td colspan="${normalizedColumnCount}" class="empty-row"><div class="smart-empty"><span>${escapeHtml(normalizedIcon)}</span><p>${escapeHtml(normalizedMessage)}</p></div></td></tr>`;
+};
+
  export const formatRoleLabel = (role) => {
    const rawRole = normalizeText(role).toLowerCase();
    if (rawRole === ROLE_STUDENT) return 'Student';

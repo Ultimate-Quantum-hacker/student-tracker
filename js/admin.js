@@ -29,6 +29,7 @@ import {
   normalizeCount,
   formatLastUpdatedLabel,
   prefersReducedMotion,
+  buildEmptyTableRowMarkup,
   buildIdentityMarkup,
   formatRoleLabel,
   getRoleBadgeClass,
@@ -512,7 +513,11 @@ const renderUsersTable = () => {
   if (!dom.tableBody) return;
   const filteredUsers = getFilteredUsers();
   if (!filteredUsers.length) {
-    dom.tableBody.innerHTML = '<tr><td colspan="5" class="empty-row"><div class="smart-empty"><span>👤</span><p>No matching users found.</p></div></td></tr>';
+    dom.tableBody.innerHTML = buildEmptyTableRowMarkup({
+      columnCount: 5,
+      icon: '👤',
+      message: 'No matching users found.'
+    });
     return;
   }
 
@@ -634,7 +639,11 @@ const renderActivityLogTable = (entries = []) => {
   if (!dom.activityBody) return;
   const visibleEntries = getVisibleActivityEntries(entries);
   if (!visibleEntries.length) {
-    dom.activityBody.innerHTML = '<tr><td colspan="5" class="empty-row"><div class="smart-empty"><span>🧾</span><p>No activity recorded.</p></div></td></tr>';
+    dom.activityBody.innerHTML = buildEmptyTableRowMarkup({
+      columnCount: 5,
+      icon: '🧾',
+      message: 'No activity recorded.'
+    });
     return;
   }
 
@@ -697,7 +706,11 @@ const renderGlobalSearchResults = (entries = []) => {
       resultCount: entries.length,
       isIndexLoaded: state.globalSearchIndexLoaded
     });
-    dom.globalSearchResultsBody.innerHTML = `<tr><td colspan="4" class="empty-row"><div class="smart-empty"><span>🔎</span><p>${escapeHtml(emptyMessage)}</p></div></td></tr>`;
+    dom.globalSearchResultsBody.innerHTML = buildEmptyTableRowMarkup({
+      columnCount: 4,
+      icon: '🔎',
+      message: emptyMessage
+    });
     return;
   }
 
