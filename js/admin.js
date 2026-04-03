@@ -74,6 +74,7 @@ import {
   findAdminUserRecord,
   getVisibleAdminUsers,
   getFilteredAdminUsers,
+  buildAdminUsersLoadRequestState,
   buildAdminUsersLoadFeedbackState,
   buildAdminUsersLoadErrorFeedbackState,
   buildVisibleAdminGlobalSearchRows,
@@ -723,8 +724,11 @@ const populateActivityUserFilter = () => {
 };
 
 const fetchUsers = async () => {
-  if (!isFirebaseConfigured) {
-    setPanelStatus('Firebase is not configured. User management is unavailable.', 'error');
+  const usersLoadRequestState = buildAdminUsersLoadRequestState({
+    isFirebaseConfigured
+  });
+  if (!usersLoadRequestState.canLoad) {
+    setPanelStatus(usersLoadRequestState.statusMessage, usersLoadRequestState.statusType);
     setElementVisibility(dom.usersLoading, false);
     setSectionLoadingState(dom.usersSection, false);
     return;
@@ -732,7 +736,7 @@ const fetchUsers = async () => {
 
   setElementVisibility(dom.usersLoading, true);
   setSectionLoadingState(dom.usersSection, true);
-  setPanelStatus('Loading users...');
+  setPanelStatus(usersLoadRequestState.progressStatusMessage);
 
   try {
     const cachedRecords = readAdminRuntimeCache('users');

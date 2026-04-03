@@ -63,6 +63,26 @@ export const buildAdminUsersLoadFeedbackState = ({
   };
 };
 
+export const buildAdminUsersLoadRequestState = ({
+  isFirebaseConfigured = true
+} = {}) => {
+  if (!isFirebaseConfigured) {
+    return {
+      canLoad: false,
+      statusMessage: 'Firebase is not configured. User management is unavailable.',
+      statusType: 'error',
+      progressStatusMessage: ''
+    };
+  }
+
+  return {
+    canLoad: true,
+    statusMessage: '',
+    statusType: '',
+    progressStatusMessage: 'Loading users...'
+  };
+};
+
 export const buildAdminUsersLoadErrorFeedbackState = ({
   isPermissionDenied = false,
   errorMessage = ''
