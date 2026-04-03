@@ -78,6 +78,7 @@ import {
   getFilteredAdminGlobalSearchRows,
   buildAdminGlobalSearchFeedbackState,
   buildAdminGlobalSearchIndexFeedbackState,
+  buildAdminGlobalSearchIndexErrorFeedbackState,
   buildAdminUserRoleUpdateState,
   buildAdminUserRoleUpdateFeedbackState,
   buildAdminUserRoleUpdateErrorFeedbackState,
@@ -881,13 +882,17 @@ const buildGlobalSearchIndex = async () => {
     state.globalSearchIndexLoaded = false;
     invalidateAdminRuntimeCache('globalSearchIndex');
     renderGlobalSearchResults([]);
+    const globalSearchIndexErrorFeedbackState = buildAdminGlobalSearchIndexErrorFeedbackState({
+      isPermissionDenied: isPermissionDeniedError(error),
+      errorMessage: formatAuthError(error)
+    });
     if (isPermissionDeniedError(error)) {
-      setGlobalSearchStatus('Search unavailable due to permissions.', 'error');
-      showToast('Search unavailable due to permissions', 'warning');
+      setGlobalSearchStatus(globalSearchIndexErrorFeedbackState.statusMessage, globalSearchIndexErrorFeedbackState.statusType);
+      showToast(globalSearchIndexErrorFeedbackState.toastMessage, globalSearchIndexErrorFeedbackState.toastType);
       return;
     }
-    setGlobalSearchStatus(`Failed to build search index: ${formatAuthError(error)}`, 'error');
-    showToast('Failed to load global search', 'error');
+    setGlobalSearchStatus(globalSearchIndexErrorFeedbackState.statusMessage, globalSearchIndexErrorFeedbackState.statusType);
+    showToast(globalSearchIndexErrorFeedbackState.toastMessage, globalSearchIndexErrorFeedbackState.toastType);
   } finally {
     setElementVisibility(dom.globalSearchLoading, false);
     setSectionLoadingState(dom.searchSection, false);

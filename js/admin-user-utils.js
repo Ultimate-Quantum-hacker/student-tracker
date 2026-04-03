@@ -278,3 +278,25 @@ export const buildAdminGlobalSearchIndexFeedbackState = ({
     statusType: 'success'
   };
 };
+
+export const buildAdminGlobalSearchIndexErrorFeedbackState = ({
+  isPermissionDenied = false,
+  errorMessage = ''
+} = {}) => {
+  if (isPermissionDenied) {
+    return {
+      statusMessage: 'Search unavailable due to permissions.',
+      statusType: 'error',
+      toastMessage: 'Search unavailable due to permissions',
+      toastType: 'warning'
+    };
+  }
+
+  const normalizedErrorMessage = normalizeText(errorMessage);
+  return {
+    statusMessage: normalizedErrorMessage ? `Failed to build search index: ${normalizedErrorMessage}` : 'Failed to build search index.',
+    statusType: 'error',
+    toastMessage: 'Failed to load global search',
+    toastType: 'error'
+  };
+};
