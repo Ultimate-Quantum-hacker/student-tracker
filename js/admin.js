@@ -94,6 +94,7 @@ import {
   buildAdminUserRoleUpdateFeedbackState,
   buildAdminUserRoleUpdateErrorFeedbackState,
   buildAdminLogoutErrorFeedbackState,
+  buildAdminRefreshFeedbackState,
   buildAdminInitSuccessFeedbackState,
   buildAdminInitErrorFeedbackState,
   canManageAdminRoles,
@@ -1224,7 +1225,8 @@ const bindEvents = () => {
     }
 
     await Promise.allSettled(refreshTasks);
-    showToast('Panel refreshed', 'success');
+    const refreshFeedbackState = buildAdminRefreshFeedbackState();
+    showToast(refreshFeedbackState.toastMessage, refreshFeedbackState.toastType);
   });
 
   dom.refreshActivityBtn?.addEventListener('click', async () => {

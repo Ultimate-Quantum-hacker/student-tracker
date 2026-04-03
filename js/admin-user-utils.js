@@ -256,6 +256,13 @@ export const buildAdminLogoutErrorFeedbackState = ({
   };
 };
 
+export const buildAdminRefreshFeedbackState = () => {
+  return {
+    toastMessage: 'Panel refreshed',
+    toastType: 'success'
+  };
+};
+
 export const buildAdminInitSuccessFeedbackState = () => {
   return {
     toastMessage: 'Admin panel ready',
