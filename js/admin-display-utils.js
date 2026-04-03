@@ -158,6 +158,11 @@ export const buildEmptyTableRowMarkup = ({
   return `<tr><td colspan="${normalizedColumnCount}" class="empty-row"><div class="smart-empty"><span>${escapeHtml(normalizedIcon)}</span><p>${escapeHtml(normalizedMessage)}</p></div></td></tr>`;
 };
 
+export const buildTableHelperTextMarkup = (message = '') => {
+  const safeMessage = normalizeDisplayText(message, '');
+  return safeMessage ? `<span class="table-helper-text">${escapeHtml(safeMessage)}</span>` : '';
+};
+
  export const formatRoleLabel = (role) => {
    const rawRole = normalizeText(role).toLowerCase();
    if (rawRole === ROLE_STUDENT) return 'Student';

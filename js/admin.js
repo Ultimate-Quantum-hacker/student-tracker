@@ -35,6 +35,7 @@ import {
   buildStackedTextMarkup,
   buildRoleBadgeMarkup,
   buildClassTokenMarkup,
+  buildTableHelperTextMarkup,
   formatRoleLabel,
   getRoleBadgeClass,
   formatCreatedAt,
@@ -591,7 +592,7 @@ const renderUsersTable = () => {
       }
       actionWrap.appendChild(updateBtn);
     } else {
-      actionWrap.innerHTML = '<span class="table-helper-text">View only</span>';
+      actionWrap.innerHTML = buildTableHelperTextMarkup('View only');
     }
     actionCell.appendChild(actionWrap);
 
