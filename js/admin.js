@@ -47,6 +47,7 @@ import {
   getDateGroupLabel,
   buildActivityLogsClearRequestState,
   buildActivityLogsClearFeedbackState,
+  buildActivityLogsLoadRequestState,
   buildActivityLogsLoadFeedbackState,
   buildActivityLogsLoadErrorFeedbackState,
   buildActivityLogsClearErrorFeedbackState
@@ -964,6 +965,7 @@ const runGlobalSearch = () => {
 };
 
 const loadActivityLogs = async () => {
+  const activityLogsLoadRequestState = buildActivityLogsLoadRequestState();
   const {
     selectedUserId,
     selectedClassKey,
@@ -979,7 +981,7 @@ const loadActivityLogs = async () => {
 
   setElementVisibility(dom.activityLoading, true);
   setSectionLoadingState(dom.activitySection, true);
-  setActivityStatus('Loading activity logs...');
+  setActivityStatus(activityLogsLoadRequestState.progressStatusMessage);
 
   try {
     if (!state.usersLoaded) {

@@ -220,6 +220,12 @@ export const buildActivityLogsLoadFeedbackState = ({
   };
 };
 
+export const buildActivityLogsLoadRequestState = () => {
+  return {
+    progressStatusMessage: 'Loading activity logs...'
+  };
+};
+
 export const buildActivityLogsLoadErrorFeedbackState = ({
   isPermissionDenied = false,
   errorMessage = ''
