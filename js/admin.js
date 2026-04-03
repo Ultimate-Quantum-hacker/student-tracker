@@ -36,6 +36,7 @@ import {
   buildRoleBadgeMarkup,
   buildClassTokenMarkup,
   buildTableHelperTextMarkup,
+  buildActivityGroupRowMarkup,
   formatRoleLabel,
   getRoleBadgeClass,
   formatCreatedAt,
@@ -667,7 +668,7 @@ const renderActivityLogTable = (entries = []) => {
     const timestampTitle = toDateValue(entry.timestamp)?.toLocaleString() || 'Unknown time';
 
     return `
-      ${shouldRenderGroup ? `<tr class="activity-group-row"><td colspan="5">${getDateGroupLabel(groupKey)}</td></tr>` : ''}
+      ${shouldRenderGroup ? buildActivityGroupRowMarkup(getDateGroupLabel(groupKey)) : ''}
       <tr class="activity-row ${actionTone.className} fade-in">
         <td title="${escapeHtml(timestampTitle)}">
           ${buildStackedTextMarkup({

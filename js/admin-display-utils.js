@@ -163,6 +163,11 @@ export const buildTableHelperTextMarkup = (message = '') => {
   return safeMessage ? `<span class="table-helper-text">${escapeHtml(safeMessage)}</span>` : '';
 };
 
+export const buildActivityGroupRowMarkup = (label = '') => {
+  const safeLabel = normalizeDisplayText(label, '');
+  return safeLabel ? `<tr class="activity-group-row"><td colspan="5">${escapeHtml(safeLabel)}</td></tr>` : '';
+};
+
  export const formatRoleLabel = (role) => {
    const rawRole = normalizeText(role).toLowerCase();
    if (rawRole === ROLE_STUDENT) return 'Student';
