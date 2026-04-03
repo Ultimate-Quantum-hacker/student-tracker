@@ -244,6 +244,12 @@ export const buildAdminUserRoleUpdateErrorFeedbackState = ({
   };
 };
 
+export const buildAdminLogoutRequestState = () => {
+  return {
+    progressLabel: 'Signing out...'
+  };
+};
+
 export const buildAdminLogoutErrorFeedbackState = ({
   errorMessage = ''
 } = {}) => {

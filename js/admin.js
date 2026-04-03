@@ -94,6 +94,7 @@ import {
   buildAdminUserRoleUpdateState,
   buildAdminUserRoleUpdateFeedbackState,
   buildAdminUserRoleUpdateErrorFeedbackState,
+  buildAdminLogoutRequestState,
   buildAdminLogoutErrorFeedbackState,
   buildAdminRefreshFeedbackState,
   buildAdminInitSuccessFeedbackState,
@@ -1301,9 +1302,10 @@ const bindEvents = () => {
   });
 
   dom.logoutBtn?.addEventListener('click', async () => {
+    const logoutRequestState = buildAdminLogoutRequestState();
     const previousLabel = dom.logoutBtn.textContent;
     dom.logoutBtn.disabled = true;
-    dom.logoutBtn.textContent = 'Signing out...';
+    dom.logoutBtn.textContent = logoutRequestState.progressLabel;
     try {
       await logoutUser();
       redirectToLogin();
