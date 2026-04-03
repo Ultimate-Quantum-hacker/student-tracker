@@ -33,6 +33,7 @@ import {
   buildIdentityMarkup,
   buildStackedTextMarkup,
   buildRoleBadgeMarkup,
+  buildClassTokenMarkup,
   formatRoleLabel,
   getRoleBadgeClass,
   formatCreatedAt,
@@ -690,7 +691,10 @@ const renderActivityLogTable = (entries = []) => {
           containerClass: 'activity-owner-cell',
           copyClass: 'activity-owner-copy'
         })}</td>
-        <td title="${escapeHtml(normalizeDisplayText(entry.classId || '', ''))}"><span class="class-token">${escapeHtml(classCellLabel || '—')}</span></td>
+        <td>${buildClassTokenMarkup({
+          label: classCellLabel || '—',
+          title: normalizeDisplayText(entry.classId || '', '')
+        })}</td>
       </tr>
     `;
   }).join('');
@@ -729,7 +733,10 @@ const renderGlobalSearchResults = (entries = []) => {
           copyClass: 'activity-owner-copy'
         })}</td>
         <td>${buildRoleBadgeMarkup(ownerRole)}</td>
-        <td><span class="class-token" title="${escapeHtml(normalizeDisplayText(entry.classId || '', ''))}">${escapeHtml(classLabel)}</span></td>
+        <td>${buildClassTokenMarkup({
+          label: classLabel,
+          title: normalizeDisplayText(entry.classId || '', '')
+        })}</td>
       </tr>
     `;
   }).join('');

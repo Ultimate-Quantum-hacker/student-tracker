@@ -167,6 +167,15 @@ export const buildEmptyTableRowMarkup = ({
    return `<span class="inline-role-badge ${getRoleBadgeClass(safeRole)}">${escapeHtml(formatRoleLabel(safeRole))}</span>`;
  };
 
+ export const buildClassTokenMarkup = ({
+   label = '—',
+   title = ''
+ } = {}) => {
+   const safeLabel = normalizeDisplayText(label, '—');
+   const safeTitle = normalizeDisplayText(title, '');
+   return `<span class="class-token"${safeTitle ? ` title="${escapeHtml(safeTitle)}"` : ''}>${escapeHtml(safeLabel)}</span>`;
+ };
+
  export const formatCreatedAt = (value) => {
    if (!value) return '—';
    if (typeof value?.toDate === 'function') {
