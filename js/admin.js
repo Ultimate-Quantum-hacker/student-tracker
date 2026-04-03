@@ -31,6 +31,7 @@ import {
   prefersReducedMotion,
   buildEmptyTableRowMarkup,
   buildIdentityMarkup,
+  buildOwnerIdentityMarkup,
   buildStackedTextMarkup,
   buildRoleBadgeMarkup,
   buildClassTokenMarkup,
@@ -685,12 +686,10 @@ const renderActivityLogTable = (entries = []) => {
           </div>
         </td>
         <td>${buildRoleBadgeMarkup(actorRole)}</td>
-        <td>${buildIdentityMarkup({
+        <td>${buildOwnerIdentityMarkup({
           label: ownerLabel,
           secondary: '',
-          role: ownerRole,
-          containerClass: 'activity-owner-cell',
-          copyClass: 'activity-owner-copy'
+          role: ownerRole
         })}</td>
         <td>${buildClassTokenMarkup({
           label: classCellLabel || '—',
@@ -726,12 +725,10 @@ const renderGlobalSearchResults = (entries = []) => {
     return `
       <tr class="fade-in">
         <td>${buildIdentityMarkup({ label: studentLabel, role: 'student' })}</td>
-        <td>${buildIdentityMarkup({
+        <td>${buildOwnerIdentityMarkup({
           label: ownerLabel,
           secondary: 'Data owner',
-          role: ownerRole,
-          containerClass: 'activity-owner-cell',
-          copyClass: 'activity-owner-copy'
+          role: ownerRole
         })}</td>
         <td>${buildRoleBadgeMarkup(ownerRole)}</td>
         <td>${buildClassTokenMarkup({

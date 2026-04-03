@@ -117,6 +117,20 @@ export const buildIdentityMarkup = ({
   `;
 };
 
+export const buildOwnerIdentityMarkup = ({
+  label = 'Unknown owner',
+  secondary = '',
+  role = ''
+} = {}) => {
+  return buildIdentityMarkup({
+    label,
+    secondary,
+    role,
+    containerClass: 'activity-owner-cell',
+    copyClass: 'activity-owner-copy'
+  });
+};
+
 export const buildStackedTextMarkup = ({
   containerClass = 'table-meta-stack',
   primary = '',
