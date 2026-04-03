@@ -77,6 +77,7 @@ import {
   buildAdminUsersLoadRequestState,
   buildAdminUsersLoadFeedbackState,
   buildAdminUsersLoadErrorFeedbackState,
+  buildAdminGlobalStatsLoadErrorFeedbackState,
   buildVisibleAdminGlobalSearchRows,
   getFilteredAdminGlobalSearchRows,
   buildAdminGlobalSearchFeedbackState,
@@ -810,13 +811,12 @@ const loadGlobalStats = async () => {
     writeAdminRuntimeCache('globalStats', state.globalStats);
   } catch (error) {
     console.error('Failed to fetch admin stats:', error);
-    state.globalStats = {
-      totalUsers: getVisibleUsers().length,
-      totalStudents: 0,
-      totalExams: 0
-    };
+    const globalStatsLoadErrorFeedbackState = buildAdminGlobalStatsLoadErrorFeedbackState({
+      visibleUserCount: getVisibleUsers().length
+    });
+    state.globalStats = globalStatsLoadErrorFeedbackState.fallbackGlobalStats;
     invalidateAdminRuntimeCache('globalStats');
-    showToast('Failed to load global stats', 'error');
+    showToast(globalStatsLoadErrorFeedbackState.toastMessage, globalStatsLoadErrorFeedbackState.toastType);
   } finally {
     renderStats();
     setSectionLoadingState(dom.overviewSection, false);

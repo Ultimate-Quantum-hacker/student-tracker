@@ -105,6 +105,25 @@ export const buildAdminUsersLoadErrorFeedbackState = ({
   };
 };
 
+export const buildAdminGlobalStatsLoadErrorFeedbackState = ({
+  visibleUserCount = 0
+} = {}) => {
+  const parsedVisibleUserCount = Number(visibleUserCount);
+  const normalizedVisibleUserCount = Number.isFinite(parsedVisibleUserCount) && parsedVisibleUserCount > 0
+    ? Math.floor(parsedVisibleUserCount)
+    : 0;
+
+  return {
+    fallbackGlobalStats: {
+      totalUsers: normalizedVisibleUserCount,
+      totalStudents: 0,
+      totalExams: 0
+    },
+    toastMessage: 'Failed to load global stats',
+    toastType: 'error'
+  };
+};
+
 export const canEditAdminUserRole = (record = {}, {
   currentRole = ''
 } = {}) => {
