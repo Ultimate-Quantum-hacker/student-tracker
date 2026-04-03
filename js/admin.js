@@ -1354,8 +1354,11 @@ const init = async () => {
     ]);
 
     if (!state.globalSearchIndexLoaded) {
+      const globalSearchIdleFeedbackState = buildAdminGlobalSearchFeedbackState({
+        isIndexLoaded: state.globalSearchIndexLoaded
+      });
       renderGlobalSearchResults([]);
-      setGlobalSearchStatus('Search by student name to load results.');
+      setGlobalSearchStatus(globalSearchIdleFeedbackState.statusMessage, globalSearchIdleFeedbackState.statusType);
     }
 
     if (!state.activityLogsLoaded) {
