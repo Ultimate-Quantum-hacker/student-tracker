@@ -92,6 +92,7 @@ import {
   buildAdminUserRoleUpdateState,
   buildAdminUserRoleUpdateFeedbackState,
   buildAdminUserRoleUpdateErrorFeedbackState,
+  buildAdminLogoutErrorFeedbackState,
   canManageAdminRoles,
   canDeleteAdminRegistryStudents,
   canEditAdminUserRole,
@@ -1289,8 +1290,11 @@ const bindEvents = () => {
       await logoutUser();
       redirectToLogin();
     } catch (error) {
-      setPanelStatus(`Logout failed: ${formatAuthError(error)}`, 'error');
-      showToast('Logout failed', 'error');
+      const logoutErrorFeedbackState = buildAdminLogoutErrorFeedbackState({
+        errorMessage: formatAuthError(error)
+      });
+      setPanelStatus(logoutErrorFeedbackState.statusMessage, logoutErrorFeedbackState.statusType);
+      showToast(logoutErrorFeedbackState.toastMessage, logoutErrorFeedbackState.toastType);
       dom.logoutBtn.disabled = false;
       dom.logoutBtn.textContent = previousLabel;
     }

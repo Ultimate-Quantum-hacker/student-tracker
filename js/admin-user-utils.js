@@ -244,6 +244,18 @@ export const buildAdminUserRoleUpdateErrorFeedbackState = ({
   };
 };
 
+export const buildAdminLogoutErrorFeedbackState = ({
+  errorMessage = ''
+} = {}) => {
+  const normalizedErrorMessage = normalizeText(errorMessage);
+  return {
+    statusMessage: normalizedErrorMessage ? `Logout failed: ${normalizedErrorMessage}` : 'Logout failed.',
+    statusType: 'error',
+    toastMessage: 'Logout failed',
+    toastType: 'error'
+  };
+};
+
 export const getVisibleAdminActivityEntries = (entries = [], users = [], {
   currentRole = ''
 } = {}) => {
