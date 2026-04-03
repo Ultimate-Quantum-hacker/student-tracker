@@ -740,6 +740,28 @@ export const buildAdminRegistryStudentDeleteFeedbackState = ({
   };
 };
 
+export const buildAdminStudentsRegistryLoadErrorFeedbackState = ({
+  isPermissionDenied = false,
+  errorMessage = ''
+} = {}) => {
+  if (isPermissionDenied) {
+    return {
+      statusMessage: 'Global student registry is unavailable due to permissions.',
+      statusType: 'error',
+      toastMessage: 'Global student registry unavailable due to permissions',
+      toastType: 'warning'
+    };
+  }
+
+  const normalizedErrorMessage = normalizeText(errorMessage);
+  return {
+    statusMessage: normalizedErrorMessage ? `Failed to load global student registry: ${normalizedErrorMessage}` : 'Failed to load global student registry.',
+    statusType: 'error',
+    toastMessage: 'Failed to load global student registry',
+    toastType: 'error'
+  };
+};
+
 export const buildAdminRegistryStudentDeleteErrorFeedbackState = ({
   isPermissionDenied = false,
   errorMessage = ''

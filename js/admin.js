@@ -64,6 +64,7 @@ import {
   buildAdminStudentsPaginationViewState,
   buildAdminStudentsRegistryViewState,
   buildAdminRegistryStudentDeleteFeedbackState,
+  buildAdminStudentsRegistryLoadErrorFeedbackState,
   buildAdminRegistryStudentDeleteErrorFeedbackState,
   buildAdminRegistryStudentDeleteRequestState
 } from './admin-student-registry-utils.js';
@@ -1602,14 +1603,18 @@ const loadAdminStudentsRegistry = async () => {
     renderAdminStudentsFilterOptions();
     renderAdminStudentsTable([]);
     renderAdminStudentsPagination();
+    const registryLoadErrorFeedbackState = buildAdminStudentsRegistryLoadErrorFeedbackState({
+      isPermissionDenied: isPermissionDeniedError(error),
+      errorMessage: formatAuthError(error)
+    });
     if (isPermissionDeniedError(error)) {
-      setAdminStudentsStatus('Global student registry is unavailable due to permissions.', 'error');
-      showToast('Global student registry unavailable due to permissions', 'warning');
+      setAdminStudentsStatus(registryLoadErrorFeedbackState.statusMessage, registryLoadErrorFeedbackState.statusType);
+      showToast(registryLoadErrorFeedbackState.toastMessage, registryLoadErrorFeedbackState.toastType);
 
       return;
     }
-    setAdminStudentsStatus(`Failed to load global student registry: ${formatAuthError(error)}`, 'error');
-    showToast('Failed to load global student registry', 'error');
+    setAdminStudentsStatus(registryLoadErrorFeedbackState.statusMessage, registryLoadErrorFeedbackState.statusType);
+    showToast(registryLoadErrorFeedbackState.toastMessage, registryLoadErrorFeedbackState.toastType);
   } finally {
     setElementVisibility(dom.adminStudentsLoading, false);
     setSectionLoadingState(dom.adminStudentsView, false);
