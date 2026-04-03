@@ -32,6 +32,7 @@ import {
   buildEmptyTableRowMarkup,
   buildIdentityMarkup,
   buildStackedTextMarkup,
+  buildRoleBadgeMarkup,
   formatRoleLabel,
   getRoleBadgeClass,
   formatCreatedAt,
@@ -555,10 +556,7 @@ const renderUsersTable = () => {
     const roleCell = document.createElement('td');
     const roleWrap = document.createElement('div');
     roleWrap.className = 'role-cell-wrap';
-    const badge = document.createElement('span');
-    badge.className = `inline-role-badge ${getRoleBadgeClass(record.role)}`;
-    badge.textContent = formatRoleLabel(record.role);
-    roleWrap.appendChild(badge);
+    roleWrap.innerHTML = buildRoleBadgeMarkup(record.role);
     const roleSelectShell = document.createElement('div');
     roleSelectShell.className = 'input-shell role-select-shell search-container select-container';
     roleSelectShell.appendChild(buildRoleSelect(record));
@@ -684,7 +682,7 @@ const renderActivityLogTable = (entries = []) => {
             </div>
           </div>
         </td>
-        <td><span class="inline-role-badge ${getRoleBadgeClass(actorRole)}">${escapeHtml(formatRoleLabel(actorRole))}</span></td>
+        <td>${buildRoleBadgeMarkup(actorRole)}</td>
         <td>${buildIdentityMarkup({
           label: ownerLabel,
           secondary: '',
@@ -730,7 +728,7 @@ const renderGlobalSearchResults = (entries = []) => {
           containerClass: 'activity-owner-cell',
           copyClass: 'activity-owner-copy'
         })}</td>
-        <td><span class="inline-role-badge ${getRoleBadgeClass(ownerRole)}">${escapeHtml(formatRoleLabel(ownerRole))}</span></td>
+        <td>${buildRoleBadgeMarkup(ownerRole)}</td>
         <td><span class="class-token" title="${escapeHtml(normalizeDisplayText(entry.classId || '', ''))}">${escapeHtml(classLabel)}</span></td>
       </tr>
     `;
