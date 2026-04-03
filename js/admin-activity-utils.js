@@ -220,6 +220,28 @@ export const buildActivityLogsLoadFeedbackState = ({
   };
 };
 
+export const buildActivityLogsLoadErrorFeedbackState = ({
+  isPermissionDenied = false,
+  errorMessage = ''
+} = {}) => {
+  if (isPermissionDenied) {
+    return {
+      statusMessage: 'Access denied. You do not have permission to read activity logs.',
+      statusType: 'error',
+      toastMessage: 'Permission denied',
+      toastType: 'error'
+    };
+  }
+
+  const normalizedErrorMessage = normalizeText(errorMessage);
+  return {
+    statusMessage: normalizedErrorMessage ? `Failed to load activity logs: ${normalizedErrorMessage}` : 'Failed to load activity logs.',
+    statusType: 'error',
+    toastMessage: 'Failed to load activity logs',
+    toastType: 'error'
+  };
+};
+
 export const buildActivityLogsClearRequestState = () => {
   return {
     confirmationMessage: 'Clear all activity logs? This permanently removes the current log history.',

@@ -47,7 +47,8 @@ import {
   getDateGroupLabel,
   buildActivityLogsClearRequestState,
   buildActivityLogsClearFeedbackState,
-  buildActivityLogsLoadFeedbackState
+  buildActivityLogsLoadFeedbackState,
+  buildActivityLogsLoadErrorFeedbackState
 } from './admin-activity-utils.js';
 
 import {
@@ -1012,13 +1013,17 @@ const loadActivityLogs = async () => {
     state.activityLogsLoaded = false;
     invalidateAdminRuntimeCache('activityLogs');
     renderActivityLogTable([]);
+    const activityLogsLoadErrorFeedbackState = buildActivityLogsLoadErrorFeedbackState({
+      isPermissionDenied: isPermissionDeniedError(error),
+      errorMessage: formatAuthError(error)
+    });
     if (isPermissionDeniedError(error)) {
-      setActivityStatus('Access denied. You do not have permission to read activity logs.', 'error');
-      showToast('Permission denied', 'error');
+      setActivityStatus(activityLogsLoadErrorFeedbackState.statusMessage, activityLogsLoadErrorFeedbackState.statusType);
+      showToast(activityLogsLoadErrorFeedbackState.toastMessage, activityLogsLoadErrorFeedbackState.toastType);
       return;
     }
-    setActivityStatus(`Failed to load activity logs: ${formatAuthError(error)}`, 'error');
-    showToast('Failed to load activity logs', 'error');
+    setActivityStatus(activityLogsLoadErrorFeedbackState.statusMessage, activityLogsLoadErrorFeedbackState.statusType);
+    showToast(activityLogsLoadErrorFeedbackState.toastMessage, activityLogsLoadErrorFeedbackState.toastType);
   } finally {
     setElementVisibility(dom.activityLoading, false);
     setSectionLoadingState(dom.activitySection, false);
