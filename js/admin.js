@@ -64,6 +64,7 @@ import {
   buildAdminStudentsPaginationViewState,
   buildAdminStudentsRegistryViewState,
   buildAdminRegistryStudentDeleteFeedbackState,
+  buildAdminRegistryStudentDeleteErrorFeedbackState,
   buildAdminRegistryStudentDeleteRequestState
 } from './admin-student-registry-utils.js';
 
@@ -1692,13 +1693,17 @@ const handleAdminRegistryStudentDelete = async ({ ownerId = '', studentId = '', 
     }
   } catch (error) {
     console.error('Failed to delete registry student:', error);
+    const deleteErrorFeedbackState = buildAdminRegistryStudentDeleteErrorFeedbackState({
+      isPermissionDenied: isPermissionDeniedError(error),
+      errorMessage: formatAuthError(error)
+    });
     if (isPermissionDeniedError(error)) {
-      setAdminStudentsStatus('Access denied. You do not have permission to delete this registry record.', 'error');
-      showToast('Permission denied', 'error');
+      setAdminStudentsStatus(deleteErrorFeedbackState.statusMessage, deleteErrorFeedbackState.statusType);
+      showToast(deleteErrorFeedbackState.toastMessage, deleteErrorFeedbackState.toastType);
       return;
     }
-    setAdminStudentsStatus(`Failed to delete student record: ${formatAuthError(error)}`, 'error');
-    showToast('Failed to delete student from registry', 'error');
+    setAdminStudentsStatus(deleteErrorFeedbackState.statusMessage, deleteErrorFeedbackState.statusType);
+    showToast(deleteErrorFeedbackState.toastMessage, deleteErrorFeedbackState.toastType);
   }
 };
 

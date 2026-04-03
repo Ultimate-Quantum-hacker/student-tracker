@@ -740,6 +740,28 @@ export const buildAdminRegistryStudentDeleteFeedbackState = ({
   };
 };
 
+export const buildAdminRegistryStudentDeleteErrorFeedbackState = ({
+  isPermissionDenied = false,
+  errorMessage = ''
+} = {}) => {
+  if (isPermissionDenied) {
+    return {
+      statusMessage: 'Access denied. You do not have permission to delete this registry record.',
+      statusType: 'error',
+      toastMessage: 'Permission denied',
+      toastType: 'error'
+    };
+  }
+
+  const normalizedErrorMessage = normalizeText(errorMessage);
+  return {
+    statusMessage: normalizedErrorMessage ? `Failed to delete student record: ${normalizedErrorMessage}` : 'Failed to delete student record.',
+    statusType: 'error',
+    toastMessage: 'Failed to delete student from registry',
+    toastType: 'error'
+  };
+};
+
 export const buildAdminRegistryStudentDeleteRequestState = ({
   ownerId = '',
   studentId = '',
