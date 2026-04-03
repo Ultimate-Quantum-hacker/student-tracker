@@ -119,6 +119,33 @@ export const canEditAdminUserRole = (record = {}, {
   return normalizeUserRole(record?.role) !== ROLE_DEVELOPER;
 };
 
+export const buildAdminUserRoleUpdatePrecheckState = ({
+  hasRecord = false,
+  canManageRoles = false
+} = {}) => {
+  if (!hasRecord) {
+    return {
+      canProceed: false,
+      statusMessage: 'Unable to find selected user.',
+      statusType: 'error'
+    };
+  }
+
+  if (!canManageRoles) {
+    return {
+      canProceed: false,
+      statusMessage: 'Only developers can update roles in this panel.',
+      statusType: 'warning'
+    };
+  }
+
+  return {
+    canProceed: true,
+    statusMessage: '',
+    statusType: ''
+  };
+};
+
 export const buildAdminUserRoleUpdateState = (record = {}, {
   nextRole = '',
   updatableRoles = []

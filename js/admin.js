@@ -83,6 +83,7 @@ import {
   buildAdminGlobalSearchIndexRequestState,
   buildAdminGlobalSearchIndexFeedbackState,
   buildAdminGlobalSearchIndexErrorFeedbackState,
+  buildAdminUserRoleUpdatePrecheckState,
   buildAdminUserRoleUpdateState,
   buildAdminUserRoleUpdateFeedbackState,
   buildAdminUserRoleUpdateErrorFeedbackState,
@@ -1090,12 +1091,12 @@ const handleClearActivityLogs = async () => {
 
 const updateUserRole = async (uid, nextRole) => {
   const record = findUserRecord(uid);
-  if (!record) {
-    setPanelStatus('Unable to find selected user.', 'error');
-    return;
-  }
-  if (!canManageAdminRoles(state.currentRole)) {
-    setPanelStatus('Only developers can update roles in this panel.', 'warning');
+  const roleUpdatePrecheckState = buildAdminUserRoleUpdatePrecheckState({
+    hasRecord: Boolean(record),
+    canManageRoles: canManageAdminRoles(state.currentRole)
+  });
+  if (!roleUpdatePrecheckState.canProceed) {
+    setPanelStatus(roleUpdatePrecheckState.statusMessage, roleUpdatePrecheckState.statusType);
     return;
   }
 
