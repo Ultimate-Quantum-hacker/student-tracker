@@ -174,12 +174,14 @@ export const buildAdminUserRoleUpdateState = (record = {}, {
   const normalizedUpdatableRoles = Array.isArray(updatableRoles)
     ? updatableRoles.map((role) => normalizeUserRole(role))
     : [];
+  const progressLabel = 'Updating...';
 
   if (!normalizedUpdatableRoles.includes(normalizedNextRole)) {
     return {
       currentRole,
       normalizedNextRole,
       canUpdate: false,
+      progressLabel,
       statusMessage: 'Only teacher and admin roles can be assigned in this panel.',
       statusType: 'warning',
       confirmationMessage: ''
@@ -191,6 +193,7 @@ export const buildAdminUserRoleUpdateState = (record = {}, {
       currentRole,
       normalizedNextRole,
       canUpdate: false,
+      progressLabel,
       statusMessage: 'No role changes to apply.',
       statusType: 'warning',
       confirmationMessage: ''
@@ -202,6 +205,7 @@ export const buildAdminUserRoleUpdateState = (record = {}, {
     currentRole,
     normalizedNextRole,
     canUpdate: true,
+    progressLabel,
     statusMessage: '',
     statusType: '',
     confirmationMessage: `Change role for ${targetLabel} from ${formatRoleLabel(currentRole)} to ${formatRoleLabel(normalizedNextRole)}?`,

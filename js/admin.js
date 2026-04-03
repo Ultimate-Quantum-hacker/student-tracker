@@ -1347,9 +1347,13 @@ const bindEvents = () => {
     const nextRole = normalizeText(roleSelect?.value || '');
     if (!nextRole) return;
 
+    const roleUpdateState = buildAdminUserRoleUpdateState(findUserRecord(uid), {
+      nextRole,
+      updatableRoles: UPDATABLE_ROLES
+    });
     trigger.disabled = true;
     const previousLabel = trigger.textContent;
-    trigger.textContent = 'Updating...';
+    trigger.textContent = roleUpdateState.progressLabel;
     await updateUserRole(uid, nextRole);
     trigger.textContent = previousLabel;
     trigger.disabled = !canEditRole(findUserRecord(uid));
