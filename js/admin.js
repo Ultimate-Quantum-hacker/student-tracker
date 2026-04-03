@@ -1856,15 +1856,20 @@ const initAdminStudentsRegistryView = () => {
     event.preventDefault();
     event.stopPropagation();
 
+    const deletePayload = {
+      ownerId: trigger.dataset.ownerId || '',
+      studentId: trigger.dataset.studentId || '',
+      studentName: trigger.dataset.studentName || ''
+    };
+    const deleteRequestState = buildAdminRegistryStudentDeleteRequestState({
+      ...deletePayload,
+      canDelete: canDeleteAdminRegistryStudents(state.currentRole)
+    });
     const previousLabel = trigger.textContent;
     trigger.disabled = true;
-    trigger.textContent = 'Deleting...';
+    trigger.textContent = deleteRequestState.progressLabel;
     try {
-      await handleAdminRegistryStudentDelete({
-        ownerId: trigger.dataset.ownerId || '',
-        studentId: trigger.dataset.studentId || '',
-        studentName: trigger.dataset.studentName || ''
-      });
+      await handleAdminRegistryStudentDelete(deletePayload);
     } finally {
       if (trigger.isConnected) {
         trigger.disabled = false;

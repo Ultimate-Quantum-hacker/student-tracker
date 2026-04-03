@@ -813,6 +813,7 @@ export const buildAdminRegistryStudentDeleteRequestState = ({
   const normalizedOwnerId = normalizeDisplayText(ownerId, '');
   const normalizedStudentId = normalizeDisplayText(studentId, '');
   const normalizedStudentName = normalizeDisplayText(studentName, 'Student');
+  const progressLabel = 'Deleting...';
 
   if (!canDelete) {
     return {
@@ -820,6 +821,7 @@ export const buildAdminRegistryStudentDeleteRequestState = ({
       normalizedStudentId,
       normalizedStudentName,
       canSubmitDelete: false,
+      progressLabel,
       statusMessage: 'Only admins and developers can delete registry students.',
       statusType: 'warning',
       toastMessage: 'Student deletion unavailable',
@@ -834,6 +836,7 @@ export const buildAdminRegistryStudentDeleteRequestState = ({
       normalizedStudentId,
       normalizedStudentName,
       canSubmitDelete: false,
+      progressLabel,
       statusMessage: 'The selected registry row is missing the student identity needed for deletion.',
       statusType: 'warning',
       toastMessage: 'Student cannot be deleted from registry',
@@ -847,6 +850,7 @@ export const buildAdminRegistryStudentDeleteRequestState = ({
     normalizedStudentId,
     normalizedStudentName,
     canSubmitDelete: true,
+    progressLabel,
     statusMessage: '',
     statusType: '',
     toastMessage: '',
