@@ -168,6 +168,30 @@ export const buildActivityGroupRowMarkup = (label = '') => {
   return safeLabel ? `<tr class="activity-group-row"><td colspan="5">${escapeHtml(safeLabel)}</td></tr>` : '';
 };
 
+export const buildActivityEventMarkup = ({
+  toneClass = '',
+  icon = '',
+  actionLabel = '',
+  actorLabel = 'Unknown user',
+  sentence = ''
+} = {}) => {
+  const safeToneClass = normalizeText(toneClass);
+  const safeIcon = normalizeDisplayText(icon, '');
+  const safeActionLabel = normalizeDisplayText(actionLabel, '');
+  const safeActorLabel = normalizeDisplayText(actorLabel, 'Unknown user');
+  const safeSentence = normalizeDisplayText(sentence, '');
+  return `
+    <div class="activity-event-cell">
+      <span class="activity-event-icon ${escapeHtml(safeToneClass)}" aria-hidden="true">${escapeHtml(safeIcon)}</span>
+      <div class="activity-event-copy">
+        <span class="activity-tag ${escapeHtml(safeToneClass)}">${escapeHtml(safeActionLabel)}</span>
+        <strong>${escapeHtml(safeActorLabel)}</strong>
+        <span class="activity-sentence">${escapeHtml(safeSentence)}</span>
+      </div>
+    </div>
+  `;
+};
+
  export const formatRoleLabel = (role) => {
    const rawRole = normalizeText(role).toLowerCase();
    if (rawRole === ROLE_STUDENT) return 'Student';

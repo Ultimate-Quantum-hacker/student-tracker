@@ -37,6 +37,7 @@ import {
   buildClassTokenMarkup,
   buildTableHelperTextMarkup,
   buildActivityGroupRowMarkup,
+  buildActivityEventMarkup,
   formatRoleLabel,
   getRoleBadgeClass,
   formatCreatedAt,
@@ -677,16 +678,13 @@ const renderActivityLogTable = (entries = []) => {
             secondary: formatDateLabel(entry.timestamp)
           })}
         </td>
-        <td>
-          <div class="activity-event-cell">
-            <span class="activity-event-icon ${actionTone.className}" aria-hidden="true">${escapeHtml(getActionIcon(actionTone.className))}</span>
-            <div class="activity-event-copy">
-              <span class="activity-tag ${actionTone.className}">${escapeHtml(actionLabel)}</span>
-              <strong>${escapeHtml(actorLabel)}</strong>
-              <span class="activity-sentence">${escapeHtml(sentence)}</span>
-            </div>
-          </div>
-        </td>
+        <td>${buildActivityEventMarkup({
+          toneClass: actionTone.className,
+          icon: getActionIcon(actionTone.className),
+          actionLabel,
+          actorLabel,
+          sentence
+        })}</td>
         <td>${buildRoleBadgeMarkup(actorRole)}</td>
         <td>${buildOwnerIdentityMarkup({
           label: ownerLabel,
