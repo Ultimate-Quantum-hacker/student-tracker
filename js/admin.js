@@ -93,6 +93,7 @@ import {
   buildAdminUserRoleUpdateFeedbackState,
   buildAdminUserRoleUpdateErrorFeedbackState,
   buildAdminLogoutErrorFeedbackState,
+  buildAdminInitErrorFeedbackState,
   canManageAdminRoles,
   canDeleteAdminRegistryStudents,
   canEditAdminUserRole,
@@ -1366,9 +1367,11 @@ const init = async () => {
     showToast('Admin panel ready', 'success');
   } catch (error) {
     console.error('Failed to initialize admin panel:', error);
-
-    setPanelStatus(`Failed to initialize panel: ${formatAuthError(error)}`, 'error');
-    showToast('Failed to initialize admin panel', 'error');
+    const initErrorFeedbackState = buildAdminInitErrorFeedbackState({
+      errorMessage: formatAuthError(error)
+    });
+    setPanelStatus(initErrorFeedbackState.statusMessage, initErrorFeedbackState.statusType);
+    showToast(initErrorFeedbackState.toastMessage, initErrorFeedbackState.toastType);
   }
 };
 

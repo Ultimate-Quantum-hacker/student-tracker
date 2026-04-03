@@ -256,6 +256,18 @@ export const buildAdminLogoutErrorFeedbackState = ({
   };
 };
 
+export const buildAdminInitErrorFeedbackState = ({
+  errorMessage = ''
+} = {}) => {
+  const normalizedErrorMessage = normalizeText(errorMessage);
+  return {
+    statusMessage: normalizedErrorMessage ? `Failed to initialize panel: ${normalizedErrorMessage}` : 'Failed to initialize panel.',
+    statusType: 'error',
+    toastMessage: 'Failed to initialize admin panel',
+    toastType: 'error'
+  };
+};
+
 export const getVisibleAdminActivityEntries = (entries = [], users = [], {
   currentRole = ''
 } = {}) => {
