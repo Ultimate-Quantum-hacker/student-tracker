@@ -117,6 +117,22 @@ export const buildIdentityMarkup = ({
   `;
 };
 
+export const buildStackedTextMarkup = ({
+  containerClass = 'table-meta-stack',
+  primary = '',
+  secondary = ''
+} = {}) => {
+  const safeContainerClass = normalizeText(containerClass) || 'table-meta-stack';
+  const safePrimary = normalizeDisplayText(primary, '');
+  const safeSecondary = normalizeDisplayText(secondary, '');
+  return `
+    <div class="${escapeHtml(safeContainerClass)}">
+      ${safePrimary ? `<strong>${escapeHtml(safePrimary)}</strong>` : ''}
+      ${safeSecondary ? `<span>${escapeHtml(safeSecondary)}</span>` : ''}
+    </div>
+  `;
+};
+
 export const buildEmptyTableRowMarkup = ({
   columnCount = 1,
   icon = 'ℹ️',

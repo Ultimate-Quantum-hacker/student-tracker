@@ -31,6 +31,7 @@ import {
   prefersReducedMotion,
   buildEmptyTableRowMarkup,
   buildIdentityMarkup,
+  buildStackedTextMarkup,
   formatRoleLabel,
   getRoleBadgeClass,
   formatCreatedAt,
@@ -545,12 +546,11 @@ const renderUsersTable = () => {
 
     const emailCell = document.createElement('td');
     emailCell.className = 'email-cell';
-    emailCell.innerHTML = `
-      <div class="email-stack">
-        <strong>${escapeHtml(userEmail)}</strong>
-        <span>${escapeHtml(canEditRole(record) ? 'Role can be updated' : 'Role editing unavailable')}</span>
-      </div>
-    `;
+    emailCell.innerHTML = buildStackedTextMarkup({
+      containerClass: 'email-stack',
+      primary: userEmail,
+      secondary: canEditRole(record) ? 'Role can be updated' : 'Role editing unavailable'
+    });
 
     const roleCell = document.createElement('td');
     const roleWrap = document.createElement('div');
@@ -566,12 +566,11 @@ const renderUsersTable = () => {
     roleCell.appendChild(roleWrap);
 
     const createdCell = document.createElement('td');
-    createdCell.innerHTML = `
-      <div class="table-meta-stack">
-        <strong>${escapeHtml(formatCreatedAt(record.createdAt))}</strong>
-        <span>Account created</span>
-      </div>
-    `;
+    createdCell.innerHTML = buildStackedTextMarkup({
+      containerClass: 'table-meta-stack',
+      primary: formatCreatedAt(record.createdAt),
+      secondary: 'Account created'
+    });
 
     const actionCell = document.createElement('td');
     const actionWrap = document.createElement('div');
