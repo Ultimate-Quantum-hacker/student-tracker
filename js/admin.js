@@ -48,7 +48,8 @@ import {
   buildActivityLogsClearRequestState,
   buildActivityLogsClearFeedbackState,
   buildActivityLogsLoadFeedbackState,
-  buildActivityLogsLoadErrorFeedbackState
+  buildActivityLogsLoadErrorFeedbackState,
+  buildActivityLogsClearErrorFeedbackState
 } from './admin-activity-utils.js';
 
 import {
@@ -1062,13 +1063,17 @@ const handleClearActivityLogs = async () => {
     markUpdatedNow();
   } catch (error) {
     console.error('Failed to clear activity logs:', error);
+    const clearErrorFeedbackState = buildActivityLogsClearErrorFeedbackState({
+      isPermissionDenied: isPermissionDeniedError(error),
+      errorMessage: formatAuthError(error)
+    });
     if (isPermissionDeniedError(error)) {
-      setActivityStatus('Access denied. You do not have permission to clear activity logs.', 'error');
-      showToast('Permission denied', 'error');
+      setActivityStatus(clearErrorFeedbackState.statusMessage, clearErrorFeedbackState.statusType);
+      showToast(clearErrorFeedbackState.toastMessage, clearErrorFeedbackState.toastType);
       return;
     }
-    setActivityStatus(`Failed to clear activity logs: ${formatAuthError(error)}`, 'error');
-    showToast('Failed to clear activity logs', 'error');
+    setActivityStatus(clearErrorFeedbackState.statusMessage, clearErrorFeedbackState.statusType);
+    showToast(clearErrorFeedbackState.toastMessage, clearErrorFeedbackState.toastType);
   } finally {
     setElementVisibility(dom.activityLoading, false);
     setSectionLoadingState(dom.activitySection, false);

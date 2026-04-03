@@ -242,6 +242,28 @@ export const buildActivityLogsLoadErrorFeedbackState = ({
   };
 };
 
+export const buildActivityLogsClearErrorFeedbackState = ({
+  isPermissionDenied = false,
+  errorMessage = ''
+} = {}) => {
+  if (isPermissionDenied) {
+    return {
+      statusMessage: 'Access denied. You do not have permission to clear activity logs.',
+      statusType: 'error',
+      toastMessage: 'Permission denied',
+      toastType: 'error'
+    };
+  }
+
+  const normalizedErrorMessage = normalizeText(errorMessage);
+  return {
+    statusMessage: normalizedErrorMessage ? `Failed to clear activity logs: ${normalizedErrorMessage}` : 'Failed to clear activity logs.',
+    statusType: 'error',
+    toastMessage: 'Failed to clear activity logs',
+    toastType: 'error'
+  };
+};
+
 export const buildActivityLogsClearRequestState = () => {
   return {
     confirmationMessage: 'Clear all activity logs? This permanently removes the current log history.',
