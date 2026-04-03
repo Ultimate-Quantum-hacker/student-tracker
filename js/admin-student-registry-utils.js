@@ -740,6 +740,26 @@ export const buildAdminRegistryStudentDeleteFeedbackState = ({
   };
 };
 
+export const buildAdminStudentsRegistryLoadRequestState = ({
+  isFirebaseConfigured = true
+} = {}) => {
+  if (!isFirebaseConfigured) {
+    return {
+      canLoad: false,
+      statusMessage: 'Global student registry is unavailable because Firebase is not configured.',
+      statusType: 'error',
+      progressStatusMessage: ''
+    };
+  }
+
+  return {
+    canLoad: true,
+    statusMessage: '',
+    statusType: '',
+    progressStatusMessage: 'Loading global student registry...'
+  };
+};
+
 export const buildAdminStudentsRegistryLoadErrorFeedbackState = ({
   isPermissionDenied = false,
   errorMessage = ''

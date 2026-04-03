@@ -64,6 +64,7 @@ import {
   buildAdminStudentsPaginationViewState,
   buildAdminStudentsRegistryViewState,
   buildAdminRegistryStudentDeleteFeedbackState,
+  buildAdminStudentsRegistryLoadRequestState,
   buildAdminStudentsRegistryLoadErrorFeedbackState,
   buildAdminRegistryStudentDeleteErrorFeedbackState,
   buildAdminRegistryStudentDeleteRequestState
@@ -1543,14 +1544,18 @@ const loadAdminStudentsRegistry = async () => {
     return;
   }
 
-  if (!isFirebaseConfigured || !db) {
+  const registryLoadRequestState = buildAdminStudentsRegistryLoadRequestState({
+    isFirebaseConfigured: Boolean(isFirebaseConfigured && db)
+  });
+
+  if (!registryLoadRequestState.canLoad) {
     state.adminStudentsRegistry = [];
     state.adminStudentsRegistryLoaded = false;
     state.adminStudentsRegistryPage = 1;
     renderAdminStudentsFilterOptions();
     renderAdminStudentsTable([]);
     renderAdminStudentsPagination();
-    setAdminStudentsStatus('Global student registry is unavailable because Firebase is not configured.', 'error');
+    setAdminStudentsStatus(registryLoadRequestState.statusMessage, registryLoadRequestState.statusType);
     setElementVisibility(dom.adminStudentsLoading, false);
     setSectionLoadingState(dom.adminStudentsView, false);
 
@@ -1565,10 +1570,11 @@ const loadAdminStudentsRegistry = async () => {
   state.adminStudentsRegistryPage = Math.max(1, Number.parseInt(state.adminStudentsRegistryPage, 10) || 1);
   setElementVisibility(dom.adminStudentsLoading, true);
   setSectionLoadingState(dom.adminStudentsView, true);
-  setAdminStudentsStatus('Loading global student registry...');
+  setAdminStudentsStatus(registryLoadRequestState.progressStatusMessage);
   if (dom.adminStudentsClassFilter) {
     dom.adminStudentsClassFilter.disabled = true;
   }
+
   if (dom.adminStudentsTeacherFilter) {
     dom.adminStudentsTeacherFilter.disabled = true;
   }
