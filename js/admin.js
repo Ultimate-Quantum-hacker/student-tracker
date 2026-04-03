@@ -80,6 +80,7 @@ import {
   buildVisibleAdminGlobalSearchRows,
   getFilteredAdminGlobalSearchRows,
   buildAdminGlobalSearchFeedbackState,
+  buildAdminGlobalSearchIndexRequestState,
   buildAdminGlobalSearchIndexFeedbackState,
   buildAdminGlobalSearchIndexErrorFeedbackState,
   buildAdminUserRoleUpdateState,
@@ -828,18 +829,21 @@ const shouldIncludeGlobalSearchOwner = (userId = '') => {
 };
 
 const buildGlobalSearchIndex = async () => {
-  if (!isFirebaseConfigured) {
+  const globalSearchIndexRequestState = buildAdminGlobalSearchIndexRequestState({
+    isFirebaseConfigured
+  });
+  if (!globalSearchIndexRequestState.canBuild) {
     state.globalSearchIndex = [];
     state.globalSearchIndexLoaded = false;
     renderGlobalSearchResults([]);
-    setGlobalSearchStatus('Global search unavailable: Firebase is not configured.', 'error');
+    setGlobalSearchStatus(globalSearchIndexRequestState.statusMessage, globalSearchIndexRequestState.statusType);
     setSectionLoadingState(dom.searchSection, false);
     return;
   }
 
   setElementVisibility(dom.globalSearchLoading, true);
   setSectionLoadingState(dom.searchSection, true);
-  setGlobalSearchStatus('Building global search index...');
+  setGlobalSearchStatus(globalSearchIndexRequestState.progressStatusMessage);
 
   try {
     if (!state.usersLoaded) {

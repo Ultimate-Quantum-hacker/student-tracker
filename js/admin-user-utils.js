@@ -299,6 +299,26 @@ export const buildAdminGlobalSearchIndexFeedbackState = ({
   };
 };
 
+export const buildAdminGlobalSearchIndexRequestState = ({
+  isFirebaseConfigured = true
+} = {}) => {
+  if (!isFirebaseConfigured) {
+    return {
+      canBuild: false,
+      statusMessage: 'Global search unavailable: Firebase is not configured.',
+      statusType: 'error',
+      progressStatusMessage: ''
+    };
+  }
+
+  return {
+    canBuild: true,
+    statusMessage: '',
+    statusType: '',
+    progressStatusMessage: 'Building global search index...'
+  };
+};
+
 export const buildAdminGlobalSearchIndexErrorFeedbackState = ({
   isPermissionDenied = false,
   errorMessage = ''
