@@ -117,6 +117,19 @@ export const buildIdentityMarkup = ({
   `;
 };
 
+export const buildStudentIdentityMarkup = ({
+  label = 'Student',
+  secondary = '',
+  avatarLabel = ''
+} = {}) => {
+  return buildIdentityMarkup({
+    label,
+    secondary,
+    role: ROLE_STUDENT,
+    avatarLabel
+  });
+};
+
 export const buildOwnerIdentityMarkup = ({
   label = 'Unknown owner',
   secondary = '',

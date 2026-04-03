@@ -31,6 +31,7 @@ import {
   prefersReducedMotion,
   buildEmptyTableRowMarkup,
   buildIdentityMarkup,
+  buildStudentIdentityMarkup,
   buildOwnerIdentityMarkup,
   buildStackedTextMarkup,
   buildRoleBadgeMarkup,
@@ -724,7 +725,7 @@ const renderGlobalSearchResults = (entries = []) => {
     const classLabel = normalizeDisplayText(entry.className || entry.classId || '', '—');
     return `
       <tr class="fade-in">
-        <td>${buildIdentityMarkup({ label: studentLabel, role: 'student' })}</td>
+        <td>${buildStudentIdentityMarkup({ label: studentLabel })}</td>
         <td>${buildOwnerIdentityMarkup({
           label: ownerLabel,
           secondary: 'Data owner',

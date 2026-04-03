@@ -1,5 +1,5 @@
 import {
-  buildIdentityMarkup,
+  buildStudentIdentityMarkup,
   escapeHtml,
   normalizeDisplayText
 } from './admin-display-utils.js';
@@ -119,7 +119,7 @@ export const buildAdminStudentsTableMarkup = (groups = [], {
       const classLabel = normalizeDisplayText(student?.className, 'Unknown Class');
       return `
         <tr class="fade-in">
-          <td>${buildIdentityMarkup({ label: student?.name, role: 'student', avatarLabel: String(studentNumber) })}</td>
+          <td>${buildStudentIdentityMarkup({ label: student?.name, avatarLabel: String(studentNumber) })}</td>
           <td>
             <div class="admin-student-meta">
               <strong>${escapeHtml(classLabel)}</strong>
