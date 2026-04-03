@@ -668,10 +668,11 @@ const renderActivityLogTable = (entries = []) => {
       ${shouldRenderGroup ? `<tr class="activity-group-row"><td colspan="5">${getDateGroupLabel(groupKey)}</td></tr>` : ''}
       <tr class="activity-row ${actionTone.className} fade-in">
         <td title="${escapeHtml(timestampTitle)}">
-          <div class="activity-time-cell">
-            <strong>${escapeHtml(timeLabel)}</strong>
-            <span>${escapeHtml(formatDateLabel(entry.timestamp))}</span>
-          </div>
+          ${buildStackedTextMarkup({
+            containerClass: 'activity-time-cell',
+            primary: timeLabel,
+            secondary: formatDateLabel(entry.timestamp)
+          })}
         </td>
         <td>
           <div class="activity-event-cell">
