@@ -226,6 +226,13 @@ export const buildActivityLogsLoadRequestState = () => {
   };
 };
 
+export const buildActivityLogsIdleFeedbackState = () => {
+  return {
+    statusMessage: 'Open this section or use refresh to load activity logs.',
+    statusType: ''
+  };
+};
+
 export const buildActivityLogsLoadErrorFeedbackState = ({
   isPermissionDenied = false,
   errorMessage = ''

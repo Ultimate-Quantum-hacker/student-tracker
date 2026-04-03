@@ -48,6 +48,7 @@ import {
   buildActivityLogsClearRequestState,
   buildActivityLogsClearFeedbackState,
   buildActivityLogsLoadRequestState,
+  buildActivityLogsIdleFeedbackState,
   buildActivityLogsLoadFeedbackState,
   buildActivityLogsLoadErrorFeedbackState,
   buildActivityLogsClearErrorFeedbackState
@@ -1362,9 +1363,10 @@ const init = async () => {
     }
 
     if (!state.activityLogsLoaded) {
+      const activityLogsIdleFeedbackState = buildActivityLogsIdleFeedbackState();
       renderActivityLogTable([]);
       populateActivityClassFilter([]);
-      setActivityStatus('Open this section or use refresh to load activity logs.');
+      setActivityStatus(activityLogsIdleFeedbackState.statusMessage, activityLogsIdleFeedbackState.statusType);
     }
 
     showToast('Admin panel ready', 'success');
