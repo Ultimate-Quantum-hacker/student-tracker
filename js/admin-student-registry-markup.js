@@ -37,6 +37,14 @@ const buildAdminStudentsDeleteButtonMarkup = ({
   `;
 };
 
+const buildAdminStudentsActionCellMarkup = (actionMarkup = '') => {
+  return `
+    <div class="table-actions-cell admin-student-row-actions">
+      ${String(actionMarkup || '')}
+    </div>
+  `;
+};
+
 const buildAdminStudentsActionMarkup = (student = {}, { canDelete = false } = {}) => {
   const ownerId = normalizeDisplayText(student?.ownerId, '');
   const studentId = normalizeDisplayText(student?.studentId, '');
@@ -49,17 +57,13 @@ const buildAdminStudentsActionMarkup = (student = {}, { canDelete = false } = {}
       ? 'This registry row is missing the student identity needed for deletion.'
       : `Delete ${studentName} from the registry`;
 
-  return `
-    <div class="table-actions-cell admin-student-row-actions">
-      ${buildAdminStudentsDeleteButtonMarkup({
-        ownerId,
-        studentId,
-        studentName,
-        buttonTitle,
-        isDisabled
-      })}
-    </div>
-  `;
+  return buildAdminStudentsActionCellMarkup(buildAdminStudentsDeleteButtonMarkup({
+    ownerId,
+    studentId,
+    studentName,
+    buttonTitle,
+    isDisabled
+  }));
 };
 
 const buildAdminStudentsTableRowMarkup = (student = {}, {
