@@ -1,5 +1,6 @@
 import {
   buildStudentIdentityMarkup,
+  buildStackedTextMarkup,
   escapeHtml,
   normalizeDisplayText
 } from './admin-display-utils.js';
@@ -120,18 +121,16 @@ export const buildAdminStudentsTableMarkup = (groups = [], {
       return `
         <tr class="fade-in">
           <td>${buildStudentIdentityMarkup({ label: student?.name, avatarLabel: String(studentNumber) })}</td>
-          <td>
-            <div class="admin-student-meta">
-              <strong>${escapeHtml(classLabel)}</strong>
-              <span>Class assignment</span>
-            </div>
-          </td>
-          <td>
-            <div class="admin-student-meta">
-              <strong>${escapeHtml(student?.teacherName)}</strong>
-              <span>Teacher</span>
-            </div>
-          </td>
+          <td>${buildStackedTextMarkup({
+            containerClass: 'admin-student-meta',
+            primary: classLabel,
+            secondary: 'Class assignment'
+          })}</td>
+          <td>${buildStackedTextMarkup({
+            containerClass: 'admin-student-meta',
+            primary: student?.teacherName,
+            secondary: 'Teacher'
+          })}</td>
           <td>${buildAdminStudentsActionMarkup(student, { canDelete })}</td>
         </tr>
       `;
