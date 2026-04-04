@@ -49,6 +49,15 @@ const buildAdminStudentsEmptyStateMarkup = ({
   return `<tr><td colspan="${normalizedColumnCount}" class="empty-row"><div class="smart-empty admin-students-empty"><span>${escapeHtml(icon)}</span><strong>${escapeHtml(title)}</strong><p>${escapeHtml(detail)}</p></div></td></tr>`;
 };
 
+const buildAdminStudentsSkeletonStackMarkup = () => {
+  return `
+    <div class="admin-students-skeleton-stack">
+      <div class="admin-students-skeleton admin-students-skeleton-title"></div>
+      <div class="admin-students-skeleton admin-students-skeleton-copy"></div>
+    </div>
+  `;
+};
+
 export const buildAdminStudentsSkeletonMarkup = ({
   rowCount = 6,
   columnCount = 4
@@ -61,24 +70,9 @@ export const buildAdminStudentsSkeletonMarkup = ({
     return `
       ${shouldRenderClassGroup ? `<tr class="admin-students-group-row admin-students-group-row-skeleton" aria-hidden="true"><td colspan="${normalizedColumnCount}"><div class="admin-students-skeleton admin-students-skeleton-group"></div></td></tr>` : ''}
       <tr class="admin-students-row-skeleton" aria-hidden="true">
-        <td>
-          <div class="admin-students-skeleton-stack">
-            <div class="admin-students-skeleton admin-students-skeleton-title"></div>
-            <div class="admin-students-skeleton admin-students-skeleton-copy"></div>
-          </div>
-        </td>
-        <td>
-          <div class="admin-students-skeleton-stack">
-            <div class="admin-students-skeleton admin-students-skeleton-title"></div>
-            <div class="admin-students-skeleton admin-students-skeleton-copy"></div>
-          </div>
-        </td>
-        <td>
-          <div class="admin-students-skeleton-stack">
-            <div class="admin-students-skeleton admin-students-skeleton-title"></div>
-            <div class="admin-students-skeleton admin-students-skeleton-copy"></div>
-          </div>
-        </td>
+        <td>${buildAdminStudentsSkeletonStackMarkup()}</td>
+        <td>${buildAdminStudentsSkeletonStackMarkup()}</td>
+        <td>${buildAdminStudentsSkeletonStackMarkup()}</td>
         <td>
           <div class="admin-students-row-actions">
             <div class="admin-students-skeleton admin-students-skeleton-action"></div>
