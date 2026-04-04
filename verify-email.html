@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verify Email - Student Performance Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/auth.css">
+</head>
+<body class="auth-page" data-auth-mode="verify-email">
+  <main class="auth-shell">
+    <section class="auth-card" aria-labelledby="verify-email-title">
+      <div class="auth-card-header">
+        <span class="auth-badge">Verification required</span>
+        <div class="auth-brand-lockup">
+          <div class="auth-logo" aria-hidden="true">ST</div>
+          <div class="auth-heading-group">
+            <h1 id="verify-email-title" class="auth-title">Verify your email</h1>
+            <p class="auth-subtitle">Teacher accounts must verify their email before entering the dashboard.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="auth-panel" aria-live="polite">
+        <p class="auth-panel-label">Signed in as</p>
+        <p id="verify-email-address" class="auth-panel-address">your email address</p>
+        <p id="verify-email-copy" class="auth-panel-copy">Open the verification link in your inbox, then return here and confirm below.</p>
+      </div>
+
+      <p id="auth-error" class="auth-error" aria-live="polite"></p>
+
+      <div class="auth-actions">
+        <button id="verify-email-refresh-btn" class="auth-btn" type="button">I've verified my email</button>
+        <button id="verify-email-resend-btn" class="auth-btn auth-btn-secondary" type="button">Resend verification email</button>
+      </div>
+
+      <div class="auth-row">
+        <button id="verify-email-switch-account-btn" class="auth-link auth-link-button" type="button">Use another account</button>
+        <a class="auth-link" href="login.html">Back to login</a>
+      </div>
+
+      <p class="auth-footnote">If you do not see the email, check your spam folder and then resend the verification link.</p>
+    </section>
+  </main>
+
+  <script src="js/firebase-config.js"></script>
+  <script type="module" src="js/firebase.js"></script>
+  <script type="module" src="js/auth-page.js"></script>
+</body>
+</html>

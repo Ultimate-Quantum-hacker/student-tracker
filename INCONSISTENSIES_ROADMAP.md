@@ -114,7 +114,7 @@ Complete the authentication and account lifecycle so users can securely sign up,
 ## Deliverables
 
 - [x] Password reset flow end to end
-- [ ] Email verification flow and verified/unverified state handling if adopted
+- [x] Email verification flow and verified/unverified state handling if adopted
 - [x] Account/profile settings page or modal
 - [ ] Auth-state-aware UX for verified status, reset actions, and session issues
 - [ ] Clear privileged-role onboarding policy and implementation
@@ -541,3 +541,8 @@ Use this section to track major roadmap updates.
 - **Phase:** Phase 2
 - **Update:** Added an in-app Account Settings dashboard surface wired to the richer auth session/profile layer, including profile name save handling, session metadata display, sidebar navigation integration, and owner-name synchronization for classes owned by the signed-in user.
 - **Impact:** Signed-in users can now manage their display name inside the product without developer intervention, and profile changes propagate to the active account/session UI plus owned-class labels. Remaining Phase 2 work is centered on email verification policy/implementation, broader auth-state UX polish, privileged-role onboarding rules, and documentation/test coverage.
+
+- **Date:** 2026-04-04
+- **Phase:** Phase 2
+- **Update:** Implemented the adopted teacher-strict, admin-manual email verification flow across signup, login, and dashboard entry, including automatic verification-email send on signup, a dedicated verification gate page, resend and refresh actions, and dashboard blocking for unverified teacher sessions.
+- **Impact:** Self-serve teacher accounts must now verify their email before entering the main app, while privileged roles remain outside that gate pending the separate onboarding policy decision. Remaining Phase 2 work is broader auth-state UX polish, privileged-role onboarding rules, and documentation/test coverage.

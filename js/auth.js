@@ -12,7 +12,9 @@ import {
   signInWithEmailAndPassword,
   signOut,
   updateProfile,
-  sendPasswordResetEmail
+  sendPasswordResetEmail,
+  sendEmailVerification,
+  reload
 } from './firebase.js';
 
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
@@ -33,6 +35,39 @@ const createTimeoutError = (code, message) => {
   return error;
 };
 
+const withTimeout = (operation, timeoutMs, code, message) => {
+  const normalizedTimeoutMs = Number(timeoutMs);
+  const shouldApplyTimeout = Number.isFinite(normalizedTimeoutMs) && normalizedTimeoutMs > 0;
+  const pendingOperation = Promise.resolve().then(() => (typeof operation === 'function' ? operation() : operation));
+
+  if (!shouldApplyTimeout) {
+    return pendingOperation;
+  }
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timeoutId = globalThis.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(createTimeoutError(code, message));
+    }, normalizedTimeoutMs);
+
+    pendingOperation
+      .then((value) => {
+        if (settled) return;
+        settled = true;
+        globalThis.clearTimeout(timeoutId);
+        resolve(value);
+      })
+      .catch((error) => {
+        if (settled) return;
+        settled = true;
+        globalThis.clearTimeout(timeoutId);
+        reject(error);
+      });
+  });
+};
+
 export const normalizeUserRole = (role) => {
   const normalized = String(role || '').trim().toLowerCase();
   if (normalized === LEGACY_ROLE_USER) {
@@ -48,6 +83,7 @@ const normalizeProfileRecord = (profile = {}, fallback = {}) => ({
   role: normalizeUserRole(profile?.role || fallback?.role),
   name: normalizeProfileName(profile?.name ?? fallback?.name),
   email: normalizeEmail(profile?.email ?? fallback?.email),
+  emailVerified: Boolean(profile?.emailVerified ?? fallback?.emailVerified),
   createdAt: profile?.createdAt ?? fallback?.createdAt ?? null,
   updatedAt: profile?.updatedAt ?? fallback?.updatedAt ?? null
 });
@@ -77,6 +113,7 @@ const sanitizeProfilePayload = (authUser, existingRole = '') => ({
 const ensureUserProfileDocument = async (authUser) => {
   const uid = String(authUser?.uid || '').trim();
   const normalizedEmail = normalizeEmail(authUser?.email || auth?.currentUser?.email);
+  const emailVerified = Boolean(auth?.currentUser?.emailVerified ?? authUser?.emailVerified);
 
   console.log('Logged in email:', normalizedEmail || '(none)');
 
@@ -90,6 +127,7 @@ const ensureUserProfileDocument = async (authUser) => {
       role: fallbackRole,
       name: normalizeProfileName(authUser?.name),
       email: normalizedEmail,
+      emailVerified,
       updatedAt: null
     };
   }
@@ -122,6 +160,7 @@ const ensureUserProfileDocument = async (authUser) => {
       role: payload.role,
       name: payload.name,
       email: payload.email,
+      emailVerified,
       updatedAt: null
     };
   }
@@ -171,6 +210,7 @@ const ensureUserProfileDocument = async (authUser) => {
     role: resolvedRole,
     name: normalizedName,
     email: resolvedEmailForProfile,
+    emailVerified,
     createdAt: data.createdAt || null,
     updatedAt: data.updatedAt || null
   };
@@ -193,17 +233,29 @@ export const resolveUserRole = async (authUser) => {
 
 export const isDeveloperRole = (role) => normalizeUserRole(role) === 'developer';
 export const isAdminRole = (role) => normalizeUserRole(role) === 'admin';
+export const isPrivilegedRole = (role) => isAdminRole(role) || isDeveloperRole(role);
+export const requiresEmailVerificationForRole = (role) => !isPrivilegedRole(role);
+export const shouldBlockForEmailVerification = (authUser = {}, role = authUser?.role) => {
+  const uid = String(authUser?.uid || '').trim();
+  if (!uid) {
+    return false;
+  }
+
+  return requiresEmailVerificationForRole(role) && !Boolean(authUser?.emailVerified);
+};
 
 const toAuthUser = (user) => {
   if (!user) return null;
   return {
     uid: user.uid,
     name: user.displayName || '',
-    email: user.email || ''
+    email: user.email || '',
+    emailVerified: Boolean(user.emailVerified)
   };
 };
 
 export const isAuthAvailable = () => Boolean(auth);
+export const getCurrentAuthenticatedUser = () => toAuthUser(auth?.currentUser);
 
 export const updateCurrentUserProfile = async ({ name }) => {
   if (!auth?.currentUser) {
@@ -354,6 +406,7 @@ export const registerUser = async ({ name, email, password }) => {
   }
 
   const credential = await createUserWithEmailAndPassword(auth, normalizeEmail(email), password);
+  let verificationEmailSent = false;
 
   if (credential?.user && String(name || '').trim()) {
     await updateProfile(credential.user, { displayName: String(name).trim() });
@@ -365,7 +418,25 @@ export const registerUser = async ({ name, email, password }) => {
   } catch (error) {
     console.error('Failed to initialize user profile during signup:', error);
   }
-  return nextAuthUser;
+
+  if (credential?.user) {
+    try {
+      await withTimeout(
+        () => sendEmailVerification(credential.user),
+        PROFILE_RESOLUTION_TIMEOUT_MS,
+        'auth/email-verification-timeout',
+        'Timed out while sending your verification email.'
+      );
+      verificationEmailSent = true;
+    } catch (error) {
+      console.error('Failed to send verification email during signup:', error);
+    }
+  }
+
+  return {
+    ...toAuthUser(credential?.user),
+    verificationEmailSent
+  };
 };
 
 export const loginUser = async ({ email, password }) => {
@@ -402,6 +473,36 @@ export const requestPasswordReset = async (email) => {
     }
     throw error;
   }
+};
+
+export const sendCurrentUserVerificationEmail = async () => {
+  if (!auth?.currentUser) {
+    throw new Error('You must be signed in to request another verification email.');
+  }
+
+  await withTimeout(
+    () => sendEmailVerification(auth.currentUser),
+    PROFILE_RESOLUTION_TIMEOUT_MS,
+    'auth/email-verification-timeout',
+    'Timed out while sending your verification email.'
+  );
+
+  return toAuthUser(auth.currentUser);
+};
+
+export const reloadCurrentUserAuthState = async () => {
+  if (!auth?.currentUser) {
+    throw new Error('You must be signed in to refresh your verification status.');
+  }
+
+  await withTimeout(
+    () => reload(auth.currentUser),
+    PROFILE_RESOLUTION_TIMEOUT_MS,
+    'auth/state-timeout',
+    'Timed out while refreshing your sign-in state.'
+  );
+
+  return toAuthUser(auth.currentUser);
 };
 
 export const logoutUser = async () => {

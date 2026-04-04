@@ -20,7 +20,8 @@ import {
   formatAuthError,
   isAuthAvailable,
   resolveUserAccountProfile,
-  normalizeUserRole
+  normalizeUserRole,
+  shouldBlockForEmailVerification
 } from './auth.js';
 
 app._initialized = app._initialized || false;
@@ -28,10 +29,16 @@ let authSubscriptionCleanup = null;
 let hasReceivedInitialAuthSubscription = false;
 
 const LOGIN_PAGE_PATH = '/login.html';
+const VERIFY_EMAIL_PAGE_PATH = '/verify-email.html';
 
 const redirectToLogin = () => {
   if (window.location.pathname.endsWith(LOGIN_PAGE_PATH)) return;
   window.location.replace(LOGIN_PAGE_PATH);
+};
+
+const redirectToVerification = () => {
+  if (window.location.pathname.endsWith(VERIFY_EMAIL_PAGE_PATH)) return;
+  window.location.replace(VERIFY_EMAIL_PAGE_PATH);
 };
 
 const getAuthUserIdentityLabel = (authUser) => {
@@ -67,16 +74,22 @@ app.syncAuthSessionUi = syncAuthSessionUi;
 const setResolvedUserRole = async (authUser) => {
   const profile = await resolveUserAccountProfile(authUser);
   const normalizedRole = normalizeUserRole(profile?.role);
+  const resolvedProfile = {
+    ...profile,
+    role: normalizedRole,
+    emailVerified: Boolean(profile?.emailVerified ?? authUser?.emailVerified)
+  };
   app.setCurrentUserRole(normalizedRole, { resolved: true });
 
   if (app.state.authUser?.uid && app.state.authUser.uid === authUser?.uid) {
     app.state.authUser = {
       ...app.state.authUser,
-      name: String(profile?.name || app.state.authUser?.name || '').trim(),
-      email: String(profile?.email || app.state.authUser?.email || '').trim(),
+      name: String(resolvedProfile?.name || app.state.authUser?.name || '').trim(),
+      email: String(resolvedProfile?.email || app.state.authUser?.email || '').trim(),
       role: normalizedRole,
-      createdAt: profile?.createdAt || app.state.authUser?.createdAt || null,
-      updatedAt: profile?.updatedAt || app.state.authUser?.updatedAt || null
+      emailVerified: resolvedProfile.emailVerified,
+      createdAt: resolvedProfile?.createdAt || app.state.authUser?.createdAt || null,
+      updatedAt: resolvedProfile?.updatedAt || app.state.authUser?.updatedAt || null
     };
   }
 
@@ -89,6 +102,8 @@ const setResolvedUserRole = async (authUser) => {
   if (app.ui && typeof app.ui.renderAccountSettings === 'function') {
     app.ui.renderAccountSettings();
   }
+
+  return resolvedProfile;
 };
 
 const setAuthUserState = (authUser) => {
@@ -107,6 +122,7 @@ const setAuthUserState = (authUser) => {
       name: authUser.name || existingAuthUser?.name || '',
       email: authUser.email || existingAuthUser?.email || '',
       role: authUser.role || existingAuthUser?.role || '',
+      emailVerified: Boolean(authUser.emailVerified ?? existingAuthUser?.emailVerified),
       createdAt: authUser.createdAt || existingAuthUser?.createdAt || null,
       updatedAt: authUser.updatedAt || existingAuthUser?.updatedAt || null
     }
@@ -162,7 +178,11 @@ const ensureAuthenticatedSession = async () => {
     }
 
     setAuthUserState(authUser);
-    await setResolvedUserRole(authUser);
+    const resolvedProfile = await setResolvedUserRole(authUser);
+    if (shouldBlockForEmailVerification(resolvedProfile, resolvedProfile?.role)) {
+      redirectToVerification();
+      return false;
+    }
     if (typeof app.syncDataContext === 'function') {
       app.syncDataContext();
     }
@@ -189,7 +209,11 @@ const handleAuthUserChange = async (authUser) => {
   }
 
   setAuthUserState(authUser);
-  await setResolvedUserRole(authUser);
+  const resolvedProfile = await setResolvedUserRole(authUser);
+  if (shouldBlockForEmailVerification(resolvedProfile, resolvedProfile?.role)) {
+    redirectToVerification();
+    return;
+  }
   if (typeof app.syncDataContext === 'function') {
     app.syncDataContext();
   }
