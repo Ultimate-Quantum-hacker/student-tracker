@@ -31,13 +31,11 @@ import {
   prefersReducedMotion,
   buildEmptyTableRowMarkup,
   buildIdentityMarkup,
-  buildOwnerIdentityMarkup,
   buildStackedTextMarkup,
   buildRoleBadgeMarkup,
-  buildClassTokenMarkup,
   buildTableHelperTextMarkup,
   buildActivityGroupRowMarkup,
-  buildActivityEventMarkup,
+  buildActivityLogRowMarkup,
   buildGlobalSearchResultRowMarkup,
   formatRoleLabel,
   getRoleBadgeClass,
@@ -657,6 +655,7 @@ const renderActivityLogTable = (entries = []) => {
     const owner = findUserRecord(entry.dataOwnerUserId);
     const actorLabel = normalizeDisplayText(actor?.name || actor?.email || entry.userEmail || entry.userId || '', 'Unknown user');
     const ownerLabel = normalizeDisplayText(owner?.name || owner?.email || entry.ownerName || entry.dataOwnerUserId || '', 'Unknown owner');
+
     const actorRole = normalizeUserRole(actor?.role);
     const ownerRole = normalizeUserRole(owner?.role || entry.ownerRole || 'teacher');
     const actionTone = getActionTone(entry.action);
@@ -671,32 +670,22 @@ const renderActivityLogTable = (entries = []) => {
 
     return `
       ${shouldRenderGroup ? buildActivityGroupRowMarkup(getDateGroupLabel(groupKey)) : ''}
-      <tr class="activity-row ${actionTone.className} fade-in">
-        <td title="${escapeHtml(timestampTitle)}">
-          ${buildStackedTextMarkup({
-            containerClass: 'activity-time-cell',
-            primary: timeLabel,
-            secondary: formatDateLabel(entry.timestamp)
-          })}
-        </td>
-        <td>${buildActivityEventMarkup({
-          toneClass: actionTone.className,
-          icon: getActionIcon(actionTone.className),
-          actionLabel,
-          actorLabel,
-          sentence
-        })}</td>
-        <td>${buildRoleBadgeMarkup(actorRole)}</td>
-        <td>${buildOwnerIdentityMarkup({
-          label: ownerLabel,
-          secondary: '',
-          role: ownerRole
-        })}</td>
-        <td>${buildClassTokenMarkup({
-          label: classCellLabel || '—',
-          title: normalizeDisplayText(entry.classId || '', '')
-        })}</td>
-      </tr>
+      ${buildActivityLogRowMarkup({
+        rowClass: actionTone.className,
+        timestampTitle,
+        timeLabel,
+        dateLabel: formatDateLabel(entry.timestamp),
+        toneClass: actionTone.className,
+        icon: getActionIcon(actionTone.className),
+        actionLabel,
+        actorLabel,
+        sentence,
+        actorRole,
+        ownerLabel,
+        ownerRole,
+        classLabel: classCellLabel || '—',
+        classId: entry.classId || ''
+      })}
     `;
   }).join('');
 };

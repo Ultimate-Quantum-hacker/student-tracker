@@ -209,6 +209,54 @@ export const buildActivityEventMarkup = ({
   `;
 };
 
+export const buildActivityLogRowMarkup = ({
+  rowClass = '',
+  timestampTitle = 'Unknown time',
+  timeLabel = '',
+  dateLabel = '',
+  toneClass = '',
+  icon = '',
+  actionLabel = '',
+  actorLabel = 'Unknown user',
+  sentence = '',
+  actorRole = '',
+  ownerLabel = 'Unknown owner',
+  ownerRole = '',
+  classLabel = '—',
+  classId = ''
+} = {}) => {
+  const safeRowClass = normalizeText(rowClass);
+  const safeTimestampTitle = normalizeDisplayText(timestampTitle, 'Unknown time');
+  return `
+    <tr class="activity-row ${escapeHtml(safeRowClass)} fade-in">
+      <td title="${escapeHtml(safeTimestampTitle)}">
+        ${buildStackedTextMarkup({
+          containerClass: 'activity-time-cell',
+          primary: timeLabel,
+          secondary: dateLabel
+        })}
+      </td>
+      <td>${buildActivityEventMarkup({
+        toneClass,
+        icon,
+        actionLabel,
+        actorLabel,
+        sentence
+      })}</td>
+      <td>${buildRoleBadgeMarkup(actorRole)}</td>
+      <td>${buildOwnerIdentityMarkup({
+        label: ownerLabel,
+        secondary: '',
+        role: ownerRole
+      })}</td>
+      <td>${buildClassTokenMarkup({
+        label: classLabel,
+        title: classId
+      })}</td>
+    </tr>
+  `;
+};
+
 export const buildGlobalSearchResultRowMarkup = ({
   studentLabel = 'Student',
   ownerLabel = 'Unknown owner',
