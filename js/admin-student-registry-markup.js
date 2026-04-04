@@ -63,6 +63,20 @@ const buildAdminStudentsTableRowMarkup = (student = {}, {
   `;
 };
 
+const buildAdminStudentsGroupRowMarkup = ({
+  label = '',
+  columnCount = 4,
+  isSkeleton = false
+} = {}) => {
+  const normalizedColumnCount = normalizePositiveInteger(columnCount, 4);
+  if (isSkeleton) {
+    return `<tr class="admin-students-group-row admin-students-group-row-skeleton" aria-hidden="true"><td colspan="${normalizedColumnCount}"><div class="admin-students-skeleton admin-students-skeleton-group"></div></td></tr>`;
+  }
+
+  const safeLabel = normalizeDisplayText(label, 'Unknown Class');
+  return `<tr class="admin-students-group-row"><td colspan="${normalizedColumnCount}">${escapeHtml(safeLabel)}</td></tr>`;
+};
+
 const buildAdminStudentsSkeletonStackMarkup = () => {
   return `
     <div class="admin-students-skeleton-stack">
@@ -82,7 +96,10 @@ export const buildAdminStudentsSkeletonMarkup = ({
   return Array.from({ length: normalizedRowCount }, (_, index) => {
     const shouldRenderClassGroup = index === 0 || index % 3 === 0;
     return `
-      ${shouldRenderClassGroup ? `<tr class="admin-students-group-row admin-students-group-row-skeleton" aria-hidden="true"><td colspan="${normalizedColumnCount}"><div class="admin-students-skeleton admin-students-skeleton-group"></div></td></tr>` : ''}
+      ${shouldRenderClassGroup ? buildAdminStudentsGroupRowMarkup({
+        columnCount: normalizedColumnCount,
+        isSkeleton: true
+      }) : ''}
       <tr class="admin-students-row-skeleton" aria-hidden="true">
         <td>${buildAdminStudentsSkeletonStackMarkup()}</td>
         <td>${buildAdminStudentsSkeletonStackMarkup()}</td>
@@ -124,7 +141,6 @@ export const buildAdminStudentsTableMarkup = (groups = [], {
 
   let studentNumber = Math.max(0, Number(startIndex) || 0);
   return groups.map((group) => {
-    const groupLabel = normalizeDisplayText(group?.label, 'Unknown Class');
     const rows = (Array.isArray(group?.students) ? group.students : []).map((student) => {
       studentNumber += 1;
       return buildAdminStudentsTableRowMarkup(student, {
@@ -133,6 +149,9 @@ export const buildAdminStudentsTableMarkup = (groups = [], {
       });
     }).join('');
 
-    return `<tr class="admin-students-group-row"><td colspan="${normalizedColumnCount}">${escapeHtml(groupLabel)}</td></tr>${rows}`;
+    return `${buildAdminStudentsGroupRowMarkup({
+      label: group?.label,
+      columnCount: normalizedColumnCount
+    })}${rows}`;
   }).join('');
 };
