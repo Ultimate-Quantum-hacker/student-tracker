@@ -66,6 +66,17 @@ const buildAdminStudentsActionMarkup = (student = {}, { canDelete = false } = {}
   }));
 };
 
+const buildAdminStudentsMetaCellMarkup = ({
+  primary = '',
+  secondary = ''
+} = {}) => {
+  return `<td>${buildStackedTextMarkup({
+    containerClass: 'admin-student-meta',
+    primary,
+    secondary
+  })}</td>`;
+};
+
 const buildAdminStudentsTableRowMarkup = (student = {}, {
   studentNumber = 1,
   canDelete = false
@@ -74,16 +85,14 @@ const buildAdminStudentsTableRowMarkup = (student = {}, {
   return `
     <tr class="fade-in">
       <td>${buildStudentIdentityMarkup({ label: student?.name, avatarLabel: String(studentNumber) })}</td>
-      <td>${buildStackedTextMarkup({
-        containerClass: 'admin-student-meta',
+      ${buildAdminStudentsMetaCellMarkup({
         primary: classLabel,
         secondary: 'Class assignment'
-      })}</td>
-      <td>${buildStackedTextMarkup({
-        containerClass: 'admin-student-meta',
+      })}
+      ${buildAdminStudentsMetaCellMarkup({
         primary: student?.teacherName,
         secondary: 'Teacher'
-      })}</td>
+      })}
       <td>${buildAdminStudentsActionMarkup(student, { canDelete })}</td>
     </tr>
   `;
@@ -151,6 +160,20 @@ const buildAdminStudentsSkeletonRowMarkup = () => {
   `;
 };
 
+const buildAdminStudentsSkeletonSectionMarkup = ({
+  shouldRenderClassGroup = false,
+  columnCount = 4
+} = {}) => {
+  const normalizedColumnCount = normalizePositiveInteger(columnCount, 4);
+  return `
+    ${shouldRenderClassGroup ? buildAdminStudentsGroupRowMarkup({
+      columnCount: normalizedColumnCount,
+      isSkeleton: true
+    }) : ''}
+    ${buildAdminStudentsSkeletonRowMarkup()}
+  `;
+};
+
 const buildAdminStudentsEmptyStateMarkup = ({
   hasActiveCriteria = false,
   columnCount = 4
@@ -173,6 +196,18 @@ const buildAdminStudentsEmptyStateMarkup = ({
       });
 };
 
+const buildAdminStudentsGroupSectionMarkup = ({
+  label = '',
+  rowsMarkup = '',
+  columnCount = 4
+} = {}) => {
+  const normalizedColumnCount = normalizePositiveInteger(columnCount, 4);
+  return `${buildAdminStudentsGroupRowMarkup({
+    label,
+    columnCount: normalizedColumnCount
+  })}${String(rowsMarkup || '')}`;
+};
+
 export const buildAdminStudentsSkeletonMarkup = ({
   rowCount = 6,
   columnCount = 4
@@ -181,14 +216,10 @@ export const buildAdminStudentsSkeletonMarkup = ({
   const normalizedColumnCount = normalizePositiveInteger(columnCount, 4);
 
   return Array.from({ length: normalizedRowCount }, (_, index) => {
-    const shouldRenderClassGroup = index === 0 || index % 3 === 0;
-    return `
-      ${shouldRenderClassGroup ? buildAdminStudentsGroupRowMarkup({
-        columnCount: normalizedColumnCount,
-        isSkeleton: true
-      }) : ''}
-      ${buildAdminStudentsSkeletonRowMarkup()}
-    `;
+    return buildAdminStudentsSkeletonSectionMarkup({
+      shouldRenderClassGroup: index === 0 || index % 3 === 0,
+      columnCount: normalizedColumnCount
+    });
   }).join('');
 };
 
@@ -216,9 +247,10 @@ export const buildAdminStudentsTableMarkup = (groups = [], {
       });
     }).join('');
 
-    return `${buildAdminStudentsGroupRowMarkup({
+    return buildAdminStudentsGroupSectionMarkup({
       label: group?.label,
+      rowsMarkup: rows,
       columnCount: normalizedColumnCount
-    })}${rows}`;
+    });
   }).join('');
 };
