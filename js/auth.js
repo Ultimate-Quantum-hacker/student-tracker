@@ -11,7 +11,8 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut,
-  updateProfile
+  updateProfile,
+  sendPasswordResetEmail
 } from './firebase.js';
 
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
@@ -24,36 +25,12 @@ const USER_ROLES = [ROLE_TEACHER, ROLE_ADMIN, ROLE_DEVELOPER, LEGACY_ROLE_USER];
 const DEFAULT_USER_ROLE = ROLE_TEACHER;
 const INITIAL_AUTH_STATE_TIMEOUT_MS = 10000;
 const PROFILE_RESOLUTION_TIMEOUT_MS = 10000;
+const PROFILE_NAME_MAX_LENGTH = 80;
 
 const createTimeoutError = (code, message) => {
   const error = new Error(message);
   error.code = code;
   return error;
-};
-
-const withTimeout = async (task, timeoutMs, code, message) => {
-  const normalizedTimeoutMs = Number.isFinite(Number(timeoutMs)) && Number(timeoutMs) > 0
-    ? Number(timeoutMs)
-    : 0;
-  if (!normalizedTimeoutMs) {
-    return typeof task === 'function' ? task() : task;
-  }
-
-  let timeoutId = null;
-  try {
-    return await Promise.race([
-      Promise.resolve().then(() => (typeof task === 'function' ? task() : task)),
-      new Promise((_, reject) => {
-        timeoutId = globalThis.setTimeout(() => {
-          reject(createTimeoutError(code, message));
-        }, normalizedTimeoutMs);
-      })
-    ]);
-  } finally {
-    if (timeoutId !== null) {
-      globalThis.clearTimeout(timeoutId);
-    }
-  }
 };
 
 export const normalizeUserRole = (role) => {
@@ -63,6 +40,17 @@ export const normalizeUserRole = (role) => {
   }
   return USER_ROLES.includes(normalized) ? normalized : DEFAULT_USER_ROLE;
 };
+
+const normalizeProfileName = (name) => normalizeName(String(name || '').slice(0, PROFILE_NAME_MAX_LENGTH));
+
+const normalizeProfileRecord = (profile = {}, fallback = {}) => ({
+  uid: String(profile?.uid || fallback?.uid || '').trim(),
+  role: normalizeUserRole(profile?.role || fallback?.role),
+  name: normalizeProfileName(profile?.name ?? fallback?.name),
+  email: normalizeEmail(profile?.email ?? fallback?.email),
+  createdAt: profile?.createdAt ?? fallback?.createdAt ?? null,
+  updatedAt: profile?.updatedAt ?? fallback?.updatedAt ?? null
+});
 
 const getUserProfileRef = (uid) => doc(db, 'users', String(uid || '').trim());
 
@@ -81,7 +69,7 @@ const resolveProfileRole = (_authUser, existingRole = '') => {
 const sanitizeProfilePayload = (authUser, existingRole = '') => ({
   uid: String(authUser?.uid || '').trim(),
   role: resolveProfileRole(authUser, existingRole),
-  name: normalizeName(authUser?.name),
+  name: normalizeProfileName(authUser?.name),
   email: normalizeEmail(authUser?.email),
   createdAt: serverTimestamp()
 });
@@ -100,8 +88,9 @@ const ensureUserProfileDocument = async (authUser) => {
     return {
       uid,
       role: fallbackRole,
-      name: normalizeName(authUser?.name),
-      email: normalizedEmail
+      name: normalizeProfileName(authUser?.name),
+      email: normalizedEmail,
+      updatedAt: null
     };
   }
 
@@ -116,7 +105,7 @@ const ensureUserProfileDocument = async (authUser) => {
   if (!profileSnapshot.exists()) {
     const payload = sanitizeProfilePayload({
       uid,
-      name: normalizeName(authUser?.name),
+      name: normalizeProfileName(authUser?.name),
       email: normalizedEmail
     });
     await withTimeout(
@@ -132,13 +121,14 @@ const ensureUserProfileDocument = async (authUser) => {
       uid,
       role: payload.role,
       name: payload.name,
-      email: payload.email
+      email: payload.email,
+      updatedAt: null
     };
   }
 
   const data = profileSnapshot.data() || {};
   console.log('Firestore role:', data.role);
-  const normalizedName = normalizeName(data.name || authUser?.name);
+  const normalizedName = normalizeProfileName(data.name || authUser?.name);
   const profileEmail = normalizeEmail(data.email || '');
   const resolvedEmailForProfile = normalizedEmail || profileEmail;
   const resolvedRole = resolveProfileRole(
@@ -154,7 +144,7 @@ const ensureUserProfileDocument = async (authUser) => {
   if (String(data.uid || '').trim() !== uid) {
     patch.uid = uid;
   }
-  if (normalizeName(data.name) !== normalizedName) {
+  if (normalizeProfileName(data.name) !== normalizedName) {
     patch.name = normalizedName;
   }
   if (normalizeEmail(data.email) !== resolvedEmailForProfile) {
@@ -181,18 +171,24 @@ const ensureUserProfileDocument = async (authUser) => {
     role: resolvedRole,
     name: normalizedName,
     email: resolvedEmailForProfile,
-    createdAt: data.createdAt || null
+    createdAt: data.createdAt || null,
+    updatedAt: data.updatedAt || null
   };
 };
 
-export const resolveUserRole = async (authUser) => {
+export const resolveUserAccountProfile = async (authUser) => {
   try {
     const profile = await ensureUserProfileDocument(authUser);
-    return normalizeUserRole(profile?.role);
+    return normalizeProfileRecord(profile, authUser);
   } catch (error) {
-    console.error('Failed to resolve user role. Falling back to teacher:', error);
-    return DEFAULT_USER_ROLE;
+    console.error('Failed to resolve user account profile. Falling back to auth payload:', error);
+    return normalizeProfileRecord({ role: DEFAULT_USER_ROLE }, authUser);
   }
+};
+
+export const resolveUserRole = async (authUser) => {
+  const profile = await resolveUserAccountProfile(authUser);
+  return normalizeUserRole(profile?.role);
 };
 
 export const isDeveloperRole = (role) => normalizeUserRole(role) === 'developer';
@@ -208,6 +204,51 @@ const toAuthUser = (user) => {
 };
 
 export const isAuthAvailable = () => Boolean(auth);
+
+export const updateCurrentUserProfile = async ({ name }) => {
+  if (!auth?.currentUser) {
+    throw new Error('You must be signed in to update your profile.');
+  }
+
+  const uid = String(auth.currentUser.uid || '').trim();
+  const normalizedName = normalizeProfileName(name);
+  const normalizedEmail = normalizeEmail(auth.currentUser.email || '');
+
+  if (!normalizedName) {
+    throw new Error('Please enter your name before saving.');
+  }
+
+  await withTimeout(
+    () => updateProfile(auth.currentUser, { displayName: normalizedName }),
+    PROFILE_RESOLUTION_TIMEOUT_MS,
+    'auth/profile-timeout',
+    'Timed out while updating your account profile.'
+  );
+
+  if (uid && isFirebaseConfigured && db) {
+    await withTimeout(
+      () => setDoc(
+        getUserProfileRef(uid),
+        {
+          uid,
+          name: normalizedName,
+          email: normalizedEmail,
+          updatedAt: serverTimestamp()
+        },
+        { merge: true }
+      ),
+      PROFILE_RESOLUTION_TIMEOUT_MS,
+      'auth/profile-timeout',
+      'Timed out while saving your account profile.'
+    );
+  }
+
+  return resolveUserAccountProfile({
+    uid,
+    name: normalizedName,
+    email: normalizedEmail
+  });
+};
 
 export const formatAuthError = (error) => {
   const code = String(error?.code || '').toLowerCase();
@@ -340,6 +381,27 @@ export const loginUser = async ({ email, password }) => {
     console.error('Failed to initialize user profile during login:', error);
   }
   return nextAuthUser;
+};
+
+export const requestPasswordReset = async (email) => {
+  if (!auth) {
+    throw new Error('Authentication service is unavailable.');
+  }
+
+  const normalizedEmail = normalizeEmail(email);
+  if (!normalizedEmail) {
+    throw new Error('Please enter your email address first.');
+  }
+
+  try {
+    await sendPasswordResetEmail(auth, normalizedEmail);
+  } catch (error) {
+    const code = String(error?.code || '').toLowerCase();
+    if (code.includes('user-not-found')) {
+      return;
+    }
+    throw error;
+  }
 };
 
 export const logoutUser = async () => {

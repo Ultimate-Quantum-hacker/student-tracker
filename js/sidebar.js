@@ -125,8 +125,13 @@ const sidebar = {
     if (activeSection) {
       activeSection.classList.add('active');
       // Render bulk table when bulk-scores section is shown
-      if (sectionId === 'bulk-scores' && window.TrackerApp && window.TrackerApp.ui) {
-        window.TrackerApp.ui.renderBulkTable();
+      if (window.TrackerApp && window.TrackerApp.ui) {
+        if (sectionId === 'bulk-scores') {
+          window.TrackerApp.ui.renderBulkTable();
+        }
+        if (sectionId === 'account-settings') {
+          window.TrackerApp.ui.renderAccountSettings({ preserveFeedback: true });
+        }
       }
     }
   }

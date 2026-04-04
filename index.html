@@ -493,6 +493,10 @@
           <button class="sidebar-item" data-section="trends"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 17"/><polyline points="17 6 23 6 23 12"/></svg>Trends</button>
           <button class="sidebar-item" data-section="heatmap"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><rect x="7" y="7" width="3" height="3"/><rect x="14" y="7" width="3" height="3"/><rect x="7" y="14" width="3" height="3"/><rect x="14" y="14" width="3" height="3"/></svg>Heatmap</button>
         </div>
+        <div class="sidebar-section">
+          <div class="sidebar-title">Account</div>
+          <button class="sidebar-item" data-section="account-settings"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Account Settings</button>
+        </div>
         <div class="sidebar-section system-tools-section" aria-label="System tools">
           <div class="sidebar-title">System Tools</div>
           <div id="system-tools-backup-status" class="system-tools-status status-never">
@@ -535,6 +539,69 @@
         <div class="card">
           <h3>Performance Analytics</h3>
           <div id="dashboard-performance-chart" class="dashboard-dist-chart"></div>
+        </div>
+      </section>
+
+      <section id="account-settings" class="content-section">
+        <div class="section-header"><h2>Account Settings</h2></div>
+        <div class="card account-settings-card">
+          <div class="account-settings-grid">
+            <div class="account-settings-panel">
+              <div class="page-stack">
+                <div>
+                  <h3>Profile Details</h3>
+                  <p class="section-subtitle">Update the display name shown in your session controls and owned-class labels.</p>
+                </div>
+                <form id="account-settings-form" class="page-stack">
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label for="account-settings-name-input">Display Name</label>
+                      <input type="text" id="account-settings-name-input" maxlength="80" autocomplete="name" placeholder="Enter your display name" required>
+                    </div>
+                    <div class="form-group">
+                      <label for="account-settings-email-input">Email</label>
+                      <input type="email" id="account-settings-email-input" readonly>
+                    </div>
+                  </div>
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label for="account-settings-role-input">Role</label>
+                      <input type="text" id="account-settings-role-input" readonly>
+                    </div>
+                    <div class="form-group">
+                      <label for="account-settings-updated-at-input">Last Updated</label>
+                      <input type="text" id="account-settings-updated-at-input" readonly>
+                    </div>
+                  </div>
+                  <p id="account-settings-feedback" class="account-settings-feedback" hidden aria-live="polite"></p>
+                  <div class="account-settings-actions">
+                    <button type="submit" class="btn btn-primary" id="account-settings-save-btn">Save Changes</button>
+                    <button type="button" class="btn btn-secondary" id="account-settings-reset-btn">Reset</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+            <div class="account-settings-panel account-settings-summary-panel">
+              <div>
+                <h3>Session Summary</h3>
+                <p class="section-subtitle">A quick view of the account context currently active in this dashboard session.</p>
+              </div>
+              <div class="account-settings-meta">
+                <div class="account-settings-meta-item">
+                  <span class="account-settings-meta-label">Session Status</span>
+                  <strong id="account-settings-session-status">No active session</strong>
+                </div>
+                <div class="account-settings-meta-item">
+                  <span class="account-settings-meta-label">Member Since</span>
+                  <strong id="account-settings-created-at-value">Not available</strong>
+                </div>
+                <div class="account-settings-meta-item">
+                  <span class="account-settings-meta-label">Current Class</span>
+                  <strong id="account-settings-class-value">No class selected</strong>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 

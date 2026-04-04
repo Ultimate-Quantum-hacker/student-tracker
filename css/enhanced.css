@@ -1189,6 +1189,11 @@ body{
   margin-top:var(--space-3);
 }
 
+.section-subtitle{
+  margin:.28rem 0 0;
+  color:var(--text-secondary);
+}
+
 .content-section.active > .section-header + *,
 .page-header + *{
   margin-top:0;
@@ -1474,6 +1479,80 @@ button:focus-visible,
   display:flex;
   align-items:center;
   gap:var(--space-2);
+}
+
+.account-settings-grid{
+  display:grid;
+  grid-template-columns:minmax(0,1.45fr) minmax(260px,1fr);
+  gap:var(--space-3);
+  align-items:start;
+}
+
+.account-settings-panel{
+  display:flex;
+  flex-direction:column;
+  gap:var(--space-3);
+}
+
+.account-settings-card input[readonly]{
+  background:var(--surface-secondary);
+  color:var(--text-secondary);
+}
+
+.account-settings-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:var(--space-2);
+  flex-wrap:wrap;
+}
+
+.account-settings-feedback{
+  margin:0;
+  font-size:.88rem;
+  font-weight:600;
+}
+
+.account-settings-feedback[data-tone="success"]{
+  color:#059669;
+}
+
+.account-settings-feedback[data-tone="error"]{
+  color:var(--danger);
+}
+
+.account-settings-meta{
+  display:grid;
+  gap:var(--space-2);
+}
+
+.account-settings-meta-item{
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  background:var(--surface-secondary);
+  padding:.92rem 1rem;
+  display:flex;
+  flex-direction:column;
+  gap:.32rem;
+}
+
+.account-settings-meta-label{
+  font-size:var(--font-size-label);
+  font-weight:600;
+  color:var(--text-secondary);
+}
+
+.account-settings-meta-item strong{
+  font-size:.96rem;
+  line-height:1.4;
+  color:var(--text);
+}
+
+#account-settings-session-status[data-tone="active"]{
+  color:var(--primary);
+}
+
+#account-settings-session-status[data-tone="inactive"]{
+  color:var(--text-secondary);
 }
 
 .bulk-entry-controls{
@@ -2397,6 +2476,8 @@ body.dark-mode .risk-item.risk-at-risk .risk-count{color:#f8fafc}
   .section-controls{width:100%;flex-wrap:wrap}
   .section-controls .search-input{flex:1 1 100%;min-width:0}
   .form-group{flex-basis:100%;min-width:0}
+  .account-settings-grid{grid-template-columns:1fr}
+  .account-settings-actions > .btn{flex:1 1 100%}
   .form-row .btn{width:100%}
   .bulk-entry-controls .bulk-entry-clear-btn{width:100%}
   .risk-summary{grid-template-columns:1fr}

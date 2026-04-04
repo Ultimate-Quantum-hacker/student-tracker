@@ -2047,7 +2047,7 @@ const normalizeClassOwnerMetadata = async (ownerId = '', classId = '', payload =
   }
 
   const ownerName = normalizeDisplayName(
-    payload?.ownerName || payload?.userName || payload?.teacherName || currentClassOwnerName || 'Teacher',
+    payload?.ownerName || payload?.userName || payload?.teacherName || getAuthenticatedUserDisplayName() || currentClassOwnerName || 'Teacher',
     'Teacher'
   );
   await setDoc(classRef, {
@@ -2070,7 +2070,10 @@ const readClassCatalogFromFirestore = async (userId) => {
     if (!classId) return;
     metadataPatchTasks.push(normalizeClassOwnerMetadata(userId, classId, payload, entry.ref));
     const ownerId = normalizeUserId(payload.ownerId || payload.userId || userId);
-    const ownerName = normalizeDisplayName(payload.ownerName || 'Teacher', 'Teacher');
+    const ownerName = normalizeDisplayName(
+      payload.ownerName || (ownerId === getAuthenticatedUserId() ? getAuthenticatedUserDisplayName() : '') || 'Teacher',
+      'Teacher'
+    );
     const normalizedPayload = {
       ...payload,
       ownerId,
@@ -3564,6 +3567,47 @@ export const updateAdminUserRole = async ({ uid = '', name = '', email = '', rol
     uid: normalizedUid,
     role: normalizedRole
   };
+};
+
+export const syncCurrentUserClassOwnerName = async (ownerName = '') => {
+  const userId = await ensureAuthenticatedUserId('update account profile');
+  const normalizedOwnerName = normalizeDisplayName(ownerName, getAuthenticatedUserDisplayName());
+  currentClassOwnerName = normalizedOwnerName;
+
+  if (!isFirebaseConfigured || !db) {
+    invalidateRecentFetchAllDataCache();
+    globalClassCatalogCache.loadedAt = 0;
+    return 0;
+  }
+
+  const classesSnapshot = await getDocs(getClassesCollectionRef(userId));
+  const updatedAt = new Date().toISOString();
+  const updateTasks = [];
+
+  classesSnapshot.forEach((entry) => {
+    const classId = normalizeClassId(entry.id);
+    const payload = entry.data() || {};
+    const ownerId = normalizeUserId(payload.ownerId || payload.userId || userId);
+    if (!classId || ownerId !== userId) {
+      return;
+    }
+
+    updateTasks.push(setDoc(entry.ref, {
+      id: classId,
+      userId,
+      ownerId: userId,
+      ownerName: normalizedOwnerName,
+      updatedAt
+    }, { merge: true }));
+  });
+
+  if (updateTasks.length) {
+    await Promise.all(updateTasks);
+  }
+
+  invalidateRecentFetchAllDataCache();
+  globalClassCatalogCache.loadedAt = 0;
+  return updateTasks.length;
 };
 
 export const createClass = async (className) => {

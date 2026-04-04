@@ -5,7 +5,8 @@
 
 import app from './state.js';
 import { auth } from './firebase.js';
-import { normalizeUserRole } from './auth.js';
+import { syncCurrentUserClassOwnerName } from '../services/db.js';
+import { formatAuthError, normalizeUserRole, updateCurrentUserProfile } from './auth.js';
 
 // DOM Node References
 app.dom = {};
@@ -138,6 +139,17 @@ const domIds = {
   performanceCategoryCounts: 'performance-category-counts',
   performanceFilteredList: 'performance-filtered-list',
   performanceInterventionNeededList: 'performance-intervention-needed-list',
+  accountSettingsForm: 'account-settings-form',
+  accountSettingsNameInput: 'account-settings-name-input',
+  accountSettingsEmailInput: 'account-settings-email-input',
+  accountSettingsRoleInput: 'account-settings-role-input',
+  accountSettingsUpdatedAtInput: 'account-settings-updated-at-input',
+  accountSettingsCreatedAtValue: 'account-settings-created-at-value',
+  accountSettingsClassValue: 'account-settings-class-value',
+  accountSettingsSessionStatus: 'account-settings-session-status',
+  accountSettingsFeedback: 'account-settings-feedback',
+  accountSettingsSaveBtn: 'account-settings-save-btn',
+  accountSettingsResetBtn: 'account-settings-reset-btn',
   authRoleBadge: 'auth-role-badge'
 };
 
@@ -167,16 +179,17 @@ const ui = {
   hasBoundClassDropdownEvents: false,
   hasBoundAccessGuardEvents: false,
   bulkClassDeleteSelection: [],
+  isSavingAccountSettings: false,
   toastTimer: null,
   loaderHideTimer: null,
   loaderRequestCount: 0,
   readOnlyToastTimer: null,
   trashRetentionDays: 3,
-    toastTimer: null,
-    loaderHideTimer: null,
-    loaderRequestCount: 0,
-    readOnlyToastTimer: null,
-    trashRetentionDays: 3,
+  toastTimer: null,
+  loaderHideTimer: null,
+  loaderRequestCount: 0,
+  readOnlyToastTimer: null,
+  trashRetentionDays: 3,
 
     init: function () {
       console.log('UI init running');
@@ -876,6 +889,248 @@ const ui = {
       const ownerName = String(entry?.ownerName || '').trim();
       if (!ownerName) return className;
       return `${className} (Teacher: ${ownerName})`;
+    },
+
+    getActiveClassEntry: function () {
+      const classes = Array.isArray(app.state.classes) ? app.state.classes : [];
+      const currentClassId = String(app.state.currentClassId || '').trim();
+      const currentOwnerId = String(app.state.currentClassOwnerId || '').trim();
+      return classes.find((entry) => {
+        const entryClassId = String(entry?.id || '').trim();
+        const entryOwnerId = String(entry?.ownerId || '').trim();
+        if (entryClassId !== currentClassId) {
+          return false;
+        }
+        if (!currentOwnerId) {
+          return true;
+        }
+        return entryOwnerId === currentOwnerId;
+      }) || classes.find(entry => String(entry?.id || '').trim() === currentClassId) || null;
+    },
+
+    getCurrentClassDisplayLabel: function () {
+      const activeClass = this.getActiveClassEntry();
+      if (activeClass) {
+        return this.formatClassDisplayLabel(activeClass);
+      }
+
+      const fallbackClassId = String(app.state.currentClassId || '').trim();
+      const fallbackClassName = String(app.state.currentClassName || '').trim();
+      const fallbackOwnerName = String(app.state.currentClassOwnerName || '').trim();
+      if (!fallbackClassId || !fallbackClassName) {
+        return 'No class selected';
+      }
+
+      return this.formatClassDisplayLabel({
+        name: fallbackClassName,
+        ownerName: fallbackOwnerName
+      });
+    },
+
+    formatAccountTimestamp: function (value, fallback = 'Not available') {
+      const parsed = new Date(value || '');
+      if (Number.isNaN(parsed.getTime())) {
+        return fallback;
+      }
+
+      return parsed.toLocaleString();
+    },
+
+    setAccountSettingsFeedback: function (message = '', tone = 'neutral') {
+      if (!app.dom.accountSettingsFeedback) {
+        return;
+      }
+
+      const normalizedMessage = String(message || '').trim();
+      app.dom.accountSettingsFeedback.textContent = normalizedMessage;
+      if (!normalizedMessage) {
+        app.dom.accountSettingsFeedback.hidden = true;
+        app.dom.accountSettingsFeedback.removeAttribute('data-tone');
+        return;
+      }
+
+      app.dom.accountSettingsFeedback.hidden = false;
+      app.dom.accountSettingsFeedback.dataset.tone = tone;
+    },
+
+    hasPendingAccountSettingsChanges: function () {
+      if (!app.dom.accountSettingsNameInput || !app.state.authUser?.uid) {
+        return false;
+      }
+
+      const currentValue = String(app.dom.accountSettingsNameInput.value || '').trim();
+      const initialValue = String(
+        app.dom.accountSettingsNameInput.dataset.initialValue
+        || app.state.authUser?.name
+        || app.state.authUser?.email
+        || ''
+      ).trim();
+
+      return Boolean(currentValue) && currentValue !== initialValue;
+    },
+
+    setAccountSettingsBusy: function (isBusy) {
+      this.isSavingAccountSettings = Boolean(isBusy);
+      const hasSession = Boolean(app.state.authUser?.uid);
+      const shouldDisableControls = this.isSavingAccountSettings || !hasSession;
+      const hasPendingChanges = this.hasPendingAccountSettingsChanges();
+
+      if (app.dom.accountSettingsNameInput) {
+        app.dom.accountSettingsNameInput.disabled = shouldDisableControls;
+      }
+      if (app.dom.accountSettingsSaveBtn) {
+        app.dom.accountSettingsSaveBtn.disabled = shouldDisableControls || !hasPendingChanges;
+        app.dom.accountSettingsSaveBtn.textContent = this.isSavingAccountSettings ? 'Saving...' : 'Save Changes';
+      }
+      if (app.dom.accountSettingsResetBtn) {
+        app.dom.accountSettingsResetBtn.disabled = shouldDisableControls || !hasPendingChanges;
+      }
+    },
+
+    syncLocalAccountIdentity: function (profile = {}) {
+      const authUid = String(profile?.uid || app.state.authUser?.uid || '').trim();
+      if (!authUid) {
+        return;
+      }
+
+      const normalizedName = String(profile?.name || app.state.authUser?.name || app.state.authUser?.email || '').trim();
+      const normalizedEmail = String(profile?.email || app.state.authUser?.email || '').trim();
+      const normalizedRole = normalizeUserRole(profile?.role || app.state.authUser?.role || app.state.currentUserRole);
+      const createdAt = profile?.createdAt ?? app.state.authUser?.createdAt ?? null;
+      const updatedAt = profile?.updatedAt ?? app.state.authUser?.updatedAt ?? null;
+
+      app.state.authUser = {
+        ...(app.state.authUser || {}),
+        uid: authUid,
+        name: normalizedName,
+        email: normalizedEmail,
+        role: normalizedRole,
+        createdAt,
+        updatedAt
+      };
+
+      if (typeof window !== 'undefined') {
+        window.__TEACHER_NAME__ = normalizedName;
+        window.teacherName = normalizedName;
+      }
+
+      app.state.classes = (Array.isArray(app.state.classes) ? app.state.classes : []).map((entry) => {
+        const entryOwnerId = String(entry?.ownerId || '').trim();
+        if (entryOwnerId !== authUid) {
+          return entry;
+        }
+
+        return {
+          ...(entry || {}),
+          ownerName: normalizedName || String(entry?.ownerName || '').trim() || 'Teacher'
+        };
+      });
+
+      if (String(app.state.currentClassOwnerId || '').trim() === authUid) {
+        app.state.currentClassOwnerName = normalizedName || app.state.currentClassOwnerName || 'Teacher';
+      }
+
+      if (typeof app.syncDataContext === 'function') {
+        app.syncDataContext();
+      }
+      if (typeof app.syncAuthSessionUi === 'function') {
+        app.syncAuthSessionUi();
+      }
+    },
+
+    resetAccountSettingsForm: function () {
+      const defaultName = String(app.state.authUser?.name || app.state.authUser?.email || '').trim();
+      if (app.dom.accountSettingsNameInput) {
+        app.dom.accountSettingsNameInput.value = defaultName;
+      }
+      this.setAccountSettingsFeedback('');
+      this.setAccountSettingsBusy(false);
+    },
+
+    renderAccountSettings: function ({ preserveFeedback = true } = {}) {
+      const hasSession = Boolean(app.state.authUser?.uid);
+      const displayName = String(app.state.authUser?.name || app.state.authUser?.email || '').trim();
+      const email = String(app.state.authUser?.email || '').trim();
+      const roleLabel = hasSession
+        ? this.formatRoleLabel(app.state.authUser?.role || app.state.currentUserRole)
+        : 'Not signed in';
+      const createdAtLabel = hasSession
+        ? this.formatAccountTimestamp(app.state.authUser?.createdAt, 'Not available')
+        : 'Not available';
+      const updatedAtLabel = hasSession
+        ? this.formatAccountTimestamp(app.state.authUser?.updatedAt, 'Not yet saved')
+        : 'Not available';
+      const classLabel = hasSession ? this.getCurrentClassDisplayLabel() : 'No class selected';
+      const shouldPreserveDraft = document.activeElement === app.dom.accountSettingsNameInput && !this.isSavingAccountSettings;
+      const currentDraftValue = shouldPreserveDraft ? String(app.dom.accountSettingsNameInput?.value || '') : '';
+
+      if (app.dom.accountSettingsNameInput) {
+        app.dom.accountSettingsNameInput.value = shouldPreserveDraft ? currentDraftValue : displayName;
+        app.dom.accountSettingsNameInput.dataset.initialValue = displayName;
+      }
+      if (app.dom.accountSettingsEmailInput) {
+        app.dom.accountSettingsEmailInput.value = email;
+      }
+      if (app.dom.accountSettingsRoleInput) {
+        app.dom.accountSettingsRoleInput.value = roleLabel;
+      }
+      if (app.dom.accountSettingsUpdatedAtInput) {
+        app.dom.accountSettingsUpdatedAtInput.value = updatedAtLabel;
+      }
+      if (app.dom.accountSettingsCreatedAtValue) {
+        app.dom.accountSettingsCreatedAtValue.textContent = createdAtLabel;
+      }
+      if (app.dom.accountSettingsClassValue) {
+        app.dom.accountSettingsClassValue.textContent = classLabel;
+      }
+      if (app.dom.accountSettingsSessionStatus) {
+        app.dom.accountSettingsSessionStatus.textContent = hasSession
+          ? `Signed in as ${displayName || email || 'User'}`
+          : 'No active session';
+        app.dom.accountSettingsSessionStatus.dataset.tone = hasSession ? 'active' : 'inactive';
+      }
+
+      if (!preserveFeedback) {
+        this.setAccountSettingsFeedback('');
+      }
+      this.setAccountSettingsBusy(this.isSavingAccountSettings);
+    },
+
+    saveAccountSettings: async function () {
+      const authUid = String(app.state.authUser?.uid || '').trim();
+      if (!authUid) {
+        this.setAccountSettingsFeedback('You must be signed in to update your profile.', 'error');
+        return;
+      }
+
+      const requestedName = String(app.dom.accountSettingsNameInput?.value || '').trim();
+      this.setAccountSettingsFeedback('');
+
+      await this.withLoader(async () => {
+        this.setAccountSettingsBusy(true);
+        try {
+          const profile = await updateCurrentUserProfile({ name: requestedName });
+          await syncCurrentUserClassOwnerName(profile?.name || requestedName);
+          this.syncLocalAccountIdentity({
+            ...profile,
+            uid: profile?.uid || authUid,
+            updatedAt: profile?.updatedAt || new Date().toISOString()
+          });
+          this.renderClassControls();
+          this.renderAccountSettings({ preserveFeedback: true });
+          this.setAccountSettingsFeedback('Account settings saved.', 'success');
+          this.showToast('Account settings saved');
+        } catch (error) {
+          console.error('Failed to save account settings:', error);
+          const message = formatAuthError(error);
+          this.setAccountSettingsFeedback(message, 'error');
+          this.showToast(message);
+        } finally {
+          this.setAccountSettingsBusy(false);
+        }
+      }, {
+        message: 'Saving account settings...'
+      });
     },
 
     getBulkClassDeleteSelection: function () {
@@ -2427,6 +2682,7 @@ const ui = {
       try {
         this.updateRoleBasedUIAccess();
         this.applyReadOnlyRoleState();
+        this.renderAccountSettings({ preserveFeedback: true });
 
         if (app.state.isLoading) {
           if (app.dom.emptyMsg) {
@@ -2438,6 +2694,7 @@ const ui = {
 
         if (app.dom.emptyMsg) app.dom.emptyMsg.style.display = app.state.students.length ? 'none' : 'block';
         this.renderClassControls();
+        this.renderAccountSettings({ preserveFeedback: true });
         this.renderManagement();
         this.populateSelects();
         this.loadScoreFields();
@@ -2612,6 +2869,26 @@ const ui = {
         // Initialize sidebar
         if (app.sidebar && app.sidebar.init) {
           app.sidebar.init();
+        }
+
+        if (app.dom.accountSettingsForm) {
+          app.dom.accountSettingsForm.onsubmit = async (e) => {
+            e.preventDefault();
+            await this.saveAccountSettings();
+          };
+        }
+        if (app.dom.accountSettingsResetBtn) {
+          app.dom.accountSettingsResetBtn.onclick = () => {
+            this.resetAccountSettingsForm();
+          };
+        }
+        if (app.dom.accountSettingsNameInput) {
+          app.dom.accountSettingsNameInput.oninput = () => {
+            if (app.dom.accountSettingsFeedback?.textContent) {
+              this.setAccountSettingsFeedback('');
+            }
+            this.setAccountSettingsBusy(this.isSavingAccountSettings);
+          };
         }
 
         if (app.dom.form) {

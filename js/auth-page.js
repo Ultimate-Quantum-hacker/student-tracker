@@ -2,6 +2,7 @@ import {
   waitForInitialAuthState,
   registerUser,
   loginUser,
+  requestPasswordReset,
   formatAuthError,
   isAuthAvailable
 } from './auth.js';
@@ -22,12 +23,19 @@ const setLoadingState = (button, isLoading, defaultLabel) => {
   button.disabled = isLoading;
   button.dataset.loading = isLoading ? 'true' : 'false';
   button.setAttribute('aria-busy', isLoading ? 'true' : 'false');
-  button.textContent = isLoading ? 'Please wait...' : defaultLabel;
+  const loadingLabel = String(button.dataset.loadingLabel || 'Please wait...');
+  button.textContent = isLoading ? loadingLabel : defaultLabel;
 };
 
-const setError = (errorEl, message) => {
+const setFeedback = (errorEl, message, tone = 'error') => {
   if (!errorEl) return;
-  errorEl.textContent = message || '';
+  const normalizedMessage = String(message || '');
+  errorEl.textContent = normalizedMessage;
+  if (normalizedMessage) {
+    errorEl.dataset.tone = tone;
+  } else {
+    errorEl.removeAttribute('data-tone');
+  }
 };
 
 const getMode = () => document.body?.dataset?.authMode === 'signup' ? 'signup' : 'login';
@@ -100,11 +108,12 @@ const handleAuthSubmit = async (mode, form, errorEl, submitBtn, defaultLabel) =>
 
   const validationError = validatePayload(mode, payload);
   if (validationError) {
-    setError(errorEl, validationError);
+    setFeedback(errorEl, validationError);
     return;
   }
 
-  setError(errorEl, '');
+  submitBtn.dataset.loadingLabel = mode === 'signup' ? 'Creating account...' : 'Signing in...';
+  setFeedback(errorEl, '');
   setLoadingState(submitBtn, true, defaultLabel);
 
   try {
@@ -117,8 +126,33 @@ const handleAuthSubmit = async (mode, form, errorEl, submitBtn, defaultLabel) =>
     redirectToDashboard();
   } catch (error) {
     console.error('Authentication action failed:', error);
-    setError(errorEl, formatAuthError(error));
+    setFeedback(errorEl, formatAuthError(error));
     setLoadingState(submitBtn, false, defaultLabel);
+  }
+};
+
+const handlePasswordResetRequest = async (form, errorEl, resetBtn, defaultLabel) => {
+  const formData = new FormData(form);
+  const email = String(formData.get('email') || '').trim();
+
+  if (!isValidEmail(email)) {
+    setFeedback(errorEl, 'Enter your email above to receive a reset link.');
+    document.getElementById('login-email')?.focus();
+    return;
+  }
+
+  resetBtn.dataset.loadingLabel = 'Sending reset link...';
+  setFeedback(errorEl, '');
+  setLoadingState(resetBtn, true, defaultLabel);
+
+  try {
+    await requestPasswordReset(email);
+    setFeedback(errorEl, 'If an account exists for that email, a password reset link has been sent. Check your inbox and spam folder.', 'success');
+  } catch (error) {
+    console.error('Password reset failed:', error);
+    setFeedback(errorEl, formatAuthError(error));
+  } finally {
+    setLoadingState(resetBtn, false, defaultLabel);
   }
 };
 
@@ -128,14 +162,19 @@ const initAuthPage = async () => {
   const errorEl = document.getElementById('auth-error');
   const submitBtn = document.getElementById('auth-submit');
   const defaultLabel = submitBtn?.textContent || 'Submit';
+  const forgotPasswordBtn = document.getElementById('forgot-password-btn');
+  const forgotPasswordDefaultLabel = forgotPasswordBtn?.textContent || 'Forgot password?';
 
   if (!form || !submitBtn) {
     return;
   }
 
   if (!isAuthAvailable()) {
-    setError(errorEl, 'Authentication is unavailable. Check Firebase configuration and refresh.');
+    setFeedback(errorEl, 'Authentication is unavailable. Check Firebase configuration and refresh.');
     submitBtn.disabled = true;
+    if (forgotPasswordBtn) {
+      forgotPasswordBtn.disabled = true;
+    }
     return;
   }
 
@@ -151,10 +190,22 @@ const initAuthPage = async () => {
 
   initPasswordToggle();
 
+  form.addEventListener('input', () => {
+    if (errorEl?.textContent) {
+      setFeedback(errorEl, '');
+    }
+  });
+
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     await handleAuthSubmit(mode, form, errorEl, submitBtn, defaultLabel);
   });
+
+  if (mode === 'login' && forgotPasswordBtn) {
+    forgotPasswordBtn.addEventListener('click', async () => {
+      await handlePasswordResetRequest(form, errorEl, forgotPasswordBtn, forgotPasswordDefaultLabel);
+    });
+  }
 };
 
 document.addEventListener('DOMContentLoaded', () => {

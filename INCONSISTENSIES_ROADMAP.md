@@ -31,7 +31,7 @@ The roadmap is only complete when:
 | Phase | Name | Status | Primary Outcome |
 | --- | --- | --- | --- |
 | 1 | Product Consistency and Canonical Rules | In Progress | One product identity, one risk model, one permission model, and no contradictory UX rules |
-| 2 | Auth, Identity, and Account Lifecycle Completion | Not Started | Authentication and user account management become complete and production-ready |
+| 2 | Auth, Identity, and Account Lifecycle Completion | In Progress | Authentication and user account management become complete and production-ready |
 | 3 | Data Model Hardening and Migration Completion | Not Started | Immutable, migration-safe, id-based data model with no legacy dependency |
 | 4 | Frontend Architecture and Service Layer Consolidation | Not Started | Modular codebase with clear boundaries and one authoritative data access layer |
 | 5 | Teacher and Admin Workflow Completion | Not Started | Fully coherent day-to-day workflows with missing feature gaps closed |
@@ -113,9 +113,9 @@ Complete the authentication and account lifecycle so users can securely sign up,
 
 ## Deliverables
 
-- [ ] Password reset flow end to end
+- [x] Password reset flow end to end
 - [ ] Email verification flow and verified/unverified state handling if adopted
-- [ ] Account/profile settings page or modal
+- [x] Account/profile settings page or modal
 - [ ] Auth-state-aware UX for verified status, reset actions, and session issues
 - [ ] Clear privileged-role onboarding policy and implementation
 - [ ] Updated auth documentation and test coverage
@@ -531,3 +531,13 @@ Use this section to track major roadmap updates.
 - **Phase:** Phase 1
 - **Update:** Standardized the main dashboard branding and reset terminology, aligned UI/state/service-layer student-name validation, updated manifest and export artifact names to the canonical Student Performance Tracker identity, and retired the legacy `risk.html` surface by redirecting it into the in-app performance analysis workflow.
 - **Impact:** Phase 1 is now actively in progress with the main supported UI surfaces using one risk workflow and one student-name validation path. Remaining Phase 1 work is mostly documentation and final verification of the canonical permission/product rules across every touched surface.
+
+- **Date:** 2026-04-04
+- **Phase:** Phase 2
+- **Update:** Began Phase 2 by auditing the auth/account lifecycle and implementing the password reset flow from the login page through the Firebase auth layer, including user-safe reset messaging and auth-page feedback state handling.
+- **Impact:** Phase 2 is now in progress and locked-out users can start recovery directly from the supported login surface. Remaining work includes email verification policy/implementation, account settings UI, and broader auth-state UX polish.
+
+- **Date:** 2026-04-04
+- **Phase:** Phase 2
+- **Update:** Added an in-app Account Settings dashboard surface wired to the richer auth session/profile layer, including profile name save handling, session metadata display, sidebar navigation integration, and owner-name synchronization for classes owned by the signed-in user.
+- **Impact:** Signed-in users can now manage their display name inside the product without developer intervention, and profile changes propagate to the active account/session UI plus owned-class labels. Remaining Phase 2 work is centered on email verification policy/implementation, broader auth-state UX polish, privileged-role onboarding rules, and documentation/test coverage.

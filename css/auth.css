@@ -9,6 +9,7 @@
   --auth-border: rgba(255, 255, 255, 0.12);
   --auth-input-bg: rgba(255, 255, 255, 0.06);
   --auth-error: #fca5a5;
+  --auth-success: #86efac;
 }
 
 * {
@@ -267,6 +268,10 @@ body.auth-page::after {
   line-height: 1.45;
 }
 
+.auth-error[data-tone='success'] {
+  color: var(--auth-success);
+}
+
 .auth-btn {
   position: relative;
   overflow: hidden;
@@ -325,6 +330,19 @@ body.auth-page::after {
   font-size: 0.88rem;
   font-weight: 600;
   transition: color 0.2s ease, opacity 0.2s ease;
+}
+
+.auth-link-button {
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+}
+
+.auth-link-button:disabled {
+  opacity: 0.72;
+  cursor: not-allowed;
 }
 
 .auth-link:hover {

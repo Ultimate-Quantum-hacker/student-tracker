@@ -19,7 +19,7 @@ import {
   logoutUser,
   formatAuthError,
   isAuthAvailable,
-  resolveUserRole,
+  resolveUserAccountProfile,
   normalizeUserRole
 } from './auth.js';
 
@@ -34,22 +34,60 @@ const redirectToLogin = () => {
   window.location.replace(LOGIN_PAGE_PATH);
 };
 
+const getAuthUserIdentityLabel = (authUser) => {
+  const name = String(authUser?.name || '').trim();
+  const email = String(authUser?.email || '').trim();
+  return name || email || '';
+};
+
+const getAuthUserIdentityInitial = (authUser) => {
+  const label = getAuthUserIdentityLabel(authUser);
+  return label ? label.charAt(0).toUpperCase() : '?';
+};
+
+const syncAuthSessionUi = () => {
+  const authUserAvatarEl = document.getElementById('auth-user-avatar');
+  if (!authUserAvatarEl) {
+    return;
+  }
+
+  const identityLabel = getAuthUserIdentityLabel(app.state.authUser);
+  const email = String(app.state.authUser?.email || '').trim();
+  const tooltip = identityLabel && email && identityLabel !== email
+    ? `${identityLabel} (${email})`
+    : identityLabel || email || 'User';
+
+  authUserAvatarEl.textContent = getAuthUserIdentityInitial(app.state.authUser);
+  authUserAvatarEl.title = tooltip;
+  authUserAvatarEl.setAttribute('aria-label', tooltip ? `Signed in as ${tooltip}` : 'Signed in user');
+};
+
+app.syncAuthSessionUi = syncAuthSessionUi;
+
 const setResolvedUserRole = async (authUser) => {
-  const nextRole = await resolveUserRole(authUser);
-  const normalizedRole = normalizeUserRole(nextRole);
+  const profile = await resolveUserAccountProfile(authUser);
+  const normalizedRole = normalizeUserRole(profile?.role);
   app.setCurrentUserRole(normalizedRole, { resolved: true });
 
   if (app.state.authUser?.uid && app.state.authUser.uid === authUser?.uid) {
     app.state.authUser = {
       ...app.state.authUser,
-      role: normalizedRole
+      name: String(profile?.name || app.state.authUser?.name || '').trim(),
+      email: String(profile?.email || app.state.authUser?.email || '').trim(),
+      role: normalizedRole,
+      createdAt: profile?.createdAt || app.state.authUser?.createdAt || null,
+      updatedAt: profile?.updatedAt || app.state.authUser?.updatedAt || null
     };
   }
 
+  syncAuthSessionUi();
   console.log('Final role:', normalizedRole);
 
   if (app.ui && typeof app.ui.updateRoleBasedUIAccess === 'function') {
     app.ui.updateRoleBasedUIAccess();
+  }
+  if (app.ui && typeof app.ui.renderAccountSettings === 'function') {
+    app.ui.renderAccountSettings();
   }
 };
 
@@ -62,21 +100,19 @@ const setAuthUserState = (authUser) => {
     }
   }
 
+  const existingAuthUser = app.state.authUser || null;
   app.state.authUser = authUser
     ? {
       uid: authUser.uid,
-      name: authUser.name || '',
-      email: authUser.email || ''
+      name: authUser.name || existingAuthUser?.name || '',
+      email: authUser.email || existingAuthUser?.email || '',
+      role: authUser.role || existingAuthUser?.role || '',
+      createdAt: authUser.createdAt || existingAuthUser?.createdAt || null,
+      updatedAt: authUser.updatedAt || existingAuthUser?.updatedAt || null
     }
     : null;
 
-  const authUserAvatarEl = document.getElementById('auth-user-avatar');
-  if (authUserAvatarEl) {
-    const email = String(app.state.authUser?.email || '').trim();
-    authUserAvatarEl.textContent = email ? email.charAt(0).toUpperCase() : '?';
-    authUserAvatarEl.title = email || 'User';
-    authUserAvatarEl.setAttribute('aria-label', email ? `Signed in as ${email}` : 'Signed in user');
-  }
+  syncAuthSessionUi();
 
   const authRoleBadgeEl = document.getElementById('auth-role-badge');
   if (authRoleBadgeEl && !app.state.authUser?.uid) {
@@ -204,10 +240,9 @@ const ensureLogoutButton = () => {
   const avatar = document.createElement('div');
   avatar.id = 'auth-user-avatar';
   avatar.className = 'user-avatar';
-  const email = String(app.state.authUser?.email || '').trim();
-  avatar.textContent = email ? email.charAt(0).toUpperCase() : '?';
-  avatar.title = email || 'User';
-  avatar.setAttribute('aria-label', email ? `Signed in as ${email}` : 'Signed in user');
+  avatar.textContent = getAuthUserIdentityInitial(app.state.authUser);
+  avatar.title = getAuthUserIdentityLabel(app.state.authUser) || 'User';
+  avatar.setAttribute('aria-label', 'Signed in user');
 
   const button = document.createElement('button');
   button.id = 'auth-logout-btn';
@@ -239,6 +274,7 @@ const ensureLogoutButton = () => {
   authControl.appendChild(roleBadge);
   authControl.appendChild(button);
   headerControls.appendChild(authControl);
+  syncAuthSessionUi();
 };
 
 const bindAuthStateWatcher = () => {
