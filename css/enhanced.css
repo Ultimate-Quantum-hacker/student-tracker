@@ -1555,6 +1555,22 @@ button:focus-visible,
   color:var(--text-secondary);
 }
 
+#account-settings-email-status-value[data-tone="verified"]{
+  color:#059669;
+}
+
+#account-settings-email-status-value[data-tone="managed"]{
+  color:#7c3aed;
+}
+
+#account-settings-email-status-value[data-tone="attention"]{
+  color:#d97706;
+}
+
+#account-settings-email-status-value[data-tone="inactive"]{
+  color:var(--text-secondary);
+}
+
 .bulk-entry-controls{
   display:flex;
   align-items:flex-end;

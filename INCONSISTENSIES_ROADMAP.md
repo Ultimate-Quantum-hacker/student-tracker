@@ -116,7 +116,7 @@ Complete the authentication and account lifecycle so users can securely sign up,
 - [x] Password reset flow end to end
 - [x] Email verification flow and verified/unverified state handling if adopted
 - [x] Account/profile settings page or modal
-- [ ] Auth-state-aware UX for verified status, reset actions, and session issues
+- [x] Auth-state-aware UX for verified status, reset actions, and session issues
 - [ ] Clear privileged-role onboarding policy and implementation
 - [ ] Updated auth documentation and test coverage
 
@@ -546,3 +546,8 @@ Use this section to track major roadmap updates.
 - **Phase:** Phase 2
 - **Update:** Implemented the adopted teacher-strict, admin-manual email verification flow across signup, login, and dashboard entry, including automatic verification-email send on signup, a dedicated verification gate page, resend and refresh actions, and dashboard blocking for unverified teacher sessions.
 - **Impact:** Self-serve teacher accounts must now verify their email before entering the main app, while privileged roles remain outside that gate pending the separate onboarding policy decision. Remaining Phase 2 work is broader auth-state UX polish, privileged-role onboarding rules, and documentation/test coverage.
+
+- **Date:** 2026-04-04
+- **Phase:** Phase 2
+- **Update:** Polished the auth-state UX across dashboard entry, login, and the verification gate by adding explicit redirect and session notices, a shared auth-notice handoff module, visible email verification status in Account Settings, and focused Playwright auth smoke coverage that runs with offline stubs for external CDN dependencies.
+- **Impact:** Auth redirects now explain why the user moved between surfaces, verified session state is visible inside the in-app account summary, password reset remains intact, and the polished login, signup, verify-email, and dashboard entry flows have passing focused smoke validation. Remaining Phase 2 work is privileged-role onboarding rules plus broader documentation and test expansion.

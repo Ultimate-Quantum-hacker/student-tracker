@@ -11,11 +11,15 @@ import {
   reloadCurrentUserAuthState,
   logoutUser
 } from './auth.js';
+import {
+  consumeAuthPageNotice,
+  storeAuthPageNotice,
+  storeAppToastNotice
+} from './auth-notices.js';
 
 const LOGIN_PAGE_PATH = '/login.html';
 const DASHBOARD_PATH = '/index.html';
 const VERIFY_EMAIL_PAGE_PATH = '/verify-email.html';
-const AUTH_VERIFICATION_NOTICE_KEY = 'authVerificationNotice';
 
 const redirectToLogin = () => {
   if (window.location.pathname.endsWith(LOGIN_PAGE_PATH)) return;
@@ -56,59 +60,6 @@ const setFeedback = (errorEl, message, tone = 'error') => {
   }
 };
 
-const storeVerificationNotice = (message, tone = 'info') => {
-  if (typeof sessionStorage === 'undefined') {
-    return;
-  }
-
-  const normalizedMessage = String(message || '').trim();
-  if (!normalizedMessage) {
-    sessionStorage.removeItem(AUTH_VERIFICATION_NOTICE_KEY);
-    return;
-  }
-
-  sessionStorage.setItem(
-    AUTH_VERIFICATION_NOTICE_KEY,
-    JSON.stringify({ message: normalizedMessage, tone: String(tone || 'info').trim() || 'info' })
-  );
-};
-
-const consumeVerificationNotice = () => {
-  if (typeof sessionStorage === 'undefined') {
-    return null;
-  }
-
-  const stored = sessionStorage.getItem(AUTH_VERIFICATION_NOTICE_KEY);
-  if (!stored) {
-    return null;
-  }
-
-  sessionStorage.removeItem(AUTH_VERIFICATION_NOTICE_KEY);
-
-  try {
-    const parsed = JSON.parse(stored);
-    const message = String(parsed?.message || '').trim();
-    if (!message) {
-      return null;
-    }
-
-    return {
-      message,
-      tone: String(parsed?.tone || 'info').trim() || 'info'
-    };
-  } catch {
-    const message = String(stored || '').trim();
-    if (!message) {
-      return null;
-    }
-
-    return {
-      message,
-      tone: 'info'
-    };
-  }
-};
-
 const resolveAuthProfile = async (authUser) => {
   const profile = await resolveUserAccountProfile(authUser);
   return {
@@ -132,11 +83,17 @@ const resolveRedirectTarget = async (authUser) => {
   };
 };
 
-const routeAuthenticatedUser = async (authUser) => {
+const routeAuthenticatedUser = async (authUser, { verificationRequiredNotice = null, dashboardNotice = null } = {}) => {
   const decision = await resolveRedirectTarget(authUser);
   if (decision.destination === 'verify-email') {
+    if (verificationRequiredNotice?.message) {
+      storeAuthPageNotice(verificationRequiredNotice.message, verificationRequiredNotice.tone || 'info');
+    }
     redirectToVerification();
   } else if (decision.destination === 'dashboard') {
+    if (dashboardNotice?.message) {
+      storeAppToastNotice(dashboardNotice.message, dashboardNotice.tone || 'info');
+    }
     redirectToDashboard();
   }
   return decision;
@@ -246,17 +203,26 @@ const handleAuthSubmit = async (mode, form, errorEl, submitBtn, defaultLabel) =>
       ? await registerUser(payload)
       : await loginUser(payload);
 
+    let verificationRequiredNotice = null;
     if (mode === 'signup') {
-      if (authUser?.verificationEmailSent) {
-        storeVerificationNotice(`We sent a verification link to ${payload.email}. Open it to continue.`, 'success');
-      } else {
-        storeVerificationNotice('Your account was created, but we could not send the verification email yet. Use the resend button on the next screen.', 'info');
-      }
+      verificationRequiredNotice = authUser?.verificationEmailSent
+        ? {
+          message: `We sent a verification link to ${payload.email}. Open it to continue.`,
+          tone: 'success'
+        }
+        : {
+          message: 'Your account was created, but we could not send the verification email yet. Use the resend button on the next screen.',
+          tone: 'info'
+        };
     } else {
-      storeVerificationNotice('');
+      storeAuthPageNotice('');
+      verificationRequiredNotice = {
+        message: 'Your email is not verified yet. Use the link in your inbox or resend it below.',
+        tone: 'info'
+      };
     }
 
-    await routeAuthenticatedUser(authUser);
+    await routeAuthenticatedUser(authUser, { verificationRequiredNotice });
   } catch (error) {
     console.error('Authentication action failed:', error);
     setFeedback(errorEl, formatAuthError(error));
@@ -312,18 +278,22 @@ const initVerifyEmailPage = async () => {
 
   const authUser = await waitForInitialAuthState();
   if (!authUser) {
+    storeAuthPageNotice('Sign in to continue to the verification screen.', 'info');
     redirectToLogin();
     return;
   }
 
   const initialDecision = await resolveRedirectTarget(authUser);
   if (initialDecision.destination !== 'verify-email') {
+    if (Boolean(initialDecision.profile?.emailVerified)) {
+      storeAppToastNotice('Email verified. Welcome back to your dashboard.', 'success');
+    }
     redirectToDashboard();
     return;
   }
 
   renderVerificationContext(initialDecision.profile);
-  const initialNotice = consumeVerificationNotice();
+  const initialNotice = consumeAuthPageNotice();
   if (initialNotice?.message) {
     setFeedback(errorEl, initialNotice.message, initialNotice.tone);
   } else {
@@ -365,6 +335,9 @@ const initVerifyEmailPage = async () => {
       const refreshedAuthUser = await reloadCurrentUserAuthState();
       const refreshedDecision = await resolveRedirectTarget(refreshedAuthUser);
       if (refreshedDecision.destination === 'dashboard') {
+        if (Boolean(refreshedDecision.profile?.emailVerified ?? refreshedAuthUser?.emailVerified)) {
+          storeAppToastNotice('Email verified. Welcome to your dashboard.', 'success');
+        }
         redirectToDashboard();
         return;
       }
@@ -390,6 +363,7 @@ const initVerifyEmailPage = async () => {
 
     try {
       await logoutUser();
+      storeAuthPageNotice('You signed out. Use another account to continue.', 'info');
       redirectToLogin();
     } catch (error) {
       console.error('Logout failed:', error);
@@ -430,11 +404,21 @@ const initAuthPage = async () => {
   try {
     const authUser = await waitForInitialAuthState();
     if (authUser) {
-      await routeAuthenticatedUser(authUser);
+      await routeAuthenticatedUser(authUser, {
+        verificationRequiredNotice: {
+          message: 'This account still needs email verification before dashboard access.',
+          tone: 'info'
+        }
+      });
       return;
     }
   } catch (error) {
     console.error('Unable to resolve initial authentication state:', error);
+  }
+
+  const persistedNotice = consumeAuthPageNotice();
+  if (persistedNotice?.message) {
+    setFeedback(errorEl, persistedNotice.message, persistedNotice.tone);
   }
 
   initPasswordToggle();

@@ -23,20 +23,31 @@ import {
   normalizeUserRole,
   shouldBlockForEmailVerification
 } from './auth.js';
+import {
+  consumeAppToastNotice,
+  storeAuthPageNotice
+} from './auth-notices.js';
 
 app._initialized = app._initialized || false;
 let authSubscriptionCleanup = null;
 let hasReceivedInitialAuthSubscription = false;
+let isManualSignOutInProgress = false;
 
 const LOGIN_PAGE_PATH = '/login.html';
 const VERIFY_EMAIL_PAGE_PATH = '/verify-email.html';
 
-const redirectToLogin = () => {
+const redirectToLogin = (notice = null) => {
+  if (notice?.message) {
+    storeAuthPageNotice(notice.message, notice.tone || 'info');
+  }
   if (window.location.pathname.endsWith(LOGIN_PAGE_PATH)) return;
   window.location.replace(LOGIN_PAGE_PATH);
 };
 
-const redirectToVerification = () => {
+const redirectToVerification = (notice = null) => {
+  if (notice?.message) {
+    storeAuthPageNotice(notice.message, notice.tone || 'info');
+  }
   if (window.location.pathname.endsWith(VERIFY_EMAIL_PAGE_PATH)) return;
   window.location.replace(VERIFY_EMAIL_PAGE_PATH);
 };
@@ -166,21 +177,30 @@ const clearLoadedDataForLogout = () => {
 const ensureAuthenticatedSession = async () => {
   if (!isAuthAvailable()) {
     console.error('Authentication service unavailable. Redirecting to login.');
-    redirectToLogin();
+    redirectToLogin({
+      message: 'Authentication is unavailable right now. Check your configuration and sign in again.',
+      tone: 'error'
+    });
     return false;
   }
 
   try {
     const authUser = await waitForInitialAuthState();
     if (!authUser) {
-      redirectToLogin();
+      redirectToLogin({
+        message: 'Please sign in to continue to the dashboard.',
+        tone: 'info'
+      });
       return false;
     }
 
     setAuthUserState(authUser);
     const resolvedProfile = await setResolvedUserRole(authUser);
     if (shouldBlockForEmailVerification(resolvedProfile, resolvedProfile?.role)) {
-      redirectToVerification();
+      redirectToVerification({
+        message: 'Verify your email to continue to the dashboard.',
+        tone: 'info'
+      });
       return false;
     }
     if (typeof app.syncDataContext === 'function') {
@@ -193,7 +213,10 @@ const ensureAuthenticatedSession = async () => {
   } catch (error) {
     console.error('Failed to resolve authentication state:', error);
     app.setCurrentUserRole('teacher', { resolved: true });
-    redirectToLogin();
+    redirectToLogin({
+      message: 'We could not restore your session. Sign in again to continue.',
+      tone: 'info'
+    });
     return false;
   }
 };
@@ -202,16 +225,31 @@ const handleAuthUserChange = async (authUser) => {
   const previousUid = app.state.authUser?.uid || '';
 
   if (!authUser) {
+    const redirectNotice = isManualSignOutInProgress
+      ? {
+        message: 'You signed out successfully.',
+        tone: 'info'
+      }
+      : {
+        message: previousUid
+          ? 'Your session ended. Sign in again to continue.'
+          : 'Please sign in to continue to the dashboard.',
+        tone: 'info'
+      };
+    isManualSignOutInProgress = false;
     setAuthUserState(null);
     clearLoadedDataForLogout();
-    redirectToLogin();
+    redirectToLogin(redirectNotice);
     return;
   }
 
   setAuthUserState(authUser);
   const resolvedProfile = await setResolvedUserRole(authUser);
   if (shouldBlockForEmailVerification(resolvedProfile, resolvedProfile?.role)) {
-    redirectToVerification();
+    redirectToVerification({
+      message: 'Verify your email to continue to the dashboard.',
+      tone: 'info'
+    });
     return;
   }
   if (typeof app.syncDataContext === 'function') {
@@ -280,12 +318,17 @@ const ensureLogoutButton = () => {
     button.textContent = 'Signing out...';
 
     try {
+      isManualSignOutInProgress = true;
       await logoutUser();
       setAuthUserState(null);
       clearLoadedDataForLogout();
-      redirectToLogin();
+      redirectToLogin({
+        message: 'You signed out successfully.',
+        tone: 'info'
+      });
     } catch (error) {
       console.error('Logout failed:', error);
+      isManualSignOutInProgress = false;
       if (ui.showToast) {
         ui.showToast(formatAuthError(error));
       }
@@ -405,8 +448,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     console.log('Events bound successfully');
 
+    const launchNotice = consumeAppToastNotice();
     if (app.state?.error && ui.showToast) {
       ui.showToast(app.state.error);
+    } else if (launchNotice?.message && ui.showToast) {
+      ui.showToast(launchNotice.message, {
+        duration: launchNotice.tone === 'success' ? 2800 : 2200
+      });
     }
 
     if (ui.refreshUI) {

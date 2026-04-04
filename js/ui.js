@@ -146,6 +146,7 @@ const domIds = {
   accountSettingsUpdatedAtInput: 'account-settings-updated-at-input',
   accountSettingsCreatedAtValue: 'account-settings-created-at-value',
   accountSettingsClassValue: 'account-settings-class-value',
+  accountSettingsEmailStatusValue: 'account-settings-email-status-value',
   accountSettingsSessionStatus: 'account-settings-session-status',
   accountSettingsFeedback: 'account-settings-feedback',
   accountSettingsSaveBtn: 'account-settings-save-btn',
@@ -1051,6 +1052,7 @@ const ui = {
       const hasSession = Boolean(app.state.authUser?.uid);
       const displayName = String(app.state.authUser?.name || app.state.authUser?.email || '').trim();
       const email = String(app.state.authUser?.email || '').trim();
+      const normalizedRole = normalizeUserRole(app.state.authUser?.role || app.state.currentUserRole);
       const roleLabel = hasSession
         ? this.formatRoleLabel(app.state.authUser?.role || app.state.currentUserRole)
         : 'Not signed in';
@@ -1061,6 +1063,13 @@ const ui = {
         ? this.formatAccountTimestamp(app.state.authUser?.updatedAt, 'Not yet saved')
         : 'Not available';
       const classLabel = hasSession ? this.getCurrentClassDisplayLabel() : 'No class selected';
+      const emailStatus = !hasSession
+        ? { label: 'Not available', tone: 'inactive' }
+        : app.state.authUser?.emailVerified
+          ? { label: 'Verified', tone: 'verified' }
+          : normalizedRole === 'admin' || normalizedRole === 'developer'
+            ? { label: 'Manual review for this role', tone: 'managed' }
+            : { label: 'Pending verification', tone: 'attention' };
       const shouldPreserveDraft = document.activeElement === app.dom.accountSettingsNameInput && !this.isSavingAccountSettings;
       const currentDraftValue = shouldPreserveDraft ? String(app.dom.accountSettingsNameInput?.value || '') : '';
 
@@ -1082,6 +1091,10 @@ const ui = {
       }
       if (app.dom.accountSettingsClassValue) {
         app.dom.accountSettingsClassValue.textContent = classLabel;
+      }
+      if (app.dom.accountSettingsEmailStatusValue) {
+        app.dom.accountSettingsEmailStatusValue.textContent = emailStatus.label;
+        app.dom.accountSettingsEmailStatusValue.dataset.tone = emailStatus.tone;
       }
       if (app.dom.accountSettingsSessionStatus) {
         app.dom.accountSettingsSessionStatus.textContent = hasSession
