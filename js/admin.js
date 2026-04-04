@@ -31,7 +31,6 @@ import {
   prefersReducedMotion,
   buildEmptyTableRowMarkup,
   buildIdentityMarkup,
-  buildStudentIdentityMarkup,
   buildOwnerIdentityMarkup,
   buildStackedTextMarkup,
   buildRoleBadgeMarkup,
@@ -39,6 +38,7 @@ import {
   buildTableHelperTextMarkup,
   buildActivityGroupRowMarkup,
   buildActivityEventMarkup,
+  buildGlobalSearchResultRowMarkup,
   formatRoleLabel,
   getRoleBadgeClass,
   formatCreatedAt,
@@ -723,21 +723,13 @@ const renderGlobalSearchResults = (entries = []) => {
     const ownerLabel = normalizeDisplayText(owner?.name || owner?.email || '', 'Unknown owner');
     const ownerRole = normalizeUserRole(owner?.role || entry.userRole || 'teacher');
     const classLabel = normalizeDisplayText(entry.className || entry.classId || '', '—');
-    return `
-      <tr class="fade-in">
-        <td>${buildStudentIdentityMarkup({ label: studentLabel })}</td>
-        <td>${buildOwnerIdentityMarkup({
-          label: ownerLabel,
-          secondary: 'Data owner',
-          role: ownerRole
-        })}</td>
-        <td>${buildRoleBadgeMarkup(ownerRole)}</td>
-        <td>${buildClassTokenMarkup({
-          label: classLabel,
-          title: normalizeDisplayText(entry.classId || '', '')
-        })}</td>
-      </tr>
-    `;
+    return buildGlobalSearchResultRowMarkup({
+      studentLabel,
+      ownerLabel,
+      ownerRole,
+      classLabel,
+      classId: entry.classId || ''
+    });
   }).join('');
 };
 

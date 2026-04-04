@@ -209,6 +209,30 @@ export const buildActivityEventMarkup = ({
   `;
 };
 
+export const buildGlobalSearchResultRowMarkup = ({
+  studentLabel = 'Student',
+  ownerLabel = 'Unknown owner',
+  ownerRole = '',
+  classLabel = '—',
+  classId = ''
+} = {}) => {
+  return `
+    <tr class="fade-in">
+      <td>${buildStudentIdentityMarkup({ label: studentLabel })}</td>
+      <td>${buildOwnerIdentityMarkup({
+        label: ownerLabel,
+        secondary: 'Data owner',
+        role: ownerRole
+      })}</td>
+      <td>${buildRoleBadgeMarkup(ownerRole)}</td>
+      <td>${buildClassTokenMarkup({
+        label: classLabel,
+        title: classId
+      })}</td>
+    </tr>
+  `;
+};
+
  export const formatRoleLabel = (role) => {
    const rawRole = normalizeText(role).toLowerCase();
    if (rawRole === ROLE_STUDENT) return 'Student';
