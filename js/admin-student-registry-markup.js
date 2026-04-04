@@ -86,6 +86,21 @@ const buildAdminStudentsSkeletonStackMarkup = () => {
   `;
 };
 
+const buildAdminStudentsSkeletonRowMarkup = () => {
+  return `
+    <tr class="admin-students-row-skeleton" aria-hidden="true">
+      <td>${buildAdminStudentsSkeletonStackMarkup()}</td>
+      <td>${buildAdminStudentsSkeletonStackMarkup()}</td>
+      <td>${buildAdminStudentsSkeletonStackMarkup()}</td>
+      <td>
+        <div class="admin-students-row-actions">
+          <div class="admin-students-skeleton admin-students-skeleton-action"></div>
+        </div>
+      </td>
+    </tr>
+  `;
+};
+
 export const buildAdminStudentsSkeletonMarkup = ({
   rowCount = 6,
   columnCount = 4
@@ -100,16 +115,7 @@ export const buildAdminStudentsSkeletonMarkup = ({
         columnCount: normalizedColumnCount,
         isSkeleton: true
       }) : ''}
-      <tr class="admin-students-row-skeleton" aria-hidden="true">
-        <td>${buildAdminStudentsSkeletonStackMarkup()}</td>
-        <td>${buildAdminStudentsSkeletonStackMarkup()}</td>
-        <td>${buildAdminStudentsSkeletonStackMarkup()}</td>
-        <td>
-          <div class="admin-students-row-actions">
-            <div class="admin-students-skeleton admin-students-skeleton-action"></div>
-          </div>
-        </td>
-      </tr>
+      ${buildAdminStudentsSkeletonRowMarkup()}
     `;
   }).join('');
 };
