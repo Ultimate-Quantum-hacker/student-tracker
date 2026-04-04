@@ -163,12 +163,16 @@ export const buildStackedTextMarkup = ({
 export const buildEmptyTableRowMarkup = ({
   columnCount = 1,
   icon = 'ℹ️',
-  message = 'No items found.'
+  title = '',
+  message = 'No items found.',
+  containerClass = 'smart-empty'
 } = {}) => {
   const normalizedColumnCount = Math.max(1, Number.parseInt(columnCount, 10) || 1);
   const normalizedIcon = normalizeDisplayText(icon, 'ℹ️');
+  const normalizedTitle = normalizeDisplayText(title, '');
   const normalizedMessage = normalizeDisplayText(message, 'No items found.');
-  return `<tr><td colspan="${normalizedColumnCount}" class="empty-row"><div class="smart-empty"><span>${escapeHtml(normalizedIcon)}</span><p>${escapeHtml(normalizedMessage)}</p></div></td></tr>`;
+  const normalizedContainerClass = normalizeText(containerClass) || 'smart-empty';
+  return `<tr><td colspan="${normalizedColumnCount}" class="empty-row"><div class="${escapeHtml(normalizedContainerClass)}"><span>${escapeHtml(normalizedIcon)}</span>${normalizedTitle ? `<strong>${escapeHtml(normalizedTitle)}</strong>` : ''}<p>${escapeHtml(normalizedMessage)}</p></div></td></tr>`;
 };
 
 export const buildTableHelperTextMarkup = (message = '') => {

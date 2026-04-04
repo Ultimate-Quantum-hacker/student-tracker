@@ -1,4 +1,5 @@
 import {
+  buildEmptyTableRowMarkup,
   buildStudentIdentityMarkup,
   buildStackedTextMarkup,
   escapeHtml,
@@ -37,16 +38,6 @@ const buildAdminStudentsActionMarkup = (student = {}, { canDelete = false } = {}
       >Delete</button>
     </div>
   `;
-};
-
-const buildAdminStudentsEmptyStateMarkup = ({
-  columnCount = 4,
-  icon = '🎓',
-  title = 'No student records found.',
-  detail = 'There are no active student entries to display in the registry right now.'
-} = {}) => {
-  const normalizedColumnCount = normalizePositiveInteger(columnCount, 4);
-  return `<tr><td colspan="${normalizedColumnCount}" class="empty-row"><div class="smart-empty admin-students-empty"><span>${escapeHtml(icon)}</span><strong>${escapeHtml(title)}</strong><p>${escapeHtml(detail)}</p></div></td></tr>`;
 };
 
 const buildAdminStudentsSkeletonStackMarkup = () => {
@@ -92,17 +83,19 @@ export const buildAdminStudentsTableMarkup = (groups = [], {
   const normalizedColumnCount = normalizePositiveInteger(columnCount, 4);
   if (!Array.isArray(groups) || !groups.length) {
     return hasActiveCriteria
-      ? buildAdminStudentsEmptyStateMarkup({
+      ? buildEmptyTableRowMarkup({
           columnCount: normalizedColumnCount,
           icon: '🔎',
           title: 'No students match your filters.',
-          detail: 'Try adjusting the search, class, or teacher filters.'
+          message: 'Try adjusting the search, class, or teacher filters.',
+          containerClass: 'smart-empty admin-students-empty'
         })
-      : buildAdminStudentsEmptyStateMarkup({
+      : buildEmptyTableRowMarkup({
           columnCount: normalizedColumnCount,
           icon: '🎓',
           title: 'No student records found.',
-          detail: 'The global registry does not have any active student entries to show yet.'
+          message: 'The global registry does not have any active student entries to show yet.',
+          containerClass: 'smart-empty admin-students-empty'
         });
   }
 
