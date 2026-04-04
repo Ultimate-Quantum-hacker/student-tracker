@@ -101,6 +101,28 @@ const buildAdminStudentsSkeletonRowMarkup = () => {
   `;
 };
 
+const buildAdminStudentsEmptyStateMarkup = ({
+  hasActiveCriteria = false,
+  columnCount = 4
+} = {}) => {
+  const normalizedColumnCount = normalizePositiveInteger(columnCount, 4);
+  return hasActiveCriteria
+    ? buildEmptyTableRowMarkup({
+        columnCount: normalizedColumnCount,
+        icon: '🔎',
+        title: 'No students match your filters.',
+        message: 'Try adjusting the search, class, or teacher filters.',
+        containerClass: 'smart-empty admin-students-empty'
+      })
+    : buildEmptyTableRowMarkup({
+        columnCount: normalizedColumnCount,
+        icon: '🎓',
+        title: 'No student records found.',
+        message: 'The global registry does not have any active student entries to show yet.',
+        containerClass: 'smart-empty admin-students-empty'
+      });
+};
+
 export const buildAdminStudentsSkeletonMarkup = ({
   rowCount = 6,
   columnCount = 4
@@ -128,21 +150,10 @@ export const buildAdminStudentsTableMarkup = (groups = [], {
 } = {}) => {
   const normalizedColumnCount = normalizePositiveInteger(columnCount, 4);
   if (!Array.isArray(groups) || !groups.length) {
-    return hasActiveCriteria
-      ? buildEmptyTableRowMarkup({
-          columnCount: normalizedColumnCount,
-          icon: '🔎',
-          title: 'No students match your filters.',
-          message: 'Try adjusting the search, class, or teacher filters.',
-          containerClass: 'smart-empty admin-students-empty'
-        })
-      : buildEmptyTableRowMarkup({
-          columnCount: normalizedColumnCount,
-          icon: '🎓',
-          title: 'No student records found.',
-          message: 'The global registry does not have any active student entries to show yet.',
-          containerClass: 'smart-empty admin-students-empty'
-        });
+    return buildAdminStudentsEmptyStateMarkup({
+      hasActiveCriteria,
+      columnCount: normalizedColumnCount
+    });
   }
 
   let studentNumber = Math.max(0, Number(startIndex) || 0);
