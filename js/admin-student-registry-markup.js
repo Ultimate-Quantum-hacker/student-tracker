@@ -40,6 +40,29 @@ const buildAdminStudentsActionMarkup = (student = {}, { canDelete = false } = {}
   `;
 };
 
+const buildAdminStudentsTableRowMarkup = (student = {}, {
+  studentNumber = 1,
+  canDelete = false
+} = {}) => {
+  const classLabel = normalizeDisplayText(student?.className, 'Unknown Class');
+  return `
+    <tr class="fade-in">
+      <td>${buildStudentIdentityMarkup({ label: student?.name, avatarLabel: String(studentNumber) })}</td>
+      <td>${buildStackedTextMarkup({
+        containerClass: 'admin-student-meta',
+        primary: classLabel,
+        secondary: 'Class assignment'
+      })}</td>
+      <td>${buildStackedTextMarkup({
+        containerClass: 'admin-student-meta',
+        primary: student?.teacherName,
+        secondary: 'Teacher'
+      })}</td>
+      <td>${buildAdminStudentsActionMarkup(student, { canDelete })}</td>
+    </tr>
+  `;
+};
+
 const buildAdminStudentsSkeletonStackMarkup = () => {
   return `
     <div class="admin-students-skeleton-stack">
@@ -104,23 +127,10 @@ export const buildAdminStudentsTableMarkup = (groups = [], {
     const groupLabel = normalizeDisplayText(group?.label, 'Unknown Class');
     const rows = (Array.isArray(group?.students) ? group.students : []).map((student) => {
       studentNumber += 1;
-      const classLabel = normalizeDisplayText(student?.className, 'Unknown Class');
-      return `
-        <tr class="fade-in">
-          <td>${buildStudentIdentityMarkup({ label: student?.name, avatarLabel: String(studentNumber) })}</td>
-          <td>${buildStackedTextMarkup({
-            containerClass: 'admin-student-meta',
-            primary: classLabel,
-            secondary: 'Class assignment'
-          })}</td>
-          <td>${buildStackedTextMarkup({
-            containerClass: 'admin-student-meta',
-            primary: student?.teacherName,
-            secondary: 'Teacher'
-          })}</td>
-          <td>${buildAdminStudentsActionMarkup(student, { canDelete })}</td>
-        </tr>
-      `;
+      return buildAdminStudentsTableRowMarkup(student, {
+        studentNumber,
+        canDelete
+      });
     }).join('');
 
     return `<tr class="admin-students-group-row"><td colspan="${normalizedColumnCount}">${escapeHtml(groupLabel)}</td></tr>${rows}`;
