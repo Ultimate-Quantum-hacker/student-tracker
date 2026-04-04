@@ -11,6 +11,32 @@ const normalizePositiveInteger = (value, fallback = 1) => {
   return Math.max(1, Number.parseInt(value, 10) || normalizedFallback);
 };
 
+const buildAdminStudentsDeleteButtonMarkup = ({
+  ownerId = '',
+  studentId = '',
+  studentName = 'Student',
+  buttonTitle = '',
+  isDisabled = false
+} = {}) => {
+  const safeOwnerId = normalizeDisplayText(ownerId, '');
+  const safeStudentId = normalizeDisplayText(studentId, '');
+  const safeStudentName = normalizeDisplayText(studentName, 'Student');
+  const safeButtonTitle = normalizeDisplayText(buttonTitle, 'Delete Student');
+  return `
+    <button
+      class="btn btn-danger admin-student-delete-btn"
+      type="button"
+      data-admin-student-delete="true"
+      data-owner-id="${escapeHtml(safeOwnerId)}"
+      data-student-id="${escapeHtml(safeStudentId)}"
+      data-student-name="${escapeHtml(safeStudentName)}"
+      aria-label="${escapeHtml(safeButtonTitle)}"
+      title="${escapeHtml(safeButtonTitle)}"
+      ${isDisabled ? 'disabled' : ''}
+    >Delete</button>
+  `;
+};
+
 const buildAdminStudentsActionMarkup = (student = {}, { canDelete = false } = {}) => {
   const ownerId = normalizeDisplayText(student?.ownerId, '');
   const studentId = normalizeDisplayText(student?.studentId, '');
@@ -25,17 +51,13 @@ const buildAdminStudentsActionMarkup = (student = {}, { canDelete = false } = {}
 
   return `
     <div class="table-actions-cell admin-student-row-actions">
-      <button
-        class="btn btn-danger admin-student-delete-btn"
-        type="button"
-        data-admin-student-delete="true"
-        data-owner-id="${escapeHtml(ownerId)}"
-        data-student-id="${escapeHtml(studentId)}"
-        data-student-name="${escapeHtml(studentName)}"
-        aria-label="${escapeHtml(buttonTitle)}"
-        title="${escapeHtml(buttonTitle)}"
-        ${isDisabled ? 'disabled' : ''}
-      >Delete</button>
+      ${buildAdminStudentsDeleteButtonMarkup({
+        ownerId,
+        studentId,
+        studentName,
+        buttonTitle,
+        isDisabled
+      })}
     </div>
   `;
 };
