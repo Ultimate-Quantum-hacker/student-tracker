@@ -92,6 +92,15 @@ const buildAdminStudentsSkeletonGroupRowMarkup = ({
   return `<tr class="admin-students-group-row admin-students-group-row-skeleton" aria-hidden="true"><td colspan="${normalizedColumnCount}"><div class="admin-students-skeleton admin-students-skeleton-group"></div></td></tr>`;
 };
 
+const buildAdminStudentsLabeledGroupRowMarkup = ({
+  label = '',
+  columnCount = 4
+} = {}) => {
+  const normalizedColumnCount = normalizePositiveInteger(columnCount, 4);
+  const safeLabel = normalizeDisplayText(label, 'Unknown Class');
+  return `<tr class="admin-students-group-row"><td colspan="${normalizedColumnCount}">${escapeHtml(safeLabel)}</td></tr>`;
+};
+
 const buildAdminStudentsGroupRowMarkup = ({
   label = '',
   columnCount = 4,
@@ -104,8 +113,10 @@ const buildAdminStudentsGroupRowMarkup = ({
     });
   }
 
-  const safeLabel = normalizeDisplayText(label, 'Unknown Class');
-  return `<tr class="admin-students-group-row"><td colspan="${normalizedColumnCount}">${escapeHtml(safeLabel)}</td></tr>`;
+  return buildAdminStudentsLabeledGroupRowMarkup({
+    label,
+    columnCount: normalizedColumnCount
+  });
 };
 
 const buildAdminStudentsSkeletonStackMarkup = () => {
