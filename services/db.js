@@ -24,6 +24,10 @@ import {
   authReadyPromise,
   onAuthStateChanged
 } from '../js/firebase.js';
+import {
+  normalizeStudentName,
+  assertValidStudentName
+} from '../js/student-name-utils.js';
 
 const CACHE_KEY_PREFIX = 'studentAppData';
 const USERS_COLLECTION = 'users';
@@ -1285,21 +1289,6 @@ const normalizeClassId = (value) => String(value || '').trim();
 const normalizeClassName = (value, fallback = DEFAULT_CLASS_NAME) => {
   const normalized = String(value || '').trim();
   return normalized || fallback;
-};
-const normalizeStudentName = (value, fallback = '') => {
-  const normalized = String(value || '').trim().replace(/\s+/g, ' ').toUpperCase();
-  return normalized || fallback;
-};
-const STUDENT_NAME_PATTERN = /^[A-Z\s]+$/;
-const assertValidStudentName = (value) => {
-  const normalized = normalizeStudentName(value);
-  if (!normalized) {
-    throw new Error('Student name is required');
-  }
-  if (!STUDENT_NAME_PATTERN.test(normalized)) {
-    throw new Error('Student names can only contain letters and spaces');
-  }
-  return normalized;
 };
 
 const getClassSelectionKeyForUser = (userId) => `${CACHE_KEY_PREFIX}:activeClass:${userId}`;

@@ -121,7 +121,7 @@ const exportModule = {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `JHS3_Tracker_Backup_${new Date().toISOString().split('T')[0]}.json`;
+      a.download = `student-performance-tracker-backup-${new Date().toISOString().split('T')[0]}.json`;
       a.click();
       app.ui.showToast('Backup downloaded');
     },
@@ -189,7 +189,7 @@ const exportModule = {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'Mock_Results.csv';
+      a.download = `student-performance-tracker-results-${this.getExportDateStamp()}.csv`;
       a.click();
     },
 
@@ -482,7 +482,7 @@ const exportModule = {
 
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Performance Report');
-        XLSX.writeFile(wb, `student-data-${dateStamp}.xlsx`, { bookType: 'xlsx', cellStyles: true });
+        XLSX.writeFile(wb, `student-performance-tracker-report-${dateStamp}.xlsx`, { bookType: 'xlsx', cellStyles: true });
 
         app.ui.showToast('Export complete');
       } catch (err) {

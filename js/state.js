@@ -4,6 +4,7 @@
    ═══════════════════════════════════════════════ */
 
 import * as dataService from '../services/db.js';
+import { normalizeStudentName } from './student-name-utils.js';
 
 window.TrackerApp = window.TrackerApp || {};
 
@@ -390,10 +391,6 @@ window.TrackerApp = window.TrackerApp || {};
   });
 
   const normalizeLabel = (value) => String(value || '').trim();
-  const normalizeStudentName = (value, fallback = '') => {
-    const normalized = String(value || '').trim().replace(/\s+/g, ' ').toUpperCase();
-    return normalized || fallback;
-  };
   const normalizeStudentUpdate = (studentData = {}) => {
     const nextStudentData = studentData && typeof studentData === 'object' ? { ...studentData } : {};
     if (Object.prototype.hasOwnProperty.call(nextStudentData, 'name')) {
@@ -667,7 +664,7 @@ window.TrackerApp = window.TrackerApp || {};
 
     app.state.students = (data.students || []).map((student, idx) => ({
       id: student.id || createId('st', student.name || `student-${idx + 1}`, idx),
-      name: normalizeStudentName(student.name, `STUDENT ${idx + 1}`),
+      name: normalizeStudentName(student.name, `Student ${idx + 1}`),
       notes: student.notes || '',
       class: student.class || '',
       scores: student.scores && typeof student.scores === 'object' ? student.scores : {}
@@ -1790,8 +1787,12 @@ window.TrackerApp = window.TrackerApp || {};
   app.importData = async function (importData) {
     return enqueueStateWrite(async () => {
       try {
-        if (!app.state.isRoleResolved || !app.isDeveloperRole()) {
-          throw new Error('Developer access required for import');
+        if (!app.state.isRoleResolved) {
+          throw new Error('Permissions are still loading');
+        }
+
+        if (!app.canCurrentRoleWrite()) {
+          throw new Error('Admin read-only mode: cannot import data');
         }
 
         app.state.isLoading = true;

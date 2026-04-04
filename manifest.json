@@ -1,7 +1,7 @@
 {
-  "name": "Student Exam Tracker",
-  "short_name": "SE Tracker",
-  "description": "Track JHS 3 mock exams, rankings, trends and interventions for your class.",
+  "name": "Student Performance Tracker",
+  "short_name": "Student Tracker",
+  "description": "Track student performance, rankings, trends, and interventions for your class.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

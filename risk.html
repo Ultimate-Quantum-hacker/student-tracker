@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Performance Analysis</title>
+  <title>Student Performance Tracker</title>
   <style>
     :root {
       --bg: #f8fafc;
@@ -11,243 +11,83 @@
       --text: #0f172a;
       --muted: #64748b;
       --border: #e2e8f0;
-      --safe: #059669;
-      --borderline: #d97706;
-      --at-risk: #dc2626;
+      --primary: #2563eb;
     }
 
     body {
       margin: 0;
-      font-family: Inter, system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 1.5rem;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: var(--bg);
       color: var(--text);
-      padding: 1.25rem;
     }
 
     .card {
-      max-width: 720px;
-      margin: 0 auto;
+      width: min(100%, 36rem);
       background: var(--surface);
       border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 1rem;
-      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.07);
+      border-radius: 16px;
+      padding: 1.5rem;
+      box-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
     }
 
     h1 {
-      margin: 0 0 0.5rem;
-      font-size: 1.2rem;
+      margin: 0 0 0.75rem;
+      font-size: 1.4rem;
     }
 
-    .meta {
+    p {
+      margin: 0 0 1rem;
       color: var(--muted);
-      font-size: 0.9rem;
-      margin-bottom: 1rem;
+      line-height: 1.5;
     }
 
-    .pill {
-      display: inline-block;
-      border-radius: 999px;
-      padding: 0.25rem 0.7rem;
-      font-size: 0.8rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.03em;
-      margin-bottom: 0.85rem;
+    a {
+      color: var(--primary);
+      font-weight: 600;
+      text-decoration: none;
     }
 
-    .safe { background: #ecfdf5; color: var(--safe); }
-    .borderline { background: #fffbeb; color: var(--borderline); }
-    .at-risk { background: #fee2e2; color: var(--at-risk); }
-
-    ul { list-style: none; margin: 0; padding: 0; }
-
-    li {
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 0.7rem 0.85rem;
-      display: flex;
-      justify-content: space-between;
-      gap: 0.6rem;
-      margin-bottom: 0.6rem;
-    }
-
-    .name { font-weight: 600; }
-    .avg { color: var(--muted); }
-
-    .empty {
-      color: var(--muted);
-      border: 1px dashed var(--border);
-      border-radius: 10px;
-      padding: 1rem;
-      text-align: center;
+    a:hover {
+      text-decoration: underline;
     }
   </style>
 </head>
 <body>
-  <div class="card">
-    <h1 id="title">Performance Group</h1>
-    <div id="meta" class="meta"></div>
-    <span id="badge" class="pill">Safe</span>
-    <ul id="list"></ul>
-    <div id="empty" class="empty" style="display:none;">No students in this category.</div>
-  </div>
+  <main class="card">
+    <h1>Performance Analysis moved</h1>
+    <p id="message">Opening Performance Analysis in Student Performance Tracker…</p>
+    <a id="continue-link" href="index.html?section=performance-analysis">Open Student Performance Tracker</a>
+  </main>
 
   <script>
-    const STORAGE_KEY_PREFIX = 'studentAppData';
-    const CURRENT_CLASS_STORAGE_KEY = 'currentClassId';
+    const query = new URLSearchParams(window.location.search);
+    const requestedType = String(query.get('type') || '').trim().toLowerCase();
+    const destinationParams = new URLSearchParams({ section: 'performance-analysis' });
 
-    function getCurrentAuthUid() {
-      const uid = sessionStorage.getItem('currentAuthUid');
-      return uid ? String(uid).trim() : '';
+    if (requestedType === 'borderline' || requestedType === 'at-risk') {
+      destinationParams.set('category', requestedType);
     }
 
-    function getCurrentClassId() {
-      const localClassId = localStorage.getItem(CURRENT_CLASS_STORAGE_KEY);
-      if (localClassId && String(localClassId).trim()) {
-        return String(localClassId).trim();
-      }
+    const message = document.getElementById('message');
+    const continueLink = document.getElementById('continue-link');
+    const destination = `index.html?${destinationParams.toString()}`;
 
-      const sessionClassId = sessionStorage.getItem(CURRENT_CLASS_STORAGE_KEY);
-      return sessionClassId ? String(sessionClassId).trim() : '';
+    if (requestedType === 'safe') {
+      message.textContent = 'Safe students now appear across the Strong, Good, and Average categories in Student Performance Tracker. Opening Performance Analysis…';
+    } else if (requestedType === 'borderline') {
+      message.textContent = 'Opening the Borderline category in Student Performance Tracker…';
+    } else if (requestedType === 'at-risk') {
+      message.textContent = 'Opening the At Risk category in Student Performance Tracker…';
     }
 
-    function getStorageKeyForCurrentUser() {
-      const uid = getCurrentAuthUid();
-      const classId = getCurrentClassId();
-      return uid && classId ? `${STORAGE_KEY_PREFIX}:${uid}:${classId}` : '';
-    }
-
-    function normalizeLabel(value) {
-      return String(value || '').trim();
-    }
-
-    function toRawData(data) {
-      if (!data || typeof data !== 'object') {
-        return { students: [], subjects: [], exams: [] };
-      }
-
-      const subjects = (data.subjects || []).map(s => normalizeLabel(s?.name || s)).filter(Boolean);
-      const exams = (data.exams || []).map(e => normalizeLabel(e?.title || e?.name || e)).filter(Boolean);
-
-      const subjectIdToName = new Map((data.subjects || []).map(s => [s?.id, normalizeLabel(s?.name)]));
-      const examIdToName = new Map((data.exams || []).map(e => [e?.id, normalizeLabel(e?.title || e?.name)]));
-
-      const students = (data.students || []).map(student => {
-        const raw = {
-          name: normalizeLabel(student?.name),
-          scores: {}
-        };
-
-        const scoreMap = student?.scores || {};
-        Object.entries(scoreMap).forEach(([subjectKey, examMap]) => {
-          const subjectName = normalizeLabel(subjectIdToName.get(subjectKey) || subjectKey);
-          if (!subjectName || !examMap || typeof examMap !== 'object') return;
-          raw.scores[subjectName] = raw.scores[subjectName] || {};
-
-          Object.entries(examMap).forEach(([examKey, value]) => {
-            const examName = normalizeLabel(examIdToName.get(examKey) || examKey);
-            if (!examName) return;
-            const num = Number(value);
-            raw.scores[subjectName][examName] = isNaN(num) ? 0 : Math.max(0, Math.min(100, num));
-          });
-        });
-
-        return raw;
-      });
-
-      return { students, subjects, exams };
-    }
-
-    function getLatestExam(data) {
-      return data.exams[data.exams.length - 1];
-    }
-
-    function getAverage(data, student, exam) {
-      let total = 0;
-      let count = 0;
-
-      data.subjects.forEach(subject => {
-        const value = student.scores?.[subject]?.[exam];
-        if (value !== undefined && value !== null && value !== '' && !isNaN(value)) {
-          total += Number(value);
-          count++;
-        }
-      });
-
-      return count ? total / count : 0;
-    }
-
-    function getRiskLevel(avg) {
-      if (avg >= 70) return 'safe';
-      if (avg >= 50) return 'borderline';
-      return 'at-risk';
-    }
-
-    function groupStudentsByRisk(data) {
-      const latestExam = getLatestExam(data);
-      const groups = { safe: [], borderline: [], 'at-risk': [] };
-
-      (data.students || []).forEach(student => {
-        const avg = latestExam ? getAverage(data, student, latestExam) : 0;
-        const risk = getRiskLevel(avg);
-        groups[risk].push({ name: student.name || 'Unnamed', avg: avg.toFixed(1) });
-      });
-
-      return { groups, latestExam: latestExam || 'N/A' };
-    }
-
-    function getTypeLabel(type) {
-      if (type === 'at-risk') return 'At Risk';
-      if (type === 'borderline') return 'Borderline';
-      return 'Safe';
-    }
-
-    function render() {
-      const query = new URLSearchParams(window.location.search);
-      const type = ['safe', 'borderline', 'at-risk'].includes(query.get('type')) ? query.get('type') : 'safe';
-
-      const userStorageKey = getStorageKeyForCurrentUser();
-      const saved = userStorageKey ? localStorage.getItem(userStorageKey) : null;
-      let parsed = null;
-      try {
-        parsed = saved ? JSON.parse(saved) : null;
-      } catch (_error) {
-        parsed = null;
-      }
-
-      const payload = parsed && typeof parsed === 'object' && parsed.data ? parsed.data : parsed;
-      const rawData = toRawData(payload);
-      const { groups, latestExam } = groupStudentsByRisk(rawData);
-      const items = groups[type] || [];
-
-      const title = document.getElementById('title');
-      const meta = document.getElementById('meta');
-      const badge = document.getElementById('badge');
-      const list = document.getElementById('list');
-      const empty = document.getElementById('empty');
-
-      title.textContent = `${getTypeLabel(type)} Students`;
-      meta.textContent = `Latest Exam: ${latestExam} · Count: ${items.length}`;
-      badge.textContent = getTypeLabel(type);
-      badge.className = `pill ${type}`;
-
-      if (!items.length) {
-        list.innerHTML = '';
-        empty.style.display = 'block';
-        return;
-      }
-
-      empty.style.display = 'none';
-      list.innerHTML = items.map(item => `
-        <li>
-          <span class="name">${item.name}</span>
-          <span class="avg">Avg: ${item.avg}%</span>
-        </li>
-      `).join('');
-    }
-
-    render();
+    continueLink.href = destination;
+    window.setTimeout(() => {
+      window.location.replace(destination);
+    }, 120);
   </script>
 </body>
 </html>

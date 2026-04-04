@@ -143,30 +143,35 @@ const domIds = {
 
 const FEATURE_ACCESS_RULES = {
   developerTools: ['developer'],
-  exportData: ['developer'],
-  importData: ['developer'],
-  bulkImport: ['teacher', 'admin', 'developer'],
-  restorePoints: ['developer'],
-  resetSystem: ['developer'],
+  exportData: ['teacher', 'admin', 'developer'],
+  importData: ['teacher', 'developer'],
+  bulkImport: ['teacher', 'developer'],
+  restorePoints: ['teacher', 'developer'],
+  resetSystem: ['teacher', 'developer'],
   adminPanel: ['admin', 'developer']
 };
 
 const FEATURE_ACCESS_MESSAGES = {
   developerTools: 'Access restricted: Developer only',
-  exportData: 'Access restricted: Developer only',
-  importData: 'Access restricted: Developer only',
-  bulkImport: 'Access restricted: Teacher, Admin, or Developer only',
-  restorePoints: 'Access restricted: Developer only',
-  resetSystem: 'Access restricted: Developer only',
+  exportData: 'Access restricted: Signed-in users only',
+  importData: 'Access restricted: Teacher or Developer only',
+  bulkImport: 'Access restricted: Teacher or Developer only',
+  restorePoints: 'Access restricted: Teacher or Developer only',
+  resetSystem: 'Access restricted: Teacher or Developer only',
   adminPanel: 'Access restricted: Admin or Developer only'
 };
 
 const ui = {
-    isReportExporting: false,
-    hasPromptedForMissingClass: false,
-    hasBoundClassDropdownEvents: false,
-    hasBoundAccessGuardEvents: false,
-    bulkClassDeleteSelection: [],
+  isReportExporting: false,
+  hasPromptedForMissingClass: false,
+  hasBoundClassDropdownEvents: false,
+  hasBoundAccessGuardEvents: false,
+  bulkClassDeleteSelection: [],
+  toastTimer: null,
+  loaderHideTimer: null,
+  loaderRequestCount: 0,
+  readOnlyToastTimer: null,
+  trashRetentionDays: 3,
     toastTimer: null,
     loaderHideTimer: null,
     loaderRequestCount: 0,
@@ -300,7 +305,7 @@ const ui = {
     },
 
     normalizeStudentNameInputValue: function (value) {
-      return String(value || '').toUpperCase();
+      return String(value || '');
     },
 
     isReadOnlyRoleContext: function () {
@@ -1234,25 +1239,25 @@ const ui = {
       if (!this.requireAccess('resetSystem')) {
         return;
       }
-      if (!this.ensureWritableAction('Data reset')) {
+      if (!this.ensureWritableAction('Start a new class')) {
         return;
       }
       await this.withLoader(async () => {
         try {
           if (app.snapshots && typeof app.snapshots.saveSnapshot === 'function') {
-            app.snapshots.saveSnapshot('Auto Backup Before Reset');
+            app.snapshots.saveSnapshot('Auto Backup Before New Class');
           }
           await app.importData({ students: [], subjects: [], exams: [] });
           app.state.selectedBulkExamId = '';
           app.state.selectedPerformanceCategory = 'strong';
           this.refreshUI();
-          this.showToast('All data cleared');
+          this.showToast('New class started');
         } catch (error) {
           console.error('Failed to clear data:', error);
-          this.showToast('Failed to clear data');
+          this.showToast('Failed to start new class');
         }
       }, {
-        message: 'Clearing data...'
+        message: 'Starting new class...'
       });
     },
 
@@ -1740,6 +1745,43 @@ const ui = {
       }).join('');
     },
 
+    showContentSection: function (sectionId) {
+      const targetSectionId = String(sectionId || '').trim();
+      if (!targetSectionId) {
+        return;
+      }
+
+      if (app.sidebar && typeof app.sidebar.showSection === 'function') {
+        app.sidebar.showSection(targetSectionId);
+      } else {
+        document.querySelectorAll('.content-section').forEach(section => section.classList.remove('active'));
+        const targetSection = document.getElementById(targetSectionId);
+        if (targetSection) targetSection.classList.add('active');
+      }
+
+      document.querySelectorAll('.sidebar-item').forEach(item => {
+        item.classList.toggle('active', item.dataset.section === targetSectionId);
+      });
+    },
+
+    applyLaunchRoute: function () {
+      const params = new URLSearchParams(window.location.search);
+      const sectionId = String(params.get('section') || '').trim();
+      const requestedCategory = String(params.get('category') || '').trim();
+
+      if (sectionId !== 'performance-analysis') {
+        return;
+      }
+
+      if (requestedCategory) {
+        this.openPerformanceCategory(requestedCategory);
+        return;
+      }
+
+      this.showContentSection('performance-analysis');
+      this.renderPerformanceAnalysisPanel();
+    },
+
     openPerformanceCategory: function (categoryKey) {
       const categories = app.analytics.getPerformanceCategories();
       const fallbackCategory = categories[0]?.key || 'strong';
@@ -1752,17 +1794,7 @@ const ui = {
         app.dom.performanceCategorySelect.value = selectedCategory;
       }
 
-      if (app.sidebar && typeof app.sidebar.showSection === 'function') {
-        app.sidebar.showSection('performance-analysis');
-      } else {
-        document.querySelectorAll('.content-section').forEach(section => section.classList.remove('active'));
-        const performanceSection = document.getElementById('performance-analysis');
-        if (performanceSection) performanceSection.classList.add('active');
-      }
-
-      document.querySelectorAll('.sidebar-item').forEach(item => {
-        item.classList.toggle('active', item.dataset.section === 'performance-analysis');
-      });
+      this.showContentSection('performance-analysis');
 
       this.renderPerformanceAnalysisPanel();
     },
@@ -2719,7 +2751,7 @@ const ui = {
         if (app.dom.systemResetBtn) {
           app.dom.systemResetBtn.onclick = () => {
             if (!this.requireAccess('resetSystem')) return;
-            const confirmed = confirm('Are you sure you want to reset the system? This action cannot be undone.');
+            const confirmed = confirm('Start a new class? A restore point will be created before current class data is replaced.');
             if (!confirmed) return;
             app.dom.resetBtn?.click();
           };

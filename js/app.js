@@ -352,6 +352,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (ui.refreshUI) {
       ui.refreshUI();
     }
+    if (ui.applyLaunchRoute) {
+      ui.applyLaunchRoute();
+    }
   } catch (error) {
     console.error('Initialization failed:', error);
     showErrorState(error.message);

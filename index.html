@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>JHS 3 Mock Exam Tracker</title>
+  <title>Student Performance Tracker</title>
 
   <!-- PWA -->
   <meta name="theme-color" content="#0f172a">
@@ -371,7 +371,7 @@
 <body>
   <!-- Splash / loading -->
   <div id="app-splash">
-    <h1>Student Exam Tracker</h1>
+    <h1>Student Performance Tracker</h1>
     <p>Loading your class data…</p>
     <div id="app-splash-spinner"></div>
   </div>
@@ -390,7 +390,7 @@
         <span>New</span>
         <span>Installed app tips</span>
       </div>
-      <h2>Quick tour of Student Exam Tracker</h2>
+      <h2>Quick tour of Student Performance Tracker</h2>
       <p>Here’s where to find the most important tools:</p>
       <ul class="pwa-tutorial-list">
         <li><strong>Dashboard</strong> – see totals, class average, and who needs support.</li>
@@ -400,7 +400,7 @@
         <li><strong>Results & Rankings</strong> – view rank, averages, status, notes, and print reports.</li>
         <li><strong>Trends & Heatmap</strong> – see class performance over time and by subject.</li>
       </ul>
-      <p>You can always backup or restore data using the icons at the top-right of the screen.</p>
+      <p>Use the top-right tools to export data, manage restore points, switch themes, or start a new class based on your role.</p>
       <div class="pwa-tutorial-footer">
         <button class="btn btn-secondary" id="pwa-tutorial-close">Got it</button>
       </div>
@@ -421,7 +421,7 @@
         <div class="header-tool-bridge" aria-hidden="true">
           <div id="backupStatus" class="backup-status">Last Backup: Never</div>
           <button class="btn btn-secondary btn-sm" id="create-snapshot-btn" type="button" title="Create Restore Point">Create Restore Point</button>
-          <button class="btn btn-secondary btn-sm" id="snapshot-manager-btn" type="button" title="Manage Restore Points">Restore Points</button>
+          <button class="btn btn-secondary btn-sm" id="snapshot-manager-btn" type="button" title="Restore Points">Restore Points</button>
           <button class="btn btn-icon" id="backup-btn" title="Download Backup"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></button>
           <button class="btn btn-icon" id="restore-btn" title="Restore Backup"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
           <input type="file" id="restore-input" style="display:none;" accept=".json">
@@ -476,7 +476,7 @@
         </div>
         <div class="sidebar-section">
           <div class="sidebar-title">Management</div>
-          <button class="sidebar-item" data-section="students"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>Students</button>
+          <button class="sidebar-item" data-section="students"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Students</button>
           <button class="sidebar-item" data-section="mocks"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Exams</button>
           <button class="sidebar-item" data-section="subjects"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Subjects</button>
           <button class="sidebar-item" data-section="trash"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>Trash</button>
@@ -489,7 +489,7 @@
         <div class="sidebar-section">
           <div class="sidebar-title">Analytics</div>
           <button class="sidebar-item" data-section="results"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="12 3 20 7.5 20 16.5 12 21 4 16.5 4 7.5 12 3"/><polyline points="12 12 20 7.5"/><polyline points="12 12 12 21"/><polyline points="12 12 4 7.5"/></svg>Results</button>
-          <button class="sidebar-item" data-section="performance-analysis"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4v6c0 5-3.5 8-8 8s-8-3-8-8V7l8-4z"/><path d="M12 8v5"/><circle cx="12" cy="16" r="1"/></svg>Performance Analysis</button>
+          <button class="sidebar-item" data-section="performance-analysis"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4v6c0 5-3.5 8-8 8s-8-3-8-8V7l8-4z"/><path d="M12 8v5"/><circle cx="12" cy="16" r="1"/></svg>Performance & Risk</button>
           <button class="sidebar-item" data-section="trends"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 17"/><polyline points="17 6 23 6 23 12"/></svg>Trends</button>
           <button class="sidebar-item" data-section="heatmap"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><rect x="7" y="7" width="3" height="3"/><rect x="14" y="7" width="3" height="3"/><rect x="7" y="14" width="3" height="3"/><rect x="14" y="14" width="3" height="3"/></svg>Heatmap</button>
         </div>
@@ -505,7 +505,7 @@
           <button class="system-tools-btn" id="system-export-data-btn" type="button" title="Export Data"><span class="system-tools-icon" aria-hidden="true">⬇️</span><span class="system-tools-label">Export Data</span></button>
           <button class="system-tools-btn" id="system-import-data-btn" type="button" title="Import Data"><span class="system-tools-icon" aria-hidden="true">⬆️</span><span class="system-tools-label">Import Data</span></button>
           <button class="system-tools-btn" id="system-theme-toggle-btn" type="button" title="Toggle Dark Mode"><span class="system-tools-icon" aria-hidden="true">🌙</span><span class="system-tools-label">Dark Mode</span></button>
-          <button class="system-tools-btn system-tools-btn-danger" id="system-reset-btn" type="button" title="Reset System"><span class="system-tools-icon" aria-hidden="true">🔄</span><span class="system-tools-label">Reset System</span></button>
+          <button class="system-tools-btn system-tools-btn-danger" id="system-reset-btn" type="button" title="Start New Class"><span class="system-tools-icon" aria-hidden="true">🔄</span><span class="system-tools-label">Start New Class</span></button>
         </div>
       </nav>
     </aside>
@@ -607,7 +607,7 @@
       </section>
 
       <section id="performance-analysis" class="content-section">
-        <div class="section-header"><h2>Performance Analysis</h2></div>
+        <div class="section-header"><h2>Performance & Risk Analysis</h2></div>
         <div class="card">
           <div class="form-row">
             <div class="form-group">
@@ -715,7 +715,7 @@
   <div class="modal-overlay" id="bulk-class-delete-modal"><div class="modal bulk-class-delete-modal"><h3>Delete Classes</h3><p class="bulk-class-delete-note">Select the classes you want to move to Trash. You can restore them later from Trash.</p><div class="bulk-class-delete-toolbar"><button type="button" class="btn btn-secondary" id="bulk-class-delete-select-all-btn">Select All</button><button type="button" class="btn btn-secondary" id="bulk-class-delete-clear-btn">Clear</button></div><p id="bulk-class-delete-summary" class="bulk-class-delete-summary">0 classes selected</p><div id="bulk-class-delete-list" class="bulk-class-delete-list"></div><div class="modal-actions"><button class="btn btn-secondary" id="bulk-class-delete-cancel-btn">Cancel</button><button class="btn btn-danger" id="bulk-class-delete-confirm-btn">Delete Selected</button></div></div></div>
   <div class="modal-overlay" id="bulk-import-modal"><div class="modal"><h3>Bulk Add Students</h3><textarea id="bulk-import-textarea" rows="8" placeholder="Enter one name per line..."></textarea><div class="modal-actions"><button class="btn btn-secondary" id="bulk-import-cancel-btn">Cancel</button><button class="btn btn-primary" id="bulk-import-confirm-btn">Add All</button></div></div></div>
   <div class="modal-overlay" id="notes-modal"><div class="modal"><h3 id="notes-modal-title">Student Notes</h3><textarea id="notes-textarea" rows="5" placeholder="Enter observations..."></textarea><div class="modal-actions"><button class="btn btn-secondary" id="notes-cancel-btn">Cancel</button><button class="btn btn-primary" id="notes-save-btn">Save Notes</button></div></div></div>
-  <div class="modal-overlay" id="reset-modal"><div class="modal"><h3>Clear All Data</h3><p>Start a new class? All current data will be erased.</p><div class="modal-actions"><button class="btn btn-secondary" id="reset-cancel-btn">Keep Data</button><button class="btn btn-danger" id="reset-confirm-btn">Erase Everything</button></div></div></div>
+  <div class="modal-overlay" id="reset-modal"><div class="modal"><h3>Start New Class</h3><p>Start fresh for a new class? Current class data will be replaced after a backup is created.</p><div class="modal-actions"><button class="btn btn-secondary" id="reset-cancel-btn">Keep Current Class</button><button class="btn btn-danger" id="reset-confirm-btn">Start Fresh</button></div></div></div>
   <div class="modal-overlay" id="report-modal"><div class="modal modal-lg"><div class="modal-actions"><button class="btn btn-primary" id="report-print-btn">Print</button><button class="btn btn-secondary" id="report-export-pdf-btn">Export as PDF</button><button class="btn btn-secondary" id="report-export-all-pdf-btn">Export All Reports</button><span id="report-export-status" class="report-export-status" aria-live="polite"></span><button class="btn btn-secondary" id="report-close-btn">Close</button></div><div id="report-card-container"></div></div></div>
   <div class="modal-overlay" id="snapshot-modal"><div class="modal modal-lg snapshot-modal"><h3>Restore Points</h3><p class="snapshot-modal-note">Create manual restore points and roll back safely if needed.</p><div id="snapshot-list" class="snapshot-list"></div><div class="modal-actions"><button class="btn btn-secondary" id="snapshot-close-btn">Close</button></div></div></div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>

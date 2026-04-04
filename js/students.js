@@ -4,6 +4,11 @@
    ═══════════════════════════════════════════════ */
 
 import app from './state.js';
+import {
+  normalizeStudentName,
+  isValidStudentName,
+  STUDENT_NAME_VALIDATION_MESSAGE
+} from './student-name-utils.js';
 
 const resolveApp = (runtimeApp) => runtimeApp || app;
 const resolveUi = (runtimeUi, runtimeApp) => runtimeUi || runtimeApp?.ui;
@@ -44,12 +49,6 @@ const resolveClassContextErrorMessage = (error, fallback = 'Failed to add studen
   }
   return fallback;
 };
-const normalizeStudentName = (value) => String(value || '').trim().replace(/\s+/g, ' ').toUpperCase();
-const STUDENT_NAME_PATTERN = /^[A-Z\s]+$/;
-const isValidStudentName = (value) => {
-  const normalized = normalizeStudentName(value);
-  return Boolean(normalized) && STUDENT_NAME_PATTERN.test(normalized);
-};
 
 const students = {
   addStudent: async function (name, runtimeApp, runtimeUi) {
@@ -63,7 +62,7 @@ const students = {
       return false;
     }
     if (!isValidStudentName(n)) {
-      uiRef?.showToast?.('Student names can only contain letters and spaces');
+      uiRef?.showToast?.(STUDENT_NAME_VALIDATION_MESSAGE);
       return false;
     }
 
@@ -189,7 +188,7 @@ const students = {
       return;
     }
     if (!isValidStudentName(newName)) {
-      uiRef?.showToast?.('Student names can only contain letters and spaces');
+      uiRef?.showToast?.(STUDENT_NAME_VALIDATION_MESSAGE);
       return;
     }
     if (appRef.dom.editInput) {
@@ -232,7 +231,7 @@ const students = {
     });
 
     if (newStudents.length === 0) {
-      ui.showToast(skippedInvalidRows ? 'Student names can only contain letters and spaces' : 'No valid students found');
+      ui.showToast(skippedInvalidRows ? STUDENT_NAME_VALIDATION_MESSAGE : 'No valid students found');
       return false;
     }
     if (skippedInvalidRows) {
