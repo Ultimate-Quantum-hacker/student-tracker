@@ -128,17 +128,21 @@ const buildAdminStudentsSkeletonStackMarkup = () => {
   `;
 };
 
+const buildAdminStudentsSkeletonActionMarkup = () => {
+  return `
+    <div class="admin-students-row-actions">
+      <div class="admin-students-skeleton admin-students-skeleton-action"></div>
+    </div>
+  `;
+};
+
 const buildAdminStudentsSkeletonRowMarkup = () => {
   return `
     <tr class="admin-students-row-skeleton" aria-hidden="true">
       <td>${buildAdminStudentsSkeletonStackMarkup()}</td>
       <td>${buildAdminStudentsSkeletonStackMarkup()}</td>
       <td>${buildAdminStudentsSkeletonStackMarkup()}</td>
-      <td>
-        <div class="admin-students-row-actions">
-          <div class="admin-students-skeleton admin-students-skeleton-action"></div>
-        </div>
-      </td>
+      <td>${buildAdminStudentsSkeletonActionMarkup()}</td>
     </tr>
   `;
 };
