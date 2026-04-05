@@ -1987,6 +1987,145 @@ test.describe('Class refactor critical regressions', () => {
     expect(result.freshClassExists).toBe(true);
   });
 
+  test('fetchActivityLogs purges expired activity logs and trims retained history to 250 entries', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__FIREBASE_CONFIG__ = {
+        apiKey: 'test-api-key',
+        authDomain: 'test-project.firebaseapp.com',
+        projectId: 'test-project',
+        storageBucket: 'test-project.appspot.com',
+        messagingSenderId: '1234567890',
+        appId: '1:1234567890:web:test'
+      };
+    });
+    await page.goto(APP_URL);
+
+    const result = await page.evaluate(async () => {
+      const [firebaseModule, dbModule] = await Promise.all([
+        import('/js/firebase.js'),
+        import('/services/db.js')
+      ]);
+
+      globalThis.__firestoreStore?.clear?.();
+      localStorage.clear();
+      sessionStorage.clear();
+
+      firebaseModule.auth.currentUser = {
+        uid: 'admin_activity_logs',
+        email: 'admin@example.com',
+        displayName: 'Admin Activity Logs'
+      };
+
+      dbModule.setCurrentUserRoleContext('admin');
+
+      const now = Date.now();
+      const recentEntries = Array.from({ length: 253 }, (_entry, index) => {
+        const id = `recent_${String(index).padStart(3, '0')}`;
+        return {
+          id,
+          timestamp: new Date(now - (index * 60 * 1000)).toISOString(),
+          createdAt: new Date(now - (index * 60 * 1000)).toISOString(),
+          action: 'updated_record',
+          targetId: id,
+          targetType: 'record',
+          targetLabel: `Recent ${index}`,
+          userId: 'admin_activity_logs',
+          userEmail: 'admin@example.com',
+          userRole: 'admin',
+          dataOwnerUserId: 'owner_recent',
+          classId: 'class_recent',
+          className: 'Recent Class',
+          ownerId: 'owner_recent',
+          ownerName: 'Owner Recent',
+          logVersion: 2
+        };
+      });
+      const expiredEntries = Array.from({ length: 2 }, (_entry, index) => {
+        const id = `expired_${index + 1}`;
+        return {
+          id,
+          timestamp: new Date(now - ((95 + index) * 24 * 60 * 60 * 1000)).toISOString(),
+          createdAt: new Date(now - ((95 + index) * 24 * 60 * 60 * 1000)).toISOString(),
+          action: 'deleted_record',
+          targetId: id,
+          targetType: 'record',
+          targetLabel: `Expired ${index + 1}`,
+          userId: 'admin_activity_logs',
+          userEmail: 'admin@example.com',
+          userRole: 'admin',
+          dataOwnerUserId: 'owner_expired',
+          classId: 'class_expired',
+          className: 'Expired Class',
+          ownerId: 'owner_expired',
+          ownerName: 'Owner Expired',
+          logVersion: 2
+        };
+      });
+
+      await Promise.all([
+        ...recentEntries.map((entry) => {
+          const { id, ...payload } = entry;
+          return firebaseModule.setDoc(
+            firebaseModule.doc(firebaseModule.db, 'activityLogs', id),
+            payload,
+            { merge: false }
+          );
+        }),
+        ...expiredEntries.map((entry) => {
+          const { id, ...payload } = entry;
+          return firebaseModule.setDoc(
+            firebaseModule.doc(firebaseModule.db, 'activityLogs', id),
+            payload,
+            { merge: false }
+          );
+        })
+      ]);
+
+      const beforeCount = Array.from(globalThis.__firestoreStore?.keys?.() || [])
+        .filter((key) => key.startsWith('activityLogs/'))
+        .length;
+
+      const logs = await dbModule.fetchActivityLogs({ maxEntries: 250 });
+
+      const storeKeys = Array.from(globalThis.__firestoreStore?.keys?.() || [])
+        .filter((key) => key.startsWith('activityLogs/'));
+      const store = globalThis.__firestoreStore;
+
+      return {
+        beforeCount,
+        fetchedCount: logs.length,
+        firstLogId: logs[0]?.id || '',
+        lastLogId: logs[logs.length - 1]?.id || '',
+        hasExpiredInFetch: logs.some((entry) => entry.id === 'expired_1' || entry.id === 'expired_2'),
+        hasOverflowInFetch: logs.some((entry) => ['recent_250', 'recent_251', 'recent_252'].includes(entry.id)),
+        retainedCount: storeKeys.length,
+        retainedNewestExists: store?.has?.('activityLogs/recent_000') || false,
+        retainedBoundaryExists: store?.has?.('activityLogs/recent_249') || false,
+        removedExpired: [
+          !(store?.has?.('activityLogs/expired_1') || false),
+          !(store?.has?.('activityLogs/expired_2') || false)
+        ],
+        removedOverflow: [
+          !(store?.has?.('activityLogs/recent_250') || false),
+          !(store?.has?.('activityLogs/recent_251') || false),
+          !(store?.has?.('activityLogs/recent_252') || false)
+        ]
+      };
+    });
+
+    expect(result.beforeCount).toBe(255);
+    expect(result.fetchedCount).toBe(250);
+    expect(result.firstLogId).toBe('recent_000');
+    expect(result.lastLogId).toBe('recent_249');
+    expect(result.hasExpiredInFetch).toBe(false);
+    expect(result.hasOverflowInFetch).toBe(false);
+    expect(result.retainedCount).toBe(250);
+    expect(result.retainedNewestExists).toBe(true);
+    expect(result.retainedBoundaryExists).toBe(true);
+    expect(result.removedExpired).toEqual([true, true]);
+    expect(result.removedOverflow).toEqual([true, true, true]);
+  });
+
   test('scoring classification boundaries remain unchanged', async ({ page }) => {
     const result = await page.evaluate(() => {
       return Promise.all([import('/js/state.js'), import('/js/analytics.js')]).then(([stateModule, analyticsModule]) => {

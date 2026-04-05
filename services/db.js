@@ -38,7 +38,8 @@ const EXAMS_SUBCOLLECTION = 'exams';
 const ACTIVITY_LOGS_COLLECTION = 'activityLogs';
 const DEFAULT_CLASS_NAME = 'My Class';
 const TRASH_RETENTION_DAYS = 3;
-const MAX_ACTIVITY_LOGS = 100;
+const ACTIVITY_LOG_RETENTION_DAYS = 90;
+const MAX_ACTIVITY_LOGS = 250;
 const ACTIVITY_LOG_FETCH_LIMIT = MAX_ACTIVITY_LOGS;
 const CLASS_MIGRATION_VERSION = 2;
 const DATA_SCHEMA_VERSION = 2;
@@ -2863,6 +2864,18 @@ const readModularRawData = async (ownerId, classId) => {
   );
 };
 
+const getActivityLogTimestampIso = (payload = {}) => {
+  return toIsoDateString(payload.timestamp)
+    || toIsoDateString(payload.createdAt)
+    || toIsoDateString(payload.time)
+    || toIsoDateString(payload.date)
+    || null;
+};
+
+const getActivityLogRetentionCutoff = (days = ACTIVITY_LOG_RETENTION_DAYS) => {
+  return Date.now() - (Math.max(Number(days) || ACTIVITY_LOG_RETENTION_DAYS, 1) * 24 * 60 * 60 * 1000);
+};
+
 const buildActivityLogRow = (entry) => {
   const normalizeLogScalar = (value, fallback = '') => {
     if (value === null || value === undefined) {
@@ -2895,16 +2908,8 @@ const buildActivityLogRow = (entry) => {
     return fallback;
   };
 
-  const normalizeLogTimestamp = (payload = {}) => {
-    return toIsoDateString(payload.timestamp)
-      || toIsoDateString(payload.createdAt)
-      || toIsoDateString(payload.time)
-      || toIsoDateString(payload.date)
-      || null;
-  };
-
   const payload = entry?.data() || {};
-  const timestampIso = normalizeLogTimestamp(payload);
+  const timestampIso = getActivityLogTimestampIso(payload);
   const normalizedAction = normalizeLogScalar(payload.action || payload.event || payload.type || '').toLowerCase();
   const normalizedStudentId = normalizeLogScalar(payload.studentId || payload.targetId || payload.target?.id || '');
   const explicitTargetType = normalizeLogScalar(payload.targetType || payload.entity || payload.target?.type || '', '').toLowerCase();
@@ -2950,22 +2955,49 @@ const sortActivityLogsByTimeDesc = (entries = []) => {
   });
 };
 
-const trimActivityLogCollection = async () => {
+const trimActivityLogCollection = async (days = ACTIVITY_LOG_RETENTION_DAYS, maxEntries = MAX_ACTIVITY_LOGS) => {
   if (!isFirebaseConfigured || !db) {
-    return 0;
+    return {
+      expired: 0,
+      overflow: 0,
+      total: 0
+    };
   }
 
   const logsSnapshot = await getDocs(query(
     collection(db, ACTIVITY_LOGS_COLLECTION),
     orderBy('timestamp', 'desc')
   ));
-  const overflowEntries = logsSnapshot.docs.slice(MAX_ACTIVITY_LOGS);
-  if (!overflowEntries.length) {
-    return 0;
+  const cutoff = getActivityLogRetentionCutoff(days);
+  const normalizedMaxEntries = Math.max(Number(maxEntries) || MAX_ACTIVITY_LOGS, 1);
+  const expiredEntries = [];
+  const retainedEntries = [];
+
+  logsSnapshot.docs.forEach((entry) => {
+    const payload = entry.data() || {};
+    const timestampMs = new Date(getActivityLogTimestampIso(payload) || 0).getTime();
+    if (Number.isFinite(timestampMs) && timestampMs > 0 && timestampMs < cutoff) {
+      expiredEntries.push(entry);
+      return;
+    }
+    retainedEntries.push(entry);
+  });
+
+  const overflowEntries = retainedEntries.slice(normalizedMaxEntries);
+  if (!expiredEntries.length && !overflowEntries.length) {
+    return {
+      expired: 0,
+      overflow: 0,
+      total: 0
+    };
   }
 
-  await Promise.all(overflowEntries.map((entry) => deleteDoc(entry.ref)));
-  return overflowEntries.length;
+  await Promise.all([...expiredEntries, ...overflowEntries].map((entry) => deleteDoc(entry.ref)));
+  return {
+    expired: expiredEntries.length,
+    overflow: overflowEntries.length,
+    total: expiredEntries.length + overflowEntries.length
+  };
 };
 
 export const logActivity = async (action, targetId, targetType, options = {}) => {

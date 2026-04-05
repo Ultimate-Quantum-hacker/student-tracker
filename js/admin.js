@@ -129,6 +129,7 @@ const UPDATABLE_ROLES = [ROLE_TEACHER, ROLE_ADMIN];
 const THEME_STORAGE_KEY = 'theme';
 const ADMIN_STUDENTS_PAGE_SIZE = 50;
 const ADMIN_STUDENTS_TABLE_COLUMN_COUNT = 4;
+const ADMIN_ACTIVITY_LOG_FETCH_LIMIT = 250;
 const ADMIN_RUNTIME_CACHE_TTL_MS = 30 * 1000;
 
 const state = {
@@ -1013,7 +1014,7 @@ const loadActivityLogs = async () => {
       entries = await fetchActivityLogs({
         userId: selectedUserId,
         sort: selectedSort,
-        maxEntries: 100
+        maxEntries: ADMIN_ACTIVITY_LOG_FETCH_LIMIT
       });
       writeAdminRuntimeCache('activityLogs', Array.isArray(entries) ? entries : [], activityLogsCacheKey);
     }
