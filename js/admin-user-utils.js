@@ -1,6 +1,7 @@
 import { normalizeUserRole } from './auth.js';
 import { formatRoleLabel, normalizeText } from './admin-display-utils.js';
 
+const ROLE_TEACHER = 'teacher';
 const ROLE_ADMIN = 'admin';
 const ROLE_DEVELOPER = 'developer';
 
@@ -138,6 +139,61 @@ export const canEditAdminUserRole = (record = {}, {
   return normalizeUserRole(record?.role) !== ROLE_DEVELOPER;
 };
 
+export const canPromoteTeacherRecordToAdmin = (record = {}) => {
+  return normalizeUserRole(record?.role) === ROLE_TEACHER && Boolean(record?.emailVerified);
+};
+
+export const canRenderAdminRoleChangeControl = (record = {}, {
+  currentRole = ''
+} = {}) => {
+  if (!canEditAdminUserRole(record, { currentRole })) {
+    return false;
+  }
+
+  const normalizedRole = normalizeUserRole(record?.role);
+  if (normalizedRole === ROLE_TEACHER) {
+    return canPromoteTeacherRecordToAdmin(record);
+  }
+
+  return normalizedRole === ROLE_ADMIN;
+};
+
+export const getAdminUserRolePolicyLabel = (record = {}, {
+  currentRole = ''
+} = {}) => {
+  if (!canManageAdminRoles(currentRole)) {
+    return 'View only';
+  }
+
+  const normalizedRole = normalizeUserRole(record?.role);
+  if (normalizedRole === ROLE_DEVELOPER) {
+    return 'Developer onboarding is manual outside the app';
+  }
+
+  if (normalizedRole === ROLE_TEACHER && !Boolean(record?.emailVerified)) {
+    return 'Verify this teacher account before admin promotion';
+  }
+
+  return 'Role can be updated by a developer';
+};
+
+export const getAdminUserAccountSummary = (record = {}) => {
+  const normalizedRole = normalizeUserRole(record?.role);
+  if (normalizedRole === ROLE_DEVELOPER) {
+    return 'Protected system account';
+  }
+
+  if (normalizedRole === ROLE_ADMIN) {
+    return 'Privileged workspace member';
+  }
+
+  if (Boolean(record?.emailVerified)) {
+    return 'Verified teacher account';
+  }
+
+  return 'Workspace member awaiting verification';
+};
+
 export const buildAdminUserRoleUpdatePrecheckState = ({
   hasRecord = false,
   canManageRoles = false
@@ -170,6 +226,7 @@ export const buildAdminUserRoleUpdateState = (record = {}, {
   updatableRoles = []
 } = {}) => {
   const currentRole = normalizeUserRole(record?.role);
+  const isEmailVerified = Boolean(record?.emailVerified);
   const normalizedNextRole = normalizeUserRole(nextRole);
   const normalizedUpdatableRoles = Array.isArray(updatableRoles)
     ? updatableRoles.map((role) => normalizeUserRole(role))
@@ -183,6 +240,30 @@ export const buildAdminUserRoleUpdateState = (record = {}, {
       canUpdate: false,
       progressLabel,
       statusMessage: 'Only teacher and admin roles can be assigned in this panel.',
+      statusType: 'warning',
+      confirmationMessage: ''
+    };
+  }
+
+  if (currentRole === ROLE_DEVELOPER || normalizedNextRole === ROLE_DEVELOPER) {
+    return {
+      currentRole,
+      normalizedNextRole,
+      canUpdate: false,
+      progressLabel,
+      statusMessage: 'Developer onboarding is manual and cannot be changed in this panel.',
+      statusType: 'warning',
+      confirmationMessage: ''
+    };
+  }
+
+  if (currentRole === ROLE_TEACHER && normalizedNextRole === ROLE_ADMIN && !isEmailVerified) {
+    return {
+      currentRole,
+      normalizedNextRole,
+      canUpdate: false,
+      progressLabel,
+      statusMessage: 'Verify this teacher email before promoting the account to admin.',
       statusType: 'warning',
       confirmationMessage: ''
     };

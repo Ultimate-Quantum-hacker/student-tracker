@@ -49,7 +49,8 @@ const ERROR_CODES = {
   MIGRATION_FAILED: 'MIGRATION_FAILED',
   INVALID_CLASS_CONTEXT: 'INVALID_CLASS_CONTEXT',
   MISSING_CLASS_ID: 'MISSING_CLASS_ID',
-  MISSING_OWNER_ID: 'MISSING_OWNER_ID'
+  MISSING_OWNER_ID: 'MISSING_OWNER_ID',
+  PRIVILEGED_ROLE_POLICY: 'PRIVILEGED_ROLE_POLICY'
 };
 
 let currentClassId = '';
@@ -131,6 +132,50 @@ const normalizeRole = (value) => {
   if (normalized === 'admin') return 'admin';
   if (normalized === 'developer') return 'developer';
   return 'teacher';
+};
+const normalizeEmailAddress = (value) => String(value || '').trim().toLowerCase();
+const isVerifiedUserRecord = (payload = {}) => Boolean(payload?.emailVerified);
+const isTeacherOrAdminRole = (role = '') => {
+  const normalizedRole = normalizeRole(role);
+  return normalizedRole === 'teacher' || normalizedRole === 'admin';
+};
+const buildPrivilegedRoleUpdatePolicyState = (userPayload = {}, nextRole = 'teacher') => {
+  const currentRole = normalizeRole(userPayload?.role || 'teacher');
+  const normalizedNextRole = normalizeRole(nextRole);
+
+  if (currentRole === 'developer' || normalizedNextRole === 'developer') {
+    return {
+      currentRole,
+      normalizedNextRole,
+      canUpdate: false,
+      message: 'Developer onboarding is manual and cannot be changed in the admin panel.'
+    };
+  }
+
+  if (!isTeacherOrAdminRole(currentRole) || !isTeacherOrAdminRole(normalizedNextRole)) {
+    return {
+      currentRole,
+      normalizedNextRole,
+      canUpdate: false,
+      message: 'Only teacher and admin roles can be managed in the admin panel.'
+    };
+  }
+
+  if (currentRole === 'teacher' && normalizedNextRole === 'admin' && !isVerifiedUserRecord(userPayload)) {
+    return {
+      currentRole,
+      normalizedNextRole,
+      canUpdate: false,
+      message: 'Only verified teacher accounts can be promoted to admin.'
+    };
+  }
+
+  return {
+    currentRole,
+    normalizedNextRole,
+    canUpdate: true,
+    message: ''
+  };
 };
 const normalizeDeletedAtValue = (value) => {
   if (!value) return null;
@@ -3441,7 +3486,10 @@ export const fetchAdminUsers = async () => {
       name: normalizeDisplayName(payload.name || payload.displayName || email || 'Teacher', 'Teacher'),
       email,
       role,
+      emailVerified: Boolean(payload.emailVerified),
       createdAt: payload.createdAt || payload.updatedAt || null,
+      roleUpdatedAt: payload.roleUpdatedAt || null,
+      roleUpdatedBy: normalizeUserId(payload.roleUpdatedBy || ''),
       status: String(payload.status || '').trim().toLowerCase() || 'active'
     });
   });
@@ -3537,7 +3585,7 @@ export const fetchAdminGlobalStats = async () => {
 };
 
 export const updateAdminUserRole = async ({ uid = '', name = '', email = '', role = 'teacher' } = {}) => {
-  await ensureAuthenticatedUserId('update user role');
+  const actorUserId = await ensureAuthenticatedUserId('update user role');
   if (getCurrentUserRoleContext() !== 'developer') {
     throw createContextError(ERROR_CODES.READ_ONLY_MODE, 'Only developers can update user roles');
   }
@@ -3546,26 +3594,56 @@ export const updateAdminUserRole = async ({ uid = '', name = '', email = '', rol
   }
 
   const normalizedUid = normalizeUserId(uid);
-  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const normalizedEmail = normalizeEmailAddress(email);
   if (!normalizedUid) {
     throw new Error('User id is required');
   }
 
-  const normalizedRole = normalizeRole(role);
+  const userSnapshot = await getDoc(getUserRootRef(normalizedUid));
+  if (!userSnapshot.exists()) {
+    throw createContextError(
+      ERROR_CODES.PRIVILEGED_ROLE_POLICY,
+      'Privileged roles can only be assigned to existing signed-in teacher accounts.'
+    );
+  }
+
+  const userPayload = userSnapshot.data() || {};
+  const policyState = buildPrivilegedRoleUpdatePolicyState(userPayload, role);
+  if (!policyState.canUpdate) {
+    throw createContextError(ERROR_CODES.PRIVILEGED_ROLE_POLICY, policyState.message);
+  }
+
+  const currentRole = policyState.currentRole;
+  const normalizedRole = policyState.normalizedNextRole;
+  const resolvedEmail = normalizeEmailAddress(normalizedEmail || userPayload.email || '');
+  const resolvedName = normalizeDisplayName(name || userPayload.name || resolvedEmail || 'Teacher', 'Teacher');
+  const emailVerified = isVerifiedUserRecord(userPayload);
   const updatedAt = new Date().toISOString();
 
   await setDoc(getUserRootRef(normalizedUid), {
     uid: normalizedUid,
     userId: normalizedUid,
-    name: normalizeDisplayName(name || normalizedEmail || 'Teacher', 'Teacher'),
-    email: normalizedEmail,
+    name: resolvedName,
+    email: resolvedEmail,
     role: normalizedRole,
-    updatedAt
+    emailVerified,
+    updatedAt,
+    roleUpdatedAt: updatedAt,
+    roleUpdatedBy: actorUserId
   }, { merge: true });
+
+  await logActivity('user_role_updated', normalizedUid, 'record', {
+    dataOwnerUserId: normalizedUid,
+    targetLabel: `${resolvedName || resolvedEmail || normalizedUid} (${currentRole} to ${normalizedRole})`,
+    userRole: getCurrentUserRoleContext()
+  });
 
   return {
     uid: normalizedUid,
-    role: normalizedRole
+    role: normalizedRole,
+    emailVerified,
+    roleUpdatedAt: updatedAt,
+    roleUpdatedBy: actorUserId
   };
 };
 

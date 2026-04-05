@@ -107,6 +107,7 @@ const sanitizeProfilePayload = (authUser, existingRole = '') => ({
   role: resolveProfileRole(authUser, existingRole),
   name: normalizeProfileName(authUser?.name),
   email: normalizeEmail(authUser?.email),
+  emailVerified: Boolean(auth?.currentUser?.emailVerified ?? authUser?.emailVerified),
   createdAt: serverTimestamp()
 });
 
@@ -188,6 +189,9 @@ const ensureUserProfileDocument = async (authUser) => {
   }
   if (normalizeEmail(data.email) !== resolvedEmailForProfile) {
     patch.email = resolvedEmailForProfile;
+  }
+  if (Boolean(data.emailVerified) !== emailVerified) {
+    patch.emailVerified = emailVerified;
   }
   if (String(data.role || '').trim().toLowerCase() !== resolvedRole) {
     patch.role = resolvedRole;

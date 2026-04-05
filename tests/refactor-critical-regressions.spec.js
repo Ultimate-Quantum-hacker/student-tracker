@@ -4,12 +4,176 @@ import path from 'node:path';
 
 const APP_URL = 'http://localhost:3000';
 
+const FIREBASE_APP_STUB = `
+export const initializeApp = (config = {}) => ({ config });
+`;
+
+const FIRESTORE_STUB = `
+export const getFirestore = () => ({});
+export const collection = (...args) => ({ type: 'collection', args });
+export const collectionGroup = (...args) => ({ type: 'collectionGroup', args });
+export const doc = (...args) => ({ type: 'doc', args });
+export const addDoc = async () => ({ id: 'mock-doc-id' });
+export const getDoc = async () => ({ exists: () => false, data: () => ({}) });
+export const getDocs = async () => ({ docs: [], empty: true, forEach: () => {} });
+export const setDoc = async () => {};
+export const updateDoc = async () => {};
+export const deleteDoc = async () => {};
+export const query = (...args) => ({ type: 'query', args });
+export const where = (...args) => ({ type: 'where', args });
+export const orderBy = (...args) => ({ type: 'orderBy', args });
+export const limit = (...args) => ({ type: 'limit', args });
+export const onSnapshot = (_target, nextOrOptions, next) => {
+  const callback = typeof nextOrOptions === 'function' ? nextOrOptions : next;
+  Promise.resolve().then(() => {
+    if (typeof callback === 'function') {
+      callback({ docs: [], empty: true, forEach: () => {} });
+    }
+  });
+  return () => {};
+};
+export const serverTimestamp = () => new Date().toISOString();
+`;
+
+const FIREBASE_AUTH_STUB = `
+const createUser = (overrides = {}) => ({
+  uid: overrides.uid || 'mock-user-id',
+  email: overrides.email || 'teacher@example.com',
+  displayName: overrides.displayName || 'Mock User',
+  emailVerified: Boolean(overrides.emailVerified),
+  metadata: {
+    creationTime: overrides.creationTime || new Date().toISOString(),
+    lastSignInTime: overrides.lastSignInTime || new Date().toISOString()
+  }
+});
+
+const authState = {
+  currentUser: null
+};
+
+export const browserLocalPersistence = {};
+
+export const getAuth = () => authState;
+
+export const onAuthStateChanged = (_auth, next, error) => {
+  Promise.resolve().then(() => {
+    try {
+      if (typeof next === 'function') {
+        next(authState.currentUser);
+      }
+    } catch (callbackError) {
+      if (typeof error === 'function') {
+        error(callbackError);
+      }
+    }
+  });
+  return () => {};
+};
+
+export const createUserWithEmailAndPassword = async (_auth, email) => {
+  authState.currentUser = createUser({ email, emailVerified: false });
+  return { user: authState.currentUser };
+};
+
+export const signInWithEmailAndPassword = async (_auth, email) => {
+  authState.currentUser = createUser({ email, emailVerified: false });
+  return { user: authState.currentUser };
+};
+
+export const signOut = async () => {
+  authState.currentUser = null;
+};
+
+export const setPersistence = async (auth) => auth;
+
+export const updateProfile = async (user, profile = {}) => {
+  if (user && typeof profile.displayName === 'string') {
+    user.displayName = profile.displayName;
+  }
+};
+
+export const sendPasswordResetEmail = async () => {};
+export const sendEmailVerification = async () => {};
+export const reload = async () => {};
+`;
+
+const EXTERNAL_LIBRARY_STUB = `
+window.XLSX = window.XLSX || {};
+window.html2pdf = window.html2pdf || function () {
+  return {
+    from() { return this; },
+    set() { return this; },
+    save() { return Promise.resolve(); },
+    outputPdf() { return Promise.resolve(''); }
+  };
+};
+`;
+
 const readWorkspaceFile = (relativePath) => {
   return fs.readFileSync(path.join(process.cwd(), relativePath), 'utf8');
 };
 
+const stubExternalDependencies = async (page) => {
+  await page.route('https://fonts.googleapis.com/**', (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'text/css; charset=utf-8',
+      body: ''
+    });
+  });
+
+  await page.route('https://fonts.gstatic.com/**', (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'font/woff2',
+      body: ''
+    });
+  });
+
+  await page.route('https://www.gstatic.com/firebasejs/**/firebase-app.js', (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/javascript; charset=utf-8',
+      body: FIREBASE_APP_STUB
+    });
+  });
+
+  await page.route('https://www.gstatic.com/firebasejs/**/firebase-firestore.js', (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/javascript; charset=utf-8',
+      body: FIRESTORE_STUB
+    });
+  });
+
+  await page.route('https://www.gstatic.com/firebasejs/**/firebase-auth.js', (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/javascript; charset=utf-8',
+      body: FIREBASE_AUTH_STUB
+    });
+  });
+
+  await page.route('https://cdnjs.cloudflare.com/ajax/libs/xlsx/**', (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/javascript; charset=utf-8',
+      body: EXTERNAL_LIBRARY_STUB
+    });
+  });
+
+  await page.route('https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/**', (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/javascript; charset=utf-8',
+      body: EXTERNAL_LIBRARY_STUB
+    });
+  });
+};
+
 test.describe('Class refactor critical regressions', () => {
   test.beforeEach(async ({ page }) => {
+    await stubExternalDependencies(page);
     await page.goto(APP_URL);
   });
 
@@ -842,6 +1006,87 @@ test.describe('Class refactor critical regressions', () => {
     expect(enhancedCss).toContain('body.dark-mode .class-dropdown-toggle');
     expect(enhancedCss).toContain('body.dark-mode .risk-pill');
     expect(enhancedCss).toContain('body.dark-mode .modal-content');
+  });
+
+  test('privileged-role onboarding policy keeps developer manual and admin promotion verified-only', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const adminUserUtils = await import('/js/admin-user-utils.js');
+      const {
+        canRenderAdminRoleChangeControl,
+        getAdminUserRolePolicyLabel,
+        buildAdminUserRoleUpdateState
+      } = adminUserUtils;
+
+      const unverifiedTeacher = {
+        uid: 'teacher_unverified',
+        role: 'teacher',
+        emailVerified: false,
+        email: 'teacher-unverified@example.com'
+      };
+      const verifiedTeacher = {
+        uid: 'teacher_verified',
+        role: 'teacher',
+        emailVerified: true,
+        email: 'teacher-verified@example.com'
+      };
+      const developerRecord = {
+        uid: 'developer_user',
+        role: 'developer',
+        emailVerified: true,
+        email: 'developer@example.com'
+      };
+
+      return {
+        unverifiedTeacherCanRender: canRenderAdminRoleChangeControl(unverifiedTeacher, { currentRole: 'developer' }),
+        unverifiedTeacherPolicy: getAdminUserRolePolicyLabel(unverifiedTeacher, { currentRole: 'developer' }),
+        unverifiedTeacherUpdate: buildAdminUserRoleUpdateState(unverifiedTeacher, {
+          nextRole: 'admin',
+          updatableRoles: ['teacher', 'admin']
+        }),
+        verifiedTeacherCanRender: canRenderAdminRoleChangeControl(verifiedTeacher, { currentRole: 'developer' }),
+        verifiedTeacherUpdate: buildAdminUserRoleUpdateState(verifiedTeacher, {
+          nextRole: 'admin',
+          updatableRoles: ['teacher', 'admin']
+        }),
+        developerCanRender: canRenderAdminRoleChangeControl(developerRecord, { currentRole: 'developer' }),
+        developerPolicy: getAdminUserRolePolicyLabel(developerRecord, { currentRole: 'developer' }),
+        developerUpdate: buildAdminUserRoleUpdateState(developerRecord, {
+          nextRole: 'admin',
+          updatableRoles: ['teacher', 'admin']
+        })
+      };
+    });
+
+    const dbSource = readWorkspaceFile('services/db.js');
+    const rulesSource = readWorkspaceFile('firestore.rules');
+    const authSource = readWorkspaceFile('js/auth.js');
+
+    expect(result.unverifiedTeacherCanRender).toBe(false);
+    expect(result.unverifiedTeacherPolicy).toContain('Verify this teacher account before admin promotion');
+    expect(result.unverifiedTeacherUpdate.canUpdate).toBe(false);
+    expect(result.unverifiedTeacherUpdate.statusMessage).toContain('Verify this teacher email');
+
+    expect(result.verifiedTeacherCanRender).toBe(true);
+    expect(result.verifiedTeacherUpdate.canUpdate).toBe(true);
+    expect(result.verifiedTeacherUpdate.normalizedNextRole).toBe('admin');
+
+    expect(result.developerCanRender).toBe(false);
+    expect(result.developerPolicy).toContain('Developer onboarding is manual outside the app');
+    expect(result.developerUpdate.canUpdate).toBe(false);
+    expect(result.developerUpdate.statusMessage).toContain('Developer onboarding is manual');
+
+    expect(authSource).toContain('emailVerified: Boolean(auth?.currentUser?.emailVerified ?? authUser?.emailVerified),');
+    expect(dbSource).toContain('PRIVILEGED_ROLE_POLICY');
+    expect(dbSource).toContain('buildPrivilegedRoleUpdatePolicyState');
+    expect(dbSource).toContain('Privileged roles can only be assigned to existing signed-in teacher accounts.');
+    expect(dbSource).toContain('Only verified teacher accounts can be promoted to admin.');
+    expect(dbSource).toContain("Developer onboarding is manual and cannot be changed in the admin panel.");
+    expect(dbSource).toContain("await logActivity('user_role_updated', normalizedUid, 'record', {");
+    expect(rulesSource).toContain('function developerCanManageUserRole(userId) {');
+    expect(rulesSource).toContain("request.resource.data.emailVerified == request.auth.token.email_verified");
+    expect(rulesSource).toContain("allow create: if ownerCanCreateOwnUserDoc(userId);");
+    expect(rulesSource).toContain("request.resource.data.role != 'admin'");
+    expect(rulesSource).toContain("resource.data.emailVerified == true");
   });
 
   test('scoring classification boundaries remain unchanged', async ({ page }) => {

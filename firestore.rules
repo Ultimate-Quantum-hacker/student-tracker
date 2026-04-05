@@ -36,8 +36,18 @@ service cloud.firestore {
       return isOwner(userId)
         && request.resource.data.uid == userId
         && (!('userId' in request.resource.data) || request.resource.data.userId == userId)
+        && request.resource.data.keys().hasOnly([
+          'uid',
+          'userId',
+          'role',
+          'name',
+          'email',
+          'emailVerified',
+          'createdAt'
+        ])
         && request.resource.data.role == 'teacher'
-        && request.resource.data.email == request.auth.token.email;
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.emailVerified == request.auth.token.email_verified;
     }
 
     function ownerCanUpdateOwnUserDoc(userId) {
@@ -45,11 +55,13 @@ service cloud.firestore {
         && (!('uid' in request.resource.data) || request.resource.data.uid == userId)
         && (!('userId' in request.resource.data) || request.resource.data.userId == userId)
         && (!('email' in request.resource.data) || request.resource.data.email == request.auth.token.email)
+        && (!('emailVerified' in request.resource.data) || request.resource.data.emailVerified == request.auth.token.email_verified)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'uid',
           'userId',
           'name',
           'email',
+          'emailVerified',
           'role',
           'updatedAt',
           'activeClassId',
@@ -66,6 +78,35 @@ service cloud.firestore {
         && (
           request.resource.data.role == resource.data.role
           || (!('role' in resource.data) && request.resource.data.role == 'teacher')
+        );
+    }
+
+    function developerCanManageUserRole(userId) {
+      return isDeveloperRole()
+        && request.resource.data.uid == userId
+        && (!('userId' in request.resource.data) || request.resource.data.userId == userId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'uid',
+          'userId',
+          'name',
+          'email',
+          'emailVerified',
+          'role',
+          'updatedAt',
+          'roleUpdatedAt',
+          'roleUpdatedBy'
+        ])
+        && (!('email' in resource.data) || request.resource.data.email == resource.data.email)
+        && (!('emailVerified' in resource.data) || request.resource.data.emailVerified == resource.data.emailVerified)
+        && request.resource.data.roleUpdatedBy == request.auth.uid
+        && (
+          (resource.data.role == 'teacher' && (request.resource.data.role == 'teacher' || request.resource.data.role == 'admin'))
+          || (resource.data.role == 'admin' && (request.resource.data.role == 'teacher' || request.resource.data.role == 'admin'))
+          || (resource.data.role == 'developer' && request.resource.data.role == 'developer')
+        )
+        && (
+          request.resource.data.role != 'admin'
+          || resource.data.emailVerified == true
         );
     }
 
@@ -116,9 +157,9 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if canReadOwnerScopedData(userId);
-      allow create: if ownerCanCreateOwnUserDoc(userId) || isDeveloperRole();
+      allow create: if ownerCanCreateOwnUserDoc(userId);
       allow delete: if isOwner(userId) || isDeveloperRole();
-      allow update: if ownerCanUpdateOwnUserDoc(userId) || isDeveloperRole() || isPrivilegedUserMetadataTouch(userId);
+      allow update: if ownerCanUpdateOwnUserDoc(userId) || developerCanManageUserRole(userId) || isPrivilegedUserMetadataTouch(userId);
     }
 
     match /users/{userId}/classes/{classId} {

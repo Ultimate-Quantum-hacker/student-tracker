@@ -117,7 +117,7 @@ Complete the authentication and account lifecycle so users can securely sign up,
 - [x] Email verification flow and verified/unverified state handling if adopted
 - [x] Account/profile settings page or modal
 - [x] Auth-state-aware UX for verified status, reset actions, and session issues
-- [ ] Clear privileged-role onboarding policy and implementation
+- [x] Clear privileged-role onboarding policy and implementation
 - [ ] Updated auth documentation and test coverage
 
 ## Exit Criteria
@@ -551,3 +551,8 @@ Use this section to track major roadmap updates.
 - **Phase:** Phase 2
 - **Update:** Polished the auth-state UX across dashboard entry, login, and the verification gate by adding explicit redirect and session notices, a shared auth-notice handoff module, visible email verification status in Account Settings, and focused Playwright auth smoke coverage that runs with offline stubs for external CDN dependencies.
 - **Impact:** Auth redirects now explain why the user moved between surfaces, verified session state is visible inside the in-app account summary, password reset remains intact, and the polished login, signup, verify-email, and dashboard entry flows have passing focused smoke validation. Remaining Phase 2 work is privileged-role onboarding rules plus broader documentation and test expansion.
+
+- **Date:** 2026-04-05
+- **Phase:** Phase 2
+- **Update:** Implemented the privileged-role onboarding policy across the auth/profile, admin panel, service, and Firestore security layers by persisting `emailVerified` on user profiles, restricting admin promotion to verified teacher accounts, keeping developer onboarding manual-only, adding audited role-update metadata, aligning the admin UI copy/disabled states with the policy, and extending the critical regression suite with focused privileged-role coverage plus offline dependency stubs.
+- **Impact:** Privileged-role creation and promotion behavior is now consistently enforced at the UI, service, and security boundaries, admin users receive clear policy feedback before blocked writes, and the new focused Chromium regression passes for the verified-admin-promotion/manual-developer path. Remaining Phase 2 work is broader auth documentation and any additional test expansion beyond this policy slice.

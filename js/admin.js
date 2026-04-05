@@ -107,7 +107,9 @@ import {
   buildAdminInitErrorFeedbackState,
   canManageAdminRoles,
   canDeleteAdminRegistryStudents,
-  canEditAdminUserRole,
+  canRenderAdminRoleChangeControl,
+  getAdminUserRolePolicyLabel,
+  getAdminUserAccountSummary,
   getVisibleAdminActivityEntries,
   shouldIncludeAdminOwner
 } from './admin-user-utils.js';
@@ -479,8 +481,14 @@ const getFilteredUsers = () => {
   });
 };
 
-const canEditRole = (record) => {
-  return canEditAdminUserRole(record, {
+const canRenderRoleChangeControl = (record) => {
+  return canRenderAdminRoleChangeControl(record, {
+    currentRole: state.currentRole
+  });
+};
+
+const getRolePolicyLabel = (record) => {
+  return getAdminUserRolePolicyLabel(record, {
     currentRole: state.currentRole
   });
 };
@@ -493,7 +501,11 @@ const buildRoleSelect = (record) => {
   select.dataset.userId = record.uid;
   select.setAttribute('aria-label', `Select role for ${record.email || 'teacher'}`);
 
-  const options = normalizedRole === ROLE_DEVELOPER ? [ROLE_DEVELOPER] : UPDATABLE_ROLES;
+  const options = normalizedRole === ROLE_DEVELOPER
+    ? [ROLE_DEVELOPER]
+    : normalizedRole === ROLE_TEACHER && !Boolean(record?.emailVerified)
+      ? [ROLE_TEACHER]
+      : UPDATABLE_ROLES;
   options.forEach((role) => {
     const option = document.createElement('option');
     option.value = role;
@@ -502,7 +514,7 @@ const buildRoleSelect = (record) => {
     select.appendChild(option);
   });
 
-  if (!canEditRole(record)) {
+  if (!canRenderRoleChangeControl(record)) {
     select.disabled = true;
   }
   return select;
@@ -538,9 +550,9 @@ const renderUsersTable = () => {
 
     const userLabel = normalizeDisplayText(record.name || record.email || '', 'Unknown user');
     const userEmail = normalizeDisplayText(record.email || '', 'No email on file');
-    const accountSummary = normalizeUserRole(record.role) === ROLE_DEVELOPER
-      ? 'Protected system account'
-      : 'Workspace member';
+    const normalizedUserRoleValue = normalizeUserRole(record.role);
+    const accountSummary = getAdminUserAccountSummary(record);
+    const rolePolicyLabel = getRolePolicyLabel(record);
 
     const nameCell = document.createElement('td');
     nameCell.innerHTML = buildIdentityMarkup({
@@ -554,7 +566,7 @@ const renderUsersTable = () => {
     emailCell.innerHTML = buildStackedTextMarkup({
       containerClass: 'email-stack',
       primary: userEmail,
-      secondary: canEditRole(record) ? 'Role can be updated' : 'Role editing unavailable'
+      secondary: rolePolicyLabel
     });
 
     const roleCell = document.createElement('td');
@@ -585,11 +597,13 @@ const renderUsersTable = () => {
       updateBtn.dataset.action = 'update-role';
       updateBtn.dataset.userId = record.uid;
       updateBtn.textContent = 'Update Role';
-      if (!canEditRole(record)) {
+      if (!canRenderRoleChangeControl(record)) {
         updateBtn.disabled = true;
-        updateBtn.title = normalizeUserRole(record?.role) === ROLE_DEVELOPER
-          ? 'Developer role cannot be changed here'
-          : 'Role update is not allowed for this account';
+        updateBtn.title = normalizedUserRoleValue === ROLE_DEVELOPER
+          ? 'Developer onboarding is manual outside the app'
+          : normalizedUserRoleValue === ROLE_TEACHER && !Boolean(record?.emailVerified)
+            ? 'Teacher email must be verified before admin promotion'
+            : 'Role update is not allowed for this account';
       }
       actionWrap.appendChild(updateBtn);
     } else {
@@ -1131,14 +1145,18 @@ const updateUserRole = async (uid, nextRole) => {
 
   try {
     setPanelStatus(roleUpdateState.progressStatusMessage);
-    await updateAdminUserRole({
+    const updatedRecord = await updateAdminUserRole({
       uid,
       name: normalizeText(record.name || ''),
       email: normalizeText(record.email || '').toLowerCase(),
       role: roleUpdateState.normalizedNextRole
     });
 
-    record.role = roleUpdateState.normalizedNextRole;
+    record.role = updatedRecord.role;
+    record.emailVerified = Boolean(updatedRecord.emailVerified ?? record.emailVerified);
+    record.roleUpdatedAt = updatedRecord.roleUpdatedAt || record.roleUpdatedAt || null;
+    record.roleUpdatedBy = updatedRecord.roleUpdatedBy || record.roleUpdatedBy || '';
+    writeAdminRuntimeCache('users', state.users);
     renderUsersTable();
     populateActivityUserFilter();
     const roleUpdateFeedbackState = buildAdminUserRoleUpdateFeedbackState();
@@ -1340,7 +1358,7 @@ const bindEvents = () => {
     trigger.textContent = roleUpdateState.progressLabel;
     await updateUserRole(uid, nextRole);
     trigger.textContent = previousLabel;
-    trigger.disabled = !canEditRole(findUserRecord(uid));
+    trigger.disabled = !canRenderRoleChangeControl(findUserRecord(uid));
   });
 };
 
