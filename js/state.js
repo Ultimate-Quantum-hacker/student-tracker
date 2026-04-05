@@ -40,7 +40,8 @@ window.TrackerApp = window.TrackerApp || {};
     error: null,
     selectedBulkExamId: '',
     selectedPerformanceCategory: 'strong',
-    allowEmptyClassCatalog: false
+    allowEmptyClassCatalog: false,
+    dataSchemaVersion: 2
   };
 
   const OFFLINE_CACHE_MESSAGE = 'Offline mode: using cached data';
@@ -55,6 +56,7 @@ window.TrackerApp = window.TrackerApp || {};
   const ALLOWED_ROLES = [ROLE_TEACHER, ROLE_ADMIN, ROLE_DEVELOPER, ROLE_LEGACY_USER];
   const LEGACY_DEFAULT_SUBJECTS = ['English Language', 'Mathematics', 'Integrated Science', 'Social Studies', 'Computing'];
   const LEGACY_DEFAULT_EXAMS = ['Mock 1'];
+  const DATA_SCHEMA_VERSION = 2;
   let stateWriteChain = Promise.resolve();
   let hasShownOfflineToast = false;
 
@@ -385,6 +387,7 @@ window.TrackerApp = window.TrackerApp || {};
   };
 
   const createDefaultRawData = () => ({
+    schemaVersion: DATA_SCHEMA_VERSION,
     students: [],
     subjects: [],
     exams: []
@@ -725,6 +728,7 @@ window.TrackerApp = window.TrackerApp || {};
     const examLookup = buildEntityLookup(normalizedExams, exam => exam?.title || exam?.name || '');
 
     return {
+      schemaVersion: DATA_SCHEMA_VERSION,
       students: (students || []).map(student => ({
         id: student.id,
         name: student.name,
@@ -774,6 +778,8 @@ window.TrackerApp = window.TrackerApp || {};
 
   app.applyRawData = function (rawData) {
     const data = app.migrateToRawData(rawData);
+
+    app.state.dataSchemaVersion = Number(data.schemaVersion || DATA_SCHEMA_VERSION) || DATA_SCHEMA_VERSION;
 
     app.state.subjects = (data.subjects || [])
       .map((subject, index) => normalizeSubjectRecord(subject, index))
@@ -841,6 +847,7 @@ window.TrackerApp = window.TrackerApp || {};
 
     if (!hasAnyRawScores(students) && isLegacySeedTemplate(normalizedSubjectLabels, normalizedExamLabels)) {
       return {
+        schemaVersion: DATA_SCHEMA_VERSION,
         students,
         subjects: [],
         exams: []
@@ -848,6 +855,7 @@ window.TrackerApp = window.TrackerApp || {};
     }
 
     return {
+      schemaVersion: DATA_SCHEMA_VERSION,
       students,
       subjects: normalizedSubjects,
       exams: normalizedExams

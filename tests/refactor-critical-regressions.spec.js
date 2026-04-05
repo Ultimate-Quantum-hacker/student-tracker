@@ -1492,8 +1492,8 @@ test.describe('Class refactor critical regressions', () => {
       const studentOneSnapshot = await firebaseModule.getDoc(
         firebaseModule.doc(firebaseModule.db, 'users', 'owner_service', 'classes', 'class_service', 'students', 'student_1')
       );
-      const studentTwoSnapshot = await firebaseModule.getDoc(
-        firebaseModule.doc(firebaseModule.db, 'users', 'owner_service', 'classes', 'class_service', 'students', 'student_2')
+      const classSnapshot = await firebaseModule.getDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_service', 'classes', 'class_service')
       );
 
       const saveStudentScores = saveStudentResult.data.students.find((student) => student.id === 'student_2')?.scores || {};
@@ -1506,6 +1506,9 @@ test.describe('Class refactor critical regressions', () => {
         saveStudentRemote: saveStudentResult.remoteSaved,
         updateStudentRemote: updateStudentResult.remoteSaved,
         saveScoresRemote: saveScoresResult.remoteSaved,
+        saveStudentSchemaVersion: saveStudentResult.data.schemaVersion,
+        saveScoresSchemaVersion: saveScoresResult.data.schemaVersion,
+        classDataSchemaVersion: classSnapshot.data().dataSchemaVersion,
         saveStudentScores,
         updateStudentScores,
         saveScoresData,
@@ -1524,6 +1527,9 @@ test.describe('Class refactor critical regressions', () => {
     expect(result.saveStudentRemote).toBe(true);
     expect(result.updateStudentRemote).toBe(true);
     expect(result.saveScoresRemote).toBe(true);
+    expect(result.saveStudentSchemaVersion).toBe(2);
+    expect(result.saveScoresSchemaVersion).toBe(2);
+    expect(result.classDataSchemaVersion).toBe(2);
     expect(result.saveStudentScores).toEqual({ subject_math: { exam_mock_1: 91 } });
     expect(result.updateStudentScores).toEqual({ subject_math: { exam_mock_1: 82 } });
     expect(result.saveScoresData).toEqual({ subject_math: { exam_mock_1: 84 } });
@@ -1536,6 +1542,139 @@ test.describe('Class refactor critical regressions', () => {
       storedStudentOne: false,
       storedStudentTwoAfterSaveStudent: false
     });
+  });
+
+  test('fetchAllData migrates legacy root data into class scope with schema markers', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__FIREBASE_CONFIG__ = {
+        apiKey: 'test-api-key',
+        authDomain: 'test-project.firebaseapp.com',
+        projectId: 'test-project',
+        storageBucket: 'test-project.appspot.com',
+        messagingSenderId: '1234567890',
+        appId: '1:1234567890:web:test'
+      };
+    });
+    await page.goto(APP_URL);
+
+    const result = await page.evaluate(async () => {
+      const [firebaseModule, dbModule] = await Promise.all([
+        import('/js/firebase.js'),
+        import('/services/db.js')
+      ]);
+
+      globalThis.__firestoreStore?.clear?.();
+      localStorage.clear();
+      sessionStorage.clear();
+
+      firebaseModule.auth.currentUser = {
+        uid: 'owner_migration',
+        email: 'teacher@example.com',
+        displayName: 'Teacher Migration'
+      };
+
+      dbModule.setCurrentUserRoleContext('teacher');
+      dbModule.setCurrentClassId('class_migration');
+      dbModule.setCurrentClassOwnerContext('owner_migration', 'Teacher Migration');
+
+      const updatedAt = new Date().toISOString();
+      await firebaseModule.setDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_migration'),
+        {
+          uid: 'owner_migration',
+          userId: 'owner_migration',
+          activeClassId: 'class_migration',
+          updatedAt
+        },
+        { merge: true }
+      );
+      await firebaseModule.setDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_migration', 'classes', 'class_migration'),
+        {
+          id: 'class_migration',
+          name: 'Migration Class',
+          createdAt: updatedAt,
+          updatedAt,
+          deleted: false,
+          deletedAt: null,
+          userId: 'owner_migration',
+          ownerId: 'owner_migration',
+          ownerName: 'Teacher Migration'
+        },
+        { merge: false }
+      );
+      await firebaseModule.setDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_migration', 'students', 'student_legacy_1'),
+        {
+          id: 'student_legacy_1',
+          name: 'Legacy Student',
+          notes: '',
+          class: 'Migration Class',
+          scores: {
+            Math: { 'Mock 1': 73 }
+          },
+          deleted: false,
+          deletedAt: null,
+          updatedAt,
+          userId: 'owner_migration'
+        },
+        { merge: false }
+      );
+      await firebaseModule.setDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_migration', 'subjects', 'subject_math'),
+        {
+          id: 'subject_math',
+          name: 'Math',
+          deleted: false,
+          deletedAt: null,
+          updatedAt,
+          userId: 'owner_migration'
+        },
+        { merge: false }
+      );
+      await firebaseModule.setDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_migration', 'exams', 'exam_mock_1'),
+        {
+          id: 'exam_mock_1',
+          title: 'Mock 1',
+          name: 'Mock 1',
+          deleted: false,
+          deletedAt: null,
+          updatedAt,
+          userId: 'owner_migration'
+        },
+        { merge: false }
+      );
+
+      const fetchResult = await dbModule.fetchAllData();
+      const migratedStudentSnapshot = await firebaseModule.getDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_migration', 'classes', 'class_migration', 'students', 'student_legacy_1')
+      );
+      const classSnapshot = await firebaseModule.getDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_migration', 'classes', 'class_migration')
+      );
+      const userRootSnapshot = await firebaseModule.getDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_migration')
+      );
+
+      return {
+        currentClassId: fetchResult.currentClassId,
+        fetchSchemaVersion: fetchResult.data.schemaVersion,
+        classDataSchemaVersion: classSnapshot.data().dataSchemaVersion,
+        migrationStatus: userRootSnapshot.data().classMigrationStatus,
+        migrationComplete: userRootSnapshot.data().classMigrationComplete,
+        migratedScores: migratedStudentSnapshot.data().scores || {},
+        fetchedScores: fetchResult.data.students[0]?.scores || {}
+      };
+    });
+
+    expect(result.currentClassId).toBe('class_migration');
+    expect(result.fetchSchemaVersion).toBe(2);
+    expect(result.classDataSchemaVersion).toBe(2);
+    expect(result.migrationStatus).toBe('completed');
+    expect(result.migrationComplete).toBe(true);
+    expect(result.migratedScores).toEqual({ subject_math: { exam_mock_1: 73 } });
+    expect(result.fetchedScores).toEqual({ subject_math: { exam_mock_1: 73 } });
   });
 
   test('scoring classification boundaries remain unchanged', async ({ page }) => {

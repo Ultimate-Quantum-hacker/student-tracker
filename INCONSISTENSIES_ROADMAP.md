@@ -161,9 +161,9 @@ Eliminate fragile storage patterns and finish the long-term migration path so th
 ## Deliverables
 
 - [x] Id-based score model replacing name-keyed score storage
-- [ ] Safe migration plan and migration tooling for existing data
-- [ ] Verified legacy-to-current data migration path
-- [ ] Schema versioning strategy and persisted version markers
+- [x] Safe migration plan and migration tooling for existing data
+- [x] Verified legacy-to-current data migration path
+- [x] Schema versioning strategy and persisted version markers
 - [ ] Automated trash cleanup mechanism with tests and operational verification
 - [ ] Activity log retention strategy with implementation and tests
 - [ ] Firestore indexes and migration documentation checked into the repo
@@ -566,3 +566,8 @@ Use this section to track major roadmap updates.
 - **Phase:** Phase 3
 - **Update:** Canonicalized subject and exam score writes around immutable ids across `js/ui.js`, `js/students.js`, `js/state.js`, and `services/db.js`, preserved id-bearing subject/exam records through Firestore reads and writes, and added focused Playwright regressions covering UI score entry, runtime migration, analytics compatibility, and service-layer persistence.
 - **Impact:** Phase 3 is now in progress with the app's active score-entry and persistence paths writing id-keyed score maps instead of mutable labels, and the focused Chromium validation slice passes with `npx playwright test tests/refactor-critical-regressions.spec.js --project=chromium --workers=1 --grep "teacher write flows retain writable class-scoped context|teacher score entry UI emits subject id keyed payloads|applyRawData migrates legacy score maps to subject and exam ids|service student write paths normalize label keyed scores to ids before persistence|scoring classification boundaries remain unchanged" --reporter=line`. Remaining Phase 3 work is migration tooling/verification, schema-version governance, trash-cleanup automation, activity-log retention policy, and Firestore index/documentation capture.
+
+- **Date:** 2026-04-05
+- **Phase:** Phase 3
+- **Update:** Added persisted `dataSchemaVersion` stamping through the shared `buildClassDocMetadataPatch` helper across class metadata write paths in `services/db.js`, backfilled the migration-completion path so the active class document is stamped even when modular child data was already in sync, and extended `tests/refactor-critical-regressions.spec.js` with focused schema-version coverage for runtime state hydration, service-layer writes, and the canonical legacy-root-to-class migration flow exercised via `fetchAllData()`.
+- **Impact:** Schema-version governance and the canonical legacy-to-current migration path are now verified end to end for the active Phase 3 data model slice, and the focused Chromium validation passes with `npx playwright test tests/refactor-critical-regressions.spec.js --project=chromium --workers=1 --reporter=line --grep "applyRawData migrates legacy score maps to subject and exam ids|service student write paths normalize label keyed scores to ids before persistence|fetchAllData migrates legacy root data into class scope with schema markers"`. Remaining Phase 3 work is trash-cleanup automation, activity-log retention policy, and Firestore index/documentation capture.

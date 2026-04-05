@@ -41,6 +41,7 @@ const TRASH_RETENTION_DAYS = 3;
 const MAX_ACTIVITY_LOGS = 100;
 const ACTIVITY_LOG_FETCH_LIMIT = MAX_ACTIVITY_LOGS;
 const CLASS_MIGRATION_VERSION = 2;
+const DATA_SCHEMA_VERSION = 2;
 
 const ERROR_CODES = {
   READ_ONLY_MODE: 'READ_ONLY_MODE',
@@ -75,6 +76,7 @@ let recentFetchAllDataCache = {
 };
 
 const createDefaultRawData = () => ({
+  schemaVersion: DATA_SCHEMA_VERSION,
   students: [],
   subjects: [],
   exams: []
@@ -88,6 +90,14 @@ let writeChain = Promise.resolve();
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const asArray = (value) => Array.isArray(value) ? value : [];
+const buildClassDocMetadataPatch = (ownerId, classId, updatedAt, extra = {}) => ({
+  id: String(classId || '').trim(),
+  updatedAt: String(updatedAt || '').trim() || new Date().toISOString(),
+  userId: String(ownerId || '').trim(),
+  ownerId: String(ownerId || '').trim(),
+  dataSchemaVersion: DATA_SCHEMA_VERSION,
+  ...extra
+});
 const invalidateRecentFetchAllDataCache = () => {
   recentFetchAllDataCache = {
     scopeKey: '',
@@ -333,6 +343,7 @@ const normalizeRawData = (rawData) => {
   const examLookup = buildEntityLookup(exams, exam => exam?.title || exam?.name || '');
 
   return {
+    schemaVersion: DATA_SCHEMA_VERSION,
     students: asArray(input.students).map((student) => ({
       id: student?.id,
       name: normalizeStudentName(student?.name),
@@ -504,12 +515,11 @@ const persistStudentRestoreById = async (studentId, nextData) => {
         console.warn('Ignoring legacy root student restore cleanup failure:', error);
       }
 
-      await setDoc(getClassDocRef(userId, classId), {
-        id: classId,
-        updatedAt,
-        userId,
-        ownerId: userId
-      }, { merge: true });
+      await setDoc(
+        getClassDocRef(userId, classId),
+        buildClassDocMetadataPatch(userId, classId, updatedAt),
+        { merge: true }
+      );
 
       await setDoc(getUserRootRef(userId), {
         userId,
@@ -719,12 +729,11 @@ const persistSubjectDeleteByIdentity = async (subjectIdentity, nextData) => {
         classId
       });
 
-      await setDoc(getClassDocRef(userId, classId), {
-        id: classId,
-        updatedAt,
-        userId,
-        ownerId: userId
-      }, { merge: true });
+      await setDoc(
+        getClassDocRef(userId, classId),
+        buildClassDocMetadataPatch(userId, classId, updatedAt),
+        { merge: true }
+      );
 
       await setDoc(getUserRootRef(userId), {
         userId,
@@ -805,12 +814,11 @@ const persistExamDeleteByIdentity = async (examIdentity, nextData) => {
         classId
       });
 
-      await setDoc(getClassDocRef(userId, classId), {
-        id: classId,
-        updatedAt,
-        userId,
-        ownerId: userId
-      }, { merge: true });
+      await setDoc(
+        getClassDocRef(userId, classId),
+        buildClassDocMetadataPatch(userId, classId, updatedAt),
+        { merge: true }
+      );
 
       await setDoc(getUserRootRef(userId), {
         userId,
@@ -894,12 +902,11 @@ const persistSubjectRestoreById = async (subjectId, nextData) => {
         classId
       });
 
-      await setDoc(getClassDocRef(userId, classId), {
-        id: classId,
-        updatedAt,
-        userId,
-        ownerId: userId
-      }, { merge: true });
+      await setDoc(
+        getClassDocRef(userId, classId),
+        buildClassDocMetadataPatch(userId, classId, updatedAt),
+        { merge: true }
+      );
 
       await setDoc(getUserRootRef(userId), {
         userId,
@@ -975,12 +982,11 @@ const persistExamRestoreById = async (examId, nextData) => {
         classId
       });
 
-      await setDoc(getClassDocRef(userId, classId), {
-        id: classId,
-        updatedAt,
-        userId,
-        ownerId: userId
-      }, { merge: true });
+      await setDoc(
+        getClassDocRef(userId, classId),
+        buildClassDocMetadataPatch(userId, classId, updatedAt),
+        { merge: true }
+      );
 
       await setDoc(getUserRootRef(userId), {
         userId,
@@ -1049,12 +1055,11 @@ const persistSubjectHardDeleteById = async (subjectId, nextData) => {
 
       await deleteDoc(getSubjectDocRef(userId, normalizedSubjectId, classId));
 
-      await setDoc(getClassDocRef(userId, classId), {
-        id: classId,
-        updatedAt,
-        userId,
-        ownerId: userId
-      }, { merge: true });
+      await setDoc(
+        getClassDocRef(userId, classId),
+        buildClassDocMetadataPatch(userId, classId, updatedAt),
+        { merge: true }
+      );
 
       await setDoc(getUserRootRef(userId), {
         userId,
@@ -1123,12 +1128,11 @@ const persistExamHardDeleteById = async (examId, nextData) => {
 
       await deleteDoc(getExamDocRef(userId, normalizedExamId, classId));
 
-      await setDoc(getClassDocRef(userId, classId), {
-        id: classId,
-        updatedAt,
-        userId,
-        ownerId: userId
-      }, { merge: true });
+      await setDoc(
+        getClassDocRef(userId, classId),
+        buildClassDocMetadataPatch(userId, classId, updatedAt),
+        { merge: true }
+      );
 
       await setDoc(getUserRootRef(userId), {
         userId,
@@ -1204,12 +1208,11 @@ const persistStudentHardDeleteById = async (studentId, nextData) => {
         console.warn('Ignoring legacy root student purge failure:', error);
       }
 
-      await setDoc(getClassDocRef(userId, classId), {
-        id: classId,
-        updatedAt,
-        userId,
-        ownerId: userId
-      }, { merge: true });
+      await setDoc(
+        getClassDocRef(userId, classId),
+        buildClassDocMetadataPatch(userId, classId, updatedAt),
+        { merge: true }
+      );
 
       await setDoc(getUserRootRef(userId), {
         userId,
@@ -1990,17 +1993,13 @@ const ensureDefaultClassDocument = async (userId) => {
   const classDocRef = doc(getClassesCollectionRef(userId));
   const classId = normalizeClassId(classDocRef.id);
 
-  await setDoc(classDocRef, {
-    id: classId,
+  await setDoc(classDocRef, buildClassDocMetadataPatch(userId, classId, createdAt, {
     name: DEFAULT_CLASS_NAME,
     createdAt,
-    updatedAt: createdAt,
     deleted: false,
     deletedAt: null,
-    userId,
-    ownerId: userId,
     ownerName
-  });
+  }));
 
   await setDoc(getUserRootRef(userId), {
     uid: userId,
@@ -2072,13 +2071,20 @@ const ensureClassMigration = async (userId) => {
       );
     }
 
+    const migrationUpdatedAt = new Date().toISOString();
+    await setDoc(
+      getClassDocRef(classOwnerId, classId),
+      buildClassDocMetadataPatch(classOwnerId, classId, migrationUpdatedAt),
+      { merge: true }
+    );
+
     await updateMigrationState(userId, 'completed', {
       classMigrationError: null,
-      classMigrationCompletedAt: new Date().toISOString(),
+      classMigrationCompletedAt: migrationUpdatedAt,
       classMigrationCountsLegacy: legacyCounts,
       classMigrationCountsClass: classCountsAfterSync,
       activeClassId: classId,
-      updatedAt: new Date().toISOString()
+      updatedAt: migrationUpdatedAt
     });
   } catch (error) {
     await updateMigrationState(userId, 'failed', {
@@ -2183,12 +2189,11 @@ const repairLegacyStudentsIntoClassScope = async (ownerId, classId, className, c
       }, { merge: false });
     }));
 
-    await setDoc(getClassDocRef(normalizedOwnerId, normalizedClassId), {
-      id: normalizedClassId,
-      updatedAt,
-      userId: normalizedOwnerId,
-      ownerId: normalizedOwnerId
-    }, { merge: true });
+    await setDoc(
+      getClassDocRef(normalizedOwnerId, normalizedClassId),
+      buildClassDocMetadataPatch(normalizedOwnerId, normalizedClassId, updatedAt),
+      { merge: true }
+    );
 
     await setDoc(getUserRootRef(normalizedOwnerId), {
       userId: normalizedOwnerId,
@@ -2568,12 +2573,11 @@ const writeModularData = async (ownerId, classId, rawData) => {
     syncCollectionDocuments(getExamsCollectionRef(normalizedOwnerId, normalizedClassId), examDocs, { preserveDeleted: true })
   ]);
 
-  await setDoc(getClassDocRef(normalizedOwnerId, normalizedClassId), {
-    id: normalizedClassId,
-    updatedAt,
-    userId: normalizedOwnerId,
-    ownerId: normalizedOwnerId
-  }, { merge: true });
+  await setDoc(
+    getClassDocRef(normalizedOwnerId, normalizedClassId),
+    buildClassDocMetadataPatch(normalizedOwnerId, normalizedClassId, updatedAt),
+    { merge: true }
+  );
 
   await setDoc(getUserRootRef(normalizedOwnerId), {
     userId: normalizedOwnerId,
@@ -3332,12 +3336,11 @@ const persistStudentUpdateById = async (studentId, studentData, nextData) => {
         updatedAt
       });
 
-      await setDoc(getClassDocRef(userId, classId), {
-        id: classId,
-        updatedAt,
-        userId,
-        ownerId: userId
-      }, { merge: true });
+      await setDoc(
+        getClassDocRef(userId, classId),
+        buildClassDocMetadataPatch(userId, classId, updatedAt),
+        { merge: true }
+      );
 
       await setDoc(getUserRootRef(userId), {
         userId,
@@ -3427,12 +3430,11 @@ const persistStudentDeleteById = async (studentId, nextData, studentMeta = {}) =
         console.warn('Ignoring legacy root student delete cleanup failure:', error);
       }
 
-      await setDoc(getClassDocRef(userId, classId), {
-        id: classId,
-        updatedAt,
-        userId,
-        ownerId: userId
-      }, { merge: true });
+      await setDoc(
+        getClassDocRef(userId, classId),
+        buildClassDocMetadataPatch(userId, classId, updatedAt),
+        { merge: true }
+      );
 
       await setDoc(getUserRootRef(userId), {
         userId,
@@ -3815,13 +3817,9 @@ export const syncCurrentUserClassOwnerName = async (ownerName = '') => {
       return;
     }
 
-    updateTasks.push(setDoc(entry.ref, {
-      id: classId,
-      userId,
-      ownerId: userId,
-      ownerName: normalizedOwnerName,
-      updatedAt
-    }, { merge: true }));
+    updateTasks.push(setDoc(entry.ref, buildClassDocMetadataPatch(userId, classId, updatedAt, {
+      ownerName: normalizedOwnerName
+    }), { merge: true }));
   });
 
   if (updateTasks.length) {
@@ -3843,17 +3841,13 @@ export const createClass = async (className) => {
   const classDocRef = doc(getClassesCollectionRef(userId));
   const classId = normalizeClassId(classDocRef.id);
 
-  await setDoc(classDocRef, {
-    id: classId,
+  await setDoc(classDocRef, buildClassDocMetadataPatch(userId, classId, createdAt, {
     name: normalizedName,
     createdAt,
-    updatedAt: createdAt,
     deleted: false,
     deletedAt: null,
-    userId,
-    ownerId: userId,
     ownerName
-  });
+  }));
 
   const catalog = await ensureClassCatalog(userId);
   const classes = catalog.classes || [];
@@ -3930,17 +3924,13 @@ const deleteClassesInternal = async (classIds = [], options = {}) => {
   });
 
   await Promise.all(deletedEntries.map((classEntry) => {
-    return setDoc(getClassDocRef(classEntry.ownerId, classEntry.id), {
-      id: classEntry.id,
+    return setDoc(getClassDocRef(classEntry.ownerId, classEntry.id), buildClassDocMetadataPatch(classEntry.ownerId, classEntry.id, updatedAt, {
       name: classEntry.name,
       createdAt: classEntry.createdAt || null,
       deleted: true,
       deletedAt: serverTimestamp(),
-      updatedAt,
-      userId: classEntry.ownerId,
-      ownerId: classEntry.ownerId,
       ownerName: classEntry.ownerName || getAuthenticatedUserDisplayName()
-    }, { merge: true });
+    }), { merge: true });
   }));
 
   const nextTrashClasses = sortClassTrashEntries([
@@ -4011,17 +4001,13 @@ export const restoreClass = async (classId) => {
     throw createContextError(ERROR_CODES.MISSING_OWNER_ID, 'Class owner metadata is missing');
   }
 
-  await setDoc(getClassDocRef(classOwnerId, normalizedClassId), {
-    id: normalizedClassId,
+  await setDoc(getClassDocRef(classOwnerId, normalizedClassId), buildClassDocMetadataPatch(classOwnerId, normalizedClassId, updatedAt, {
     name: classEntry.name,
     createdAt: classEntry.createdAt || null,
     deleted: false,
     deletedAt: null,
-    updatedAt,
-    userId: classOwnerId,
-    ownerId: classOwnerId,
     ownerName: classEntry.ownerName || getAuthenticatedUserDisplayName()
-  }, { merge: true });
+  }), { merge: true });
 
   const nextClasses = sortClasses([
     ...classes.filter(entry => entry.id !== normalizedClassId),
@@ -4193,12 +4179,11 @@ export const deleteAdminRegistryStudent = async ({ ownerId = '', studentId = '',
 
   const uniqueClassIds = Array.from(new Set(matches.map((entry) => normalizeClassId(entry?.classId || '')).filter(Boolean)));
   const metadataResults = await Promise.allSettled([
-    ...uniqueClassIds.map((classId) => setDoc(getClassDocRef(normalizedOwnerId, classId), {
-      id: classId,
-      updatedAt,
-      userId: normalizedOwnerId,
-      ownerId: normalizedOwnerId
-    }, { merge: true })),
+    ...uniqueClassIds.map((classId) => setDoc(
+      getClassDocRef(normalizedOwnerId, classId),
+      buildClassDocMetadataPatch(normalizedOwnerId, classId, updatedAt),
+      { merge: true }
+    )),
     setDoc(getUserRootRef(normalizedOwnerId), {
       userId: normalizedOwnerId,
       updatedAt
