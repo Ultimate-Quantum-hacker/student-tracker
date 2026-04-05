@@ -2662,7 +2662,7 @@ const ui = {
       if (s) {
         app.dom.dynamicSubjectFields.innerHTML = app.state.subjects.map(sb => {
           const value = exam ? app.analytics.getScore(s, sb, exam) : '';
-          return `<div class="form-group"><label>${app.utils.esc(sb.name)}</label><input type="number" data-subject="${sb.name}" value="${value}"></div>`;
+          return `<div class="form-group"><label>${app.utils.esc(sb.name)}</label><input type="number" data-subject-id="${sb.id}" value="${value}"></div>`;
         }).join('');
       } else {
         app.dom.dynamicSubjectFields.innerHTML = '';
@@ -2681,7 +2681,7 @@ const ui = {
       const bodyHtml = app.state.students.map(s => {
         const row = app.state.subjects.map(sub => {
           const val = exam ? app.analytics.getScore(s, sub, exam) : '';
-          return `<td><input type="number" class="bulk-score-input" data-sid="${s.id}" data-sub="${sub.name}" value="${val === '' ? '' : val}" min="0" max="100"></td>`;
+          return `<td><input type="number" class="bulk-score-input" data-sid="${s.id}" data-sub="${sub.id}" value="${val === '' ? '' : val}" min="0" max="100"></td>`;
         }).join('');
         const studentName = app.utils.esc(s.name);
         return `<tr><td class="sticky-col"><div class="bulk-student-cell"><span class="bulk-student-name">${studentName}</span><button type="button" class="bulk-row-reset-btn" data-reset-student-id="${s.id}" title="Clear all marks for ${studentName}" aria-label="Clear all marks for ${studentName}">&#8635;</button></div></td>${row}</tr>`;
@@ -3193,9 +3193,9 @@ const ui = {
           const sid = app.dom.scoreStudentSelect.value, mid = app.dom.scoreMockSelect.value;
           const scores = {};
           app.dom.dynamicSubjectFields.querySelectorAll('input').forEach(f => {
-            const subjectName = f.dataset.subject;
-            if (subjectName) {
-              scores[subjectName] = app.normalizeScore(f.value);
+            const subjectId = f.dataset.subjectId || f.dataset.subject;
+            if (subjectId) {
+              scores[subjectId] = app.normalizeScore(f.value);
             }
           });
           await this.withLoader(() => app.students.saveScores(sid, mid, scores, app, this), {

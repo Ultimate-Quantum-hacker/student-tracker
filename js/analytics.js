@@ -22,6 +22,26 @@ const analytics = {
     return subject?.name || '';
   },
 
+  getExamId: function (exam) {
+    if (exam && typeof exam === 'object') {
+      return String(exam.id || '').trim();
+    }
+
+    const examLabel = this.getExamLabel(exam);
+    const matchedExam = (app.state.exams || []).find(candidate => this.getExamLabel(candidate) === examLabel);
+    return String(matchedExam?.id || examLabel || '').trim();
+  },
+
+  getSubjectId: function (subject) {
+    if (subject && typeof subject === 'object') {
+      return String(subject.id || '').trim();
+    }
+
+    const subjectLabel = this.getSubjectLabel(subject);
+    const matchedSubject = (app.state.subjects || []).find(candidate => this.getSubjectLabel(candidate) === subjectLabel);
+    return String(matchedSubject?.id || subjectLabel || '').trim();
+  },
+
   getPerformanceCategories: function () {
     return [
       { key: 'strong', label: 'Strong', min: 80, max: 100 },
@@ -57,9 +77,28 @@ const analytics = {
   },
 
   getScore: function (student, subject, exam) {
+    const subjectId = this.getSubjectId(subject);
+    const examId = this.getExamId(exam);
     const subjectLabel = this.getSubjectLabel(subject);
     const examLabel = this.getExamLabel(exam);
-    return student?.scores?.[subjectLabel]?.[examLabel] ?? '';
+
+    const subjectKeys = Array.from(new Set([subjectId, subjectLabel].filter(Boolean)));
+    const examKeys = Array.from(new Set([examId, examLabel].filter(Boolean)));
+
+    for (const subjectKey of subjectKeys) {
+      const examMap = student?.scores?.[subjectKey];
+      if (!examMap || typeof examMap !== 'object') {
+        continue;
+      }
+
+      for (const examKey of examKeys) {
+        if (Object.prototype.hasOwnProperty.call(examMap, examKey)) {
+          return examMap[examKey];
+        }
+      }
+    }
+
+    return '';
   },
 
   getTotal: function (student, exam) {
@@ -83,13 +122,12 @@ const analytics = {
   mockTotal: function (scores, exam) {
     if (!scores) return null;
 
-    const examLabel = this.getExamLabel(exam) || this.getLatestExamLabel();
+    const resolvedExam = exam || this.getLatestExam();
     let total = 0;
     let count = 0;
 
     (app.state.subjects || []).forEach(subject => {
-      const subjectLabel = this.getSubjectLabel(subject);
-      const value = scores?.[subjectLabel]?.[examLabel];
+      const value = this.getScore({ scores }, subject, resolvedExam);
       if (value !== '' && value !== undefined && value !== null && !isNaN(value)) {
         total += Number(value);
         count++;

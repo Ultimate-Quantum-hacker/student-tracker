@@ -32,7 +32,7 @@ The roadmap is only complete when:
 | --- | --- | --- | --- |
 | 1 | Product Consistency and Canonical Rules | In Progress | One product identity, one risk model, one permission model, and no contradictory UX rules |
 | 2 | Auth, Identity, and Account Lifecycle Completion | In Progress | Authentication and user account management become complete and production-ready |
-| 3 | Data Model Hardening and Migration Completion | Not Started | Immutable, migration-safe, id-based data model with no legacy dependency |
+| 3 | Data Model Hardening and Migration Completion | In Progress | Immutable, migration-safe, id-based data model with no legacy dependency |
 | 4 | Frontend Architecture and Service Layer Consolidation | Not Started | Modular codebase with clear boundaries and one authoritative data access layer |
 | 5 | Teacher and Admin Workflow Completion | Not Started | Fully coherent day-to-day workflows with missing feature gaps closed |
 | 6 | Offline, PWA, Environment, and Deployment Readiness | Not Started | Valid installable PWA, correct environment separation, and complete deployment setup |
@@ -160,7 +160,7 @@ Eliminate fragile storage patterns and finish the long-term migration path so th
 
 ## Deliverables
 
-- [ ] Id-based score model replacing name-keyed score storage
+- [x] Id-based score model replacing name-keyed score storage
 - [ ] Safe migration plan and migration tooling for existing data
 - [ ] Verified legacy-to-current data migration path
 - [ ] Schema versioning strategy and persisted version markers
@@ -561,3 +561,8 @@ Use this section to track major roadmap updates.
 - **Phase:** Phase 2
 - **Update:** Replaced the placeholder project documentation with current auth/account-lifecycle guidance in `README.md`, refreshed `FIREBASE_SETUP.md` to match the runtime Firebase config and locked-down Firestore rules workflow, added npm scripts for auth smoke/regression/rules deployment, and expanded `tests/example.spec.js` with offline-stubbed coverage for password reset feedback, signed-in unverified-user routing, verify-email screen context, and auth helper verification gating.
 - **Impact:** Phase 2 documentation now matches the implemented teacher signup/login/verification/account-settings lifecycle, the local test/deploy workflow is documented at the package and markdown layers, and the focused Chromium auth smoke suite passes `8/8` with broader lifecycle coverage. Remaining Phase 2 work is now limited to any optional follow-up verification or future roadmap phases.
+
+- **Date:** 2026-04-05
+- **Phase:** Phase 3
+- **Update:** Canonicalized subject and exam score writes around immutable ids across `js/ui.js`, `js/students.js`, `js/state.js`, and `services/db.js`, preserved id-bearing subject/exam records through Firestore reads and writes, and added focused Playwright regressions covering UI score entry, runtime migration, analytics compatibility, and service-layer persistence.
+- **Impact:** Phase 3 is now in progress with the app's active score-entry and persistence paths writing id-keyed score maps instead of mutable labels, and the focused Chromium validation slice passes with `npx playwright test tests/refactor-critical-regressions.spec.js --project=chromium --workers=1 --grep "teacher write flows retain writable class-scoped context|teacher score entry UI emits subject id keyed payloads|applyRawData migrates legacy score maps to subject and exam ids|service student write paths normalize label keyed scores to ids before persistence|scoring classification boundaries remain unchanged" --reporter=line`. Remaining Phase 3 work is migration tooling/verification, schema-version governance, trash-cleanup automation, activity-log retention policy, and Firestore index/documentation capture.

@@ -396,6 +396,11 @@ window.TrackerApp = window.TrackerApp || {};
     if (Object.prototype.hasOwnProperty.call(nextStudentData, 'name')) {
       nextStudentData.name = normalizeStudentName(nextStudentData.name);
     }
+    if (Object.prototype.hasOwnProperty.call(nextStudentData, 'scores')) {
+      const subjectLookup = buildEntityLookup(app.state.subjects || [], subject => subject?.name || '');
+      const examLookup = buildEntityLookup(app.state.exams || [], exam => exam?.title || exam?.name || '');
+      nextStudentData.scores = normalizeScoreMapByIds(nextStudentData.scores || {}, subjectLookup, examLookup);
+    }
     return nextStudentData;
   };
   const createId = (prefix, name, index) => {
@@ -404,6 +409,102 @@ window.TrackerApp = window.TrackerApp || {};
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '');
     return `${prefix}_${base || index + 1}`;
+  };
+
+  const createCollectionDocId = (prefix, label, index) => {
+    const base = normalizeLabel(label)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    return `${prefix}_${base || index + 1}_${index + 1}`;
+  };
+
+  const normalizeSubjectRecord = (subject, index = 0) => {
+    const payload = subject && typeof subject === 'object' && !Array.isArray(subject) ? subject : {};
+    const name = normalizeLabel(payload.name || payload.label || payload.title || (typeof subject === 'string' ? subject : ''));
+    if (!name) {
+      return null;
+    }
+
+    return {
+      ...payload,
+      id: normalizeLabel(payload.id) || createCollectionDocId('sub', name, index),
+      name
+    };
+  };
+
+  const normalizeExamRecord = (exam, index = 0) => {
+    const payload = exam && typeof exam === 'object' && !Array.isArray(exam) ? exam : {};
+    const title = normalizeLabel(payload.title || payload.name || payload.label || (typeof exam === 'string' ? exam : ''));
+    if (!title) {
+      return null;
+    }
+
+    return {
+      ...payload,
+      id: normalizeLabel(payload.id) || createCollectionDocId('exam', title, index),
+      title,
+      name: title
+    };
+  };
+
+  const buildEntityLookup = (items = [], labelSelector = () => '') => {
+    const byId = new Map();
+    const byLabel = new Map();
+
+    (items || []).forEach((item) => {
+      const id = normalizeLabel(item?.id);
+      const label = normalizeLabel(labelSelector(item)).toLowerCase();
+      if (id) {
+        byId.set(id, item);
+      }
+      if (id && label) {
+        byLabel.set(label, id);
+      }
+    });
+
+    return { byId, byLabel };
+  };
+
+  const resolveEntityScoreKey = (key, lookup) => {
+    const normalizedKey = normalizeLabel(key);
+    if (!normalizedKey) {
+      return '';
+    }
+    if (lookup?.byId?.has(normalizedKey)) {
+      return normalizedKey;
+    }
+    return lookup?.byLabel?.get(normalizedKey.toLowerCase()) || normalizedKey;
+  };
+
+  const normalizeScoreMapByIds = (scores = {}, subjectLookup = null, examLookup = null) => {
+    const normalizedScores = {};
+
+    Object.entries(scores && typeof scores === 'object' ? scores : {}).forEach(([subjectKey, examMap]) => {
+      if (!examMap || typeof examMap !== 'object' || Array.isArray(examMap)) {
+        return;
+      }
+
+      const resolvedSubjectKey = resolveEntityScoreKey(subjectKey, subjectLookup);
+      if (!resolvedSubjectKey) {
+        return;
+      }
+
+      Object.entries(examMap).forEach(([examKey, value]) => {
+        const resolvedExamKey = resolveEntityScoreKey(examKey, examLookup);
+        if (!resolvedExamKey) {
+          return;
+        }
+
+        if (!normalizedScores[resolvedSubjectKey] || typeof normalizedScores[resolvedSubjectKey] !== 'object') {
+          normalizedScores[resolvedSubjectKey] = {};
+        }
+
+        normalizedScores[resolvedSubjectKey][resolvedExamKey] = app.normalizeScore(value);
+      });
+    });
+
+    return normalizedScores;
   };
 
   const hasAnyRawScores = (students = []) => students.some(student => {
@@ -614,8 +715,14 @@ window.TrackerApp = window.TrackerApp || {};
   };
 
   const composeRawData = (students = [], subjects = [], exams = []) => {
-    const subjectLabels = (subjects || []).map(s => normalizeLabel(s.name)).filter(Boolean);
-    const examLabels = (exams || []).map(e => normalizeLabel(e.title || e.name)).filter(Boolean);
+    const normalizedSubjects = (subjects || [])
+      .map((subject, index) => normalizeSubjectRecord(subject, index))
+      .filter(Boolean);
+    const normalizedExams = (exams || [])
+      .map((exam, index) => normalizeExamRecord(exam, index))
+      .filter(Boolean);
+    const subjectLookup = buildEntityLookup(normalizedSubjects, subject => subject?.name || '');
+    const examLookup = buildEntityLookup(normalizedExams, exam => exam?.title || exam?.name || '');
 
     return {
       students: (students || []).map(student => ({
@@ -623,10 +730,18 @@ window.TrackerApp = window.TrackerApp || {};
         name: student.name,
         notes: student.notes || '',
         class: student.class || '',
-        scores: { ...(student.scores || {}) }
+        scores: normalizeScoreMapByIds(student.scores || {}, subjectLookup, examLookup)
       })),
-      subjects: subjectLabels,
-      exams: examLabels
+      subjects: normalizedSubjects.map(subject => ({
+        id: subject.id,
+        name: subject.name
+      })),
+      exams: normalizedExams.map(exam => ({
+        ...(exam.date ? { date: exam.date } : {}),
+        id: exam.id,
+        title: exam.title,
+        name: exam.title
+      }))
     };
   };
 
@@ -639,12 +754,15 @@ window.TrackerApp = window.TrackerApp || {};
     app.state.students.forEach(student => {
       app.state.subjects.forEach(subject => {
         app.state.exams.forEach(exam => {
-          const score = student.scores?.[subject.name]?.[exam.title];
+          const score = app.analytics?.getScore
+            ? app.analytics.getScore(student, subject, exam)
+            : (student.scores?.[subject.id]?.[exam.id] ?? student.scores?.[subject.name]?.[exam.title]);
           if (score !== '' && score !== undefined && score !== null && !isNaN(score)) {
             app.state.scores.push({
               id: `${student.id}_${exam.id}_${subject.id}`,
               studentId: student.id,
               examId: exam.id,
+              subjectId: subject.id,
               subject: subject.name,
               score: Number(score)
             });
@@ -655,19 +773,24 @@ window.TrackerApp = window.TrackerApp || {};
   };
 
   app.applyRawData = function (rawData) {
-    const data = rawData || createDefaultRawData();
-    const subjectLabels = (data.subjects || []).map(normalizeLabel).filter(Boolean);
-    const examLabels = (data.exams || []).map(normalizeLabel).filter(Boolean);
+    const data = app.migrateToRawData(rawData);
 
-    app.state.subjects = subjectLabels.map((name, idx) => ({ id: createId('sub', name, idx), name }));
-    app.state.exams = examLabels.map((title, idx) => ({ id: createId('exam', title, idx), title, name: title }));
+    app.state.subjects = (data.subjects || [])
+      .map((subject, index) => normalizeSubjectRecord(subject, index))
+      .filter(Boolean);
+    app.state.exams = (data.exams || [])
+      .map((exam, index) => normalizeExamRecord(exam, index))
+      .filter(Boolean);
+
+    const subjectLookup = buildEntityLookup(app.state.subjects, subject => subject?.name || '');
+    const examLookup = buildEntityLookup(app.state.exams, exam => exam?.title || exam?.name || '');
 
     app.state.students = (data.students || []).map((student, idx) => ({
       id: student.id || createId('st', student.name || `student-${idx + 1}`, idx),
       name: normalizeStudentName(student.name, `Student ${idx + 1}`),
       notes: student.notes || '',
       class: student.class || '',
-      scores: student.scores && typeof student.scores === 'object' ? student.scores : {}
+      scores: normalizeScoreMapByIds(student.scores || {}, subjectLookup, examLookup)
     }));
 
     rebuildRuntimeScores();
@@ -678,10 +801,14 @@ window.TrackerApp = window.TrackerApp || {};
       return createDefaultRawData();
     }
 
-    const subjects = (legacyData.subjects || []).map(s => normalizeLabel(s?.name || s)).filter(Boolean);
-    const exams = (legacyData.exams || []).map(e => normalizeLabel(e?.title || e?.name || e)).filter(Boolean);
-    const subjectIdToName = new Map((legacyData.subjects || []).map(s => [s?.id, normalizeLabel(s?.name)]));
-    const examIdToTitle = new Map((legacyData.exams || []).map(e => [e?.id, normalizeLabel(e?.title || e?.name)]));
+    const subjects = (legacyData.subjects || [])
+      .map((subject, index) => normalizeSubjectRecord(subject, index))
+      .filter(Boolean);
+    const exams = (legacyData.exams || [])
+      .map((exam, index) => normalizeExamRecord(exam, index))
+      .filter(Boolean);
+    const subjectLookup = buildEntityLookup(subjects, subject => subject?.name || '');
+    const examLookup = buildEntityLookup(exams, exam => exam?.title || exam?.name || '');
 
     const students = (legacyData.students || []).map((student, idx) => {
       const rawStudent = {
@@ -689,27 +816,8 @@ window.TrackerApp = window.TrackerApp || {};
         name: normalizeStudentName(student.name),
         notes: student.notes || '',
         class: student.class || '',
-        scores: {}
+        scores: normalizeScoreMapByIds(student.scores || {}, subjectLookup, examLookup)
       };
-
-      const sourceScores = student.scores || {};
-      const maybeRaw = Object.keys(sourceScores).every(subjectKey => {
-        const val = sourceScores[subjectKey];
-        return val && typeof val === 'object' && !Array.isArray(val);
-      });
-
-      if (maybeRaw) {
-        Object.entries(sourceScores).forEach(([subject, examMap]) => {
-          const subjectLabel = normalizeLabel(subjectIdToName.get(subject) || subject);
-          if (!subjectLabel) return;
-          rawStudent.scores[subjectLabel] = rawStudent.scores[subjectLabel] || {};
-          Object.entries(examMap || {}).forEach(([exam, value]) => {
-            const examLabel = normalizeLabel(examIdToTitle.get(exam) || exam);
-            if (!examLabel) return;
-            rawStudent.scores[subjectLabel][examLabel] = app.normalizeScore(value);
-          });
-        });
-      }
 
       return rawStudent;
     });
@@ -717,19 +825,21 @@ window.TrackerApp = window.TrackerApp || {};
     (legacyData.scores || []).forEach(score => {
       const student = students.find(s => s.id === score.studentId);
       if (!student) return;
-      const subjectLabel = normalizeLabel(score.subjectId ? subjectIdToName.get(score.subjectId) : score.subject);
-      const examLabel = normalizeLabel(examIdToTitle.get(score.examId));
-      if (!subjectLabel || !examLabel) return;
-      if (!student.scores[subjectLabel]) {
-        student.scores[subjectLabel] = {};
+      const subjectKey = resolveEntityScoreKey(score.subjectId || score.subject, subjectLookup);
+      const examKey = resolveEntityScoreKey(score.examId || score.exam || score.title || score.name, examLookup);
+      if (!subjectKey || !examKey) return;
+      if (!student.scores[subjectKey]) {
+        student.scores[subjectKey] = {};
       }
-      student.scores[subjectLabel][examLabel] = app.normalizeScore(score.score);
+      student.scores[subjectKey][examKey] = app.normalizeScore(score.score);
     });
 
     const normalizedSubjects = subjects.length ? subjects : createDefaultRawData().subjects;
     const normalizedExams = exams.length ? exams : createDefaultRawData().exams;
+    const normalizedSubjectLabels = normalizedSubjects.map(subject => normalizeLabel(subject?.name || subject)).filter(Boolean);
+    const normalizedExamLabels = normalizedExams.map(exam => normalizeLabel(exam?.title || exam?.name || exam)).filter(Boolean);
 
-    if (!hasAnyRawScores(students) && isLegacySeedTemplate(normalizedSubjects, normalizedExams)) {
+    if (!hasAnyRawScores(students) && isLegacySeedTemplate(normalizedSubjectLabels, normalizedExamLabels)) {
       return {
         students,
         subjects: [],
@@ -919,10 +1029,7 @@ window.TrackerApp = window.TrackerApp || {};
   };
 
   const applyRuntimeCollections = (students, subjects, exams) => {
-    app.state.students = students;
-    app.state.subjects = subjects;
-    app.state.exams = exams;
-    rebuildRuntimeScores();
+    app.applyRawData(composeRawData(students, subjects, exams));
   };
 
   const syncRuntimeAndCache = (students, subjects, exams, saveResult, operationLabel = 'save data') => {
@@ -1434,21 +1541,8 @@ window.TrackerApp = window.TrackerApp || {};
         const index = nextExams.findIndex(e => e.id === examId);
         if (index !== -1) {
           const current = nextExams[index];
-          const prevTitle = current.title || current.name;
-          const nextTitle = normalizeLabel(examData.title || examData.name || prevTitle);
+          const nextTitle = normalizeLabel(examData.title || examData.name || current.title || current.name);
           nextExams[index] = { ...current, ...examData, title: nextTitle, name: nextTitle };
-
-          if (prevTitle !== nextTitle) {
-            nextStudents.forEach(student => {
-              Object.keys(student.scores || {}).forEach(subject => {
-                const examScores = student.scores[subject] || {};
-                if (Object.prototype.hasOwnProperty.call(examScores, prevTitle)) {
-                  examScores[nextTitle] = examScores[prevTitle];
-                  delete examScores[prevTitle];
-                }
-              });
-            });
-          }
         }
 
         const saveResult = await dataService.saveAllData(composeRawData(nextStudents, nextSubjects, nextExams));
@@ -1475,7 +1569,7 @@ window.TrackerApp = window.TrackerApp || {};
         const examTitle = exam?.title || exam?.name;
         const filteredExams = nextExams.filter(e => e.id !== examId);
 
-        const saveResult = await dataService.deleteExam(app.getRawData(), {
+        const saveResult = await dataService.deleteExam(composeRawData(nextStudents, nextSubjects, filteredExams), {
           id: examId,
           title: examTitle
         });
@@ -1545,18 +1639,8 @@ window.TrackerApp = window.TrackerApp || {};
         const index = nextSubjects.findIndex(s => s.id === subjectId);
         if (index !== -1) {
           const current = nextSubjects[index];
-          const prevName = current.name;
-          const nextName = normalizeLabel(subjectData.name || prevName);
+          const nextName = normalizeLabel(subjectData.name || current.name);
           nextSubjects[index] = { ...current, ...subjectData, name: nextName };
-
-          if (prevName !== nextName) {
-            nextStudents.forEach(student => {
-              if (student.scores?.[prevName]) {
-                student.scores[nextName] = student.scores[prevName];
-                delete student.scores[prevName];
-              }
-            });
-          }
         }
 
         const saveResult = await dataService.saveAllData(composeRawData(nextStudents, nextSubjects, nextExams));
@@ -1580,7 +1664,7 @@ window.TrackerApp = window.TrackerApp || {};
         const subjectName = subject?.name;
         const filteredSubjects = nextSubjects.filter(s => s.id !== subjectId);
 
-        const saveResult = await dataService.deleteSubject(app.getRawData(), {
+        const saveResult = await dataService.deleteSubject(composeRawData(nextStudents, filteredSubjects, nextExams), {
           id: subjectId,
           name: subjectName
         });
@@ -1697,19 +1781,27 @@ window.TrackerApp = window.TrackerApp || {};
 
         const student = nextStudents.find(s => s.id === scoreData.studentId);
         const exam = nextExams.find(e => e.id === scoreData.examId);
-        if (!student || !exam || !scoreData.subject) {
+        const subjectId = String(
+          scoreData.subjectId
+          || app.analytics?.getSubjectId?.(scoreData.subject)
+          || scoreData.subject
+          || ''
+        ).trim();
+        if (!student || !exam || !subjectId) {
           throw new Error('Invalid score payload');
         }
 
-        const examLabel = exam.title || exam.name;
-        if (!student.scores[scoreData.subject]) {
-          student.scores[scoreData.subject] = {};
+        if (!student.scores || typeof student.scores !== 'object') {
+          student.scores = {};
         }
-        student.scores[scoreData.subject][examLabel] = app.normalizeScore(scoreData.score);
+        if (!student.scores[subjectId] || typeof student.scores[subjectId] !== 'object') {
+          student.scores[subjectId] = {};
+        }
+        student.scores[subjectId][exam.id] = app.normalizeScore(scoreData.score);
 
-        const saveResult = await dataService.saveScores(app.getRawData(), student.id, student.scores);
+        const saveResult = await dataService.saveScores(composeRawData(nextStudents, nextSubjects, nextExams), student.id, student.scores);
         syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult, 'save scores');
-        return scoreData;
+        return { ...scoreData, subjectId };
       } catch (error) {
         console.error('Failed to save score:', error);
         throw error;

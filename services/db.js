@@ -205,8 +205,132 @@ const toIsoDateString = (value) => {
   return parsed.toISOString();
 };
 
+const toCollectionDocId = (prefix, label, index) => {
+  const slug = String(label || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return `${prefix}_${slug || index + 1}_${index + 1}`;
+};
+
+const normalizeSubjectRecord = (subject, index = 0) => {
+  const payload = subject && typeof subject === 'object' && !Array.isArray(subject) ? subject : {};
+  const name = String(payload.name || subject || '').trim();
+  if (!name) {
+    return null;
+  }
+
+  return {
+    id: String(payload.id || '').trim() || toCollectionDocId('sub', name, index),
+    name
+  };
+};
+
+const normalizeExamRecord = (exam, index = 0) => {
+  const payload = exam && typeof exam === 'object' && !Array.isArray(exam) ? exam : {};
+  const title = String(payload.title || payload.name || exam || '').trim();
+  if (!title) {
+    return null;
+  }
+
+  const normalizedDate = toIsoDateString(payload.date) || String(payload.date || '').trim();
+  return {
+    ...(normalizedDate ? { date: normalizedDate } : {}),
+    id: String(payload.id || '').trim() || toCollectionDocId('exam', title, index),
+    title,
+    name: title
+  };
+};
+
+const buildEntityLookup = (items = [], labelSelector = () => '') => {
+  const byId = new Map();
+  const byLabel = new Map();
+
+  asArray(items).forEach((item) => {
+    const id = String(item?.id || '').trim();
+    const label = String(labelSelector(item) || '').trim().toLowerCase();
+    if (id) {
+      byId.set(id, item);
+    }
+    if (id && label) {
+      byLabel.set(label, id);
+    }
+  });
+
+  return { byId, byLabel };
+};
+
+const resolveEntityScoreKey = (key, lookup) => {
+  const normalizedKey = String(key || '').trim();
+  if (!normalizedKey) {
+    return '';
+  }
+  if (lookup?.byId?.has(normalizedKey)) {
+    return normalizedKey;
+  }
+  return lookup?.byLabel?.get(normalizedKey.toLowerCase()) || normalizedKey;
+};
+
+const normalizeScoreMapByIds = (scores = {}, subjectLookup = null, examLookup = null) => {
+  const normalizedScores = {};
+
+  Object.entries(scores && typeof scores === 'object' ? scores : {}).forEach(([subjectKey, examMap]) => {
+    if (!examMap || typeof examMap !== 'object' || Array.isArray(examMap)) {
+      return;
+    }
+
+    const resolvedSubjectKey = resolveEntityScoreKey(subjectKey, subjectLookup);
+    if (!resolvedSubjectKey) {
+      return;
+    }
+
+    Object.entries(examMap).forEach(([examKey, value]) => {
+      const resolvedExamKey = resolveEntityScoreKey(examKey, examLookup);
+      if (!resolvedExamKey) {
+        return;
+      }
+
+      if (!normalizedScores[resolvedSubjectKey] || typeof normalizedScores[resolvedSubjectKey] !== 'object') {
+        normalizedScores[resolvedSubjectKey] = {};
+      }
+
+      normalizedScores[resolvedSubjectKey][resolvedExamKey] = clone(value);
+    });
+  });
+
+  return normalizedScores;
+};
+
+const buildScoreLookupsForRawData = (rawData = {}) => {
+  const subjects = asArray(rawData?.subjects)
+    .map((subject, index) => normalizeSubjectRecord(subject, index))
+    .filter(Boolean);
+  const exams = asArray(rawData?.exams)
+    .map((exam, index) => normalizeExamRecord(exam, index))
+    .filter(Boolean);
+
+  return {
+    subjectLookup: buildEntityLookup(subjects, subject => subject?.name || ''),
+    examLookup: buildEntityLookup(exams, exam => exam?.title || exam?.name || '')
+  };
+};
+
+const normalizeStudentScoresForRawData = (rawData = {}, scores = {}) => {
+  const { subjectLookup, examLookup } = buildScoreLookupsForRawData(rawData);
+  return normalizeScoreMapByIds(scores, subjectLookup, examLookup);
+};
+
 const normalizeRawData = (rawData) => {
   const input = rawData && typeof rawData === 'object' ? rawData : createDefaultRawData();
+  const subjects = asArray(input.subjects)
+    .map((subject, index) => normalizeSubjectRecord(subject, index))
+    .filter(Boolean);
+  const exams = asArray(input.exams)
+    .map((exam, index) => normalizeExamRecord(exam, index))
+    .filter(Boolean);
+  const subjectLookup = buildEntityLookup(subjects, subject => subject?.name || '');
+  const examLookup = buildEntityLookup(exams, exam => exam?.title || exam?.name || '');
 
   return {
     students: asArray(input.students).map((student) => ({
@@ -214,14 +338,18 @@ const normalizeRawData = (rawData) => {
       name: normalizeStudentName(student?.name),
       notes: student?.notes || '',
       class: student?.class || '',
-      scores: student?.scores && typeof student.scores === 'object' ? clone(student.scores) : {}
+      scores: normalizeScoreMapByIds(student?.scores || {}, subjectLookup, examLookup)
     })),
-    subjects: asArray(input.subjects)
-      .map(subject => String(subject?.name || subject || '').trim())
-      .filter(Boolean),
-    exams: asArray(input.exams)
-      .map(exam => String(exam?.title || exam?.name || exam || '').trim())
-      .filter(Boolean)
+    subjects: subjects.map(subject => ({
+      id: subject.id,
+      name: subject.name
+    })),
+    exams: exams.map(exam => ({
+      ...(exam.date ? { date: exam.date } : {}),
+      id: exam.id,
+      title: exam.title,
+      name: exam.title
+    }))
   };
 
 };
@@ -246,7 +374,7 @@ function parseCache(raw) {
     return null;
   }
   return null;
-}
+};
 
 const safeParseCache = (raw) => {
   if (typeof parseCache === 'function') {
@@ -1208,15 +1336,6 @@ const formatRawDataCounts = (counts = {}) => {
   return `students=${Number(counts.students || 0)}, subjects=${Number(counts.subjects || 0)}, exams=${Number(counts.exams || 0)}`;
 };
 
-const toDocId = (prefix, label, index) => {
-  const slug = String(label || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return `${prefix}_${slug || index + 1}_${index + 1}`;
-};
-
 const normalizeUserId = (value) => String(value || '').trim();
 
 const normalizeDisplayName = (value, fallback = 'Teacher') => {
@@ -1805,7 +1924,10 @@ const readLegacyRawData = async (userId) => {
     if (payload.deleted === true) return;
     const name = String(payload.name || entry.id || '').trim();
     if (name) {
-      subjects.push(name);
+      subjects.push({
+        id: String(payload.id || entry.id || '').trim(),
+        name
+      });
     }
   });
 
@@ -1815,7 +1937,13 @@ const readLegacyRawData = async (userId) => {
     if (payload.deleted === true) return;
     const title = String(payload.title || payload.name || entry.id || '').trim();
     if (title) {
-      exams.push(title);
+      const normalizedDate = toIsoDateString(payload.date) || String(payload.date || '').trim();
+      exams.push({
+        ...(normalizedDate ? { date: normalizedDate } : {}),
+        id: String(payload.id || entry.id || '').trim(),
+        title,
+        name: title
+      });
     }
   });
 
@@ -2291,7 +2419,11 @@ const ensureActiveClassContext = async (userId, options = {}) => {
   const trashClasses = catalog.trashClasses || [];
   const { classId, className } = resolveActiveClassModel(authUserId, classes);
   const persistedSelection = readPersistedClassSelection(authUserId);
-  const activeClass = findClassEntryBySelection(classes, classId, currentClassOwnerId || persistedSelection.ownerId || '') || null;
+  const activeClass = findClassEntryBySelection(
+    classes,
+    classId,
+    currentClassOwnerId || persistedSelection.ownerId || ''
+  ) || null;
   const classOwnerId = normalizeUserId(activeClass?.ownerId || '');
   const classOwnerName = normalizeDisplayName(activeClass?.ownerName || '', 'Teacher');
   setCurrentClassContext(classId, authUserId, classOwnerId, classOwnerName);
@@ -2317,7 +2449,7 @@ const ensureActiveClassContext = async (userId, options = {}) => {
 
 const mapStudentsToDocs = (students, ownerId, classId, updatedAt) => {
   return asArray(students).map((student, index) => {
-    const id = String(student?.id || '').trim() || toDocId('student', student?.name || 'student', index);
+    const id = String(student?.id || '').trim() || toCollectionDocId('student', student?.name || 'student', index);
     return {
       id,
       data: {
@@ -2339,46 +2471,55 @@ const mapStudentsToDocs = (students, ownerId, classId, updatedAt) => {
 };
 
 const mapSubjectsToDocs = (subjects, ownerId, classId, updatedAt) => {
-  return asArray(subjects).map((subject, index) => {
-    const name = String(subject || '').trim();
-    const docId = toDocId('sub', name, index);
-    return {
-      id: docId,
-      data: {
-        id: docId,
-        name,
-        deleted: false,
-        deletedAt: null,
-        order: index,
-        userId: ownerId,
-        ownerId,
-        classId,
-        updatedAt
+  return asArray(subjects)
+    .map((subject, index) => {
+      const normalizedSubject = normalizeSubjectRecord(subject, index);
+      if (!normalizedSubject) {
+        return null;
       }
-    };
-  });
+      return {
+        id: normalizedSubject.id,
+        data: {
+          id: normalizedSubject.id,
+          name: normalizedSubject.name,
+          deleted: false,
+          deletedAt: null,
+          order: index,
+          userId: ownerId,
+          ownerId,
+          classId,
+          updatedAt
+        }
+      };
+    })
+    .filter(Boolean);
 };
 
 const mapExamsToDocs = (exams, ownerId, classId, updatedAt) => {
-  return asArray(exams).map((exam, index) => {
-    const title = String(exam || '').trim();
-    const docId = toDocId('exam', title, index);
-    return {
-      id: docId,
-      data: {
-        id: docId,
-        title,
-        name: title,
-        deleted: false,
-        deletedAt: null,
-        order: index,
-        userId: ownerId,
-        ownerId,
-        classId,
-        updatedAt
+  return asArray(exams)
+    .map((exam, index) => {
+      const normalizedExam = normalizeExamRecord(exam, index);
+      if (!normalizedExam) {
+        return null;
       }
-    };
-  });
+      return {
+        id: normalizedExam.id,
+        data: {
+          ...(normalizedExam.date ? { date: normalizedExam.date } : {}),
+          id: normalizedExam.id,
+          title: normalizedExam.title,
+          name: normalizedExam.title,
+          deleted: false,
+          deletedAt: null,
+          order: index,
+          userId: ownerId,
+          ownerId,
+          classId,
+          updatedAt
+        }
+      };
+    })
+    .filter(Boolean);
 };
 
 const syncCollectionDocuments = async (collectionRef, targetDocs, options = {}) => {
@@ -2510,6 +2651,7 @@ const readRawDataFromCollectionRefs = async (studentsRef, subjectsRef, examsRef,
       return;
     }
     subjects.push({
+      id: String(payload.id || entry.id || '').trim(),
       name: String(payload.name || '').trim(),
       order: Number.isFinite(Number(payload.order)) ? Number(payload.order) : Number.MAX_SAFE_INTEGER
     });
@@ -2529,7 +2671,10 @@ const readRawDataFromCollectionRefs = async (studentsRef, subjectsRef, examsRef,
       });
       return;
     }
+    const normalizedDate = toIsoDateString(payload.date) || String(payload.date || '').trim();
     exams.push({
+      ...(normalizedDate ? { date: normalizedDate } : {}),
+      id: String(payload.id || entry.id || '').trim(),
       title: String(payload.title || payload.name || '').trim(),
       order: Number.isFinite(Number(payload.order)) ? Number(payload.order) : Number.MAX_SAFE_INTEGER
     });
@@ -2538,8 +2683,8 @@ const readRawDataFromCollectionRefs = async (studentsRef, subjectsRef, examsRef,
 
   const data = normalizeRawData({
     students: students.map(({ id, name, notes, class: className, scores }) => ({ id, name, notes, class: className, scores })),
-    subjects: subjects.map((subject) => subject.name),
-    exams: exams.map((exam) => exam.title)
+    subjects: subjects.map(({ id, name }) => ({ id, name })),
+    exams: exams.map(({ id, title, date }) => ({ ...(date ? { date } : {}), id, title, name: title }))
   });
 
   return {
@@ -2995,12 +3140,12 @@ export const fetchAllData = async () => {
 
   for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
     try {
-      const classContext = await ensureActiveClassContext(userId, { requireClass: false });
-      const scopedClasses = classContext.classes || [];
-      const scopedTrashClasses = classContext.trashClasses || [];
-      const scopedClassId = classContext.classId;
-      const scopedClassName = classContext.className;
-      const scopedOwnerId = normalizeUserId(classContext.classOwnerId || '');
+      const classScope = await ensureActiveClassContext(userId, { requireClass: false });
+      const scopedClasses = classScope.classes || [];
+      const scopedTrashClasses = classScope.trashClasses || [];
+      const scopedClassId = classScope.classId;
+      const scopedClassName = classScope.className;
+      const scopedOwnerId = normalizeUserId(classScope.classOwnerId || '');
       const cacheScopeKey = getScopeKey();
 
       if (!scopedClassId) {
@@ -3017,7 +3162,7 @@ export const fetchAllData = async () => {
           offline: false,
           error: null,
           errorType: null,
-          allowEmptyClassCatalog: Boolean(classContext?.allowEmptyClassCatalog)
+          allowEmptyClassCatalog: Boolean(classScope?.allowEmptyClassCatalog)
         };
         return writeRecentFetchAllDataCache({ scopeKey: cacheScopeKey, classId: '', ownerId: '', payload: result });
       }
@@ -3052,7 +3197,7 @@ export const fetchAllData = async () => {
         offline: false,
         error: null,
         errorType: null,
-        allowEmptyClassCatalog: Boolean(classContext?.allowEmptyClassCatalog)
+        allowEmptyClassCatalog: Boolean(classScope?.allowEmptyClassCatalog)
       };
       return writeRecentFetchAllDataCache({ scopeKey: cacheScopeKey, classId: scopedClassId, ownerId: scopedOwnerId, payload: result });
     } catch (error) {
@@ -3118,7 +3263,7 @@ export const fetchAllData = async () => {
   };
 };
 
-const normalizeStudentPatch = (studentData) => {
+const normalizeStudentPatch = (studentData, rawData = null) => {
   const source = studentData && typeof studentData === 'object' ? studentData : {};
   const patch = {};
 
@@ -3135,7 +3280,7 @@ const normalizeStudentPatch = (studentData) => {
   }
 
   if (Object.prototype.hasOwnProperty.call(source, 'scores')) {
-    patch.scores = source.scores && typeof source.scores === 'object' ? clone(source.scores) : {};
+    patch.scores = normalizeStudentScoresForRawData(rawData || {}, source.scores || {});
   }
 
   return patch;
@@ -3155,7 +3300,7 @@ const persistStudentUpdateById = async (studentId, studentData, nextData) => {
     };
   }
 
-  const patch = normalizeStudentPatch(studentData);
+  const patch = normalizeStudentPatch(studentData, nextData);
   if (!Object.keys(patch).length) {
     return {
       data: nextData,
@@ -3964,6 +4109,9 @@ export const saveStudent = async (rawData, studentData) => enqueueWrite(async ()
   const next = normalizeRawData(rawData);
   const nextStudent = studentData && typeof studentData === 'object' ? clone(studentData) : {};
   nextStudent.name = assertValidStudentName(nextStudent.name);
+  if (Object.prototype.hasOwnProperty.call(nextStudent, 'scores')) {
+    nextStudent.scores = normalizeStudentScoresForRawData(next, nextStudent.scores || {});
+  }
   next.students.push(nextStudent);
   return persistRemoteFirst(next, 'save student');
 });
@@ -3973,6 +4121,9 @@ export const updateStudent = async (rawData, studentId, studentData) => enqueueW
   const nextStudentData = studentData && typeof studentData === 'object' ? clone(studentData) : {};
   if (Object.prototype.hasOwnProperty.call(nextStudentData, 'name')) {
     nextStudentData.name = assertValidStudentName(nextStudentData.name);
+  }
+  if (Object.prototype.hasOwnProperty.call(nextStudentData, 'scores')) {
+    nextStudentData.scores = normalizeStudentScoresForRawData(next, nextStudentData.scores || {});
   }
   const idx = next.students.findIndex(student => student.id === studentId);
   if (idx !== -1) {
@@ -4102,9 +4253,10 @@ export const cleanupDeletedStudents = async (days = TRASH_RETENTION_DAYS) => {
 
 export const saveScores = async (rawData, studentId, scores) => enqueueWrite(async () => {
   const next = normalizeRawData(rawData);
+  const normalizedScores = normalizeStudentScoresForRawData(next, scores || {});
   const student = next.students.find(item => item.id === studentId);
   if (student) {
-    student.scores = scores && typeof scores === 'object' ? clone(scores) : {};
+    student.scores = normalizedScores;
   }
   return persistRemoteFirst(next, 'save scores');
 });
@@ -4112,7 +4264,7 @@ export const saveScores = async (rawData, studentId, scores) => enqueueWrite(asy
 export const updateSubjects = async (rawData, subjects) => enqueueWrite(async () => {
   const next = normalizeRawData(rawData);
   next.subjects = asArray(subjects)
-    .map(subject => String(subject?.name || subject || '').trim())
+    .map((subject, index) => normalizeSubjectRecord(subject, index))
     .filter(Boolean);
   return persistRemoteFirst(next, 'update subjects');
 });
@@ -4122,9 +4274,17 @@ export const deleteSubject = async (rawData, subjectIdentity) => enqueueWrite(as
   const normalizedId = String(subjectIdentity?.id || subjectIdentity || '').trim();
   const normalizedName = String(subjectIdentity?.name || '').trim();
 
-  if (normalizedName) {
-    next.subjects = next.subjects.filter(subject => String(subject || '').trim() !== normalizedName);
-  }
+  next.subjects = next.subjects.filter((subject) => {
+    const subjectId = String(subject?.id || '').trim();
+    const subjectName = String(subject?.name || '').trim();
+    if (normalizedId && subjectId === normalizedId) {
+      return false;
+    }
+    if (normalizedName && subjectName === normalizedName) {
+      return false;
+    }
+    return true;
+  });
 
   return persistSubjectDeleteByIdentity({ id: normalizedId, name: normalizedName }, next);
 });
@@ -4142,7 +4302,7 @@ export const permanentlyDeleteSubject = async (rawData, subjectId) => enqueueWri
 export const updateExams = async (rawData, exams) => enqueueWrite(async () => {
   const next = normalizeRawData(rawData);
   next.exams = asArray(exams)
-    .map(exam => String(exam?.title || exam?.name || exam || '').trim())
+    .map((exam, index) => normalizeExamRecord(exam, index))
     .filter(Boolean);
   return persistRemoteFirst(next, 'update exams');
 });
@@ -4152,9 +4312,17 @@ export const deleteExam = async (rawData, examIdentity) => enqueueWrite(async ()
   const normalizedId = String(examIdentity?.id || examIdentity || '').trim();
   const normalizedTitle = String(examIdentity?.title || examIdentity?.name || '').trim();
 
-  if (normalizedTitle) {
-    next.exams = next.exams.filter(exam => String(exam || '').trim() !== normalizedTitle);
-  }
+  next.exams = next.exams.filter((exam) => {
+    const examId = String(exam?.id || '').trim();
+    const examTitle = String(exam?.title || exam?.name || '').trim();
+    if (normalizedId && examId === normalizedId) {
+      return false;
+    }
+    if (normalizedTitle && examTitle === normalizedTitle) {
+      return false;
+    }
+    return true;
+  });
 
   return persistExamDeleteByIdentity({ id: normalizedId, title: normalizedTitle }, next);
 });

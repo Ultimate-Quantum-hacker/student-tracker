@@ -12,6 +12,27 @@ import {
 
 const resolveApp = (runtimeApp) => runtimeApp || app;
 const resolveUi = (runtimeUi, runtimeApp) => runtimeUi || runtimeApp?.ui;
+const resolveSubjectScoreKey = (appRef, subjectIdentity) => {
+  const normalizedIdentity = String(subjectIdentity || '').trim();
+  if (!normalizedIdentity) {
+    return '';
+  }
+
+  const analyticsSubjectId = String(appRef?.analytics?.getSubjectId?.(subjectIdentity) || '').trim();
+  if (analyticsSubjectId) {
+    return analyticsSubjectId;
+  }
+
+  const subjectMatch = Array.isArray(appRef?.state?.subjects)
+    ? appRef.state.subjects.find((subject) => {
+      const subjectId = String(subject?.id || '').trim();
+      const subjectName = String(subject?.name || subject || '').trim().toLowerCase();
+      return normalizedIdentity === subjectId || normalizedIdentity.toLowerCase() === subjectName;
+    })
+    : null;
+
+  return String(subjectMatch?.id || normalizedIdentity).trim();
+};
 const isReadOnlyRoleContext = (appRef) => typeof appRef?.isReadOnlyRoleContext === 'function' && appRef.isReadOnlyRoleContext();
 const getReadOnlyMessage = (appRef) => {
   const label = typeof appRef?.getCurrentClassOwnerName === 'function'
@@ -274,10 +295,9 @@ const students = {
 
     try {
       const exam = app.state.exams.find(e => e.id === examId);
-      const examLabel = exam?.title || exam?.name || '';
       const student = app.state.students.find(s => s.id === studentId);
 
-      if (!student || !examLabel) {
+      if (!student || !exam?.id) {
         ui.showToast('Select student and exam first');
         return;
       }
@@ -285,10 +305,14 @@ const students = {
       const nextScores = JSON.parse(JSON.stringify(student.scores || {}));
 
       for (const [subject, score] of Object.entries(scores)) {
-        if (!nextScores[subject] || typeof nextScores[subject] !== 'object') {
-          nextScores[subject] = {};
+        const subjectId = resolveSubjectScoreKey(app, subject);
+        if (!subjectId) {
+          continue;
         }
-        nextScores[subject][examLabel] = app.analytics.normalizeScore(score);
+        if (!nextScores[subjectId] || typeof nextScores[subjectId] !== 'object') {
+          nextScores[subjectId] = {};
+        }
+        nextScores[subjectId][exam.id] = app.analytics.normalizeScore(score);
       }
 
       await app.updateStudent(student.id, { scores: nextScores });
@@ -305,9 +329,8 @@ const students = {
 
     try {
       const exam = app.state.exams.find(e => e.id === examId);
-      const examLabel = exam?.title || exam?.name || '';
 
-      if (!examLabel) {
+      if (!exam?.id) {
         ui.showToast('Select an exam first');
         return;
       }
@@ -319,10 +342,10 @@ const students = {
       const changedStudents = new Map();
       inputs.forEach(input => {
         const studentId = input.dataset.sid;
-        const subject = input.dataset.sub;
+        const subjectId = resolveSubjectScoreKey(app, input.dataset.sub || '');
         const score = app.analytics.normalizeScore(input.value);
 
-        if (studentId && subject) {
+        if (studentId && subjectId) {
           const stateStudent = app.state.students.find(s => s.id === studentId);
           if (!stateStudent) return;
 
@@ -334,10 +357,10 @@ const students = {
           }
 
           const studentDraft = changedStudents.get(studentId);
-          if (!studentDraft.scores[subject] || typeof studentDraft.scores[subject] !== 'object') {
-            studentDraft.scores[subject] = {};
+          if (!studentDraft.scores[subjectId] || typeof studentDraft.scores[subjectId] !== 'object') {
+            studentDraft.scores[subjectId] = {};
           }
-          studentDraft.scores[subject][examLabel] = score;
+          studentDraft.scores[subjectId][exam.id] = score;
         }
       });
 

@@ -9,26 +9,188 @@ export const initializeApp = (config = {}) => ({ config });
 `;
 
 const FIRESTORE_STUB = `
+const cloneValue = (value) => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+const normalizeSegments = (segments = []) => {
+  return segments.flatMap((segment) => {
+    if (!segment) {
+      return [];
+    }
+    if (segment.type === 'collection' || segment.type === 'doc') {
+      return Array.isArray(segment.path) ? segment.path : [];
+    }
+    if (typeof segment === 'string') {
+      return [segment];
+    }
+    return [];
+  }).map((segment) => String(segment || '').trim()).filter(Boolean);
+};
+const pathKey = (segments = []) => normalizeSegments(segments).join('/');
+const docIdFromPath = (segments = []) => {
+  const normalized = normalizeSegments(segments);
+  return normalized[normalized.length - 1] || '';
+};
+const getCollectionPath = (segments = []) => normalizeSegments(segments).slice(0, -1);
+const getCollectionIdFromDocPath = (segments = []) => {
+  const collectionPath = getCollectionPath(segments);
+  return collectionPath[collectionPath.length - 1] || '';
+};
+const matchesCollectionPath = (docPath = [], collectionPath = []) => {
+  const normalizedDocPath = normalizeSegments(docPath);
+  const normalizedCollectionPath = normalizeSegments(collectionPath);
+  if (normalizedDocPath.length !== normalizedCollectionPath.length + 1) {
+    return false;
+  }
+  return normalizedCollectionPath.every((segment, index) => normalizedDocPath[index] === segment);
+};
+const buildCollectionRef = (segments = []) => ({
+  type: 'collection',
+  path: normalizeSegments(segments)
+});
+const buildDocRef = (segments = []) => ({
+  type: 'doc',
+  path: normalizeSegments(segments),
+  id: docIdFromPath(segments)
+});
+const store = globalThis.__firestoreStore || (globalThis.__firestoreStore = new Map());
+const buildDocSnapshot = (ref, data) => ({
+  id: ref.id || docIdFromPath(ref.path),
+  ref,
+  exists: () => data !== undefined,
+  data: () => cloneValue(data === undefined ? {} : data)
+});
+const buildQuerySnapshot = (entries = []) => {
+  const docs = entries.map(({ ref, data }) => buildDocSnapshot(ref, data));
+  return {
+    docs,
+    empty: docs.length === 0,
+    size: docs.length,
+    forEach(callback) {
+      docs.forEach((entry) => callback(entry));
+    }
+  };
+};
+const getFieldValue = (data = {}, fieldPath = '') => {
+  return String(fieldPath || '').split('.').reduce((value, key) => {
+    if (value && typeof value === 'object') {
+      return value[key];
+    }
+    return undefined;
+  }, data);
+};
+const compareValues = (left, right, direction = 'asc') => {
+  if (left === right) {
+    return 0;
+  }
+  if (left === undefined || left === null) {
+    return direction === 'desc' ? 1 : -1;
+  }
+  if (right === undefined || right === null) {
+    return direction === 'desc' ? -1 : 1;
+  }
+  if (left < right) {
+    return direction === 'desc' ? 1 : -1;
+  }
+  return direction === 'desc' ? -1 : 1;
+};
+const applyConstraint = (entries = [], constraint = null) => {
+  if (!constraint || typeof constraint !== 'object') {
+    return entries;
+  }
+  if (constraint.type === 'where') {
+    const [fieldPath, op, expected] = constraint.args || [];
+    if (op === '==') {
+      return entries.filter(({ data }) => getFieldValue(data, fieldPath) === expected);
+    }
+    return entries;
+  }
+  if (constraint.type === 'orderBy') {
+    const [fieldPath, direction = 'asc'] = constraint.args || [];
+    return [...entries].sort((left, right) => compareValues(
+      getFieldValue(left.data, fieldPath),
+      getFieldValue(right.data, fieldPath),
+      direction
+    ));
+  }
+  if (constraint.type === 'limit') {
+    const [maxItems] = constraint.args || [];
+    return entries.slice(0, Math.max(Number(maxItems) || 0, 0));
+  }
+  return entries;
+};
+const resolveEntries = (target) => {
+  if (!target) {
+    return [];
+  }
+  if (target.type === 'query') {
+    return (target.constraints || []).reduce((entries, constraint) => applyConstraint(entries, constraint), resolveEntries(target.target));
+  }
+  if (target.type === 'collectionGroup') {
+    const collectionId = String(target.collectionId || '').trim();
+    return Array.from(store.entries())
+      .map(([key, data]) => ({ ref: buildDocRef(key.split('/')), data: cloneValue(data) }))
+      .filter(({ ref }) => getCollectionIdFromDocPath(ref.path) === collectionId);
+  }
+  if (target.type === 'collection') {
+    const collectionPath = normalizeSegments(target.path);
+    return Array.from(store.entries())
+      .map(([key, data]) => ({ ref: buildDocRef(key.split('/')), data: cloneValue(data) }))
+      .filter(({ ref }) => matchesCollectionPath(ref.path, collectionPath));
+  }
+  if (target.type === 'doc') {
+    const key = pathKey(target.path);
+    return store.has(key)
+      ? [{ ref: buildDocRef(target.path), data: cloneValue(store.get(key)) }]
+      : [];
+  }
+  return [];
+};
 export const getFirestore = () => ({});
-export const collection = (...args) => ({ type: 'collection', args });
-export const collectionGroup = (...args) => ({ type: 'collectionGroup', args });
-export const doc = (...args) => ({ type: 'doc', args });
-export const addDoc = async () => ({ id: 'mock-doc-id' });
-export const getDoc = async () => ({ exists: () => false, data: () => ({}) });
-export const getDocs = async () => ({ docs: [], empty: true, forEach: () => {} });
-export const setDoc = async () => {};
-export const updateDoc = async () => {};
-export const deleteDoc = async () => {};
-export const query = (...args) => ({ type: 'query', args });
+export const collection = (...args) => buildCollectionRef(args);
+export const collectionGroup = (...args) => ({
+  type: 'collectionGroup',
+  collectionId: String(args[args.length - 1] || '').trim()
+});
+export const doc = (...args) => buildDocRef(args);
+export const addDoc = async (collectionRef, data = {}) => {
+  const id = 'mock-doc-' + Math.random().toString(36).slice(2, 10);
+  const ref = doc(collectionRef, id);
+  await setDoc(ref, data, { merge: false });
+  return { id, ...ref };
+};
+export const getDoc = async (ref) => {
+  const key = pathKey(ref?.path || []);
+  return buildDocSnapshot(buildDocRef(ref?.path || []), store.get(key));
+};
+export const getDocs = async (target) => buildQuerySnapshot(resolveEntries(target));
+export const setDoc = async (ref, data = {}, options = {}) => {
+  const key = pathKey(ref?.path || []);
+  const existing = store.get(key) || {};
+  const next = options?.merge ? { ...existing, ...cloneValue(data || {}) } : cloneValue(data || {});
+  store.set(key, next);
+};
+export const updateDoc = async (ref, patch = {}) => {
+  const key = pathKey(ref?.path || []);
+  const existing = store.get(key) || {};
+  store.set(key, { ...existing, ...cloneValue(patch || {}) });
+};
+export const deleteDoc = async (ref) => {
+  store.delete(pathKey(ref?.path || []));
+};
+export const query = (target, ...constraints) => ({ type: 'query', target, constraints });
 export const where = (...args) => ({ type: 'where', args });
 export const orderBy = (...args) => ({ type: 'orderBy', args });
 export const limit = (...args) => ({ type: 'limit', args });
-export const onSnapshot = (_target, nextOrOptions, next) => {
+export const onSnapshot = (target, nextOrOptions, next) => {
   const callback = typeof nextOrOptions === 'function' ? nextOrOptions : next;
-  Promise.resolve().then(() => {
-    if (typeof callback === 'function') {
-      callback({ docs: [], empty: true, forEach: () => {} });
+  Promise.resolve().then(async () => {
+    if (typeof callback !== 'function') {
+      return;
     }
+    if (target?.type === 'doc') {
+      callback(await getDoc(target));
+      return;
+    }
+    callback(await getDocs(target));
   });
   return () => {};
 };
@@ -334,6 +496,7 @@ test.describe('Class refactor critical regressions', () => {
       const app = stateModule.default || window.TrackerApp;
       const students = studentsModule.default || app.students;
       const calls = [];
+      let savedStudentPatch = null;
 
       app.setCurrentUserRole('teacher', { resolved: true });
       app.state.classes = [
@@ -354,8 +517,9 @@ test.describe('Class refactor critical regressions', () => {
         calls.push('addExam');
         return { id: 'exam_1' };
       };
-      app.updateStudent = async () => {
+      app.updateStudent = async (_studentId, patch) => {
         calls.push('saveMarks');
+        savedStudentPatch = JSON.parse(JSON.stringify(patch || {}));
         return { id: 'student_1' };
       };
 
@@ -381,6 +545,8 @@ test.describe('Class refactor critical regressions', () => {
 
       return {
         calls,
+        savedStudentPatch,
+        hasLegacyScoreKey: Object.prototype.hasOwnProperty.call(savedStudentPatch?.scores || {}, 'Math'),
         classId: app.state.currentClassId,
         ownerId: app.getCurrentClassOwnerId(),
         readOnly: app.isReadOnlyRoleContext()
@@ -391,6 +557,108 @@ test.describe('Class refactor critical regressions', () => {
     expect(result.classId).toBe('class_teacher_scope');
     expect(result.ownerId).toBe('owner_teacher_scope');
     expect(result.calls).toEqual(['addStudent', 'addSubject', 'addExam', 'saveMarks']);
+    expect(result.savedStudentPatch?.scores).toEqual({ subject_1: { exam_1: 78 } });
+    expect(result.hasLegacyScoreKey).toBe(false);
+  });
+
+  test('teacher score entry UI emits subject id keyed payloads', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const [stateModule, uiModule, studentsModule] = await Promise.all([
+        import('/js/state.js'),
+        import('/js/ui.js'),
+        import('/js/students.js')
+      ]);
+
+      const app = stateModule.default || window.TrackerApp;
+      const ui = uiModule.default || app.ui;
+      const students = studentsModule.default || app.students;
+
+      document.body.innerHTML = `
+        <div id="toast"></div>
+        <div class="global-class-switcher"><div class="class-switcher-main">
+          <button id="class-prev-btn" type="button"></button>
+          <div id="class-dropdown" class="class-dropdown">
+            <button id="class-dropdown-toggle" type="button"><span id="class-dropdown-value"></span></button>
+            <div id="class-dropdown-menu" class="class-dropdown-menu"></div>
+          </div>
+          <button id="class-next-btn" type="button"></button>
+          <button id="create-class-btn" type="button"></button>
+          <button id="delete-class-btn" type="button"></button>
+        </div><p id="class-name-display"></p></div>
+        <div id="admin-readonly-banner" hidden><span id="admin-readonly-label"></span></div>
+        <div id="empty-msg"></div>
+        <select id="score-student-select"></select>
+        <select id="scoreMockSelect"></select>
+        <div id="dynamicSubjectFields"></div>
+        <button id="save-scores-btn" type="button">Save</button>
+        <div id="mockList"></div>
+        <div id="subjectList"></div>
+      `;
+
+      app.students = students;
+      ui.init();
+      ui.bindEvents();
+      ui.withLoader = async (task) => task();
+
+      app.setCurrentUserRole('teacher', { resolved: true });
+      app.state.isLoading = false;
+      app.state.classes = [
+        { id: 'class_teacher', name: 'Teacher Class', ownerId: 'owner_teacher', ownerName: 'Teacher Owner' }
+      ];
+      app.state.currentClassId = 'class_teacher';
+      app.state.currentClassOwnerId = 'owner_teacher';
+      app.state.currentClassName = 'Teacher Class';
+      app.state.students = [{ id: 'student_1', name: 'Student One', scores: {} }];
+      app.state.subjects = [{ id: 'subject_math', name: 'Math' }];
+      app.state.exams = [{ id: 'exam_mock_1', title: 'Mock 1', name: 'Mock 1' }];
+      app.analytics = {
+        ...(app.analytics || {}),
+        getScore() {
+          return '';
+        }
+      };
+      app.syncDataContext();
+
+      let captured = null;
+      let hasLegacyKey = false;
+      app.students.saveScores = async (studentId, examId, scores) => {
+        captured = {
+          studentId,
+          examId,
+          scores: JSON.parse(JSON.stringify(scores || {}))
+        };
+        hasLegacyKey = Object.prototype.hasOwnProperty.call(scores || {}, 'Math');
+        return { id: studentId };
+      };
+
+      ui.refreshUI();
+      const scoreStudentSelect = document.getElementById('score-student-select');
+      const scoreMockSelect = document.getElementById('scoreMockSelect');
+      scoreStudentSelect.value = 'student_1';
+      scoreMockSelect.value = 'exam_mock_1';
+      ui.loadScoreFields();
+
+      const input = document.querySelector('#dynamicSubjectFields input');
+      const subjectDataset = input?.dataset.subjectId || '';
+      input.value = '78';
+
+      document.getElementById('save-scores-btn').click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      return {
+        captured,
+        hasLegacyKey,
+        subjectDataset
+      };
+    });
+
+    expect(result.subjectDataset).toBe('subject_math');
+    expect(result.hasLegacyKey).toBe(false);
+    expect(result.captured).toEqual({
+      studentId: 'student_1',
+      examId: 'exam_mock_1',
+      scores: { subject_math: 78 }
+    });
   });
 
   test('teacher can add student end-to-end via UI submit', async ({ page }) => {
@@ -1089,14 +1357,198 @@ test.describe('Class refactor critical regressions', () => {
     expect(rulesSource).toContain("resource.data.emailVerified == true");
   });
 
+  test('applyRawData migrates legacy score maps to subject and exam ids', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const stateModule = await import('/js/state.js');
+      const app = stateModule.default || window.TrackerApp;
+
+      app.applyRawData({
+        students: [{
+          id: 'student_legacy_1',
+          name: 'Legacy Student',
+          scores: {
+            Math: { 'Mock 1': 88 },
+            English: { 'Mock 1': 76 }
+          }
+        }],
+        subjects: [
+          { id: 'subject_math', name: 'Math' },
+          { id: 'subject_english', name: 'English' }
+        ],
+        exams: [
+          { id: 'exam_mock_1', title: 'Mock 1', name: 'Mock 1' }
+        ]
+      });
+
+      const student = app.state.students[0] || {};
+      const scores = student.scores || {};
+      return {
+        scores,
+        hasLegacySubjectKey: Object.prototype.hasOwnProperty.call(scores, 'Math'),
+        hasLegacyExamKey: Object.prototype.hasOwnProperty.call(scores.subject_math || {}, 'Mock 1')
+      };
+    });
+
+    expect(result.hasLegacySubjectKey).toBe(false);
+    expect(result.hasLegacyExamKey).toBe(false);
+    expect(result.scores).toEqual({
+      subject_math: { exam_mock_1: 88 },
+      subject_english: { exam_mock_1: 76 }
+    });
+  });
+
+  test('service student write paths normalize label keyed scores to ids before persistence', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__FIREBASE_CONFIG__ = {
+        apiKey: 'test-api-key',
+        authDomain: 'test-project.firebaseapp.com',
+        projectId: 'test-project',
+        storageBucket: 'test-project.appspot.com',
+        messagingSenderId: '1234567890',
+        appId: '1:1234567890:web:test'
+      };
+    });
+    await page.goto(APP_URL);
+
+    const result = await page.evaluate(async () => {
+      const [firebaseModule, dbModule] = await Promise.all([
+        import('/js/firebase.js'),
+        import('/services/db.js')
+      ]);
+
+      globalThis.__firestoreStore?.clear?.();
+      localStorage.clear();
+      sessionStorage.clear();
+
+      firebaseModule.auth.currentUser = {
+        uid: 'owner_service',
+        email: 'teacher@example.com',
+        displayName: 'Teacher Service'
+      };
+
+      dbModule.setCurrentUserRoleContext('teacher');
+      dbModule.setCurrentClassId('class_service');
+      dbModule.setCurrentClassOwnerContext('owner_service', 'Teacher Service');
+
+      const updatedAt = new Date().toISOString();
+      await firebaseModule.setDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_service'),
+        { userId: 'owner_service', activeClassId: 'class_service', updatedAt },
+        { merge: true }
+      );
+      await firebaseModule.setDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_service', 'classes', 'class_service'),
+        {
+          id: 'class_service',
+          name: 'Service Class',
+          userId: 'owner_service',
+          ownerId: 'owner_service',
+          ownerName: 'Teacher Service',
+          updatedAt,
+          deleted: false
+        },
+        { merge: false }
+      );
+      await firebaseModule.setDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_service', 'classes', 'class_service', 'students', 'student_1'),
+        {
+          id: 'student_1',
+          name: 'Student One',
+          notes: '',
+          class: '',
+          scores: {},
+          deleted: false,
+          deletedAt: null,
+          order: 0,
+          userId: 'owner_service',
+          ownerId: 'owner_service',
+          classId: 'class_service',
+          updatedAt
+        },
+        { merge: false }
+      );
+
+      const rawData = {
+        students: [{ id: 'student_1', name: 'Student One', scores: {} }],
+        subjects: [{ id: 'subject_math', name: 'Math' }],
+        exams: [{ id: 'exam_mock_1', title: 'Mock 1', name: 'Mock 1' }]
+      };
+
+      const saveStudentResult = await dbModule.saveStudent(rawData, {
+        id: 'student_2',
+        name: 'Student Two',
+        scores: { Math: { 'Mock 1': 91 } }
+      });
+      const studentTwoAfterSaveStudentSnapshot = await firebaseModule.getDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_service', 'classes', 'class_service', 'students', 'student_2')
+      );
+      const updateStudentResult = await dbModule.updateStudent(rawData, 'student_1', {
+        scores: { Math: { 'Mock 1': 82 } }
+      });
+      const saveScoresResult = await dbModule.saveScores(rawData, 'student_1', {
+        Math: { 'Mock 1': 84 }
+      });
+
+      const studentOneSnapshot = await firebaseModule.getDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_service', 'classes', 'class_service', 'students', 'student_1')
+      );
+      const studentTwoSnapshot = await firebaseModule.getDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_service', 'classes', 'class_service', 'students', 'student_2')
+      );
+
+      const saveStudentScores = saveStudentResult.data.students.find((student) => student.id === 'student_2')?.scores || {};
+      const updateStudentScores = updateStudentResult.data.students.find((student) => student.id === 'student_1')?.scores || {};
+      const saveScoresData = saveScoresResult.data.students.find((student) => student.id === 'student_1')?.scores || {};
+      const storedStudentOne = studentOneSnapshot.data().scores || {};
+      const storedStudentTwoAfterSaveStudent = studentTwoAfterSaveStudentSnapshot.data().scores || {};
+
+      return {
+        saveStudentRemote: saveStudentResult.remoteSaved,
+        updateStudentRemote: updateStudentResult.remoteSaved,
+        saveScoresRemote: saveScoresResult.remoteSaved,
+        saveStudentScores,
+        updateStudentScores,
+        saveScoresData,
+        storedStudentOne,
+        storedStudentTwoAfterSaveStudent,
+        legacyFlags: {
+          saveStudent: Object.prototype.hasOwnProperty.call(saveStudentScores, 'Math'),
+          updateStudent: Object.prototype.hasOwnProperty.call(updateStudentScores, 'Math'),
+          saveScores: Object.prototype.hasOwnProperty.call(saveScoresData, 'Math'),
+          storedStudentOne: Object.prototype.hasOwnProperty.call(storedStudentOne, 'Math'),
+          storedStudentTwoAfterSaveStudent: Object.prototype.hasOwnProperty.call(storedStudentTwoAfterSaveStudent, 'Math')
+        }
+      };
+    });
+
+    expect(result.saveStudentRemote).toBe(true);
+    expect(result.updateStudentRemote).toBe(true);
+    expect(result.saveScoresRemote).toBe(true);
+    expect(result.saveStudentScores).toEqual({ subject_math: { exam_mock_1: 91 } });
+    expect(result.updateStudentScores).toEqual({ subject_math: { exam_mock_1: 82 } });
+    expect(result.saveScoresData).toEqual({ subject_math: { exam_mock_1: 84 } });
+    expect(result.storedStudentOne).toEqual({ subject_math: { exam_mock_1: 84 } });
+    expect(result.storedStudentTwoAfterSaveStudent).toEqual({ subject_math: { exam_mock_1: 91 } });
+    expect(result.legacyFlags).toEqual({
+      saveStudent: false,
+      updateStudent: false,
+      saveScores: false,
+      storedStudentOne: false,
+      storedStudentTwoAfterSaveStudent: false
+    });
+  });
+
   test('scoring classification boundaries remain unchanged', async ({ page }) => {
     const result = await page.evaluate(() => {
       return Promise.all([import('/js/state.js'), import('/js/analytics.js')]).then(([stateModule, analyticsModule]) => {
       const app = stateModule.default || window.TrackerApp;
       const analytics = analyticsModule.default || app.analytics;
 
-      app.state.subjects = ['Math', 'English'];
-      app.state.exams = [{ id: 'mock-1', title: 'Mock 1' }];
+      app.state.subjects = [
+        { id: 'subject_math', name: 'Math' },
+        { id: 'subject_english', name: 'English' }
+      ];
+      app.state.exams = [{ id: 'mock-1', title: 'Mock 1', name: 'Mock 1' }];
 
       const exam = app.state.exams[0];
       const student = (math, english) => ({
@@ -1124,7 +1576,11 @@ test.describe('Class refactor critical regressions', () => {
 
       return {
         statuses,
-        categories: analytics.getPerformanceCategories()
+        categories: analytics.getPerformanceCategories(),
+        resolvedScores: {
+          math: analytics.getScore(student(85, 85), app.state.subjects[0], exam),
+          english: analytics.getScore(student(85, 85), app.state.subjects[1], exam)
+        }
       };
       });
     });
@@ -1145,6 +1601,10 @@ test.describe('Class refactor critical regressions', () => {
       atRisk: 'at-risk',
       noData: 'no-data',
       incomplete: 'incomplete'
+    });
+    expect(result.resolvedScores).toEqual({
+      math: 85,
+      english: 85
     });
   });
 });
