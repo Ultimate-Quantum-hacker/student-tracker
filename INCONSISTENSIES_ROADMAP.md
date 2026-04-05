@@ -164,7 +164,7 @@ Eliminate fragile storage patterns and finish the long-term migration path so th
 - [x] Safe migration plan and migration tooling for existing data
 - [x] Verified legacy-to-current data migration path
 - [x] Schema versioning strategy and persisted version markers
-- [ ] Automated trash cleanup mechanism with tests and operational verification
+- [x] Automated trash cleanup mechanism with tests and operational verification
 - [ ] Activity log retention strategy with implementation and tests
 - [ ] Firestore indexes and migration documentation checked into the repo
 
@@ -571,3 +571,8 @@ Use this section to track major roadmap updates.
 - **Phase:** Phase 3
 - **Update:** Added persisted `dataSchemaVersion` stamping through the shared `buildClassDocMetadataPatch` helper across class metadata write paths in `services/db.js`, backfilled the migration-completion path so the active class document is stamped even when modular child data was already in sync, and extended `tests/refactor-critical-regressions.spec.js` with focused schema-version coverage for runtime state hydration, service-layer writes, and the canonical legacy-root-to-class migration flow exercised via `fetchAllData()`.
 - **Impact:** Schema-version governance and the canonical legacy-to-current migration path are now verified end to end for the active Phase 3 data model slice, and the focused Chromium validation passes with `npx playwright test tests/refactor-critical-regressions.spec.js --project=chromium --workers=1 --reporter=line --grep "applyRawData migrates legacy score maps to subject and exam ids|service student write paths normalize label keyed scores to ids before persistence|fetchAllData migrates legacy root data into class scope with schema markers"`. Remaining Phase 3 work is trash-cleanup automation, activity-log retention policy, and Firestore index/documentation capture.
+
+- **Date:** 2026-04-05
+- **Phase:** Phase 3
+- **Update:** Added an automated trash-retention cleanup pipeline in `services/db.js` that purges expired class-scoped trash during live `fetchAllData()` reads, permanently removes expired trashed classes from the class catalog, preserves fresh trash entries, and stamps the active class metadata after cleanup. Extended `tests/refactor-critical-regressions.spec.js` with focused browser coverage that seeds expired and fresh trash across students, subjects, exams, and classes, then verifies that the expired documents are actually removed from Firestore while the fresh trash remains visible.
+- **Impact:** Phase 3 trash-retention enforcement is now implemented in the authoritative live-read path instead of relying only on UI messaging, and the focused Chromium validation passes with `npm run test:critical-regressions -- --project=chromium --grep "fetchAllData automatically purges expired trash entries during live reads|fetchAllData migrates legacy root data into class scope with schema markers"`. Remaining Phase 3 work is activity-log retention policy and Firestore index/documentation capture.

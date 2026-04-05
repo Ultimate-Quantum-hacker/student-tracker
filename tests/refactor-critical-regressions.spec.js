@@ -1677,6 +1677,316 @@ test.describe('Class refactor critical regressions', () => {
     expect(result.fetchedScores).toEqual({ subject_math: { exam_mock_1: 73 } });
   });
 
+  test('fetchAllData automatically purges expired trash entries during live reads', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__FIREBASE_CONFIG__ = {
+        apiKey: 'test-api-key',
+        authDomain: 'test-project.firebaseapp.com',
+        projectId: 'test-project',
+        storageBucket: 'test-project.appspot.com',
+        messagingSenderId: '1234567890',
+        appId: '1:1234567890:web:test'
+      };
+    });
+    await page.goto(APP_URL);
+
+    const result = await page.evaluate(async () => {
+      const [firebaseModule, dbModule] = await Promise.all([
+        import('/js/firebase.js'),
+        import('/services/db.js')
+      ]);
+
+      globalThis.__firestoreStore?.clear?.();
+      localStorage.clear();
+      sessionStorage.clear();
+
+      firebaseModule.auth.currentUser = {
+        uid: 'owner_cleanup',
+        email: 'teacher@example.com',
+        displayName: 'Teacher Cleanup'
+      };
+
+      dbModule.setCurrentUserRoleContext('teacher');
+      dbModule.setCurrentClassId('class_cleanup_active');
+      dbModule.setCurrentClassOwnerContext('owner_cleanup', 'Teacher Cleanup');
+
+      const now = Date.now();
+      const updatedAt = new Date(now).toISOString();
+      const expiredDeletedAt = new Date(now - (5 * 24 * 60 * 60 * 1000)).toISOString();
+      const freshDeletedAt = new Date(now - (24 * 60 * 60 * 1000)).toISOString();
+
+      await firebaseModule.setDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_cleanup'),
+        {
+          userId: 'owner_cleanup',
+          activeClassId: 'class_cleanup_active',
+          updatedAt
+        },
+        { merge: true }
+      );
+      await firebaseModule.setDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_cleanup', 'classes', 'class_cleanup_active'),
+        {
+          id: 'class_cleanup_active',
+          name: 'Cleanup Active Class',
+          createdAt: updatedAt,
+          updatedAt,
+          deleted: false,
+          deletedAt: null,
+          userId: 'owner_cleanup',
+          ownerId: 'owner_cleanup',
+          ownerName: 'Teacher Cleanup'
+        },
+        { merge: false }
+      );
+      await firebaseModule.setDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_cleanup', 'classes', 'class_cleanup_expired'),
+        {
+          id: 'class_cleanup_expired',
+          name: 'Cleanup Expired Class',
+          createdAt: updatedAt,
+          updatedAt,
+          deleted: true,
+          deletedAt: expiredDeletedAt,
+          userId: 'owner_cleanup',
+          ownerId: 'owner_cleanup',
+          ownerName: 'Teacher Cleanup'
+        },
+        { merge: false }
+      );
+      await firebaseModule.setDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_cleanup', 'classes', 'class_cleanup_fresh'),
+        {
+          id: 'class_cleanup_fresh',
+          name: 'Cleanup Fresh Class',
+          createdAt: updatedAt,
+          updatedAt,
+          deleted: true,
+          deletedAt: freshDeletedAt,
+          userId: 'owner_cleanup',
+          ownerId: 'owner_cleanup',
+          ownerName: 'Teacher Cleanup'
+        },
+        { merge: false }
+      );
+      await firebaseModule.setDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_cleanup', 'classes', 'class_cleanup_active', 'students', 'student_active'),
+        {
+          id: 'student_active',
+          name: 'Student Active',
+          notes: '',
+          class: '',
+          scores: {},
+          deleted: false,
+          deletedAt: null,
+          order: 0,
+          userId: 'owner_cleanup',
+          ownerId: 'owner_cleanup',
+          classId: 'class_cleanup_active',
+          updatedAt
+        },
+        { merge: false }
+      );
+      await firebaseModule.setDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_cleanup', 'classes', 'class_cleanup_active', 'students', 'student_expired'),
+        {
+          id: 'student_expired',
+          name: 'Student Expired',
+          notes: '',
+          class: '',
+          scores: {},
+          deleted: true,
+          deletedAt: expiredDeletedAt,
+          order: 1,
+          userId: 'owner_cleanup',
+          ownerId: 'owner_cleanup',
+          classId: 'class_cleanup_active',
+          updatedAt
+        },
+        { merge: false }
+      );
+      await firebaseModule.setDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_cleanup', 'classes', 'class_cleanup_active', 'students', 'student_fresh'),
+        {
+          id: 'student_fresh',
+          name: 'Student Fresh',
+          notes: '',
+          class: '',
+          scores: {},
+          deleted: true,
+          deletedAt: freshDeletedAt,
+          order: 2,
+          userId: 'owner_cleanup',
+          ownerId: 'owner_cleanup',
+          classId: 'class_cleanup_active',
+          updatedAt
+        },
+        { merge: false }
+      );
+      await firebaseModule.setDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_cleanup', 'classes', 'class_cleanup_active', 'subjects', 'subject_active'),
+        {
+          id: 'subject_active',
+          name: 'Subject Active',
+          deleted: false,
+          deletedAt: null,
+          order: 0,
+          userId: 'owner_cleanup',
+          ownerId: 'owner_cleanup',
+          classId: 'class_cleanup_active',
+          updatedAt
+        },
+        { merge: false }
+      );
+      await firebaseModule.setDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_cleanup', 'classes', 'class_cleanup_active', 'subjects', 'subject_expired'),
+        {
+          id: 'subject_expired',
+          name: 'Subject Expired',
+          deleted: true,
+          deletedAt: expiredDeletedAt,
+          order: 1,
+          userId: 'owner_cleanup',
+          ownerId: 'owner_cleanup',
+          classId: 'class_cleanup_active',
+          updatedAt
+        },
+        { merge: false }
+      );
+      await firebaseModule.setDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_cleanup', 'classes', 'class_cleanup_active', 'subjects', 'subject_fresh'),
+        {
+          id: 'subject_fresh',
+          name: 'Subject Fresh',
+          deleted: true,
+          deletedAt: freshDeletedAt,
+          order: 2,
+          userId: 'owner_cleanup',
+          ownerId: 'owner_cleanup',
+          classId: 'class_cleanup_active',
+          updatedAt
+        },
+        { merge: false }
+      );
+      await firebaseModule.setDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_cleanup', 'classes', 'class_cleanup_active', 'exams', 'exam_active'),
+        {
+          id: 'exam_active',
+          title: 'Exam Active',
+          name: 'Exam Active',
+          deleted: false,
+          deletedAt: null,
+          order: 0,
+          userId: 'owner_cleanup',
+          ownerId: 'owner_cleanup',
+          classId: 'class_cleanup_active',
+          updatedAt
+        },
+        { merge: false }
+      );
+      await firebaseModule.setDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_cleanup', 'classes', 'class_cleanup_active', 'exams', 'exam_expired'),
+        {
+          id: 'exam_expired',
+          title: 'Exam Expired',
+          name: 'Exam Expired',
+          deleted: true,
+          deletedAt: expiredDeletedAt,
+          order: 1,
+          userId: 'owner_cleanup',
+          ownerId: 'owner_cleanup',
+          classId: 'class_cleanup_active',
+          updatedAt
+        },
+        { merge: false }
+      );
+      await firebaseModule.setDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_cleanup', 'classes', 'class_cleanup_active', 'exams', 'exam_fresh'),
+        {
+          id: 'exam_fresh',
+          title: 'Exam Fresh',
+          name: 'Exam Fresh',
+          deleted: true,
+          deletedAt: freshDeletedAt,
+          order: 2,
+          userId: 'owner_cleanup',
+          ownerId: 'owner_cleanup',
+          classId: 'class_cleanup_active',
+          updatedAt
+        },
+        { merge: false }
+      );
+
+      const fetchResult = await dbModule.fetchAllData();
+
+      const activeClassSnapshot = await firebaseModule.getDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_cleanup', 'classes', 'class_cleanup_active')
+      );
+      const expiredStudentSnapshot = await firebaseModule.getDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_cleanup', 'classes', 'class_cleanup_active', 'students', 'student_expired')
+      );
+      const freshStudentSnapshot = await firebaseModule.getDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_cleanup', 'classes', 'class_cleanup_active', 'students', 'student_fresh')
+      );
+      const expiredSubjectSnapshot = await firebaseModule.getDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_cleanup', 'classes', 'class_cleanup_active', 'subjects', 'subject_expired')
+      );
+      const freshSubjectSnapshot = await firebaseModule.getDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_cleanup', 'classes', 'class_cleanup_active', 'subjects', 'subject_fresh')
+      );
+      const expiredExamSnapshot = await firebaseModule.getDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_cleanup', 'classes', 'class_cleanup_active', 'exams', 'exam_expired')
+      );
+      const freshExamSnapshot = await firebaseModule.getDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_cleanup', 'classes', 'class_cleanup_active', 'exams', 'exam_fresh')
+      );
+      const expiredClassSnapshot = await firebaseModule.getDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_cleanup', 'classes', 'class_cleanup_expired')
+      );
+      const freshClassSnapshot = await firebaseModule.getDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_cleanup', 'classes', 'class_cleanup_fresh')
+      );
+
+      return {
+        currentClassId: fetchResult.currentClassId,
+        studentIds: fetchResult.data.students.map((student) => student.id),
+        subjectIds: fetchResult.data.subjects.map((subject) => subject.id),
+        examIds: fetchResult.data.exams.map((exam) => exam.id),
+        trashStudents: fetchResult.trashStudents.map((entry) => entry.id),
+        trashSubjects: fetchResult.trashSubjects.map((entry) => entry.id),
+        trashExams: fetchResult.trashExams.map((entry) => entry.id),
+        trashClasses: fetchResult.trashClasses.map((entry) => entry.id),
+        activeClassSchemaVersion: activeClassSnapshot.data().dataSchemaVersion,
+        expiredStudentExists: expiredStudentSnapshot.exists(),
+        freshStudentExists: freshStudentSnapshot.exists(),
+        expiredSubjectExists: expiredSubjectSnapshot.exists(),
+        freshSubjectExists: freshSubjectSnapshot.exists(),
+        expiredExamExists: expiredExamSnapshot.exists(),
+        freshExamExists: freshExamSnapshot.exists(),
+        expiredClassExists: expiredClassSnapshot.exists(),
+        freshClassExists: freshClassSnapshot.exists()
+      };
+    });
+
+    expect(result.currentClassId).toBe('class_cleanup_active');
+    expect(result.studentIds).toEqual(['student_active']);
+    expect(result.subjectIds).toEqual(['subject_active']);
+    expect(result.examIds).toEqual(['exam_active']);
+    expect(result.trashStudents).toEqual(['student_fresh']);
+    expect(result.trashSubjects).toEqual(['subject_fresh']);
+    expect(result.trashExams).toEqual(['exam_fresh']);
+    expect(result.trashClasses).toEqual(['class_cleanup_fresh']);
+    expect(result.activeClassSchemaVersion).toBe(2);
+    expect(result.expiredStudentExists).toBe(false);
+    expect(result.freshStudentExists).toBe(true);
+    expect(result.expiredSubjectExists).toBe(false);
+    expect(result.freshSubjectExists).toBe(true);
+    expect(result.expiredExamExists).toBe(false);
+    expect(result.freshExamExists).toBe(true);
+    expect(result.expiredClassExists).toBe(false);
+    expect(result.freshClassExists).toBe(true);
+  });
+
   test('scoring classification boundaries remain unchanged', async ({ page }) => {
     const result = await page.evaluate(() => {
       return Promise.all([import('/js/state.js'), import('/js/analytics.js')]).then(([stateModule, analyticsModule]) => {

@@ -1295,13 +1295,7 @@ const cleanupDeletedStudentsOlderThan = async (days = TRASH_RETENTION_DAYS) => {
     return 0;
   }
 
-  const cutoff = Date.now() - (Math.max(Number(days) || TRASH_RETENTION_DAYS, 1) * 24 * 60 * 60 * 1000);
-  const expiredIds = studentTrash
-    .filter(entry => {
-      const time = new Date(entry.deletedAt || 0).getTime();
-      return Number.isFinite(time) && time > 0 && time < cutoff;
-    })
-    .map(entry => entry.id);
+  const expiredIds = getExpiredTrashIds(studentTrash, days);
 
   if (!expiredIds.length) {
     return 0;
@@ -1313,6 +1307,135 @@ const cleanupDeletedStudentsOlderThan = async (days = TRASH_RETENTION_DAYS) => {
   }
 
   return expiredIds.length;
+};
+
+const getTrashRetentionCutoff = (days = TRASH_RETENTION_DAYS) => {
+  return Date.now() - (Math.max(Number(days) || TRASH_RETENTION_DAYS, 1) * 24 * 60 * 60 * 1000);
+};
+
+const getExpiredTrashIds = (trashEntries = [], days = TRASH_RETENTION_DAYS) => {
+  const cutoff = getTrashRetentionCutoff(days);
+  return [...new Set(asArray(trashEntries)
+    .filter((entry) => {
+      const time = new Date(entry?.deletedAt || 0).getTime();
+      return Number.isFinite(time) && time > 0 && time < cutoff;
+    })
+    .map((entry) => String(entry?.id || '').trim())
+    .filter(Boolean))];
+};
+
+const cleanupExpiredClassScopedTrash = async (ownerId, classId, trashPayload = {}, days = TRASH_RETENTION_DAYS) => {
+  const normalizedOwnerId = normalizeUserId(ownerId);
+  const normalizedClassId = normalizeClassId(classId);
+  if (!normalizedOwnerId || !normalizedClassId || !isFirebaseConfigured || !db) {
+    return {
+      students: 0,
+      subjects: 0,
+      exams: 0,
+      total: 0
+    };
+  }
+
+  const expiredStudentIds = getExpiredTrashIds(trashPayload?.trashStudents || [], days);
+  const expiredSubjectIds = getExpiredTrashIds(trashPayload?.trashSubjects || [], days);
+  const expiredExamIds = getExpiredTrashIds(trashPayload?.trashExams || [], days);
+  const total = expiredStudentIds.length + expiredSubjectIds.length + expiredExamIds.length;
+
+  if (!total) {
+    return {
+      students: 0,
+      subjects: 0,
+      exams: 0,
+      total: 0
+    };
+  }
+
+  await Promise.all([
+    ...expiredStudentIds.map(async (studentId) => {
+      await deleteDoc(getStudentDocRef(normalizedOwnerId, studentId, normalizedClassId));
+      try {
+        await cleanupLegacyStudentCompanionDoc(normalizedOwnerId, studentId, 'purge');
+      } catch (error) {
+        console.warn('Ignoring legacy root student purge failure during automated trash cleanup:', error);
+      }
+    }),
+    ...expiredSubjectIds.map((subjectId) => deleteDoc(getSubjectDocRef(normalizedOwnerId, subjectId, normalizedClassId))),
+    ...expiredExamIds.map((examId) => deleteDoc(getExamDocRef(normalizedOwnerId, examId, normalizedClassId)))
+  ]);
+
+  const updatedAt = new Date().toISOString();
+  await setDoc(
+    getClassDocRef(normalizedOwnerId, normalizedClassId),
+    buildClassDocMetadataPatch(normalizedOwnerId, normalizedClassId, updatedAt),
+    { merge: true }
+  );
+
+  return {
+    students: expiredStudentIds.length,
+    subjects: expiredSubjectIds.length,
+    exams: expiredExamIds.length,
+    total
+  };
+};
+
+const runAutomatedTrashCleanup = async (authUserId = '', role = getCurrentUserRoleContext(), classes = [], trashClasses = [], days = TRASH_RETENTION_DAYS) => {
+  const normalizedAuthUserId = normalizeUserId(authUserId);
+  if (!normalizedAuthUserId || !canRoleWrite(role) || !isFirebaseConfigured || !db) {
+    return {
+      classes: 0,
+      students: 0,
+      subjects: 0,
+      exams: 0,
+      total: 0
+    };
+  }
+
+  let deletedClasses = 0;
+  let deletedStudents = 0;
+  let deletedSubjects = 0;
+  let deletedExams = 0;
+
+  const expiredTrashClassIds = getExpiredTrashIds(
+    asArray(trashClasses).filter((entry) => normalizeUserId(entry?.ownerId || normalizedAuthUserId) === normalizedAuthUserId),
+    days
+  );
+
+  for (const classId of expiredTrashClassIds) {
+    try {
+      await permanentlyDeleteClass(classId);
+      deletedClasses += 1;
+    } catch (error) {
+      console.warn(`Automated trash cleanup failed for class ${classId}:`, error);
+    }
+  }
+
+  const ownedClasses = asArray(classes).filter((entry) => normalizeUserId(entry?.ownerId || '') === normalizedAuthUserId);
+
+  for (const classEntry of ownedClasses) {
+    const ownerId = normalizeUserId(classEntry?.ownerId || '');
+    const classId = normalizeClassId(classEntry?.id || '');
+    if (!ownerId || !classId) {
+      continue;
+    }
+
+    try {
+      const modularResult = await readModularRawData(ownerId, classId);
+      const cleanupResult = await cleanupExpiredClassScopedTrash(ownerId, classId, modularResult, days);
+      deletedStudents += cleanupResult.students;
+      deletedSubjects += cleanupResult.subjects;
+      deletedExams += cleanupResult.exams;
+    } catch (error) {
+      console.warn(`Automated trash cleanup failed for class-scoped data ${classId}:`, error);
+    }
+  }
+
+  return {
+    classes: deletedClasses,
+    students: deletedStudents,
+    subjects: deletedSubjects,
+    exams: deletedExams,
+    total: deletedClasses + deletedStudents + deletedSubjects + deletedExams
+  };
 };
 
 const hasAnyRawData = (rawData) => {
@@ -3144,13 +3267,23 @@ export const fetchAllData = async () => {
 
   for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
     try {
-      const classScope = await ensureActiveClassContext(userId, { requireClass: false });
-      const scopedClasses = classScope.classes || [];
-      const scopedTrashClasses = classScope.trashClasses || [];
-      const scopedClassId = classScope.classId;
-      const scopedClassName = classScope.className;
-      const scopedOwnerId = normalizeUserId(classScope.classOwnerId || '');
+      let classScope = await ensureActiveClassContext(userId, { requireClass: false });
+      let scopedClasses = classScope.classes || [];
+      let scopedTrashClasses = classScope.trashClasses || [];
+      let scopedClassId = classScope.classId;
+      let scopedClassName = classScope.className;
+      let scopedOwnerId = normalizeUserId(classScope.classOwnerId || '');
       const cacheScopeKey = getScopeKey();
+
+      const cleanupResult = await runAutomatedTrashCleanup(authUserId, role, scopedClasses, scopedTrashClasses);
+      if (cleanupResult.total > 0) {
+        classScope = await ensureActiveClassContext(userId, { requireClass: false });
+        scopedClasses = classScope.classes || [];
+        scopedTrashClasses = classScope.trashClasses || [];
+        scopedClassId = classScope.classId;
+        scopedClassName = classScope.className;
+        scopedOwnerId = normalizeUserId(classScope.classOwnerId || '');
+      }
 
       if (!scopedClassId) {
         const result = {
