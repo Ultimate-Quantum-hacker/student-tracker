@@ -1,145 +1,139 @@
 # Firebase Setup Guide
 
 ## Overview
-This app now uses Firebase Firestore for data storage instead of localStorage. Follow these steps to set up your Firebase project.
 
-## Step 1: Create Firebase Project
+Student Tracker uses Firebase Authentication and Firestore for account lifecycle, dashboard data, admin workflows, and security enforcement.
 
-1. Go to [Firebase Console](https://console.firebase.google.com/)
-2. Click "Add project"
-3. Enter project name (e.g., "student-tracker")
-4. Accept terms and continue
-5. Choose your Google Analytics account or skip
-6. Click "Create project"
+The repository is currently wired to the Firebase project:
 
-## Step 2: Set Up Firestore Database
+- `student-tracker-app-670c2`
 
-1. In your Firebase project, go to "Firestore Database" in the left menu
-2. Click "Create database"
-3. Choose "Start in test mode" (for now)
-4. Select a location (choose closest to your users)
-5. Click "Create"
+## Runtime Web Configuration
 
-## Step 3: Get Firebase Configuration
+This app reads Firebase web config from `window.__FIREBASE_CONFIG__`.
 
-1. In Firebase Console, click the gear icon ⚙️ next to "Project Overview"
-2. Select "Project settings"
-3. Under "Your apps", click the web icon (</>)
-4. Enter app name: "Student Tracker"
-5. Click "Register app"
-6. Copy the firebaseConfig object
+By default, that object is set in:
 
-## Step 4: Update Firebase Configuration
+- `js/firebase-config.js`
 
-Open `js/firebase.js` and replace the placeholder config with your actual config:
+If you need to switch projects, update that file or inject a replacement config object before `js/firebase.js` loads.
 
-```javascript
-const firebaseConfig = {
-  apiKey: "your-actual-api-key",
-  authDomain: "your-project-id.firebaseapp.com",
-  projectId: "your-project-id",
-  storageBucket: "your-project-id.appspot.com",
-  messagingSenderId: "your-sender-id",
-  appId: "your-actual-app-id"
-};
+The required keys are:
+
+- `apiKey`
+- `authDomain`
+- `projectId`
+- `storageBucket`
+- `messagingSenderId`
+- `appId`
+
+## Firebase Project Setup
+
+If you are setting up a fresh Firebase project:
+
+1. Create a Firebase project in the Firebase Console.
+2. Enable Email/Password authentication in Authentication.
+3. Create a Firestore database.
+4. Register a web app and copy the Firebase web config.
+5. Put that config in `js/firebase-config.js`.
+6. Deploy the repository's `firestore.rules` before using the app with real data.
+
+## Firestore Rules Source of Truth
+
+Do not use permissive test-mode rules for this app.
+
+The authoritative rules live in:
+
+- `firestore.rules`
+
+Deployment config lives in:
+
+- `firebase.json`
+- `.firebaserc`
+
+Deploy rules with:
+
+```bash
+npm run deploy:firestore-rules
 ```
 
-## Step 5: Update Firestore Rules
+Or directly:
 
-For security, update your Firestore rules in the Firebase Console:
-
-1. Go to Firestore Database → Rules
-2. Replace the default rules with:
-
-```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    // Allow read/write access to authenticated users only
-    // For now, allow all access (testing mode)
-    match /{document=**} {
-      allow read, write: if true;
-    }
-  }
-}
+```bash
+npx firebase-tools deploy --only firestore:rules --project student-tracker-app-670c2
 ```
 
-## Data Structure
+## Auth and Account Lifecycle Expectations
 
-The app automatically creates these collections:
+The current auth flow is:
 
-### students
-```javascript
-{
-  id: "auto-generated",
-  name: "Student Name",
-  class: "Class Name (optional)",
-  notes: "Optional notes",
-  createdAt: "2023-..."
-}
+1. A user signs up with email/password.
+2. The app creates or updates `users/{uid}`.
+3. Self-serve accounts start as `teacher`.
+4. Teacher accounts must verify email before dashboard access.
+5. Unverified teachers are routed to `verify-email.html`.
+6. Login supports password reset.
+7. Account Settings supports display-name updates and session metadata display.
+
+Privileged-role policy:
+
+- `admin` promotion is allowed only for verified teacher accounts.
+- `developer` onboarding is manual only.
+- Privileged-role changes are enforced in UI, service logic, and Firestore rules.
+
+## Relevant App Entry Points
+
+- `login.html`
+- `signup.html`
+- `verify-email.html`
+- `index.html`
+- `admin.html`
+
+## Local Verification Checklist
+
+After configuring Firebase:
+
+1. Load `signup.html` and create a teacher account.
+2. Confirm a verification email is sent.
+3. Confirm the account is routed to `verify-email.html` until verification completes.
+4. Verify that a verified teacher can reach `index.html`.
+5. Confirm password reset works from `login.html`.
+6. Confirm Account Settings shows role, email, last updated, and email status.
+7. Confirm admin role changes follow the privileged-role policy.
+
+## Automated Test Coverage
+
+Relevant Playwright commands:
+
+```bash
+npm run test:auth-smoke
+npm run test:critical-regressions
 ```
 
-### exams
-```javascript
-{
-  id: "auto-generated", 
-  title: "Mock 1",
-  date: "2023-..."
-}
-```
-
-### subjects
-```javascript
-{
-  id: "auto-generated",
-  name: "English Language"
-}
-```
-
-### scores
-```javascript
-{
-  id: "auto-generated",
-  studentId: "student-id",
-  examId: "exam-id", 
-  subject: "English Language",
-  score: 85,
-  createdAt: "2023-..."
-}
-```
-
-## Testing
-
-1. Open `index.html` in a browser
-2. Check browser console for "Firebase initialized successfully"
-3. Try adding a student - it should save to Firestore
-4. Check Firebase Console → Firestore Database to see your data
+The auth smoke tests stub Firebase CDN dependencies so they can run reliably without live network access to those browser-side modules.
 
 ## Troubleshooting
 
-### "Firebase not defined" error
-- Make sure Firebase SDK scripts are loaded before your app scripts
-- Check internet connection
+### Authentication is unavailable
 
-### "Permission denied" error
-- Update Firestore rules to allow access
-- Check if you're using the correct project ID
+- Check `js/firebase-config.js`.
+- Confirm all required Firebase config keys are present.
+- Check browser console for Firebase initialization errors.
 
-### Data not saving
-- Check browser console for errors
-- Verify Firebase configuration is correct
-- Make sure Firestore is enabled in your project
+### Verification flow does not advance
 
-## Next Steps
+- Confirm the account exists in Firebase Authentication.
+- Confirm the signed-in account's `emailVerified` state changed after verification.
+- Refresh from `verify-email.html` after using the email link.
 
-After testing works:
-1. Implement proper authentication
-2. Restrict Firestore rules for security
-3. Set up proper indexes for performance
+### Firestore permission denied
 
-## Migration from localStorage
+- Confirm the correct project is active.
+- Confirm the latest `firestore.rules` were deployed.
+- Check whether the attempted write violates ownership or privileged-role policy.
 
-If you have existing data in localStorage:
-1. The app will automatically migrate when you first load it
-2. All existing students, exams, subjects, and scores will be copied to Firestore
-3. Your data is now stored in the cloud and accessible from any device
+### Admin role updates fail
+
+- Confirm the acting user has the `developer` role.
+- Confirm the target account already exists as a signed-in teacher record.
+- Confirm teacher-to-admin promotion only happens for verified teacher accounts.

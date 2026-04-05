@@ -1,9 +1,13 @@
 {
   "name": "student-tracker",
   "version": "1.0.0",
-  "description": "To make it easy for you to get started with GitLab, here's a list of recommended next steps.",
+  "description": "Firebase-backed Student Performance Tracker with auth, account lifecycle, and admin tooling.",
   "main": "index.js",
-  "scripts": {},
+  "scripts": {
+    "test:auth-smoke": "npx playwright test tests/example.spec.js --project=chromium",
+    "test:critical-regressions": "npx playwright test tests/refactor-critical-regressions.spec.js --project=chromium",
+    "deploy:firestore-rules": "npx firebase-tools deploy --only firestore:rules --project student-tracker-app-670c2"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://gitlab.com/ultimate-quantum-hacker-group/student-tracker.git"

@@ -1,93 +1,111 @@
 # Student Tracker
 
+Student Tracker is a Firebase-backed web app for managing classes, students, subjects, exams, and score analysis from a teacher dashboard, with an admin panel for privileged oversight and support workflows.
 
+## Core Features
 
-## Getting started
+- Teacher dashboard for student, subject, exam, and score management
+- Firebase Authentication with email/password login and signup
+- Password reset from the login page
+- Teacher email-verification gate before dashboard access
+- In-app Account Settings with display-name updates and session metadata
+- Admin panel with role-aware visibility, activity logs, and global search
+- Firestore security rules aligned with role and ownership boundaries
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+## Current Auth and Account Lifecycle
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+The supported account lifecycle in Phase 2 is:
 
-## Add your files
+1. A new self-serve account signs up with email/password.
+2. The app creates a user profile under `users/{uid}` with the default `teacher` role.
+3. A verification email is sent during signup.
+4. Unverified teacher accounts are routed to `verify-email.html` instead of the main dashboard.
+5. Verified teacher accounts can enter `index.html` normally.
+6. Login supports password reset from the same page.
+7. Signed-in users can update their display name from Account Settings.
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+Privileged-role policy:
 
+- New self-serve accounts cannot create `admin` or `developer` roles.
+- `admin` promotion is limited to verified teacher accounts.
+- `developer` onboarding is manual and cannot be performed from the admin panel.
+- The policy is enforced in the admin UI, the service layer, and `firestore.rules`.
+
+## Firebase Configuration
+
+This repo currently uses runtime Firebase config via `js/firebase-config.js`, which sets `window.__FIREBASE_CONFIG__` for the default project:
+
+- `student-tracker-app-670c2`
+
+If you need to point the app at a different Firebase project, update `js/firebase-config.js` or inject `window.__FIREBASE_CONFIG__` before `js/firebase.js` loads.
+
+## Local Development
+
+1. Install dependencies:
+
+```bash
+npm install
 ```
-cd existing_repo
-git remote add origin https://gitlab.com/ultimate-quantum-hacker-group/student-tracker.git
-git branch -M main
-git push -uf origin main
+
+2. Serve the repository root on `http://localhost:3000` with your preferred static server.
+
+3. Open one of the supported entry points:
+
+- `login.html`
+- `signup.html`
+- `verify-email.html`
+- `index.html`
+- `admin.html`
+
+## Testing
+
+Focused test commands are available in `package.json`:
+
+```bash
+npm run test:auth-smoke
+npm run test:critical-regressions
 ```
 
-## Integrate with your tools
+The Playwright auth smoke suite uses offline stubs for:
 
-* [Set up project integrations](https://gitlab.com/ultimate-quantum-hacker-group/student-tracker/-/settings/integrations)
+- Firebase CDN modules
+- Google Fonts
+- CDN-hosted export libraries
 
-## Collaborate with your team
+That keeps auth-flow validation stable even when network access is limited.
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+## Firestore Rules Deployment
 
-## Test and Deploy
+Firestore rules source lives in `firestore.rules`.
 
-Use the built-in continuous integration in GitLab.
+Deploy the active rules with:
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+```bash
+npm run deploy:firestore-rules
+```
 
-***
+Deployment config is tracked in:
 
-# Editing this README
+- `firebase.json`
+- `.firebaserc`
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+## Key Files
 
-## Suggestions for a good README
+- `js/auth.js` - auth helpers, profile resolution, verification, reset, and session utilities
+- `js/auth-page.js` - login, signup, verify-email, reset, and redirect UX
+- `js/app.js` - dashboard auth/session gating and redirects
+- `js/ui.js` - Account Settings and session-summary rendering
+- `js/admin.js` - admin panel orchestration and role-management UI
+- `js/admin-user-utils.js` - role-policy helpers for admin UI decisions
+- `services/db.js` - service-layer Firestore access and privileged-role enforcement
+- `firestore.rules` - Firestore security rules
+- `tests/example.spec.js` - focused auth smoke coverage
+- `tests/refactor-critical-regressions.spec.js` - higher-value regression coverage
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+## Roadmap Source of Truth
 
-## Name
-Choose a self-explaining name for your project.
+Roadmap tracking lives in:
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+- `INCONSISTENSIES_ROADMAP.md`
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+Phase 2 currently covers auth, identity, and account lifecycle completion.

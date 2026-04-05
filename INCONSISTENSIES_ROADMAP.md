@@ -118,7 +118,7 @@ Complete the authentication and account lifecycle so users can securely sign up,
 - [x] Account/profile settings page or modal
 - [x] Auth-state-aware UX for verified status, reset actions, and session issues
 - [x] Clear privileged-role onboarding policy and implementation
-- [ ] Updated auth documentation and test coverage
+- [x] Updated auth documentation and test coverage
 
 ## Exit Criteria
 
@@ -556,3 +556,8 @@ Use this section to track major roadmap updates.
 - **Phase:** Phase 2
 - **Update:** Implemented the privileged-role onboarding policy across the auth/profile, admin panel, service, and Firestore security layers by persisting `emailVerified` on user profiles, restricting admin promotion to verified teacher accounts, keeping developer onboarding manual-only, adding audited role-update metadata, aligning the admin UI copy/disabled states with the policy, and extending the critical regression suite with focused privileged-role coverage plus offline dependency stubs.
 - **Impact:** Privileged-role creation and promotion behavior is now consistently enforced at the UI, service, and security boundaries, admin users receive clear policy feedback before blocked writes, and the new focused Chromium regression passes for the verified-admin-promotion/manual-developer path. Remaining Phase 2 work is broader auth documentation and any additional test expansion beyond this policy slice.
+
+- **Date:** 2026-04-05
+- **Phase:** Phase 2
+- **Update:** Replaced the placeholder project documentation with current auth/account-lifecycle guidance in `README.md`, refreshed `FIREBASE_SETUP.md` to match the runtime Firebase config and locked-down Firestore rules workflow, added npm scripts for auth smoke/regression/rules deployment, and expanded `tests/example.spec.js` with offline-stubbed coverage for password reset feedback, signed-in unverified-user routing, verify-email screen context, and auth helper verification gating.
+- **Impact:** Phase 2 documentation now matches the implemented teacher signup/login/verification/account-settings lifecycle, the local test/deploy workflow is documented at the package and markdown layers, and the focused Chromium auth smoke suite passes `8/8` with broader lifecycle coverage. Remaining Phase 2 work is now limited to any optional follow-up verification or future roadmap phases.
