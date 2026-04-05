@@ -74,18 +74,33 @@ The Playwright auth smoke suite uses offline stubs for:
 
 That keeps auth-flow validation stable even when network access is limited.
 
-## Firestore Rules Deployment
+## Firestore Deployment
 
 Firestore rules source lives in `firestore.rules`.
+Firestore index configuration source lives in `firestore.indexes.json`.
+The current checked-in composite-index set is intentionally empty because the stabilized Phase 3 query model does not yet require any custom multi-field indexes.
 
-Deploy the active rules with:
+Deploy the active Firestore config with:
+
+```bash
+npm run deploy:firestore
+```
+
+Deploy only rules with:
 
 ```bash
 npm run deploy:firestore-rules
 ```
 
+Deploy only indexes with:
+
+```bash
+npm run deploy:firestore-indexes
+```
+
 Deployment config is tracked in:
 
+- `firestore.indexes.json`
 - `firebase.json`
 - `.firebaserc`
 
@@ -99,6 +114,7 @@ Deployment config is tracked in:
 - `js/admin-user-utils.js` - role-policy helpers for admin UI decisions
 - `services/db.js` - service-layer Firestore access and privileged-role enforcement
 - `firestore.rules` - Firestore security rules
+- `firestore.indexes.json` - Firestore composite-index source of truth
 - `tests/example.spec.js` - focused auth smoke coverage
 - `tests/refactor-critical-regressions.spec.js` - higher-value regression coverage
 

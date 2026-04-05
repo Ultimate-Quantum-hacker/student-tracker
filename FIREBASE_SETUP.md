@@ -36,7 +36,7 @@ If you are setting up a fresh Firebase project:
 3. Create a Firestore database.
 4. Register a web app and copy the Firebase web config.
 5. Put that config in `js/firebase-config.js`.
-6. Deploy the repository's `firestore.rules` before using the app with real data.
+6. Deploy the repository's checked-in Firestore config before using the app with real data.
 
 ## Firestore Rules Source of Truth
 
@@ -45,11 +45,19 @@ Do not use permissive test-mode rules for this app.
 The authoritative rules live in:
 
 - `firestore.rules`
+- `firestore.indexes.json`
 
 Deployment config lives in:
 
+- `firestore.indexes.json`
 - `firebase.json`
 - `.firebaserc`
+
+Deploy the full Firestore config with:
+
+```bash
+npm run deploy:firestore
+```
 
 Deploy rules with:
 
@@ -57,11 +65,29 @@ Deploy rules with:
 npm run deploy:firestore-rules
 ```
 
+Deploy only indexes with:
+
+```bash
+npm run deploy:firestore-indexes
+```
+
 Or directly:
 
 ```bash
-npx firebase-tools deploy --only firestore:rules --project student-tracker-app-670c2
+npx firebase-tools deploy --only firestore --project student-tracker-app-670c2
 ```
+
+Or deploy only indexes directly:
+
+```bash
+npx firebase-tools deploy --only firestore:indexes --project student-tracker-app-670c2
+```
+
+Current Phase 3 note:
+
+- The checked-in `firestore.indexes.json` file is the repository source of truth for Firestore index config.
+- The current stabilized query set does not require any custom composite indexes yet, so the tracked file intentionally contains empty `indexes` and `fieldOverrides` arrays.
+- If a future query adds a compound `where(...)` plus `orderBy(...)` or similar multi-field index requirement, update `firestore.indexes.json` and deploy it with the scripts above.
 
 ## Auth and Account Lifecycle Expectations
 

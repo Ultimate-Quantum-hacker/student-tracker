@@ -166,7 +166,7 @@ Eliminate fragile storage patterns and finish the long-term migration path so th
 - [x] Schema versioning strategy and persisted version markers
 - [x] Automated trash cleanup mechanism with tests and operational verification
 - [x] Activity log retention strategy with implementation and tests
-- [ ] Firestore indexes and migration documentation checked into the repo
+- [x] Firestore indexes and migration documentation checked into the repo
 
 ## Exit Criteria
 
@@ -581,3 +581,8 @@ Use this section to track major roadmap updates.
 - **Phase:** Phase 3
 - **Update:** Implemented the activity-log retention policy in `services/db.js` with a shared activity-log timestamp helper, a `90` day cutoff, and a retained cap of `250` logs enforced from the privileged cleanup path during both `logActivity()` and `fetchActivityLogs()`. Updated `js/admin.js` to request the deeper retained history and extended `tests/refactor-critical-regressions.spec.js` with focused browser coverage that seeds expired and overflowing activity logs, then verifies that privileged reads purge expired entries and trim retained history to the newest `250` documents.
 - **Impact:** Phase 3 activity-log retention is now enforced in the authoritative service layer instead of relying on a shallower count-only limit, the admin panel can surface the full retained history window, and the focused Chromium validation passes with `npx playwright test tests/refactor-critical-regressions.spec.js --project=chromium -g "fetchActivityLogs purges expired activity logs and trims retained history to 250 entries" --reporter=line`. Remaining Phase 3 work is Firestore index/documentation capture.
+
+- **Date:** 2026-04-05
+- **Phase:** Phase 3
+- **Update:** Checked in `firestore.indexes.json` as the repository source of truth for Firestore index configuration, wired it into `firebase.json`, added package scripts to deploy full Firestore config or only indexes, and updated `README.md` plus `FIREBASE_SETUP.md` to document the current index/deployment workflow. The Phase 3 query audit found that the stabilized data model currently relies on default single-field indexes and broad `collectionGroup(...)` reads, so the tracked composite-index set is intentionally empty until a future compound query requires it.
+- **Impact:** Firestore configuration required by the stabilized Phase 3 data model is now stored in the repo and deployment/documentation no longer omit index management. Phase 3 data-model hardening is now fully complete, and the next roadmap work can move into Phase 4 architectural cleanup.
