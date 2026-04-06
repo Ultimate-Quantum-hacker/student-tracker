@@ -3485,6 +3485,103 @@ export const fetchAllData = async () => {
   };
 };
 
+const persistStudentCreate = async (studentData, nextData) => {
+  const nextStudent = studentData && typeof studentData === 'object' ? clone(studentData) : {};
+  const normalizedStudentId = String(nextStudent.id || '').trim();
+  if (!normalizedStudentId) {
+    const error = new Error('Student id is required to save student');
+    return {
+      data: nextData,
+      remoteSaved: false,
+      error,
+      errorType: 'unknown',
+      operation: 'save student',
+      offline: false
+    };
+  }
+
+  nextStudent.name = assertValidStudentName(nextStudent.name);
+  nextStudent.scores = normalizeStudentScoresForRawData(nextData, nextStudent.scores || {});
+
+  let lastError = null;
+  let lastErrorType = null;
+
+  for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      const classScope = await ensureValidClassContext('save student', { requireWritable: true });
+      const userId = classScope.ownerId;
+      const classId = classScope.classId;
+      const updatedAt = new Date().toISOString();
+      const studentOrder = Math.max(
+        0,
+        asArray(nextData?.students).findIndex((student) => String(student?.id || '').trim() === normalizedStudentId)
+      );
+
+      await setDoc(getStudentDocRef(userId, normalizedStudentId, classId), {
+        id: normalizedStudentId,
+        name: nextStudent.name,
+        notes: nextStudent.notes || '',
+        class: nextStudent.class || '',
+        scores: nextStudent.scores && typeof nextStudent.scores === 'object' ? clone(nextStudent.scores) : {},
+        deleted: false,
+        deletedAt: null,
+        order: studentOrder,
+        userId,
+        ownerId: userId,
+        classId,
+        updatedAt
+      }, { merge: false });
+
+      await setDoc(
+        getClassDocRef(userId, classId),
+        buildClassDocMetadataPatch(userId, classId, updatedAt),
+        { merge: true }
+      );
+
+      await mergeUserRootMetadata(userId, {
+        userId,
+        activeClassId: classId,
+        updatedAt
+      });
+
+      return {
+        data: nextData,
+        remoteSaved: true,
+        error: null,
+        errorType: null,
+        operation: 'save student',
+        classId,
+        offline: false
+      };
+    } catch (error) {
+      lastError = error;
+      lastErrorType = classifyFirebaseError(error);
+      console.error('Failed to save student via Firebase:', error);
+
+      if (attempt < RETRY_ATTEMPTS && shouldRetry(lastErrorType) && !isNavigatorOffline()) {
+        console.warn(`Retrying save student (${attempt + 1}/${RETRY_ATTEMPTS}) after ${lastErrorType} error`);
+        await wait(RETRY_DELAY_MS * attempt);
+        continue;
+      }
+
+      break;
+    }
+  }
+
+  if (!isOfflineError(lastErrorType)) {
+    logOnlineFailure('save student', lastErrorType);
+  }
+
+  return {
+    data: nextData,
+    remoteSaved: false,
+    error: lastError,
+    errorType: lastErrorType,
+    operation: 'save student',
+    offline: isOfflineError(lastErrorType)
+  };
+};
+
 const normalizeStudentPatch = (studentData, rawData = null) => {
   const source = studentData && typeof studentData === 'object' ? studentData : {};
   const patch = {};
@@ -4315,7 +4412,7 @@ export const saveStudent = async (rawData, studentData) => enqueueWrite(async ()
     nextStudent.scores = normalizeStudentScoresForRawData(next, nextStudent.scores || {});
   }
   next.students.push(nextStudent);
-  return persistRemoteFirst(next, 'save student');
+  return persistStudentCreate(nextStudent, next);
 });
 
 export const updateStudent = async (rawData, studentId, studentData) => enqueueWrite(async () => {
@@ -4459,7 +4556,7 @@ export const saveScores = async (rawData, studentId, scores) => enqueueWrite(asy
   if (student) {
     student.scores = normalizedScores;
   }
-  return persistRemoteFirst(next, 'save scores');
+  return persistStudentUpdateById(studentId, { scores: normalizedScores }, next);
 });
 
 export const updateSubjects = async (rawData, subjects) => enqueueWrite(async () => {

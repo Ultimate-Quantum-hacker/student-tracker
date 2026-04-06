@@ -20,6 +20,7 @@ const domIds = {
   snapshotModal: 'snapshot-modal',
   snapshotList: 'snapshot-list',
   snapshotCloseBtn: 'snapshot-close-btn',
+  systemToolsSection: 'system-tools-section',
   themeToggle: 'themeToggle',
   resetBtn: 'reset-btn',
   resetModal: 'reset-modal',
@@ -160,21 +161,25 @@ const domIds = {
 
 const FEATURE_ACCESS_RULES = {
   developerTools: ['developer'],
+  systemToolsPanel: ['admin', 'developer'],
+  backupData: ['admin', 'developer'],
   exportData: ['teacher', 'admin', 'developer'],
-  importData: ['teacher', 'developer'],
+  importData: ['developer'],
   bulkImport: ['teacher', 'developer'],
-  restorePoints: ['teacher', 'developer'],
-  resetSystem: ['teacher', 'developer'],
+  restorePoints: ['developer'],
+  resetSystem: ['developer'],
   adminPanel: ['admin', 'developer']
 };
 
 const FEATURE_ACCESS_MESSAGES = {
   developerTools: 'Access restricted: Developer only',
+  systemToolsPanel: 'Access restricted: Admin or Developer only',
+  backupData: 'Access restricted: Admin or Developer only',
   exportData: 'Access restricted: Signed-in users only',
-  importData: 'Access restricted: Teacher or Developer only',
+  importData: 'Access restricted: Developer only',
   bulkImport: 'Access restricted: Teacher or Developer only',
-  restorePoints: 'Access restricted: Teacher or Developer only',
-  resetSystem: 'Access restricted: Teacher or Developer only',
+  restorePoints: 'Access restricted: Developer only',
+  resetSystem: 'Access restricted: Developer only',
   adminPanel: 'Access restricted: Admin or Developer only'
 };
 
@@ -611,6 +616,10 @@ const ui = {
         app.dom.systemImportDataBtn
       ]);
 
+      this.applyFeatureAccessState('systemToolsPanel', [
+        app.dom.systemToolsSection
+      ]);
+
       this.applyFeatureAccessState('bulkImport', [
         app.dom.bulkImportBtn,
         app.dom.bulkImportConfirmBtn
@@ -628,11 +637,14 @@ const ui = {
         app.dom.systemResetBtn
       ]);
 
-      this.applyFeatureAccessState('exportData', [
+      this.applyFeatureAccessState('backupData', [
         app.dom.systemToolsBackupStatus,
         app.dom.backupStatus,
         app.dom.backupBtn,
-        app.dom.systemExportDataBtn,
+        app.dom.systemExportDataBtn
+      ]);
+
+      this.applyFeatureAccessState('exportData', [
         app.dom.exportCsvBtn,
         app.dom.exportExcelBtn,
         app.dom.reportExportPdfBtn,

@@ -467,7 +467,7 @@ const students = {
       }
       for (const studentData of studentsData) {
         try {
-          await app.addStudent({ ...studentData, scores: {} });
+          await app.addStudent({ ...studentData, scores: {} }, { skipActivityLog: true });
           importResult.importedCount += 1;
         } catch (error) {
           console.error('Failed to import student:', error);
@@ -485,6 +485,9 @@ const students = {
         }
       }
       if (importResult.importedCount) {
+        if (app?.state && Array.isArray(app.state.students)) {
+          app.state.dashboardStudentCount = app.state.students.length;
+        }
         ui.refreshUI();
       }
       return importResult;

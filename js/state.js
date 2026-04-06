@@ -1020,9 +1020,10 @@ window.TrackerApp = window.TrackerApp || {};
   };
 
   // CRUD operations for students
-  app.addStudent = async function (studentData) {
+  app.addStudent = async function (studentData, options = {}) {
     return enqueueStateWrite(async () => {
       try {
+        const shouldLogActivity = options?.skipActivityLog !== true;
         const classContext = ensureResolvedClassContext('add student');
         const normalizedStudentData = normalizeStudentUpdate(studentData);
         const newStudent = {
@@ -1043,14 +1044,16 @@ window.TrackerApp = window.TrackerApp || {};
 
         const saveResult = await dataService.saveStudent(app.getRawData(), newStudent);
         syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult, 'save student');
-        await logTrackedActivity('student_added', newStudent.id, 'student', {
-          classId: classContext.classId,
-          ownerId: classContext.ownerId,
-          className: classContext.className,
-          ownerName: classContext.ownerName,
-          targetLabel: newStudent.name || 'Student'
-        });
-        await app.refreshDashboardStudentCount();
+        app.state.dashboardStudentCount = nextStudents.length;
+        if (shouldLogActivity) {
+          void logTrackedActivity('student_added', newStudent.id, 'student', {
+            classId: classContext.classId,
+            ownerId: classContext.ownerId,
+            className: classContext.className,
+            ownerName: classContext.ownerName,
+            targetLabel: newStudent.name || 'Student'
+          });
+        }
         return newStudent;
       } catch (error) {
         console.error('Failed to add student:', error);
@@ -1198,15 +1201,14 @@ window.TrackerApp = window.TrackerApp || {};
           ...deepClone(app.state.studentTrash || []).filter(entry => entry?.id !== studentId)
         ]);
 
-        await logTrackedActivity('student_deleted', studentId, 'student', {
+        app.state.dashboardStudentCount = nextStudents.length;
+        void logTrackedActivity('student_deleted', studentId, 'student', {
           classId: app.state.currentClassId,
           className: app.state.currentClassName,
           ownerId: app.getCurrentClassOwnerId(),
           ownerName: app.getCurrentClassOwnerName(),
           targetLabel: existingStudent.name || deletedEntry.name || 'Student'
         });
-
-        await app.refreshDashboardStudentCount();
 
         return deletedEntry;
       } catch (error) {
@@ -1304,7 +1306,7 @@ window.TrackerApp = window.TrackerApp || {};
 
         const saveResult = await dataService.saveAllData(composeRawData(nextStudents, nextSubjects, nextExams));
         syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult, 'save exam changes');
-        await logTrackedActivity('exam_updated', examId, 'exam', {
+        void logTrackedActivity('exam_updated', examId, 'exam', {
           classId: app.state.currentClassId
         });
         return nextExams[index];
@@ -1373,7 +1375,7 @@ window.TrackerApp = window.TrackerApp || {};
 
         const saveResult = await dataService.updateSubjects(app.getRawData(), nextSubjects);
         syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult, 'update subjects');
-        await logTrackedActivity('subject_created', newSubject.id, 'subject', {
+        void logTrackedActivity('subject_created', newSubject.id, 'subject', {
           classId: classContext.classId,
           ownerId: classContext.ownerId,
           className: classContext.className,

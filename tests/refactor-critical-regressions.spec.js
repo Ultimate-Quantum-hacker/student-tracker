@@ -1957,23 +1957,25 @@ test('bulk delete class modal shows polished selection state and prevents deleti
           <button id="create-class-btn" type="button"></button>
           <button id="delete-class-btn" type="button"></button>
           <div id="backupStatus"></div>
-          <div id="system-tools-backup-status"><span id="system-tools-backup-status-text"></span></div>
           <button id="backup-btn" type="button"></button>
           <button id="restore-btn" type="button"></button>
           <input id="restore-input" type="file">
           <button id="create-snapshot-btn" type="button"></button>
           <button id="snapshot-manager-btn" type="button"></button>
           <button id="reset-btn" type="button"></button>
-          <button id="system-create-restore-point-btn" type="button"></button>
-          <button id="system-restore-points-btn" type="button"></button>
-          <button id="system-export-data-btn" type="button"></button>
-          <button id="system-import-data-btn" type="button"></button>
-          <button id="system-reset-btn" type="button"></button>
+          <div id="system-tools-section">
+            <div id="system-tools-backup-status"><span id="system-tools-backup-status-text"></span></div>
+            <button id="system-create-restore-point-btn" type="button"></button>
+            <button id="system-restore-points-btn" type="button"></button>
+            <button id="system-export-data-btn" type="button"></button>
+            <button id="system-import-data-btn" type="button"></button>
+            <button id="system-reset-btn" type="button"></button>
+            <button id="admin-dashboard-btn" type="button"></button>
+          </div>
           <button id="export-csv-btn" type="button"></button>
           <button id="export-excel-btn" type="button"></button>
           <button id="report-export-pdf-btn" type="button"></button>
           <button id="report-export-all-pdf-btn" type="button"></button>
-          <button id="admin-dashboard-btn" type="button"></button>
         `;
         ui.initDOM();
       };
@@ -1986,6 +1988,7 @@ test('bulk delete class modal shows polished selection state and prevents deleti
 
         return {
           role,
+          systemToolsPanel: Boolean(document.getElementById('system-tools-section')),
           headerBackupStatus: Boolean(document.getElementById('backupStatus')),
           sidebarBackupStatus: Boolean(document.getElementById('system-tools-backup-status')),
           backup: Boolean(document.getElementById('backup-btn')),
@@ -2012,17 +2015,18 @@ test('bulk delete class modal shows polished selection state and prevents deleti
 
     expect(result.teacher).toEqual({
       role: 'teacher',
-      headerBackupStatus: true,
-      sidebarBackupStatus: true,
-      backup: true,
-      restore: true,
-      restoreInput: true,
-      restorePoints: true,
-      reset: true,
-      systemExport: true,
-      systemImport: true,
-      systemRestorePoints: true,
-      systemReset: true,
+      systemToolsPanel: false,
+      headerBackupStatus: false,
+      sidebarBackupStatus: false,
+      backup: false,
+      restore: false,
+      restoreInput: false,
+      restorePoints: false,
+      reset: false,
+      systemExport: false,
+      systemImport: false,
+      systemRestorePoints: false,
+      systemReset: false,
       resultsExport: true,
       reportExport: true,
       adminPanel: false
@@ -2030,6 +2034,7 @@ test('bulk delete class modal shows polished selection state and prevents deleti
 
     expect(result.admin).toEqual({
       role: 'admin',
+      systemToolsPanel: true,
       headerBackupStatus: true,
       sidebarBackupStatus: true,
       backup: true,
@@ -2048,6 +2053,7 @@ test('bulk delete class modal shows polished selection state and prevents deleti
 
     expect(result.developer).toEqual({
       role: 'developer',
+      systemToolsPanel: true,
       headerBackupStatus: true,
       sidebarBackupStatus: true,
       backup: true,
@@ -2063,6 +2069,18 @@ test('bulk delete class modal shows polished selection state and prevents deleti
       reportExport: true,
       adminPanel: true
     });
+  });
+
+  test('student save hot paths stay on targeted persistence helpers', async () => {
+    const dbSource = readWorkspaceFile('services/db.js');
+    const stateSource = readWorkspaceFile('js/state.js');
+    const studentsSource = readWorkspaceFile('js/students.js');
+
+    expect(dbSource).toContain('const persistStudentCreate = async (studentData, nextData) => {');
+    expect(dbSource).toContain('return persistStudentCreate(nextStudent, next);');
+    expect(dbSource).toContain('return persistStudentUpdateById(studentId, { scores: normalizedScores }, next);');
+    expect(stateSource).toContain('app.state.dashboardStudentCount = nextStudents.length;');
+    expect(studentsSource).toContain('await app.addStudent({ ...studentData, scores: {} }, { skipActivityLog: true });');
   });
 
   test('admin destructive panel actions stay developer-only while admins keep read access', async ({ page }) => {
