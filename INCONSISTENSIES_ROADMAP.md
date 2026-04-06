@@ -33,7 +33,7 @@ The roadmap is only complete when:
 | 1 | Product Consistency and Canonical Rules | In Progress | One product identity, one risk model, one permission model, and no contradictory UX rules |
 | 2 | Auth, Identity, and Account Lifecycle Completion | In Progress | Authentication and user account management become complete and production-ready |
 | 3 | Data Model Hardening and Migration Completion | In Progress | Immutable, migration-safe, id-based data model with no legacy dependency |
-| 4 | Frontend Architecture and Service Layer Consolidation | Not Started | Modular codebase with clear boundaries and one authoritative data access layer |
+| 4 | Frontend Architecture and Service Layer Consolidation | Completed | Modular codebase with clear boundaries and one authoritative data access layer |
 | 5 | Teacher and Admin Workflow Completion | Not Started | Fully coherent day-to-day workflows with missing feature gaps closed |
 | 6 | Offline, PWA, Environment, and Deployment Readiness | Not Started | Valid installable PWA, correct environment separation, and complete deployment setup |
 | 7 | Scale, Performance, and Operational Maturity | Not Started | App performs acceptably at larger data volumes and admin operations scale cleanly |
@@ -207,12 +207,12 @@ Refactor the codebase into clear modules with stable boundaries so future featur
 
 ## Deliverables
 
-- [ ] Feature-based module structure for dashboard, results, trash, reports, analytics, admin views, and shared utilities
-- [ ] Reduced responsibilities in `ui.js`, `state.js`, and `admin.js`
-- [ ] Centralized admin data reads/writes through the service layer
-- [ ] Documented architectural conventions for new modules
-- [ ] Standardized charting strategy with one chosen frontend approach
-- [ ] Removal or archival of stale legacy files and obsolete artifacts
+- [x] Feature-based module structure for dashboard, results, trash, reports, analytics, admin views, and shared utilities
+- [x] Reduced responsibilities in `ui.js`, `state.js`, and `admin.js`
+- [x] Centralized admin data reads/writes through the service layer
+- [x] Documented architectural conventions for new modules
+- [x] Standardized charting strategy with one chosen frontend approach
+- [x] Removal or archival of stale legacy files and obsolete artifacts
 
 ## Exit Criteria
 
@@ -586,3 +586,8 @@ Use this section to track major roadmap updates.
 - **Phase:** Phase 3
 - **Update:** Checked in `firestore.indexes.json` as the repository source of truth for Firestore index configuration, wired it into `firebase.json`, added package scripts to deploy full Firestore config or only indexes, and updated `README.md` plus `FIREBASE_SETUP.md` to document the current index/deployment workflow. The Phase 3 query audit found that the stabilized data model currently relies on default single-field indexes and broad `collectionGroup(...)` reads, so the tracked composite-index set is intentionally empty until a future compound query requires it.
 - **Impact:** Firestore configuration required by the stabilized Phase 3 data model is now stored in the repo and deployment/documentation no longer omit index management. Phase 3 data-model hardening is now fully complete, and the next roadmap work can move into Phase 4 architectural cleanup.
+
+- **Date:** 2026-04-06
+- **Phase:** Phase 4
+- **Update:** Completed the frontend architecture and service-layer consolidation by moving dashboard/performance rendering into `js/ui-dashboard.js`, extracting role and class-context orchestration into `js/state-context.js`, finishing the admin helper/service-layer breakup across the `js/admin-*.js` modules plus `services/db.js`, standardizing the active chart layer on the native renderer path, removing stale manual-test and legacy artifacts, and aligning the critical regression source assertions with the new module boundaries.
+- **Impact:** Phase 4 is now complete with `js/ui.js`, `js/state.js`, and `js/admin.js` acting as orchestration layers instead of catch-all files, admin data access flowing through the shared service layer, the chart stack using one vanilla rendering approach, and `npx playwright test tests/refactor-critical-regressions.spec.js --project=chromium --reporter=line` passing `27/27` to validate the refactor slices.

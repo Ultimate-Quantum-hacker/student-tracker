@@ -104,13 +104,25 @@ Deployment config is tracked in:
 - `firebase.json`
 - `.firebaserc`
 
+## Frontend Architecture Conventions
+
+- Keep `js/app.js`, `js/ui.js`, `js/state.js`, and `js/admin.js` focused on orchestration, lifecycle wiring, and cross-module coordination.
+- Put bounded feature logic in focused modules such as `js/ui-dashboard.js`, `js/state-context.js`, and the `js/admin-*.js` helper modules instead of growing the main runtime files.
+- Prefer small pure/helper modules for shared formatting, normalization, markup, and role-policy logic so they can be imported and regression-tested independently.
+- Route Firestore reads and writes through `services/db.js`; runtime UI/admin/state modules should consume service-layer helpers instead of calling Firestore directly.
+- Keep the charting layer on the app's native DOM/SVG/canvas renderer path; do not reintroduce React/Recharts into the active frontend.
+
 ## Key Files
 
 - `js/auth.js` - auth helpers, profile resolution, verification, reset, and session utilities
 - `js/auth-page.js` - login, signup, verify-email, reset, and redirect UX
 - `js/app.js` - dashboard auth/session gating and redirects
-- `js/ui.js` - Account Settings and session-summary rendering
-- `js/admin.js` - admin panel orchestration and role-management UI
+- `js/ui.js` - main dashboard/UI orchestration and shared surface coordination
+- `js/ui-dashboard.js` - dashboard and performance rendering helpers extracted from `js/ui.js`
+- `js/state.js` - runtime state orchestration, data loading, and persistence coordination
+- `js/state-context.js` - role normalization and current-class context helpers extracted from `js/state.js`
+- `js/admin.js` - admin panel orchestration layered over focused admin helper modules
+- `js/admin-*.js` - focused admin display, registry, activity, and markup helpers
 - `js/admin-user-utils.js` - role-policy helpers for admin UI decisions
 - `services/db.js` - service-layer Firestore access and privileged-role enforcement
 - `firestore.rules` - Firestore security rules
@@ -124,4 +136,4 @@ Roadmap tracking lives in:
 
 - `INCONSISTENSIES_ROADMAP.md`
 
-Phase 2 currently covers auth, identity, and account lifecycle completion.
+Phase 4 is now complete; use the roadmap file for current phase status and progress-log details.

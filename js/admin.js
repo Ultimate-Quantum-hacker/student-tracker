@@ -1,8 +1,5 @@
 import {
   isFirebaseConfigured,
-  db,
-  getDocs,
-  collectionGroup
 } from './firebase.js';
 import {
   waitForInitialAuthState,
@@ -15,6 +12,7 @@ import {
   fetchAdminGlobalStats,
   fetchActivityLogs,
   fetchAdminUsers,
+  fetchClassCatalog,
   deleteAdminRegistryStudent,
   clearActivityLogs,
   updateAdminUserRole,
@@ -62,9 +60,8 @@ import {
 } from './admin-activity-utils.js';
 
 import {
-  buildAdminRegistryStudentRecords,
   removeAdminRegistryStudentEntries,
-  mapAdminRegistryClassRecord,
+  buildAdminRegistryClassKey,
   buildAdminStudentsRegistryRecords,
   getVisibleAdminStudentsClassMap,
   buildAdminStudentsFilterState,
@@ -1411,38 +1408,35 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function fetchAllStudentsGlobal() {
-  if (!isFirebaseConfigured || !db) {
+  if (!isFirebaseConfigured) {
     return [];
   }
-  const snapshot = await getDocs(collectionGroup(db, 'students'));
 
-  return buildAdminRegistryStudentRecords(snapshot.docs.map((entry) => {
-    return {
-      payload: entry.data(),
-      path: entry.ref?.path
-    };
-  }));
+  return fetchGlobalStudentSearchIndex();
 }
 
 async function fetchAdminClassNameMap() {
-  if (!isFirebaseConfigured || !db) {
+  if (!isFirebaseConfigured) {
     return new Map();
   }
 
-  const snapshot = await getDocs(collectionGroup(db, 'classes'));
+  const catalog = await fetchClassCatalog();
+  const classes = Array.isArray(catalog?.classes) ? catalog.classes : [];
   const classMap = new Map();
-  snapshot.forEach((entry) => {
-    const mappedClass = mapAdminRegistryClassRecord({
-      payload: entry.data(),
-      path: entry.ref?.path,
-      fallbackClassId: entry.id,
-      users: state.users
-    });
-    if (!mappedClass) {
+  classes.forEach((entry) => {
+    const ownerId = normalizeText(entry?.ownerId || '');
+    const classId = normalizeText(entry?.id || '');
+    const classKey = buildAdminRegistryClassKey(ownerId, classId);
+    if (!classKey) {
       return;
     }
 
-    classMap.set(mappedClass.classKey, mappedClass.classInfo);
+    const ownerRecord = findAdminUserRecord(state.users, ownerId);
+    classMap.set(classKey, {
+      name: normalizeDisplayText(entry?.name || entry?.className || '', 'Unnamed Class'),
+      ownerId,
+      ownerName: normalizeDisplayText(entry?.ownerName || ownerRecord?.name || ownerRecord?.email || '', 'Unknown Teacher')
+    });
   });
   return classMap;
 }
@@ -1490,7 +1484,6 @@ const renderAdminStudentsFilterOptions = (classMap = new Map(), students = []) =
     dom.adminStudentsTeacherFilter.value = teacherSelectedValue;
     dom.adminStudentsTeacherFilter.disabled = teacherDisabled;
   }
-
   updateAdminStudentsFilterControls();
 };
 
@@ -1583,7 +1576,7 @@ const loadAdminStudentsRegistry = async () => {
   }
 
   const registryLoadRequestState = buildAdminStudentsRegistryLoadRequestState({
-    isFirebaseConfigured: Boolean(isFirebaseConfigured && db)
+    isFirebaseConfigured: Boolean(isFirebaseConfigured)
   });
 
   if (!registryLoadRequestState.canLoad) {

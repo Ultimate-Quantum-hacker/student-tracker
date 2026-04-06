@@ -1192,8 +1192,9 @@ test.describe('Class refactor critical regressions', () => {
     const adminSource = readWorkspaceFile('js/admin.js');
     const dbSource = readWorkspaceFile('services/db.js');
     const stateSource = readWorkspaceFile('js/state.js');
+    const stateContextSource = readWorkspaceFile('js/state-context.js');
     const rulesSource = readWorkspaceFile('firestore.rules');
-    const hardcodedDeveloperSource = [authSource, appSource, uiRoleSource, adminSource, dbSource, rulesSource].join('\n');
+    const hardcodedDeveloperSource = [authSource, appSource, uiRoleSource, adminSource, dbSource, stateSource, stateContextSource, rulesSource].join('\n');
 
     expect(dbSource).toContain('const getRawDataCounts = (rawData) =>');
     expect(dbSource).toContain("if (classifyFirebaseError(error) === 'permission') {");
@@ -1214,9 +1215,10 @@ test.describe('Class refactor critical regressions', () => {
     expect(dbSource).toContain('return normalizeUserId(currentClassOwnerId) || getAuthenticatedUserId();');
     expect(dbSource).toContain("assertAdminOrDeveloperRole('read activity logs');");
     expect(dbSource).toContain("if (userRole === 'admin' || userRole === 'developer') {");
-    expect(stateSource).toContain('app.canCurrentRoleWrite = function () {');
-    expect(stateSource).toContain("console.log('CAN WRITE:', app.state.currentUserRole !== ROLE_ADMIN);");
-    expect(stateSource).toContain("const getAuthenticatedOwnerFallback = () => String(app.state.authUser?.uid || '').trim();");
+    expect(stateSource).toContain('Object.assign(app, createStateContextApi(app, dataService));');
+    expect(stateContextSource).toContain('canCurrentRoleWrite() {');
+    expect(stateContextSource).toContain("console.log('CAN WRITE:', app.state.currentUserRole !== ROLE_ADMIN);");
+    expect(stateContextSource).toContain("export const getAuthenticatedOwnerFallback = (state = {}) => String(state.authUser?.uid || '').trim();");
     expect(rulesSource).toContain('function isSignedIn() {');
     expect(rulesSource).toContain('function isOwner(userId) {');
     expect(rulesSource).toContain('function requesterRole() {');
@@ -1240,10 +1242,11 @@ test.describe('Class refactor critical regressions', () => {
 
   test('stale deleted class selection has validated fallback path', async () => {
     const stateSource = readWorkspaceFile('js/state.js');
+    const stateContextSource = readWorkspaceFile('js/state-context.js');
     const uiSource = readWorkspaceFile('js/ui.js');
 
-    expect(stateSource).toContain('const resolveValidatedClassContext = (classes = [], classId = \'\', ownerId = \'\') => {');
-    expect(stateSource).toContain('isFallback: Boolean(!selectedClass && (normalizedClassId || normalizedOwnerId))');
+    expect(stateContextSource).toContain('export const resolveValidatedClassContext = (classes = [], classId = \'\', ownerId = \'\') => {');
+    expect(stateContextSource).toContain('isFallback: Boolean(!selectedClass && (normalizedClassId || normalizedOwnerId))');
     expect(stateSource).toContain('Persisted class selection was stale/invalid; selection has been reset to a valid class context.');
     expect(stateSource).toContain('app.state.dashboardStudentCount = null;');
     expect(uiSource).toContain('data-owner-id="${app.utils.esc(ownerId)}"');
@@ -1251,17 +1254,45 @@ test.describe('Class refactor critical regressions', () => {
   });
 
   test('audit log and number rendering sanitize malformed values', async () => {
-    const adminSource = readWorkspaceFile('js/admin.js');
+    const adminDisplayUtilsSource = readWorkspaceFile('js/admin-display-utils.js');
     const uiSource = readWorkspaceFile('js/ui.js');
     const dbSource = readWorkspaceFile('services/db.js');
 
-    expect(adminSource).toContain("normalized === '[object Object]'");
-    expect(adminSource).toContain("lower === 'nan'");
-    expect(adminSource).toContain('const normalizeCount = (value) => {');
+    expect(adminDisplayUtilsSource).toContain("normalized === '[object Object]'");
+    expect(adminDisplayUtilsSource).toContain("lower === 'nan'");
+    expect(adminDisplayUtilsSource).toContain('export const normalizeCount = (value) => {');
     expect(uiSource).toContain('toFiniteNumber: function (value) {');
     expect(uiSource).toContain("formatFixedOrFallback: function (value, decimals = 1, fallback = '—') {");
     expect(dbSource).toContain('const normalizeLogScalar = (value, fallback = \'\') => {');
-    expect(dbSource).toContain('const normalizeLogTimestamp = (payload = {}) => {');
+    expect(dbSource).toContain('const timestampIso = getActivityLogTimestampIso(payload);');
+  });
+
+  test('admin student registry global reads flow through the service layer', async () => {
+    const adminSource = readWorkspaceFile('js/admin.js');
+    const dbSource = readWorkspaceFile('services/db.js');
+
+    expect(dbSource).toContain('export const fetchClassCatalog = async () => {');
+    expect(dbSource).toContain('export const fetchGlobalStudentSearchIndex = async () => {');
+    expect(adminSource).toContain('return fetchGlobalStudentSearchIndex();');
+    expect(adminSource).toContain('const catalog = await fetchClassCatalog();');
+    expect(adminSource).toContain('isFirebaseConfigured: Boolean(isFirebaseConfigured)');
+    expect(adminSource).not.toContain("collectionGroup(db, 'students')");
+    expect(adminSource).not.toContain("collectionGroup(db, 'classes')");
+    expect(adminSource).not.toContain('getDocs(collectionGroup(db,');
+  });
+
+  test('chart rendering stays native and theme changes refresh chart surfaces', async () => {
+    const chartsSource = readWorkspaceFile('js/charts.js');
+    const stateSource = readWorkspaceFile('js/state.js');
+
+    expect(chartsSource).toContain("mountNode.dataset.renderer = 'native-svg';");
+    expect(chartsSource).toContain("canvas.dataset.renderer = 'native-canvas';");
+    expect(chartsSource).toContain('const setStudentChartEmptyState = (isEmpty = true) => {');
+    expect(chartsSource).not.toContain("import React from 'https://esm.sh/react@18';");
+    expect(chartsSource).not.toContain("} from 'https://esm.sh/recharts@2.12.7';");
+    expect(chartsSource).not.toContain('createRoot(');
+    expect(stateSource).toContain("if (app.ui && typeof app.ui.renderClassSummary === 'function') {");
+    expect(stateSource).toContain("app.charts.renderStudentChart(app.dom.chartStudentSelect.value || '');");
   });
 
   test('dark mode readability overrides cover key admin and dashboard surfaces', async () => {

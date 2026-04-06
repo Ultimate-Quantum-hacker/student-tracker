@@ -5,6 +5,13 @@
 
 import * as dataService from '../services/db.js';
 import { normalizeStudentName } from './student-name-utils.js';
+import {
+  createStateContextApi,
+  normalizeClassCatalogEntries,
+  persistCurrentClassContext,
+  readPersistedCurrentClassContext,
+  resolveValidatedClassContext
+} from './state-context.js';
 
 window.TrackerApp = window.TrackerApp || {};
 
@@ -47,13 +54,6 @@ window.TrackerApp = window.TrackerApp || {};
   const OFFLINE_CACHE_MESSAGE = 'Offline mode: using cached data';
   const OFFLINE_GRACE_PERIOD_MS = 3000;
   const DATA_LOAD_TIMEOUT_MS = 15000;
-  const CURRENT_CLASS_STORAGE_KEY = 'currentClassId';
-  const CURRENT_CLASS_OWNER_STORAGE_KEY = 'currentClassOwnerId';
-  const ROLE_TEACHER = 'teacher';
-  const ROLE_LEGACY_USER = 'user';
-  const ROLE_ADMIN = 'admin';
-  const ROLE_DEVELOPER = 'developer';
-  const ALLOWED_ROLES = [ROLE_TEACHER, ROLE_ADMIN, ROLE_DEVELOPER, ROLE_LEGACY_USER];
   const LEGACY_DEFAULT_SUBJECTS = ['English Language', 'Mathematics', 'Integrated Science', 'Social Studies', 'Computing'];
   const LEGACY_DEFAULT_EXAMS = ['Mock 1'];
   const DATA_SCHEMA_VERSION = 2;
@@ -91,132 +91,7 @@ window.TrackerApp = window.TrackerApp || {};
     }
   };
 
-  const normalizeClassStorageId = (value) => String(value || '').trim();
-  const normalizeRole = (value) => {
-    const normalized = String(value || '').trim().toLowerCase();
-    if (normalized === ROLE_LEGACY_USER) {
-      return ROLE_TEACHER;
-    }
-    return ALLOWED_ROLES.includes(normalized) ? normalized : ROLE_TEACHER;
-  };
-
-  app.getCurrentUserRole = function () {
-    return normalizeRole(app.state.currentUserRole);
-  };
-
-  app.setCurrentUserRole = function (role, { resolved = true } = {}) {
-    app.state.currentUserRole = normalizeRole(role);
-    app.state.isRoleResolved = Boolean(resolved);
-    if (typeof dataService.setCurrentUserRoleContext === 'function') {
-      dataService.setCurrentUserRoleContext(app.state.currentUserRole);
-    }
-    console.log('ROLE:', app.state.currentUserRole);
-    console.log('CAN WRITE:', app.state.currentUserRole !== ROLE_ADMIN);
-  };
-
-  const resolveCurrentClassEntry = () => {
-    const currentClassId = String(app.state.currentClassId || '').trim();
-    const currentOwnerId = String(app.state.currentClassOwnerId || '').trim();
-    const classes = Array.isArray(app.state.classes) ? app.state.classes : [];
-    if (!currentClassId || !classes.length) {
-      return null;
-    }
-
-    const ownerAwareMatch = classes.find((entry) => {
-      const entryClassId = String(entry?.id || '').trim();
-      const entryOwnerId = String(entry?.ownerId || '').trim();
-      if (entryClassId !== currentClassId) {
-        return false;
-      }
-      if (!currentOwnerId) {
-        return true;
-      }
-      return entryOwnerId === currentOwnerId;
-    });
-
-    if (ownerAwareMatch) {
-      return ownerAwareMatch;
-    }
-
-    return classes.find((entry) => String(entry?.id || '').trim() === currentClassId) || null;
-  };
-
-  const getAuthenticatedOwnerFallback = () => String(app.state.authUser?.uid || '').trim();
-
-  app.getCurrentClassOwnerId = function () {
-    const classEntry = resolveCurrentClassEntry();
-    const ownerId = String(classEntry?.ownerId || '').trim();
-    if (ownerId) {
-      app.state.currentClassOwnerId = ownerId;
-      return ownerId;
-    }
-    const fallbackOwnerId = String(app.state.currentClassOwnerId || '').trim() || getAuthenticatedOwnerFallback();
-    if (fallbackOwnerId) {
-      app.state.currentClassOwnerId = fallbackOwnerId;
-    }
-    return fallbackOwnerId;
-  };
-
-  app.getCurrentClassOwnerName = function () {
-    const classEntry = resolveCurrentClassEntry();
-    const ownerName = String(classEntry?.ownerName || '').trim();
-    if (ownerName) {
-      app.state.currentClassOwnerName = ownerName;
-      return ownerName;
-    }
-
-    return String(app.state.currentClassOwnerName || '').trim() || 'Teacher';
-  };
-
-  app.setCurrentClassOwnerContext = function () {
-    const ownerId = app.getCurrentClassOwnerId();
-    const ownerName = app.getCurrentClassOwnerName();
-    if (typeof dataService.setCurrentClassOwnerContext === 'function') {
-      dataService.setCurrentClassOwnerContext(ownerId, ownerName);
-    }
-    return { ownerId, ownerName };
-  };
-
-  app.syncDataContext = function () {
-    const classEntry = resolveCurrentClassEntry();
-    app.state.currentClassOwnerId = String(classEntry?.ownerId || app.state.currentClassOwnerId || getAuthenticatedOwnerFallback() || '').trim();
-    app.state.currentClassOwnerName = String(classEntry?.ownerName || app.state.currentClassOwnerName || '').trim() || 'Teacher';
-
-    if (typeof dataService.setCurrentClassId === 'function') {
-      dataService.setCurrentClassId(app.state.currentClassId || '');
-    }
-    app.setCurrentClassOwnerContext();
-    persistCurrentClassContext(app.state.currentClassId, app.state.currentClassOwnerId);
-  };
-
-  app.getEffectiveUserId = function () {
-    return app.getCurrentClassOwnerId();
-  };
-
-  app.canCurrentRoleWrite = function () {
-    return app.getCurrentUserRole() !== ROLE_ADMIN;
-  };
-
-  app.isReadOnlyRoleContext = function () {
-    return Boolean(app.state.isRoleResolved) && !app.canCurrentRoleWrite();
-  };
-
-  app.clearCurrentUserRole = function () {
-    app.state.currentUserRole = ROLE_TEACHER;
-    app.state.isRoleResolved = false;
-  };
-
-  app.isTeacherRole = function () {
-    return app.getCurrentUserRole() === ROLE_TEACHER;
-  };
-
-  app.isAdminRole = function () {
-    return app.getCurrentUserRole() === ROLE_ADMIN;
-  };
-
-  app.isDeveloperRole = function () {
-    return app.getCurrentUserRole() === ROLE_DEVELOPER;
-  };
+  Object.assign(app, createStateContextApi(app, dataService));
 
   app.refreshDashboardStudentCount = async function () {
     const authUid = String(app.state.authUser?.uid || '').trim();
@@ -256,135 +131,9 @@ window.TrackerApp = window.TrackerApp || {};
     return dataService.fetchActivityLogs(options);
   };
 
-  const persistCurrentClassContext = (classId, ownerId = '') => {
-    const normalizedClassId = normalizeClassStorageId(classId);
-    const normalizedOwnerId = normalizeClassStorageId(ownerId);
-    if (typeof localStorage !== 'undefined') {
-      if (normalizedClassId) {
-        localStorage.setItem(CURRENT_CLASS_STORAGE_KEY, normalizedClassId);
-      } else {
-        localStorage.removeItem(CURRENT_CLASS_STORAGE_KEY);
-      }
-
-      if (normalizedOwnerId) {
-        localStorage.setItem(CURRENT_CLASS_OWNER_STORAGE_KEY, normalizedOwnerId);
-      } else {
-        localStorage.removeItem(CURRENT_CLASS_OWNER_STORAGE_KEY);
-      }
-    }
-
-    if (typeof sessionStorage !== 'undefined') {
-      if (normalizedClassId) {
-        sessionStorage.setItem(CURRENT_CLASS_STORAGE_KEY, normalizedClassId);
-      } else {
-        sessionStorage.removeItem(CURRENT_CLASS_STORAGE_KEY);
-      }
-
-      if (normalizedOwnerId) {
-        sessionStorage.setItem(CURRENT_CLASS_OWNER_STORAGE_KEY, normalizedOwnerId);
-      } else {
-        sessionStorage.removeItem(CURRENT_CLASS_OWNER_STORAGE_KEY);
-      }
-    }
-  };
-
-  const readPersistedCurrentClassContext = () => {
-    const localValue = typeof localStorage !== 'undefined'
-      ? normalizeClassStorageId(localStorage.getItem(CURRENT_CLASS_STORAGE_KEY))
-      : '';
-    const localOwner = typeof localStorage !== 'undefined'
-      ? normalizeClassStorageId(localStorage.getItem(CURRENT_CLASS_OWNER_STORAGE_KEY))
-      : '';
-    if (localValue) {
-      return {
-        classId: localValue,
-        ownerId: localOwner
-      };
-    }
-
-    const sessionClassId = typeof sessionStorage !== 'undefined'
-      ? normalizeClassStorageId(sessionStorage.getItem(CURRENT_CLASS_STORAGE_KEY))
-      : '';
-    const sessionOwnerId = typeof sessionStorage !== 'undefined'
-      ? normalizeClassStorageId(sessionStorage.getItem(CURRENT_CLASS_OWNER_STORAGE_KEY))
-      : '';
-
-    return {
-      classId: sessionClassId,
-      ownerId: sessionOwnerId
-    };
-  };
-
   const persistedClassContext = readPersistedCurrentClassContext();
   app.state.currentClassId = persistedClassContext.classId;
   app.state.currentClassOwnerId = persistedClassContext.ownerId;
-
-  const resolveValidatedClassContext = (classes = [], classId = '', ownerId = '') => {
-    const normalizedClassId = normalizeClassStorageId(classId);
-    const normalizedOwnerId = normalizeClassStorageId(ownerId);
-    const normalizedClasses = Array.isArray(classes)
-      ? classes.filter((entry) => normalizeClassStorageId(entry?.id))
-      : [];
-
-    if (!normalizedClasses.length) {
-      return {
-        classId: '',
-        className: 'My Class',
-        ownerId: '',
-        ownerName: 'Teacher',
-        isFallback: Boolean(normalizedClassId || normalizedOwnerId)
-      };
-    }
-
-    const selectedClass = normalizedClasses.find((entry) => {
-      const entryClassId = normalizeClassStorageId(entry?.id);
-      const entryOwnerId = normalizeClassStorageId(entry?.ownerId);
-      if (!entryClassId || entryClassId !== normalizedClassId) {
-        return false;
-      }
-      if (!normalizedOwnerId) {
-        return true;
-      }
-      return entryOwnerId === normalizedOwnerId;
-    });
-
-    const fallbackClass = normalizedClasses[0] || null;
-    const activeClass = selectedClass || fallbackClass;
-
-    return {
-      classId: normalizeClassStorageId(activeClass?.id),
-      className: String(activeClass?.name || '').trim() || 'My Class',
-      ownerId: normalizeClassStorageId(activeClass?.ownerId),
-      ownerName: String(activeClass?.ownerName || '').trim() || 'Teacher',
-      isFallback: Boolean(!selectedClass && (normalizedClassId || normalizedOwnerId))
-    };
-  };
-
-  const normalizeClassCatalogEntries = (classes = []) => {
-    if (!Array.isArray(classes)) {
-      return [];
-    }
-
-    return classes
-      .map((entry) => {
-        const id = normalizeClassStorageId(entry?.id);
-        const ownerId = normalizeClassStorageId(entry?.ownerId);
-        const name = String(entry?.name || '').trim() || 'My Class';
-        const ownerName = String(entry?.ownerName || '').trim() || 'Teacher';
-        if (!id || !ownerId || !name) {
-          return null;
-        }
-
-        return {
-          ...(entry || {}),
-          id,
-          ownerId,
-          name,
-          ownerName
-        };
-      })
-      .filter(Boolean);
-  };
 
   const createDefaultRawData = () => ({
     schemaVersion: DATA_SCHEMA_VERSION,
@@ -1855,6 +1604,13 @@ window.TrackerApp = window.TrackerApp || {};
         labelNode.textContent = nextLabel;
       }
       systemThemeButton.title = nextLabel;
+    }
+
+    if (app.ui && typeof app.ui.renderClassSummary === 'function') {
+      app.ui.renderClassSummary();
+    }
+    if (app.charts && typeof app.charts.renderStudentChart === 'function' && app.dom?.chartStudentSelect) {
+      app.charts.renderStudentChart(app.dom.chartStudentSelect.value || '');
     }
 
     // Save theme preference to localStorage (UI preference, not data)
