@@ -985,7 +985,7 @@ test.describe('Class refactor critical regressions', () => {
       };
     });
 
-    expect(result.initialSummary).toBe('Paste names to preview the import summary.');
+    expect(result.initialSummary).toBe('Enter names to preview the import summary.');
     expect(result.initialDisabled).toBe(true);
     expect(result.populatedSummary).toContain('2 students ready to import');
     expect(result.populatedSummary).toContain('1 duplicate row will be skipped');
@@ -1002,10 +1002,12 @@ test.describe('Class refactor critical regressions', () => {
     const enhancedCss = readWorkspaceFile('css/enhanced.css');
 
     expect(indexSource).toContain('aria-describedby="bulk-import-file-help"');
-    expect(indexSource).toContain('Accepted files: .csv, .tsv, or .txt. You can also paste one student per line below.');
+    expect(indexSource).toContain('Accepted files: .csv, .tsv, or .txt. You can also enter one student per line below.');
     expect(enhancedCss).toContain('.bulk-import-file-help{');
+    expect(indexSource).toContain('class="app-splash-card"');
     expect(indexSource).toContain('class="loader-logo-shell"');
-    expect(indexSource).toContain('class="loader-status">Please wait</div>');
+    expect(indexSource).toContain('class="loader-progress-bar"');
+    expect(indexSource).toContain('class="loader-status">Working on your data</div>');
   });
 
   test('bulk import accepts tab-separated spreadsheet rows with a header row', async ({ page }) => {

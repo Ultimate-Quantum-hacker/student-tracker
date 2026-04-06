@@ -1274,7 +1274,7 @@ const ui = {
       const pluralize = (count, singular, plural = `${singular}s`) => (count === 1 ? singular : plural);
 
       if (!preview?.hasContent) {
-        app.dom.bulkImportSummary.textContent = 'Paste names to preview the import summary.';
+        app.dom.bulkImportSummary.textContent = 'Enter names to preview the import summary.';
         if (app.dom.bulkImportConfirmBtn) {
           app.dom.bulkImportConfirmBtn.disabled = true;
         }

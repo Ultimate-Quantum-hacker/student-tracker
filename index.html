@@ -165,35 +165,213 @@
     #app-splash {
       position: fixed;
       inset: 0;
-      background: #0f172a;
-      color: #f9fafb;
+      background:
+        radial-gradient(circle at 20% 18%, rgba(56, 189, 248, 0.2), transparent 28%),
+        radial-gradient(circle at 82% 16%, rgba(96, 165, 250, 0.16), transparent 24%),
+        linear-gradient(160deg, #020617 0%, #0f172a 52%, #111827 100%);
+      color: #f8fafc;
       display: flex;
-      flex-direction: column;
       align-items: center;
       justify-content: center;
       z-index: 9999;
-      text-align: center;
+      text-align: left;
       padding: 1.5rem;
+      overflow: hidden;
+    }
+
+    #app-splash::before,
+    #app-splash::after {
+      content: '';
+      position: absolute;
+      border-radius: 999px;
+      pointer-events: none;
+      filter: blur(12px);
+      opacity: 0.8;
+      animation: splash-float 6.2s ease-in-out infinite;
+    }
+
+    #app-splash::before {
+      width: 220px;
+      height: 220px;
+      top: 8%;
+      left: 10%;
+      background: rgba(56, 189, 248, 0.16);
+    }
+
+    #app-splash::after {
+      width: 260px;
+      height: 260px;
+      right: 8%;
+      bottom: 8%;
+      background: rgba(99, 102, 241, 0.12);
+      animation-delay: -2.2s;
+    }
+
+    .app-splash-card {
+      position: relative;
+      width: min(100%, 500px);
+      padding: 1.45rem;
+      border-radius: 32px;
+      background: linear-gradient(180deg, rgba(15, 23, 42, 0.9), rgba(2, 6, 23, 0.86));
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      box-shadow: 0 30px 80px rgba(2, 6, 23, 0.52), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      overflow: hidden;
+    }
+
+    .app-splash-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(148, 163, 184, 0.08), transparent 48%);
+      pointer-events: none;
+    }
+
+    .app-splash-brand {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .app-splash-logo-shell {
+      position: relative;
+      width: 92px;
+      height: 92px;
+      flex-shrink: 0;
+      display: grid;
+      place-items: center;
+    }
+
+    .app-splash-ring {
+      position: absolute;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.24);
+      animation: loader-orbit-spin 6s linear infinite;
+    }
+
+    .app-splash-ring-outer {
+      inset: 0;
+    }
+
+    .app-splash-ring-inner {
+      inset: 11px;
+      opacity: 0.76;
+      animation-direction: reverse;
+      animation-duration: 4s;
+    }
+
+    .app-splash-logo-core {
+      position: relative;
+      z-index: 1;
+      width: 68px;
+      height: 68px;
+      display: grid;
+      place-items: center;
+      border-radius: 22px;
+      background: linear-gradient(135deg, rgba(30, 41, 59, 0.94), rgba(15, 23, 42, 0.78));
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 14px 34px rgba(14, 165, 233, 0.16);
+    }
+
+    .app-splash-logo {
+      width: 46px;
+      height: 46px;
+      object-fit: contain;
+      filter: drop-shadow(0 0 16px rgba(56, 189, 248, 0.24));
+      animation: loader-pulse 2.1s ease-in-out infinite;
+    }
+
+    .app-splash-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      margin-bottom: 0.5rem;
+      padding: 0.28rem 0.68rem;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #bfdbfe;
+      background: rgba(30, 41, 59, 0.74);
+      border: 1px solid rgba(148, 163, 184, 0.16);
     }
 
     #app-splash h1 {
-      font-size: 1.5rem;
-      margin-bottom: 0.4rem;
+      margin: 0 0 0.35rem;
+      font-size: 1.58rem;
+      letter-spacing: -0.02em;
     }
 
     #app-splash p {
-      font-size: 0.95rem;
-      opacity: 0.85;
-      margin-bottom: 1.25rem;
+      margin: 0;
+      font-size: 0.98rem;
+      line-height: 1.55;
+      color: rgba(226, 232, 240, 0.84);
     }
 
-    #app-splash-spinner {
-      width: 32px;
-      height: 32px;
+    .app-splash-progress {
+      position: relative;
+      z-index: 1;
+      margin-top: 1.2rem;
+      height: 8px;
       border-radius: 999px;
-      border: 3px solid rgba(148, 163, 184, 0.6);
-      border-top-color: #38bdf8;
-      animation: pwa-spin 0.7s linear infinite;
+      overflow: hidden;
+      background: rgba(15, 23, 42, 0.92);
+      border: 1px solid rgba(148, 163, 184, 0.12);
+    }
+
+    .app-splash-progress-bar {
+      display: block;
+      width: 42%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #38bdf8 0%, #60a5fa 56%, #a78bfa 100%);
+      box-shadow: 0 0 18px rgba(56, 189, 248, 0.36);
+      animation: loader-progress-slide 1.7s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    }
+
+    .app-splash-meta {
+      position: relative;
+      z-index: 1;
+      margin-top: 0.8rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .app-splash-caption {
+      font-size: 0.8rem;
+      color: rgba(148, 163, 184, 0.92);
+    }
+
+    .app-splash-dots,
+    .loader-dots {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .app-splash-dots span,
+    .loader-dots span {
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.48);
+      animation: loader-dot-bounce 1.2s ease-in-out infinite;
+    }
+
+    .app-splash-dots span:nth-child(2),
+    .loader-dots span:nth-child(2) {
+      animation-delay: 0.16s;
+    }
+
+    .app-splash-dots span:nth-child(3),
+    .loader-dots span:nth-child(3) {
+      animation-delay: 0.32s;
     }
 
     .hidden {
@@ -211,9 +389,12 @@
       width: 100%;
       height: 100%;
       padding: 1.5rem;
-      background: radial-gradient(circle at top, rgba(59, 130, 246, 0.14), transparent 42%), rgba(10, 15, 30, 0.82);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
+      background:
+        radial-gradient(circle at 18% 18%, rgba(56, 189, 248, 0.22), transparent 26%),
+        radial-gradient(circle at 82% 16%, rgba(99, 102, 241, 0.16), transparent 22%),
+        rgba(2, 6, 23, 0.72);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -221,71 +402,189 @@
     }
 
     .loader-content {
-      width: min(100%, 320px);
+      position: relative;
+      overflow: hidden;
+      width: min(100%, 440px);
       min-width: 220px;
-      padding: 1.45rem 1.6rem 1.5rem;
-      border-radius: 28px;
+      padding: 1.3rem;
+      border-radius: 30px;
       display: flex;
       flex-direction: column;
-      align-items: center;
-      gap: 0.45rem;
-      text-align: center;
-      background: linear-gradient(180deg, rgba(15, 23, 42, 0.94), rgba(2, 6, 23, 0.9));
+      gap: 0.95rem;
+      text-align: left;
+      background: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(2, 6, 23, 0.92));
       border: 1px solid rgba(148, 163, 184, 0.18);
-      box-shadow: 0 28px 80px rgba(2, 6, 23, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+      box-shadow: 0 30px 90px rgba(2, 6, 23, 0.52), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    }
+
+    .loader-content::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(145deg, rgba(148, 163, 184, 0.08), transparent 44%);
+      pointer-events: none;
+    }
+
+    .loader-ambient {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      overflow: hidden;
+    }
+
+    .loader-glow {
+      position: absolute;
+      border-radius: 999px;
+      filter: blur(18px);
+      opacity: 0.55;
+      animation: splash-float 5.4s ease-in-out infinite;
+    }
+
+    .loader-glow-one {
+      width: 140px;
+      height: 140px;
+      top: -36px;
+      right: -28px;
+      background: rgba(56, 189, 248, 0.16);
+    }
+
+    .loader-glow-two {
+      width: 120px;
+      height: 120px;
+      left: -32px;
+      bottom: -38px;
+      background: rgba(99, 102, 241, 0.14);
+      animation-delay: -1.8s;
+    }
+
+    .loader-brand,
+    .loader-footer {
+      position: relative;
+      z-index: 1;
+    }
+
+    .loader-brand {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
     }
 
     .loader-logo-shell {
       position: relative;
-      display: grid;
-      place-items: center;
       width: 88px;
       height: 88px;
-      margin-bottom: 0.1rem;
+      flex-shrink: 0;
+      display: grid;
+      place-items: center;
+      border-radius: 26px;
+      background: linear-gradient(135deg, rgba(30, 41, 59, 0.86), rgba(15, 23, 42, 0.54));
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 18px 34px rgba(2, 6, 23, 0.34);
     }
 
     .loader-orbit {
       position: absolute;
       border-radius: 999px;
-      border: 1px solid rgba(148, 163, 184, 0.24);
-      animation: loader-orbit-spin 3.6s linear infinite;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      animation: loader-orbit-spin 5.2s linear infinite;
     }
 
     .loader-orbit-outer {
-      inset: 0;
+      inset: 7px;
     }
 
     .loader-orbit-inner {
-      inset: 12px;
-      opacity: 0.72;
-      animation-duration: 2.4s;
+      inset: 18px;
+      opacity: 0.7;
+      animation-duration: 3.3s;
       animation-direction: reverse;
+    }
+
+    .loader-logo-core {
+      position: relative;
+      z-index: 1;
+      width: 58px;
+      height: 58px;
+      display: grid;
+      place-items: center;
+      border-radius: 20px;
+      background: linear-gradient(135deg, rgba(2, 6, 23, 0.42), rgba(30, 41, 59, 0.7));
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
     }
 
     .loader-logo {
       position: relative;
       z-index: 1;
-      width: 64px;
-      height: 64px;
+      width: 38px;
+      height: 38px;
       object-fit: contain;
-      animation: pulse 1.7s infinite ease-in-out;
-      filter: drop-shadow(0 0 20px rgba(56, 189, 248, 0.3));
+      animation: loader-pulse 1.9s infinite ease-in-out;
+      filter: drop-shadow(0 0 18px rgba(56, 189, 248, 0.28));
+    }
+
+    .loader-copy {
+      min-width: 0;
+      flex: 1;
     }
 
     .loader-status {
+      margin-bottom: 0.35rem;
       font-size: 0.72rem;
       font-weight: 700;
-      letter-spacing: 0.14em;
+      letter-spacing: 0.16em;
       text-transform: uppercase;
       color: #93c5fd;
     }
 
     .loader-text {
       margin-top: 0;
-      font-size: 1.05rem;
-      font-weight: 600;
-      color: #e2e8f0;
-      letter-spacing: 0.02em;
+      font-size: 1.08rem;
+      font-weight: 700;
+      line-height: 1.35;
+      color: #f8fafc;
+      letter-spacing: 0.01em;
+    }
+
+    .loader-subtext,
+    .loader-hint {
+      color: rgba(148, 163, 184, 0.9);
+    }
+
+    .loader-subtext {
+      margin-top: 0.35rem;
+      font-size: 0.84rem;
+      line-height: 1.45;
+    }
+
+    .loader-progress {
+      position: relative;
+      z-index: 1;
+      height: 9px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.94);
+      border: 1px solid rgba(148, 163, 184, 0.12);
+    }
+
+    .loader-progress-bar {
+      display: block;
+      width: 40%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #38bdf8 0%, #60a5fa 56%, #a78bfa 100%);
+      box-shadow: 0 0 18px rgba(56, 189, 248, 0.34);
+      animation: loader-progress-slide 1.55s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    }
+
+    .loader-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.85rem;
+    }
+
+    .loader-hint {
+      font-size: 0.78rem;
+      white-space: nowrap;
     }
 
     @keyframes pwa-spin {
@@ -294,7 +593,7 @@
       }
     }
 
-    @keyframes pulse {
+    @keyframes loader-pulse {
       0% {
         transform: scale(1);
         opacity: 0.86;
@@ -311,9 +610,67 @@
       }
     }
 
+    @keyframes splash-float {
+      0%,
+      100% {
+        transform: translate3d(0, 0, 0) scale(1);
+      }
+
+      50% {
+        transform: translate3d(0, -10px, 0) scale(1.04);
+      }
+    }
+
     @keyframes loader-orbit-spin {
       to {
         transform: rotate(360deg);
+      }
+    }
+
+    @keyframes loader-progress-slide {
+      0% {
+        transform: translateX(-120%);
+      }
+
+      100% {
+        transform: translateX(280%);
+      }
+    }
+
+    @keyframes loader-dot-bounce {
+      0%,
+      80%,
+      100% {
+        transform: translateY(0);
+        opacity: 0.4;
+      }
+
+      40% {
+        transform: translateY(-3px);
+        opacity: 1;
+      }
+    }
+
+    @media (max-width: 560px) {
+      #app-splash {
+        text-align: center;
+      }
+
+      .app-splash-brand,
+      .loader-brand,
+      .app-splash-meta,
+      .loader-footer {
+        flex-direction: column;
+        align-items: center;
+      }
+
+      .loader-brand,
+      .loader-copy {
+        text-align: center;
+      }
+
+      .loader-hint {
+        white-space: normal;
       }
     }
 
@@ -419,20 +776,56 @@
 <body>
   <!-- Splash / loading -->
   <div id="app-splash">
-    <h1>Student Performance Tracker</h1>
-    <p>Loading your class data…</p>
-    <div id="app-splash-spinner"></div>
+    <div class="app-splash-card">
+      <div class="app-splash-brand">
+        <div class="app-splash-logo-shell" aria-hidden="true">
+          <span class="app-splash-ring app-splash-ring-outer"></span>
+          <span class="app-splash-ring app-splash-ring-inner"></span>
+          <div class="app-splash-logo-core">
+            <img src="icons/launchericon-192x192.png" alt="" class="app-splash-logo">
+          </div>
+        </div>
+        <div class="app-splash-copy">
+          <span class="app-splash-kicker">Launching workspace</span>
+          <h1>Student Performance Tracker</h1>
+          <p>Loading your class data and preparing the dashboard…</p>
+        </div>
+      </div>
+      <div class="app-splash-progress" aria-hidden="true">
+        <span class="app-splash-progress-bar"></span>
+      </div>
+      <div class="app-splash-meta">
+        <span class="app-splash-caption">Setting up students, scores, and insights</span>
+        <div class="app-splash-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+      </div>
+    </div>
   </div>
 
   <div id="global-loader" class="global-loader hidden" role="status" aria-live="polite" aria-hidden="true">
     <div class="loader-content">
-      <div class="loader-logo-shell" aria-hidden="true">
-        <span class="loader-orbit loader-orbit-outer"></span>
-        <span class="loader-orbit loader-orbit-inner"></span>
-        <img src="icons/launchericon-192x192.png" alt="Student Performance Tracker" class="loader-logo">
+      <div class="loader-ambient" aria-hidden="true">
+        <span class="loader-glow loader-glow-one"></span>
+        <span class="loader-glow loader-glow-two"></span>
       </div>
-      <div class="loader-status">Please wait</div>
-      <div id="global-loader-text" class="loader-text">Processing...</div>
+      <div class="loader-brand">
+        <div class="loader-logo-shell" aria-hidden="true">
+          <span class="loader-orbit loader-orbit-outer"></span>
+          <span class="loader-orbit loader-orbit-inner"></span>
+          <div class="loader-logo-core">
+            <img src="icons/launchericon-192x192.png" alt="" class="loader-logo">
+          </div>
+        </div>
+        <div class="loader-copy">
+          <div class="loader-status">Working on your data</div>
+          <div id="global-loader-text" class="loader-text">Processing...</div>
+          <div class="loader-subtext">Please keep this window open for a moment.</div>
+        </div>
+      </div>
+      <div class="loader-progress" aria-hidden="true"><span class="loader-progress-bar"></span></div>
+      <div class="loader-footer">
+        <div class="loader-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+        <div class="loader-hint">Saving safely</div>
+      </div>
     </div>
   </div>
 
@@ -837,7 +1230,7 @@
   <div class="modal-overlay" id="edit-modal"><div class="modal"><h3>Edit Name</h3><input type="text" id="edit-name-input" maxlength="60"><div class="modal-actions"><button class="btn btn-secondary" id="edit-cancel-btn">Cancel</button><button class="btn btn-primary" id="edit-save-btn">Save</button></div></div></div>
   <div class="modal-overlay" id="delete-modal"><div class="modal"><h3>Delete Record</h3><p id="delete-confirm-msg">Are you sure?</p><div class="modal-actions"><button class="btn btn-secondary" id="delete-cancel-btn">Cancel</button><button class="btn btn-danger" id="delete-confirm-btn">Delete</button></div></div></div>
   <div class="modal-overlay" id="bulk-class-delete-modal"><div class="modal bulk-class-delete-modal"><div class="bulk-class-delete-header"><div class="bulk-class-delete-heading"><span class="bulk-class-delete-kicker">Class cleanup</span><h3>Delete Classes</h3></div><span class="bulk-class-delete-chip">Moves to Trash</span></div><p class="bulk-class-delete-note">Select the classes you want to move to Trash. You can restore them later from Trash.</p><div class="bulk-class-delete-status-panel"><p id="bulk-class-delete-summary" class="bulk-class-delete-summary" aria-live="polite">0 classes selected</p><p id="bulk-class-delete-hint" class="bulk-class-delete-hint" aria-live="polite">Select classes to review what will be moved to Trash.</p></div><div class="bulk-class-delete-toolbar"><button type="button" class="btn btn-secondary" id="bulk-class-delete-select-all-btn">Select All</button><button type="button" class="btn btn-secondary" id="bulk-class-delete-clear-btn">Clear</button></div><div id="bulk-class-delete-list" class="bulk-class-delete-list"></div><div class="modal-actions bulk-class-delete-actions"><button class="btn btn-secondary" id="bulk-class-delete-cancel-btn">Cancel</button><button class="btn btn-danger" id="bulk-class-delete-confirm-btn">Delete Selected</button></div></div></div>
-  <div class="modal-overlay" id="bulk-import-modal"><div class="modal bulk-import-modal"><h3>Bulk Add Students</h3><label class="bulk-import-file-label" for="bulk-import-file-input">Import from file</label><input type="file" id="bulk-import-file-input" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain" aria-describedby="bulk-import-file-help"><p id="bulk-import-file-help" class="bulk-import-file-help">Accepted files: .csv, .tsv, or .txt. You can also paste one student per line below.</p><textarea id="bulk-import-textarea" rows="8" placeholder="Enter one name per line..."></textarea><p id="bulk-import-summary" aria-live="polite">Paste names to preview the import summary.</p><div class="modal-actions"><button class="btn btn-secondary" id="bulk-import-cancel-btn">Cancel</button><button class="btn btn-primary" id="bulk-import-confirm-btn">Add All</button></div></div></div>
+  <div class="modal-overlay" id="bulk-import-modal"><div class="modal bulk-import-modal"><h3>Bulk Add Students</h3><label class="bulk-import-file-label" for="bulk-import-file-input">Import from file</label><input type="file" id="bulk-import-file-input" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain" aria-describedby="bulk-import-file-help"><p id="bulk-import-file-help" class="bulk-import-file-help">Accepted files: .csv, .tsv, or .txt. You can also enter one student per line below.</p><textarea id="bulk-import-textarea" rows="8" placeholder="Enter one name per line..."></textarea><p id="bulk-import-summary" aria-live="polite">Enter names to preview the import summary.</p><div class="modal-actions"><button class="btn btn-secondary" id="bulk-import-cancel-btn">Cancel</button><button class="btn btn-primary" id="bulk-import-confirm-btn">Add All</button></div></div></div>
   <div class="modal-overlay" id="notes-modal"><div class="modal"><h3 id="notes-modal-title">Student Notes</h3><textarea id="notes-textarea" rows="5" placeholder="Enter observations..."></textarea><div class="modal-actions"><button class="btn btn-secondary" id="notes-cancel-btn">Cancel</button><button class="btn btn-primary" id="notes-save-btn">Save Notes</button></div></div></div>
   <div class="modal-overlay" id="reset-modal"><div class="modal"><h3>Start New Class</h3><p>Start fresh for a new class? Current class data will be replaced after a backup is created.</p><div class="modal-actions"><button class="btn btn-secondary" id="reset-cancel-btn">Keep Current Class</button><button class="btn btn-danger" id="reset-confirm-btn">Start Fresh</button></div></div></div>
   <div class="modal-overlay" id="report-modal"><div class="modal modal-lg"><div class="modal-actions"><button class="btn btn-primary" id="report-print-btn">Print</button><button class="btn btn-secondary" id="report-export-pdf-btn">Export as PDF</button><button class="btn btn-secondary" id="report-export-all-pdf-btn">Export All Reports</button><span id="report-export-status" class="report-export-status" aria-live="polite"></span><button class="btn btn-secondary" id="report-close-btn">Close</button></div><div id="report-card-container"></div></div></div>
