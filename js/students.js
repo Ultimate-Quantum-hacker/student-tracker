@@ -71,6 +71,182 @@ const resolveClassContextErrorMessage = (error, fallback = 'Failed to add studen
   return fallback;
 };
 
+const normalizeBulkImportInput = (value) => String(value || '').replace(/\r\n?/g, '\n');
+const toStudentNameKey = (value) => normalizeStudentName(value).toLocaleLowerCase();
+const pluralize = (count, singular, plural = `${singular}s`) => (count === 1 ? singular : plural);
+const splitBulkImportLine = (line) => {
+  const rawLine = String(line || '');
+  const delimiter = rawLine.includes('\t') ? '\t' : ',';
+  return {
+    delimiter,
+    parts: rawLine.split(delimiter).map((part) => part.trim())
+  };
+};
+const isBulkImportHeaderRow = (parts = []) => {
+  const normalizedParts = parts.map((part) => String(part || '').trim().toLowerCase());
+  const firstCell = normalizedParts[0] || '';
+  const secondCell = normalizedParts[1] || '';
+  const thirdCell = normalizedParts[2] || '';
+  const remainingCellsAreEmpty = normalizedParts.slice(3).every((cell) => !cell);
+
+  const matchesFirstCell = firstCell === 'name' || firstCell === 'student' || firstCell === 'student name';
+  const matchesSecondCell = !secondCell || secondCell === 'class' || secondCell === 'class name';
+  const matchesThirdCell = !thirdCell || thirdCell === 'notes' || thirdCell === 'note' || thirdCell === 'comment' || thirdCell === 'comments';
+
+  return matchesFirstCell && matchesSecondCell && matchesThirdCell && remainingCellsAreEmpty;
+};
+const shouldStopBulkImport = (error) => {
+  const code = String(error?.code || '').trim().toLowerCase();
+  return isReadOnlyError(error)
+    || code === 'app/missing-class-context'
+    || code === 'app/missing-class-id'
+    || code === 'app/missing-class-owner-context'
+    || code === 'app/missing-owner-id'
+    || code === 'app/class-not-found'
+    || code === 'app/invalid-owner';
+};
+const parseBulkImportCsv = (csv, appRef) => {
+  const lines = normalizeBulkImportInput(csv).split('\n');
+  const newStudents = [];
+  const invalidRows = [];
+  const duplicateRows = [];
+  const existingNameMatches = [];
+  const existingStudentNames = new Set(
+    (appRef?.state?.students || [])
+      .map((student) => toStudentNameKey(student?.name))
+      .filter(Boolean)
+  );
+  const seenRowKeys = new Set();
+  let hasHandledFirstNonEmptyRow = false;
+
+  lines.forEach((line, index) => {
+    const trimmedLine = String(line || '').trim();
+    if (!trimmedLine) {
+      return;
+    }
+
+    const { delimiter, parts } = splitBulkImportLine(line);
+    if (!hasHandledFirstNonEmptyRow) {
+      hasHandledFirstNonEmptyRow = true;
+      if (isBulkImportHeaderRow(parts)) {
+        return;
+      }
+    }
+
+    const normalizedName = normalizeStudentName(parts[0]);
+    if (!normalizedName) {
+      return;
+    }
+    if (!isValidStudentName(normalizedName)) {
+      invalidRows.push({ rowNumber: index + 1, value: parts[0] || '' });
+      return;
+    }
+
+    const normalizedClass = parts[1] || '';
+    const normalizedNotes = parts.slice(2).join(delimiter).trim();
+    const rowKey = JSON.stringify([
+      toStudentNameKey(normalizedName),
+      normalizedClass.toLowerCase(),
+      normalizedNotes.toLowerCase()
+    ]);
+
+    if (seenRowKeys.has(rowKey)) {
+      duplicateRows.push({ rowNumber: index + 1, name: normalizedName });
+      return;
+    }
+
+    seenRowKeys.add(rowKey);
+    if (existingStudentNames.has(toStudentNameKey(normalizedName))) {
+      existingNameMatches.push({ rowNumber: index + 1, name: normalizedName });
+    }
+
+    newStudents.push({
+      name: normalizedName,
+      class: normalizedClass,
+      notes: normalizedNotes
+    });
+  });
+
+  return {
+    newStudents,
+    invalidRows,
+    duplicateRows,
+    existingNameMatches
+  };
+};
+const buildBulkImportConfirmationMessage = (summary) => {
+  const messageLines = [`Import ${summary.newStudents.length} ${pluralize(summary.newStudents.length, 'student')} into the active class?`];
+  const notices = [];
+
+  if (summary.duplicateRows.length) {
+    notices.push(`${summary.duplicateRows.length} duplicate ${pluralize(summary.duplicateRows.length, 'row')} will be skipped`);
+  }
+  if (summary.invalidRows.length) {
+    notices.push(`${summary.invalidRows.length} invalid ${pluralize(summary.invalidRows.length, 'row')} will be skipped`);
+  }
+  if (summary.existingNameMatches.length) {
+    notices.push(`${summary.existingNameMatches.length} existing-name ${pluralize(summary.existingNameMatches.length, 'match', 'matches')} will still be added`);
+  }
+
+  if (notices.length) {
+    messageLines.push('', ...notices.map((notice) => `- ${notice}`));
+  }
+
+  return messageLines.join('\n');
+};
+const buildBulkImportEmptyMessage = (summary) => {
+  if (summary.invalidRows.length && !summary.duplicateRows.length) {
+    return STUDENT_NAME_VALIDATION_MESSAGE;
+  }
+
+  const reasons = [];
+  if (summary.duplicateRows.length) {
+    reasons.push(`${summary.duplicateRows.length} duplicate ${pluralize(summary.duplicateRows.length, 'row')} skipped`);
+  }
+  if (summary.invalidRows.length) {
+    reasons.push(`${summary.invalidRows.length} invalid ${pluralize(summary.invalidRows.length, 'row')} skipped`);
+  }
+
+  return reasons.length
+    ? `No importable students found. ${reasons.join('. ')}.`
+    : 'No valid students found';
+};
+const buildBulkImportResultMessage = (preflightSummary, importResult) => {
+  const parts = [];
+
+  if (importResult.importedCount) {
+    parts.push(`${importResult.importedCount} ${pluralize(importResult.importedCount, 'student')} imported`);
+  } else {
+    parts.push('No students imported');
+  }
+  if (preflightSummary.duplicateRows.length) {
+    parts.push(`${preflightSummary.duplicateRows.length} duplicate ${pluralize(preflightSummary.duplicateRows.length, 'row')} skipped`);
+  }
+  if (preflightSummary.invalidRows.length) {
+    parts.push(`${preflightSummary.invalidRows.length} invalid ${pluralize(preflightSummary.invalidRows.length, 'row')} skipped`);
+  }
+  if (preflightSummary.existingNameMatches.length) {
+    parts.push(`${preflightSummary.existingNameMatches.length} existing-name ${pluralize(preflightSummary.existingNameMatches.length, 'match', 'matches')} added separately`);
+  }
+  if (importResult.failedRows.length) {
+    const failureNames = importResult.failedRows
+      .slice(0, 2)
+      .map((entry) => String(entry?.name || '').trim())
+      .filter(Boolean);
+    const failureSuffix = importResult.failedRows.length > failureNames.length ? ', …' : '';
+    parts.push(
+      failureNames.length
+        ? `${importResult.failedRows.length} ${pluralize(importResult.failedRows.length, 'row')} failed (${failureNames.join(', ')}${failureSuffix})`
+        : `${importResult.failedRows.length} ${pluralize(importResult.failedRows.length, 'row')} failed`
+    );
+  }
+  if (importResult.stoppedEarly) {
+    parts.push('Import stopped after a blocking error');
+  }
+
+  return `${parts.join('. ')}.`;
+};
+
 const students = {
   addStudent: async function (name, runtimeApp, runtimeUi) {
     const appRef = resolveApp(runtimeApp);
@@ -230,63 +406,94 @@ const students = {
     }
   },
 
-  bulkImport: function (csv, app, ui) {
+  getBulkImportPreview: function (csv, app) {
+    const importPlan = parseBulkImportCsv(csv, app);
+    const hasContent = normalizeBulkImportInput(csv)
+      .split('\n')
+      .some((line) => Boolean(String(line || '').trim()));
+
+    return {
+      hasContent,
+      importableCount: importPlan.newStudents.length,
+      invalidRowCount: importPlan.invalidRows.length,
+      duplicateRowCount: importPlan.duplicateRows.length,
+      existingNameMatchCount: importPlan.existingNameMatches.length
+    };
+  },
+
+  bulkImport: async function (csv, app, ui) {
     if (!ensureWritable(app, ui)) return false;
 
-    const lines = csv.trim().split('\n');
-    const newStudents = [];
-    let skippedInvalidRows = 0;
+    const importPlan = parseBulkImportCsv(csv, app);
 
-    lines.forEach(line => {
-      const parts = line.split(',').map(p => p.trim());
-      const normalizedName = normalizeStudentName(parts[0]);
-      if (normalizedName && isValidStudentName(normalizedName)) {
-        newStudents.push({
-          name: normalizedName,
-          class: parts[1] || '',
-          notes: parts[2] || ''
-        });
-      } else if (parts[0]) {
-        skippedInvalidRows += 1;
-      }
+    if (importPlan.newStudents.length === 0) {
+      ui.showToast(buildBulkImportEmptyMessage(importPlan));
+      return false;
+    }
+
+    if (!window.confirm(buildBulkImportConfirmationMessage(importPlan))) {
+      return false;
+    }
+
+    const runImport = () => this.importStudents(importPlan.newStudents, app, ui);
+    const importResult = typeof ui?.withLoader === 'function'
+      ? await ui.withLoader(runImport, { message: 'Importing students...' })
+      : await runImport();
+
+    if (importResult === false) {
+      return false;
+    }
+
+    ui.showToast(buildBulkImportResultMessage(importPlan, importResult), {
+      duration: importResult.failedRows.length ? 5000 : 3200
     });
-
-    if (newStudents.length === 0) {
-      ui.showToast(skippedInvalidRows ? STUDENT_NAME_VALIDATION_MESSAGE : 'No valid students found');
-      return false;
-    }
-    if (skippedInvalidRows) {
-      ui.showToast(`${skippedInvalidRows} invalid row${skippedInvalidRows === 1 ? '' : 's'} skipped`);
-    }
-
-    if (!window.confirm(`Import ${newStudents.length} students into the active class?`)) {
-      return false;
-    }
-
-    if (typeof ui?.withLoader === 'function') {
-      return ui.withLoader(() => this.importStudents(newStudents, app, ui), {
-        message: 'Importing students...'
-      });
-    }
-
-    return this.importStudents(newStudents, app, ui);
+    return importResult;
   },
 
   importStudents: async function (studentsData, app, ui) {
-    if (!ensureWritable(app, ui)) return;
+    if (!ensureWritable(app, ui)) return false;
+
+    const importResult = {
+      importedCount: 0,
+      failedRows: [],
+      stoppedEarly: false
+    };
 
     try {
       if (app.snapshots && typeof app.snapshots.saveSnapshot === 'function') {
-        app.snapshots.saveSnapshot('Auto Backup Before Bulk Student Import');
+        try {
+          app.snapshots.saveSnapshot('Auto Backup Before Bulk Student Import');
+        } catch (snapshotError) {
+          console.error('Failed to create pre-import snapshot:', snapshotError);
+        }
       }
       for (const studentData of studentsData) {
-        await app.addStudent({ ...studentData, scores: {} });
+        try {
+          await app.addStudent({ ...studentData, scores: {} });
+          importResult.importedCount += 1;
+        } catch (error) {
+          console.error('Failed to import student:', error);
+          importResult.failedRows.push({
+            name: String(studentData?.name || '').trim(),
+            message: isReadOnlyError(error)
+              ? getReadOnlyMessage(app)
+              : resolveClassContextErrorMessage(error, String(error?.message || 'Failed to import student'))
+          });
+
+          if (shouldStopBulkImport(error)) {
+            importResult.stoppedEarly = true;
+            break;
+          }
+        }
       }
-      ui.refreshUI();
-      ui.showToast(`${studentsData.length} students imported`);
+      if (importResult.importedCount) {
+        ui.refreshUI();
+      }
+      return importResult;
     } catch (error) {
       console.error('Failed to import students:', error);
       ui.showToast(isReadOnlyError(error) ? getReadOnlyMessage(app) : resolveClassContextErrorMessage(error, String(error?.message || 'Failed to import students')));
+      return false;
     }
   },
 

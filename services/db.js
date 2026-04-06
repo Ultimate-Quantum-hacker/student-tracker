@@ -99,6 +99,19 @@ const buildClassDocMetadataPatch = (ownerId, classId, updatedAt, extra = {}) => 
   dataSchemaVersion: DATA_SCHEMA_VERSION,
   ...extra
 });
+const buildUserRootBootstrapPayload = (userId) => {
+  const normalizedUserId = normalizeUserId(userId);
+  const authenticatedUser = auth?.currentUser || null;
+  return {
+    uid: normalizedUserId,
+    userId: normalizedUserId,
+    role: 'teacher',
+    name: normalizeDisplayName(authenticatedUser?.displayName || authenticatedUser?.email || 'Teacher', 'Teacher'),
+    email: normalizeEmailAddress(authenticatedUser?.email || ''),
+    emailVerified: Boolean(authenticatedUser?.emailVerified),
+    createdAt: serverTimestamp()
+  };
+};
 const invalidateRecentFetchAllDataCache = () => {
   recentFetchAllDataCache = {
     scopeKey: '',
@@ -522,11 +535,11 @@ const persistStudentRestoreById = async (studentId, nextData) => {
         { merge: true }
       );
 
-      await setDoc(getUserRootRef(userId), {
+      await mergeUserRootMetadata(userId, {
         userId,
         activeClassId: classId,
         updatedAt
-      }, { merge: true });
+      });
 
       return {
         data: nextData,
@@ -736,11 +749,11 @@ const persistSubjectDeleteByIdentity = async (subjectIdentity, nextData) => {
         { merge: true }
       );
 
-      await setDoc(getUserRootRef(userId), {
+      await mergeUserRootMetadata(userId, {
         userId,
         activeClassId: classId,
         updatedAt
-      }, { merge: true });
+      });
 
       const deletedId = String(subjectDocRef?.id || subjectIdentity?.id || '').trim();
       const deletedName = String(subjectIdentity?.name || '').trim() || 'Subject';
@@ -821,11 +834,11 @@ const persistExamDeleteByIdentity = async (examIdentity, nextData) => {
         { merge: true }
       );
 
-      await setDoc(getUserRootRef(userId), {
+      await mergeUserRootMetadata(userId, {
         userId,
         activeClassId: classId,
         updatedAt
-      }, { merge: true });
+      });
 
       const deletedId = String(examDocRef?.id || examIdentity?.id || '').trim();
       const deletedName = String(examIdentity?.title || examIdentity?.name || '').trim() || 'Exam';
@@ -909,11 +922,11 @@ const persistSubjectRestoreById = async (subjectId, nextData) => {
         { merge: true }
       );
 
-      await setDoc(getUserRootRef(userId), {
+      await mergeUserRootMetadata(userId, {
         userId,
         activeClassId: classId,
         updatedAt
-      }, { merge: true });
+      });
 
       return {
         data: nextData,
@@ -989,11 +1002,11 @@ const persistExamRestoreById = async (examId, nextData) => {
         { merge: true }
       );
 
-      await setDoc(getUserRootRef(userId), {
+      await mergeUserRootMetadata(userId, {
         userId,
         activeClassId: classId,
         updatedAt
-      }, { merge: true });
+      });
 
       return {
         data: nextData,
@@ -1062,11 +1075,11 @@ const persistSubjectHardDeleteById = async (subjectId, nextData) => {
         { merge: true }
       );
 
-      await setDoc(getUserRootRef(userId), {
+      await mergeUserRootMetadata(userId, {
         userId,
         activeClassId: classId,
         updatedAt
-      }, { merge: true });
+      });
 
       return {
         data: nextData,
@@ -1135,11 +1148,11 @@ const persistExamHardDeleteById = async (examId, nextData) => {
         { merge: true }
       );
 
-      await setDoc(getUserRootRef(userId), {
+      await mergeUserRootMetadata(userId, {
         userId,
         activeClassId: classId,
         updatedAt
-      }, { merge: true });
+      });
 
       return {
         data: nextData,
@@ -1215,11 +1228,11 @@ const persistStudentHardDeleteById = async (studentId, nextData) => {
         { merge: true }
       );
 
-      await setDoc(getUserRootRef(userId), {
+      await mergeUserRootMetadata(userId, {
         userId,
         activeClassId: classId,
         updatedAt
-      }, { merge: true });
+      });
 
       return {
         data: nextData,
@@ -1960,6 +1973,39 @@ const getUserRootRef = (userId) => doc(db, USERS_COLLECTION, userId);
 const getStudentsCollectionRef = (userId, classId = getCurrentClassContext()) => getClassStudentsCollectionRef(userId, normalizeClassId(classId));
 const getSubjectsCollectionRef = (userId, classId = getCurrentClassContext()) => getClassSubjectsCollectionRef(userId, normalizeClassId(classId));
 const getExamsCollectionRef = (userId, classId = getCurrentClassContext()) => getClassExamsCollectionRef(userId, normalizeClassId(classId));
+const ensureUserRootProfileDocument = async (userId) => {
+  const normalizedUserId = normalizeUserId(userId);
+  if (!isFirebaseConfigured || !db || !normalizedUserId) {
+    return;
+  }
+
+  const userRootRef = getUserRootRef(normalizedUserId);
+  const snapshot = await getDoc(userRootRef);
+  if (snapshot.exists()) {
+    return;
+  }
+
+  if (getCurrentUserRoleContext() !== 'teacher') {
+    return;
+  }
+
+  const bootstrapPayload = buildUserRootBootstrapPayload(normalizedUserId);
+  if (!bootstrapPayload.email) {
+    return;
+  }
+
+  await setDoc(userRootRef, bootstrapPayload, { merge: true });
+};
+
+const mergeUserRootMetadata = async (userId, patch = {}) => {
+  const normalizedUserId = normalizeUserId(userId);
+  if (!isFirebaseConfigured || !db || !normalizedUserId) {
+    return;
+  }
+
+  await ensureUserRootProfileDocument(normalizedUserId);
+  await setDoc(getUserRootRef(normalizedUserId), patch, { merge: true });
+};
 const getStudentDocRef = (userId, studentId, classId = getCurrentClassContext()) => getClassStudentDocRef(userId, normalizeClassId(classId), studentId);
 const getLegacyStudentDocRef = (userId, studentId) => doc(db, USERS_COLLECTION, userId, STUDENTS_SUBCOLLECTION, studentId);
 const getSubjectDocRef = (userId, subjectId, classId = getCurrentClassContext()) => getClassSubjectDocRef(userId, normalizeClassId(classId), subjectId);
@@ -2086,14 +2132,14 @@ const updateMigrationState = async (userId, status, extra = {}) => {
     return;
   }
 
-  await setDoc(getUserRootRef(userId), {
+  await mergeUserRootMetadata(userId, {
     uid: userId,
     classMigrationStatus: String(status || '').trim() || 'unknown',
     classMigrationVersion: CLASS_MIGRATION_VERSION,
     classMigrationComplete: status === 'completed',
     classMigrationUpdatedAt: new Date().toISOString(),
     ...extra
-  }, { merge: true });
+  });
 };
 
 const readUserRootData = async (userId) => {
@@ -2125,12 +2171,12 @@ const ensureDefaultClassDocument = async (userId) => {
     ownerName
   }));
 
-  await setDoc(getUserRootRef(userId), {
+  await mergeUserRootMetadata(userId, {
     uid: userId,
     activeClassId: classId,
     [ALLOW_EMPTY_CLASS_CATALOG_FIELD]: false,
     updatedAt: createdAt
-  }, { merge: true });
+  });
 
   return toClassModel(classId, {
     id: classId,
@@ -2319,11 +2365,11 @@ const repairLegacyStudentsIntoClassScope = async (ownerId, classId, className, c
       { merge: true }
     );
 
-    await setDoc(getUserRootRef(normalizedOwnerId), {
+    await mergeUserRootMetadata(normalizedOwnerId, {
       userId: normalizedOwnerId,
       activeClassId: normalizedClassId,
       updatedAt
-    }, { merge: true });
+    });
 
     return readModularRawData(normalizedOwnerId, normalizedClassId);
   } catch (error) {
@@ -2703,11 +2749,11 @@ const writeModularData = async (ownerId, classId, rawData) => {
     { merge: true }
   );
 
-  await setDoc(getUserRootRef(normalizedOwnerId), {
+  await mergeUserRootMetadata(normalizedOwnerId, {
     userId: normalizedOwnerId,
     updatedAt,
     activeClassId: normalizedClassId
-  }, { merge: true });
+  });
 
   return normalized;
 };
@@ -3507,11 +3553,11 @@ const persistStudentUpdateById = async (studentId, studentData, nextData) => {
         { merge: true }
       );
 
-      await setDoc(getUserRootRef(userId), {
+      await mergeUserRootMetadata(userId, {
         userId,
         activeClassId: classId,
         updatedAt
-      }, { merge: true });
+      });
 
       return {
         data: nextData,
@@ -3601,11 +3647,11 @@ const persistStudentDeleteById = async (studentId, nextData, studentMeta = {}) =
         { merge: true }
       );
 
-      await setDoc(getUserRootRef(userId), {
+      await mergeUserRootMetadata(userId, {
         userId,
         activeClassId: classId,
         updatedAt
-      }, { merge: true });
+      });
 
       return {
         data: nextData,
@@ -4028,12 +4074,12 @@ export const createClass = async (className) => {
   globalClassCatalogCache.loadedAt = 0;
   setCurrentClassContext(classId, userId, userId, ownerName);
 
-  await setDoc(getUserRootRef(userId), {
+  await mergeUserRootMetadata(userId, {
     userId,
     activeClassId: classId,
     [ALLOW_EMPTY_CLASS_CATALOG_FIELD]: false,
     updatedAt: createdAt
-  }, { merge: true });
+  });
 
   return {
     class: toClassModel(classId, { name: normalizedName, createdAt, ownerId: userId, ownerName }),
@@ -4108,12 +4154,12 @@ const deleteClassesInternal = async (classIds = [], options = {}) => {
   const { classId: nextClassId, className: nextClassName } = resolveActiveClassModel(userId, remainingClasses);
   const allowEmptyClassCatalog = remainingClasses.length === 0;
 
-  await setDoc(getUserRootRef(userId), {
+  await mergeUserRootMetadata(userId, {
     userId,
     activeClassId: nextClassId,
     [ALLOW_EMPTY_CLASS_CATALOG_FIELD]: allowEmptyClassCatalog,
     updatedAt
-  }, { merge: true });
+  });
 
   return {
     classes: remainingClasses,
@@ -4189,12 +4235,12 @@ export const restoreClass = async (classId) => {
   globalClassCatalogCache.loadedAt = 0;
 
   const { classId: nextClassId, className: nextClassName } = resolveActiveClassModel(userId, nextClasses);
-  await setDoc(getUserRootRef(userId), {
+  await mergeUserRootMetadata(userId, {
     userId,
     activeClassId: nextClassId,
     [ALLOW_EMPTY_CLASS_CATALOG_FIELD]: false,
     updatedAt
-  }, { merge: true });
+  });
 
   return {
     classes: nextClasses,
@@ -4238,12 +4284,12 @@ export const permanentlyDeleteClass = async (classId) => {
   globalClassCatalogCache.loadedAt = 0;
 
   const { classId: nextClassId, className: nextClassName } = resolveActiveClassModel(userId, classes);
-  await setDoc(getUserRootRef(userId), {
+  await mergeUserRootMetadata(userId, {
     userId,
     activeClassId: nextClassId,
     [ALLOW_EMPTY_CLASS_CATALOG_FIELD]: classes.length === 0,
     updatedAt
-  }, { merge: true });
+  });
 
   return {
     classes,

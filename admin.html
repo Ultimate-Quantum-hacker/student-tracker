@@ -260,6 +260,25 @@
             <p class="panel-subtitle">Review cross-user actions with visual event cues and flexible filtering controls.</p>
           </div>
           <div class="activity-filters">
+            <div class="admin-field admin-search-field">
+              <span class="admin-field-label">Search logs</span>
+              <label class="input-shell search-container" aria-label="Search activity logs by target, class, or user">
+                <span class="input-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="7"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                  </svg>
+                </span>
+                <input
+                  id="activity-search-input"
+                  class="search-input admin-search-input"
+                  type="search"
+                  placeholder="Search target, class, or user"
+                  aria-label="Search activity logs by target, class, or user"
+                  autocomplete="off"
+                >
+              </label>
+            </div>
             <div class="admin-field admin-filter-field">
               <span class="admin-field-label">User</span>
               <label class="filter-shell search-container select-container" aria-label="Filter activity by user">
@@ -296,6 +315,10 @@
                   <option value="asc">Oldest First</option>
                 </select>
               </label>
+            </div>
+            <div class="admin-field admin-filter-action">
+              <span class="admin-field-label admin-field-label-hidden" aria-hidden="true">Clear activity filters</span>
+              <button id="clear-activity-filters-btn" class="btn btn-secondary" type="button">Clear Filters</button>
             </div>
             <div class="admin-field admin-filter-action">
               <span class="admin-field-label admin-field-label-hidden" aria-hidden="true">Refresh logs</span>

@@ -97,18 +97,22 @@ export const buildActivityLogsQueryState = ({
   userId = '',
   classKey = '',
   action = '',
+  searchTerm = '',
   sort = 'desc'
 } = {}) => {
   const normalizedUserId = normalizeText(userId);
   const normalizedClassKey = normalizeText(classKey);
   const normalizedAction = normalizeText(action).toLowerCase();
+  const normalizedSearchTerm = normalizeText(searchTerm).toLowerCase();
   const normalizedSort = normalizeText(sort).toLowerCase() === 'asc' ? 'asc' : 'desc';
 
   return {
     selectedUserId: normalizedUserId,
     selectedClassKey: normalizedClassKey,
     selectedAction: normalizedAction,
+    selectedSearchTerm: normalizedSearchTerm,
     selectedSort: normalizedSort,
+    hasActiveFilters: Boolean(normalizedUserId || normalizedClassKey || normalizedAction || normalizedSearchTerm || normalizedSort !== 'desc'),
     activityLogsCacheKey: buildActivityLogsCacheKey({
       userId: normalizedUserId,
       sort: normalizedSort
@@ -116,17 +120,39 @@ export const buildActivityLogsQueryState = ({
   };
 };
 
+const buildActivitySearchHaystack = (entry = {}) => {
+  return [
+    String(entry?.action || '').replace(/[_-]+/g, ' '),
+    entry?.targetLabel,
+    entry?.studentName,
+    entry?.targetType,
+    entry?.targetId,
+    entry?.userName,
+    entry?.userDisplayName,
+    entry?.userEmail,
+    entry?.userId,
+    entry?.ownerName,
+    entry?.className,
+    entry?.classId,
+    formatClassDisplayLabel(entry)
+  ].map((value) => normalizeText(value).toLowerCase()).join(' ');
+};
+
 export const filterAdminActivityEntries = (entries = [], {
   selectedAction = '',
-  selectedClassKey = ''
+  selectedClassKey = '',
+  searchTerm = ''
 } = {}) => {
   const normalizedEntries = Array.isArray(entries) ? entries : [];
   const normalizedSelectedAction = normalizeText(selectedAction).toLowerCase();
   const normalizedSelectedClassKey = normalizeText(selectedClassKey);
+  const normalizedSearchTerm = normalizeText(searchTerm).toLowerCase();
 
-  const entriesForClassFilter = normalizedSelectedAction
-    ? normalizedEntries.filter((entry) => String(entry?.action || '').trim().toLowerCase() === normalizedSelectedAction)
-    : normalizedEntries.slice();
+  const entriesForClassFilter = normalizedEntries.filter((entry) => {
+    const matchesAction = !normalizedSelectedAction || String(entry?.action || '').trim().toLowerCase() === normalizedSelectedAction;
+    const matchesSearch = !normalizedSearchTerm || buildActivitySearchHaystack(entry).includes(normalizedSearchTerm);
+    return matchesAction && matchesSearch;
+  });
 
   const filteredEntries = normalizedSelectedClassKey
     ? entriesForClassFilter.filter((entry) => getEntryClassFilterKey(entry) === normalizedSelectedClassKey)

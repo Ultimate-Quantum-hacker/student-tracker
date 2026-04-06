@@ -110,7 +110,9 @@ const domIds = {
   bulkClassDeleteClearBtn: 'bulk-class-delete-clear-btn',
   bulkImportBtn: 'bulk-import-btn',
   bulkImportModal: 'bulk-import-modal',
+  bulkImportFileInput: 'bulk-import-file-input',
   bulkImportTextarea: 'bulk-import-textarea',
+  bulkImportSummary: 'bulk-import-summary',
   bulkImportConfirmBtn: 'bulk-import-confirm-btn',
   bulkImportCancelBtn: 'bulk-import-cancel-btn',
   notesModal: 'notes-modal',
@@ -602,26 +604,6 @@ const ui = {
         classSwitcher.style.display = '';
       }
 
-      this.applyFeatureAccessState('developerTools', [
-        app.dom.systemToolsBackupStatus,
-        app.dom.backupStatus,
-        app.dom.backupBtn,
-        app.dom.restoreBtn,
-        app.dom.restoreInput,
-        app.dom.createSnapshotBtn,
-        app.dom.snapshotManagerBtn,
-        app.dom.resetBtn,
-        app.dom.systemCreateRestorePointBtn,
-        app.dom.systemRestorePointsBtn,
-        app.dom.systemExportDataBtn,
-        app.dom.systemImportDataBtn,
-        app.dom.systemResetBtn,
-        app.dom.exportCsvBtn,
-        app.dom.exportExcelBtn,
-        app.dom.reportExportPdfBtn,
-        app.dom.reportExportAllPdfBtn
-      ]);
-
       this.applyFeatureAccessState('importData', [
         app.dom.restoreBtn,
         app.dom.restoreInput,
@@ -646,6 +628,8 @@ const ui = {
       ]);
 
       this.applyFeatureAccessState('exportData', [
+        app.dom.systemToolsBackupStatus,
+        app.dom.backupStatus,
         app.dom.backupBtn,
         app.dom.systemExportDataBtn,
         app.dom.exportCsvBtn,
@@ -1216,6 +1200,71 @@ const ui = {
       this.bulkClassDeleteSelection = [];
       if (app.dom.bulkClassDeleteModal) {
         app.dom.bulkClassDeleteModal.classList.remove('active');
+      }
+    },
+
+    renderBulkImportSummary: function () {
+      if (!app.dom.bulkImportSummary) {
+        return;
+      }
+
+      const preview = typeof app.students?.getBulkImportPreview === 'function'
+        ? app.students.getBulkImportPreview(app.dom.bulkImportTextarea?.value || '', app)
+        : null;
+      const pluralize = (count, singular, plural = `${singular}s`) => (count === 1 ? singular : plural);
+
+      if (!preview?.hasContent) {
+        app.dom.bulkImportSummary.textContent = 'Paste names to preview the import summary.';
+        if (app.dom.bulkImportConfirmBtn) {
+          app.dom.bulkImportConfirmBtn.disabled = true;
+        }
+        return;
+      }
+
+      const parts = [];
+      if (preview.importableCount) {
+        parts.push(`${preview.importableCount} ${pluralize(preview.importableCount, 'student')} ready to import`);
+      } else {
+        parts.push('No importable students found');
+      }
+      if (preview.duplicateRowCount) {
+        parts.push(`${preview.duplicateRowCount} duplicate ${pluralize(preview.duplicateRowCount, 'row')} will be skipped`);
+      }
+      if (preview.invalidRowCount) {
+        parts.push(`${preview.invalidRowCount} invalid ${pluralize(preview.invalidRowCount, 'row')} will be skipped`);
+      }
+      if (preview.existingNameMatchCount) {
+        parts.push(`${preview.existingNameMatchCount} existing-name ${pluralize(preview.existingNameMatchCount, 'match', 'matches')} will still be added`);
+      }
+
+      app.dom.bulkImportSummary.textContent = `${parts.join('. ')}.`;
+      if (app.dom.bulkImportConfirmBtn) {
+        app.dom.bulkImportConfirmBtn.disabled = preview.importableCount === 0;
+      }
+    },
+
+    loadBulkImportFile: async function () {
+      const fileInput = app.dom.bulkImportFileInput;
+      const selectedFile = fileInput?.files?.[0] || null;
+      if (!selectedFile) {
+        this.renderBulkImportSummary();
+        return;
+      }
+
+      try {
+        const fileContents = await selectedFile.text();
+        if (app.dom.bulkImportTextarea) {
+          app.dom.bulkImportTextarea.value = fileContents;
+        }
+        this.renderBulkImportSummary();
+        this.showToast(`Loaded ${selectedFile.name}`);
+      } catch (error) {
+        console.error('Failed to read bulk import file:', error);
+        this.showToast('Failed to read import file');
+      } finally {
+        if (fileInput) {
+          fileInput.value = '';
+        }
       }
     },
 
@@ -2772,17 +2821,28 @@ const ui = {
         }
         if (app.dom.bulkImportBtn) app.dom.bulkImportBtn.onclick = () => {
           if (!this.requireAccess('bulkImport')) return;
+          this.renderBulkImportSummary();
           app.dom.bulkImportModal.classList.add('active');
         };
+        if (app.dom.bulkImportFileInput) app.dom.bulkImportFileInput.onchange = async () => {
+          await this.loadBulkImportFile();
+        };
+        if (app.dom.bulkImportTextarea) app.dom.bulkImportTextarea.oninput = () => this.renderBulkImportSummary();
         if (app.dom.bulkImportConfirmBtn) app.dom.bulkImportConfirmBtn.onclick = async () => {
           if (!this.requireAccess('bulkImport')) return;
           if (!this.ensureWritableAction('Bulk add')) return;
           const importResult = await app.students.bulkImport(app.dom.bulkImportTextarea.value, app, this);
           if (importResult !== false) {
+            if (app.dom.bulkImportTextarea) app.dom.bulkImportTextarea.value = '';
+            if (app.dom.bulkImportFileInput) app.dom.bulkImportFileInput.value = '';
+            this.renderBulkImportSummary();
             app.dom.bulkImportModal.classList.remove('active');
           }
         };
-        if (app.dom.bulkImportCancelBtn) app.dom.bulkImportCancelBtn.onclick = () => app.dom.bulkImportModal.classList.remove('active');
+        if (app.dom.bulkImportCancelBtn) app.dom.bulkImportCancelBtn.onclick = () => {
+          this.renderBulkImportSummary();
+          app.dom.bulkImportModal.classList.remove('active');
+        };
         if (app.dom.editSaveBtn) app.dom.editSaveBtn.onclick = async () => {
           if (!this.ensureWritableAction('Student updates')) return;
           await this.withLoader(() => app.students.saveEdit(app, this), {

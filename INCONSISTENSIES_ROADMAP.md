@@ -34,7 +34,7 @@ The roadmap is only complete when:
 | 2 | Auth, Identity, and Account Lifecycle Completion | In Progress | Authentication and user account management become complete and production-ready |
 | 3 | Data Model Hardening and Migration Completion | In Progress | Immutable, migration-safe, id-based data model with no legacy dependency |
 | 4 | Frontend Architecture and Service Layer Consolidation | Completed | Modular codebase with clear boundaries and one authoritative data access layer |
-| 5 | Teacher and Admin Workflow Completion | Not Started | Fully coherent day-to-day workflows with missing feature gaps closed |
+| 5 | Teacher and Admin Workflow Completion | In Progress | Fully coherent day-to-day workflows with missing feature gaps closed |
 | 6 | Offline, PWA, Environment, and Deployment Readiness | Not Started | Valid installable PWA, correct environment separation, and complete deployment setup |
 | 7 | Scale, Performance, and Operational Maturity | Not Started | App performs acceptably at larger data volumes and admin operations scale cleanly |
 | 8 | QA, Automation, and Release Governance | Not Started | Turnkey local setup, CI automation, reliable regression coverage, and release gates |
@@ -254,8 +254,8 @@ Close the remaining workflow gaps so the app supports complete, intentional, pro
 
 ## Deliverables
 
-- [ ] Finalized role-based export/import/backup capability set
-- [ ] Robust CSV or spreadsheet import with validation summary, duplicate handling, and failure reporting
+- [x] Finalized role-based export/import/backup capability set
+- [x] Robust CSV or spreadsheet import with validation summary, duplicate handling, and failure reporting
 - [ ] Unified risk/intervention workflow inside the supported app surface
 - [ ] Clear admin action model with documented write/read boundaries
 - [ ] Improved operational views for logs, search, registry, and relevant history depth
@@ -591,3 +591,38 @@ Use this section to track major roadmap updates.
 - **Phase:** Phase 4
 - **Update:** Completed the frontend architecture and service-layer consolidation by moving dashboard/performance rendering into `js/ui-dashboard.js`, extracting role and class-context orchestration into `js/state-context.js`, finishing the admin helper/service-layer breakup across the `js/admin-*.js` modules plus `services/db.js`, standardizing the active chart layer on the native renderer path, removing stale manual-test and legacy artifacts, and aligning the critical regression source assertions with the new module boundaries.
 - **Impact:** Phase 4 is now complete with `js/ui.js`, `js/state.js`, and `js/admin.js` acting as orchestration layers instead of catch-all files, admin data access flowing through the shared service layer, the chart stack using one vanilla rendering approach, and `npx playwright test tests/refactor-critical-regressions.spec.js --project=chromium --reporter=line` passing `27/27` to validate the refactor slices.
+
+- **Date:** 2026-04-06
+- **Phase:** Phase 5
+- **Update:** Started the teacher/admin workflow completion phase by auditing the workflow access gates in `js/ui.js`, removing the overlapping `developerTools` control removal that was hiding export/import/backup-related tools from non-developer roles, reassigning backup status visibility to the `exportData` capability gate, and extending `tests/refactor-critical-regressions.spec.js` with a focused workflow capability-matrix regression covering teacher, admin, and developer access to export, import, restore-point, reset, and admin-panel controls.
+- **Impact:** Phase 5 is now in progress with the first permission-alignment slice validated: teachers retain their intended export/import/restore/reset workflow tools, admins keep export plus admin dashboard access without regaining blocked write/restore operations, and `npx playwright test tests/refactor-critical-regressions.spec.js --project=chromium --reporter=line` passes `28/28` with the restored admin class-switch regressions plus the new workflow matrix guard.
+
+- **Date:** 2026-04-06
+- **Phase:** Phase 5
+- **Update:** Hardened the next workflow slice in `js/students.js` by upgrading bulk student import from a line-by-line best-effort add into a preflighted import path that summarizes invalid rows before execution, skips exact duplicate rows inside the pasted batch, preserves existing-name matches as explicit separate imports, keeps notes text after the second CSV column intact, and reports row-level failures without aborting the whole import on the first non-blocking error.
+- **Impact:** Phase 5 now has a validated bulk-import hardening slice toward the remaining import deliverable: teachers get clearer import validation and duplicate handling with partial-failure reporting, and `tests/refactor-critical-regressions.spec.js` adds focused coverage for duplicate/invalid preflight behavior plus partial-failure continuation while the full critical file passes `30/30` via `npx playwright test tests/refactor-critical-regressions.spec.js --project=chromium --reporter=line`.
+
+- **Date:** 2026-04-06
+- **Phase:** Phase 5
+- **Update:** Added the next bounded import UX slice by exposing a shared bulk-import preview API from `js/students.js`, wiring `index.html` and `js/ui.js` to show a live modal summary before confirmation, and disabling the confirm action when the pasted content contains no importable students.
+- **Impact:** Phase 5’s import workflow now gives teachers immediate preview feedback for ready-to-import rows, duplicate rows, invalid rows, and existing-name matches before execution, and `tests/refactor-critical-regressions.spec.js` adds a focused preview regression while the full critical file passes `31/31` via `npx playwright test tests/refactor-critical-regressions.spec.js --project=chromium --reporter=line`.
+
+- **Date:** 2026-04-06
+- **Phase:** Phase 5
+- **Update:** Extended the same import path in `js/students.js` to accept spreadsheet-style clipboard data by supporting a conventional first-row header and tab-separated rows in addition to the existing pasted comma-separated format, keeping the same duplicate handling, preview, and failure-reporting behavior across all supported inputs.
+- **Impact:** Phase 5’s import workflow now covers a practical spreadsheet copy/paste path in the existing modal without introducing a separate import surface, and `tests/refactor-critical-regressions.spec.js` adds a focused tab-separated/header-row regression while the full critical file passes `32/32` via `npx playwright test tests/refactor-critical-regressions.spec.js --project=chromium --reporter=line`.
+
+- **Date:** 2026-04-06
+- **Phase:** Phase 5
+- **Update:** Added the next import usability slice by extending the existing bulk-import modal in `index.html` and `js/ui.js` with a CSV/TSV file input that reads selected text files into the same textarea, preview summary, and confirm path already validated in `js/students.js`.
+- **Impact:** Phase 5’s import workflow now supports both paste-based and file-based entry inside the same modal without branching logic or separate screens, and `tests/refactor-critical-regressions.spec.js` adds a focused file-load regression while the full critical file passes `33/33` via `npx playwright test tests/refactor-critical-regressions.spec.js --project=chromium --reporter=line`.
+
+- **Date:** 2026-04-06
+- **Phase:** Phase 5
+- **Update:** Started the operational-views portion of Phase 5 by extending `admin.html`, `js/admin.js`, `js/admin-activity-filter-utils.js`, and `js/admin-activity-utils.js` with a debounced activity-log text search that filters loaded admin history by target, class, user, and action while keeping class-filter options and empty-state/status feedback aligned with the active filters.
+- **Impact:** Phase 5 now has a validated operational-view slice toward the remaining logs/search/history deliverable: admins can narrow activity history without leaving the supported app surface, and `tests/refactor-critical-regressions.spec.js` adds focused coverage for the new activity search wiring and filter behavior while the full critical file passes `34/34` via `npx playwright test tests/refactor-critical-regressions.spec.js --project=chromium --reporter=line`.
+
+- **Date:** 2026-04-06
+- **Phase:** Phase 5
+- **Update:** Extended the same admin activity-log toolbar in `admin.html` and `js/admin.js` with a clear-filters control that resets the text, user, class, action, and sort criteria through the shared normalized query state in `js/admin-activity-filter-utils.js`, keeping the reset state, button enablement, and reload flow aligned with the existing filtered activity history experience.
+- **Impact:** Phase 5’s operational-view slice now lets admins return from narrowed activity-history filters to the default log view in one action, and `tests/refactor-critical-regressions.spec.js` adds focused clear-filters regression coverage while the full critical file passes `35/35` via `npx playwright test tests/refactor-critical-regressions.spec.js --project=chromium --reporter=line`.

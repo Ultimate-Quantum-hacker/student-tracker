@@ -211,9 +211,22 @@ export const buildActivityLogsClearFeedbackState = ({
 };
 
 export const buildActivityLogsLoadFeedbackState = ({
-  visibleCount = 0
+  visibleCount = 0,
+  hasActiveFilters = false
 } = {}) => {
   const normalizedVisibleCount = Math.max(0, Number.parseInt(visibleCount, 10) || 0);
+  if (normalizedVisibleCount === 0) {
+    return hasActiveFilters
+      ? {
+          statusMessage: 'No activity logs match the current filters.',
+          statusType: 'warning'
+        }
+      : {
+          statusMessage: 'No activity logs available.',
+          statusType: 'warning'
+        };
+  }
+
   return {
     statusMessage: `Loaded ${normalizedVisibleCount} log entr${normalizedVisibleCount === 1 ? 'y' : 'ies'}.`,
     statusType: 'success'

@@ -145,6 +145,7 @@ const state = {
   toastTimer: null,
   userSearchDebounceTimer: null,
   globalSearchDebounceTimer: null,
+  activitySearchDebounceTimer: null,
   adminStudentsSearchDebounceTimer: null,
   pendingConfirmResolver: null,
   pendingConfirmAction: null,
@@ -200,10 +201,12 @@ const dom = {
   activityStatus: document.getElementById('activity-status'),
   activityLoading: document.getElementById('activity-loading'),
   activityBody: document.getElementById('activity-table-body'),
+  activitySearchInput: document.getElementById('activity-search-input'),
   activityUserFilter: document.getElementById('activity-user-filter'),
   activityClassFilter: document.getElementById('activity-class-filter'),
   activityActionFilter: document.getElementById('activity-action-filter'),
   activitySortFilter: document.getElementById('activity-sort-filter'),
+  clearActivityFiltersBtn: document.getElementById('clear-activity-filters-btn'),
   refreshActivityBtn: document.getElementById('refresh-activity-btn'),
   clearActivityBtn: document.getElementById('clear-activity-btn'),
   overviewSection: document.getElementById('admin-section-overview'),
@@ -649,14 +652,16 @@ const populateActivityClassFilter = (entries = []) => {
   dom.activityClassFilter.value = selectedValue;
 };
 
-const renderActivityLogTable = (entries = []) => {
+const renderActivityLogTable = (entries = [], {
+  hasActiveFilters = false
+} = {}) => {
   if (!dom.activityBody) return;
   const visibleEntries = getVisibleActivityEntries(entries);
   if (!visibleEntries.length) {
     dom.activityBody.innerHTML = buildEmptyTableRowMarkup({
       columnCount: 5,
       icon: '🧾',
-      message: 'No activity recorded.'
+      message: hasActiveFilters ? 'No activity logs match the current filters.' : 'No activity recorded.'
     });
     return;
   }
@@ -743,6 +748,23 @@ const populateActivityUserFilter = () => {
 
   dom.activityUserFilter.innerHTML = optionMarkup;
   dom.activityUserFilter.value = selectedValue;
+};
+
+const getActivityFilterState = () => {
+  return buildActivityLogsQueryState({
+    searchTerm: dom.activitySearchInput?.value || '',
+    userId: dom.activityUserFilter?.value || '',
+    classKey: dom.activityClassFilter?.value || '',
+    action: dom.activityActionFilter?.value || '',
+    sort: dom.activitySortFilter?.value || 'desc'
+  });
+};
+
+const updateActivityFilterControls = () => {
+  const { hasActiveFilters } = getActivityFilterState();
+  if (dom.clearActivityFiltersBtn) {
+    dom.clearActivityFiltersBtn.disabled = !hasActiveFilters;
+  }
 };
 
 const fetchUsers = async () => {
@@ -988,14 +1010,10 @@ const loadActivityLogs = async () => {
     selectedUserId,
     selectedClassKey,
     selectedAction,
+    selectedSearchTerm,
     selectedSort,
     activityLogsCacheKey
-  } = buildActivityLogsQueryState({
-    userId: dom.activityUserFilter?.value || '',
-    classKey: dom.activityClassFilter?.value || '',
-    action: dom.activityActionFilter?.value || '',
-    sort: dom.activitySortFilter?.value || 'desc'
-  });
+  } = getActivityFilterState();
 
   setElementVisibility(dom.activityLoading, true);
   setSectionLoadingState(dom.activitySection, true);
@@ -1020,22 +1038,35 @@ const loadActivityLogs = async () => {
       entriesForClassFilter,
       filteredEntries
     } = filterAdminActivityEntries(entries, {
+      searchTerm: selectedSearchTerm,
       selectedAction,
       selectedClassKey
     });
 
     populateActivityClassFilter(entriesForClassFilter);
 
-    entries = filteredEntries;
+    const resolvedSelectedClassKey = dom.activityClassFilter?.value || '';
+    entries = resolvedSelectedClassKey === selectedClassKey
+      ? filteredEntries
+      : filterAdminActivityEntries(entries, {
+          searchTerm: selectedSearchTerm,
+          selectedAction,
+          selectedClassKey: resolvedSelectedClassKey
+        }).filteredEntries;
+    const hasActiveFilters = Boolean(selectedUserId || resolvedSelectedClassKey || selectedAction || selectedSearchTerm);
 
     state.activityLogs = entries;
     state.activityLogsLoaded = true;
-    renderActivityLogTable(entries);
+    renderActivityLogTable(entries, {
+      hasActiveFilters
+    });
     const visibleCount = getVisibleActivityEntries(entries).length;
     const loadFeedbackState = buildActivityLogsLoadFeedbackState({
-      visibleCount
+      visibleCount,
+      hasActiveFilters
     });
     setActivityStatus(loadFeedbackState.statusMessage, loadFeedbackState.statusType);
+    updateActivityFilterControls();
     markUpdatedNow();
   } catch (error) {
     console.error('Failed to load activity logs:', error);
@@ -1084,6 +1115,7 @@ const handleClearActivityLogs = async () => {
     invalidateAdminRuntimeCache('activityLogs');
     renderActivityLogTable([]);
     populateActivityClassFilter([]);
+    updateActivityFilterControls();
     const clearFeedbackState = buildActivityLogsClearFeedbackState({
       clearedCount
     });
@@ -1252,19 +1284,51 @@ const bindEvents = () => {
     await handleClearActivityLogs();
   });
 
+  dom.clearActivityFiltersBtn?.addEventListener('click', async () => {
+    if (dom.activitySearchInput) {
+      dom.activitySearchInput.value = '';
+    }
+    if (dom.activityUserFilter) {
+      dom.activityUserFilter.value = '';
+    }
+    if (dom.activityClassFilter) {
+      dom.activityClassFilter.value = '';
+    }
+    if (dom.activityActionFilter) {
+      dom.activityActionFilter.value = '';
+    }
+    if (dom.activitySortFilter) {
+      dom.activitySortFilter.value = 'desc';
+    }
+    updateActivityFilterControls();
+    await loadActivityLogs();
+    dom.activitySearchInput?.focus();
+  });
+
   dom.activityUserFilter?.addEventListener('change', async () => {
+    updateActivityFilterControls();
     await loadActivityLogs();
   });
 
   dom.activityClassFilter?.addEventListener('change', async () => {
+    updateActivityFilterControls();
     await loadActivityLogs();
   });
 
   dom.activityActionFilter?.addEventListener('change', async () => {
+    updateActivityFilterControls();
     await loadActivityLogs();
   });
 
+  dom.activitySearchInput?.addEventListener('input', () => {
+    updateActivityFilterControls();
+    debounceAdminTask('activitySearchDebounceTimer', async () => {
+      await loadActivityLogs();
+    });
+  });
+
   dom.activitySortFilter?.addEventListener('change', async () => {
+    updateActivityFilterControls();
     await loadActivityLogs();
   });
 
@@ -1390,6 +1454,8 @@ const init = async () => {
       populateActivityClassFilter([]);
       setActivityStatus(activityLogsIdleFeedbackState.statusMessage, activityLogsIdleFeedbackState.statusType);
     }
+
+    updateActivityFilterControls();
 
     const initSuccessFeedbackState = buildAdminInitSuccessFeedbackState();
     showToast(initSuccessFeedbackState.toastMessage, initSuccessFeedbackState.toastType);

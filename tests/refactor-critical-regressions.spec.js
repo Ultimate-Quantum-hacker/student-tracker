@@ -561,6 +561,25 @@ test.describe('Class refactor critical regressions', () => {
     expect(result.hasLegacyScoreKey).toBe(false);
   });
 
+  test('new teacher root metadata writes bootstrap a compliant user profile before class writes', async () => {
+    const dbSource = readWorkspaceFile('services/db.js');
+    const rulesSource = readWorkspaceFile('firestore.rules');
+
+    expect(rulesSource).toContain('function ownerCanCreateOwnUserDoc(userId) {');
+    expect(rulesSource).toContain("request.resource.data.role == 'teacher'");
+    expect(rulesSource).toContain("'createdAt'");
+    expect(dbSource).toContain('const buildUserRootBootstrapPayload = (userId) => {');
+    expect(dbSource).toContain("role: 'teacher'");
+    expect(dbSource).toContain('const ensureUserRootProfileDocument = async (userId) => {');
+    expect(dbSource).toContain("if (getCurrentUserRoleContext() !== 'teacher') {");
+    expect(dbSource).toContain('await setDoc(userRootRef, bootstrapPayload, { merge: true });');
+    expect(dbSource).toContain('const mergeUserRootMetadata = async (userId, patch = {}) => {');
+    expect(dbSource).toContain('await ensureUserRootProfileDocument(normalizedUserId);');
+    expect(dbSource).toContain('export const createClass = async (className) => {');
+    expect(dbSource).toContain('await mergeUserRootMetadata(userId, {');
+    expect(dbSource).toContain('[ALLOW_EMPTY_CLASS_CATALOG_FIELD]: false');
+  });
+
   test('teacher score entry UI emits subject id keyed payloads', async ({ page }) => {
     const result = await page.evaluate(async () => {
       const [stateModule, uiModule, studentsModule] = await Promise.all([
@@ -733,6 +752,389 @@ test.describe('Class refactor critical regressions', () => {
       notes: ''
     });
     expect(result.toast).toContain('Student added');
+  });
+
+  test('bulk import summarizes duplicate and invalid rows before importing unique students', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const [stateModule, studentsModule] = await Promise.all([
+        import('/js/state.js'),
+        import('/js/students.js')
+      ]);
+
+      const app = stateModule.default || window.TrackerApp;
+      const students = studentsModule.default || app.students;
+      const toasts = [];
+      const confirmMessages = [];
+      const addedPayloads = [];
+      const snapshotNames = [];
+      let refreshCount = 0;
+      const originalConfirm = window.confirm;
+
+      window.confirm = (message) => {
+        confirmMessages.push(String(message || ''));
+        return true;
+      };
+
+      try {
+        app.state.students = [
+          { id: 'student_existing_1', name: 'Existing Student' }
+        ];
+        app.snapshots = {
+          saveSnapshot: (name) => {
+            snapshotNames.push(String(name || ''));
+            return { id: 'snapshot_bulk_import' };
+          }
+        };
+        app.addStudent = async (payload) => {
+          addedPayloads.push(payload);
+          return { id: `student_${addedPayloads.length}`, ...payload };
+        };
+
+        const ui = {
+          showToast: (message) => {
+            toasts.push(String(message || ''));
+          },
+          refreshUI: () => {
+            refreshCount += 1;
+          },
+          withLoader: async (callback) => callback()
+        };
+
+        const importResult = await students.bulkImport('Alice\nAlice\nExisting Student\nBad123\nBob,,Has,comma', app, ui);
+
+        return {
+          importResult,
+          toasts,
+          confirmMessages,
+          addedPayloads,
+          snapshotNames,
+          refreshCount
+        };
+      } finally {
+        window.confirm = originalConfirm;
+      }
+    });
+
+    expect(result.importResult).toMatchObject({
+      importedCount: 3,
+      failedRows: [],
+      stoppedEarly: false
+    });
+    expect(result.confirmMessages[0]).toContain('Import 3 students into the active class?');
+    expect(result.confirmMessages[0]).toContain('1 duplicate row will be skipped');
+    expect(result.confirmMessages[0]).toContain('1 invalid row will be skipped');
+    expect(result.confirmMessages[0]).toContain('1 existing-name match will still be added');
+    expect(result.addedPayloads).toEqual([
+      { name: 'Alice', class: '', notes: '', scores: {} },
+      { name: 'Existing Student', class: '', notes: '', scores: {} },
+      { name: 'Bob', class: '', notes: 'Has,comma', scores: {} }
+    ]);
+    expect(result.snapshotNames).toEqual(['Auto Backup Before Bulk Student Import']);
+    expect(result.refreshCount).toBe(1);
+    expect(result.toasts[result.toasts.length - 1]).toContain('3 students imported');
+    expect(result.toasts[result.toasts.length - 1]).toContain('1 duplicate row skipped');
+    expect(result.toasts[result.toasts.length - 1]).toContain('1 invalid row skipped');
+    expect(result.toasts[result.toasts.length - 1]).toContain('1 existing-name match added separately');
+  });
+
+  test('bulk import reports partial failures while continuing remaining rows', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const [stateModule, studentsModule] = await Promise.all([
+        import('/js/state.js'),
+        import('/js/students.js')
+      ]);
+
+      const app = stateModule.default || window.TrackerApp;
+      const students = studentsModule.default || app.students;
+      const toasts = [];
+      const addedPayloads = [];
+      let refreshCount = 0;
+      const originalConfirm = window.confirm;
+
+      window.confirm = () => true;
+
+      try {
+        app.state.students = [];
+        app.snapshots = {
+          saveSnapshot: () => ({ id: 'snapshot_bulk_import_partial' })
+        };
+        app.addStudent = async (payload) => {
+          if (payload.name === 'Broken Row') {
+            throw new Error('Network down');
+          }
+          addedPayloads.push(payload);
+          return { id: `student_${addedPayloads.length}`, ...payload };
+        };
+
+        const ui = {
+          showToast: (message) => {
+            toasts.push(String(message || ''));
+          },
+          refreshUI: () => {
+            refreshCount += 1;
+          },
+          withLoader: async (callback) => callback()
+        };
+
+        const importResult = await students.bulkImport('Alpha\nBroken Row\nGamma', app, ui);
+
+        return {
+          importResult,
+          toasts,
+          addedPayloads,
+          refreshCount
+        };
+      } finally {
+        window.confirm = originalConfirm;
+      }
+    });
+
+    expect(result.importResult).toMatchObject({
+      importedCount: 2,
+      stoppedEarly: false
+    });
+    expect(result.importResult.failedRows).toHaveLength(1);
+    expect(result.importResult.failedRows[0]).toMatchObject({
+      name: 'Broken Row',
+      message: 'Network down'
+    });
+    expect(result.addedPayloads).toEqual([
+      { name: 'Alpha', class: '', notes: '', scores: {} },
+      { name: 'Gamma', class: '', notes: '', scores: {} }
+    ]);
+    expect(result.refreshCount).toBe(1);
+    expect(result.toasts[result.toasts.length - 1]).toContain('2 students imported');
+    expect(result.toasts[result.toasts.length - 1]).toContain('1 row failed (Broken Row)');
+  });
+
+  test('bulk import modal preview summarizes pasted rows and disables confirm when nothing is importable', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const [stateModule, uiModule, studentsModule] = await Promise.all([
+        import('/js/state.js'),
+        import('/js/ui.js'),
+        import('/js/students.js')
+      ]);
+
+      const app = stateModule.default || window.TrackerApp;
+      const ui = uiModule.default || app.ui;
+      const students = studentsModule.default || app.students;
+
+      document.body.innerHTML = `
+        <div id="toast"></div>
+        <div class="global-class-switcher"><div class="class-switcher-main">
+          <button id="class-prev-btn" type="button"></button>
+          <div id="class-dropdown" class="class-dropdown">
+            <button id="class-dropdown-toggle" type="button"><span id="class-dropdown-value"></span></button>
+            <div id="class-dropdown-menu" class="class-dropdown-menu"></div>
+          </div>
+          <button id="class-next-btn" type="button"></button>
+          <button id="create-class-btn" type="button"></button>
+          <button id="delete-class-btn" type="button"></button>
+        </div><p id="class-name-display"></p></div>
+        <div id="admin-readonly-banner" hidden><span id="admin-readonly-label"></span></div>
+        <div id="empty-msg"></div>
+        <form id="add-student-form"><input id="student-name-input" /><button type="submit">Add</button></form>
+        <form id="addMockForm"><input id="mockNameInput" /><button type="submit">Add Exam</button></form>
+        <form id="addSubjectForm"><input id="subjectNameInput" /><button type="submit">Add Subject</button></form>
+        <button id="bulk-import-btn" type="button">Bulk Add</button>
+        <div id="bulk-import-modal" class="modal-overlay"><div class="modal"><textarea id="bulk-import-textarea"></textarea><p id="bulk-import-summary"></p><button id="bulk-import-cancel-btn" type="button">Cancel</button><button id="bulk-import-confirm-btn" type="button">Add All</button></div></div>
+        <div id="mockList"></div>
+        <div id="subjectList"></div>
+      `;
+
+      app.students = students;
+      ui.init();
+      ui.bindEvents();
+
+      app.setCurrentUserRole('teacher', { resolved: true });
+      app.state.isLoading = false;
+      app.state.classes = [
+        { id: 'class_teacher', name: 'Teacher Class', ownerId: 'owner_teacher', ownerName: 'Teacher Owner' }
+      ];
+      app.state.currentClassId = 'class_teacher';
+      app.state.currentClassOwnerId = 'owner_teacher';
+      app.state.students = [
+        { id: 'student_existing_1', name: 'Existing Student' }
+      ];
+      app.syncDataContext();
+
+      const openButton = document.getElementById('bulk-import-btn');
+      const textarea = document.getElementById('bulk-import-textarea');
+      const summary = document.getElementById('bulk-import-summary');
+      const confirmButton = document.getElementById('bulk-import-confirm-btn');
+
+      openButton.click();
+      const initialSummary = summary.textContent;
+      const initialDisabled = Boolean(confirmButton.disabled);
+
+      textarea.value = 'Alice\nAlice\nExisting Student\nBad123';
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      const populatedSummary = summary.textContent;
+      const populatedDisabled = Boolean(confirmButton.disabled);
+
+      textarea.value = 'Bad123';
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+
+      return {
+        initialSummary,
+        initialDisabled,
+        populatedSummary,
+        populatedDisabled,
+        invalidOnlySummary: summary.textContent,
+        invalidOnlyDisabled: Boolean(confirmButton.disabled)
+      };
+    });
+
+    expect(result.initialSummary).toBe('Paste names to preview the import summary.');
+    expect(result.initialDisabled).toBe(true);
+    expect(result.populatedSummary).toContain('2 students ready to import');
+    expect(result.populatedSummary).toContain('1 duplicate row will be skipped');
+    expect(result.populatedSummary).toContain('1 invalid row will be skipped');
+    expect(result.populatedSummary).toContain('1 existing-name match will still be added');
+    expect(result.populatedDisabled).toBe(false);
+    expect(result.invalidOnlySummary).toContain('No importable students found');
+    expect(result.invalidOnlySummary).toContain('1 invalid row will be skipped');
+    expect(result.invalidOnlyDisabled).toBe(true);
+  });
+
+  test('bulk import accepts tab-separated spreadsheet rows with a header row', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const [stateModule, studentsModule] = await Promise.all([
+        import('/js/state.js'),
+        import('/js/students.js')
+      ]);
+
+      const app = stateModule.default || window.TrackerApp;
+      const students = studentsModule.default || app.students;
+      const confirmMessages = [];
+      const addedPayloads = [];
+      const originalConfirm = window.confirm;
+
+      window.confirm = (message) => {
+        confirmMessages.push(String(message || ''));
+        return true;
+      };
+
+      try {
+        app.state.students = [];
+        app.snapshots = {
+          saveSnapshot: () => ({ id: 'snapshot_bulk_import_spreadsheet' })
+        };
+        app.addStudent = async (payload) => {
+          addedPayloads.push(payload);
+          return { id: `student_${addedPayloads.length}`, ...payload };
+        };
+
+        const ui = {
+          showToast: () => {},
+          refreshUI: () => {},
+          withLoader: async (callback) => callback()
+        };
+
+        const importResult = await students.bulkImport('Name\tClass\tNotes\nAda\tA1\tTop performer\nBen\tA1\tNeeds support', app, ui);
+
+        return {
+          importResult,
+          confirmMessages,
+          addedPayloads
+        };
+      } finally {
+        window.confirm = originalConfirm;
+      }
+    });
+
+    expect(result.importResult).toMatchObject({
+      importedCount: 2,
+      failedRows: [],
+      stoppedEarly: false
+    });
+    expect(result.confirmMessages[0]).toContain('Import 2 students into the active class?');
+    expect(result.addedPayloads).toEqual([
+      { name: 'Ada', class: 'A1', notes: 'Top performer', scores: {} },
+      { name: 'Ben', class: 'A1', notes: 'Needs support', scores: {} }
+    ]);
+  });
+
+  test('bulk import file loading fills the modal and refreshes the preview summary', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const [stateModule, uiModule, studentsModule] = await Promise.all([
+        import('/js/state.js'),
+        import('/js/ui.js'),
+        import('/js/students.js')
+      ]);
+
+      const app = stateModule.default || window.TrackerApp;
+      const ui = uiModule.default || app.ui;
+      const students = studentsModule.default || app.students;
+      const toasts = [];
+
+      document.body.innerHTML = `
+        <div id="toast"></div>
+        <div class="global-class-switcher"><div class="class-switcher-main">
+          <button id="class-prev-btn" type="button"></button>
+          <div id="class-dropdown" class="class-dropdown">
+            <button id="class-dropdown-toggle" type="button"><span id="class-dropdown-value"></span></button>
+            <div id="class-dropdown-menu" class="class-dropdown-menu"></div>
+          </div>
+          <button id="class-next-btn" type="button"></button>
+          <button id="create-class-btn" type="button"></button>
+          <button id="delete-class-btn" type="button"></button>
+        </div><p id="class-name-display"></p></div>
+        <div id="admin-readonly-banner" hidden><span id="admin-readonly-label"></span></div>
+        <div id="empty-msg"></div>
+        <form id="add-student-form"><input id="student-name-input" /><button type="submit">Add</button></form>
+        <form id="addMockForm"><input id="mockNameInput" /><button type="submit">Add Exam</button></form>
+        <form id="addSubjectForm"><input id="subjectNameInput" /><button type="submit">Add Subject</button></form>
+        <button id="bulk-import-btn" type="button">Bulk Add</button>
+        <div id="bulk-import-modal" class="modal-overlay"><div class="modal"><input id="bulk-import-file-input" type="file"><textarea id="bulk-import-textarea"></textarea><p id="bulk-import-summary"></p><button id="bulk-import-cancel-btn" type="button">Cancel</button><button id="bulk-import-confirm-btn" type="button">Add All</button></div></div>
+        <div id="mockList"></div>
+        <div id="subjectList"></div>
+      `;
+
+      app.students = students;
+      ui.init();
+      ui.bindEvents();
+      ui.showToast = (message) => {
+        toasts.push(String(message || ''));
+      };
+
+      app.setCurrentUserRole('teacher', { resolved: true });
+      app.state.isLoading = false;
+      app.state.classes = [
+        { id: 'class_teacher', name: 'Teacher Class', ownerId: 'owner_teacher', ownerName: 'Teacher Owner' }
+      ];
+      app.state.currentClassId = 'class_teacher';
+      app.state.currentClassOwnerId = 'owner_teacher';
+      app.state.students = [];
+      app.syncDataContext();
+
+      const input = document.getElementById('bulk-import-file-input');
+      const textarea = document.getElementById('bulk-import-textarea');
+      const summary = document.getElementById('bulk-import-summary');
+      const confirmButton = document.getElementById('bulk-import-confirm-btn');
+      const file = {
+        name: 'students.tsv',
+        text: async () => 'Name\tClass\tNotes\nAma\tA1\tExcellent\nKojo\tA1\tImproving'
+      };
+      Object.defineProperty(input, 'files', {
+        configurable: true,
+        value: [file]
+      });
+
+      await input.onchange();
+
+      return {
+        textareaValue: textarea.value,
+        summary: summary.textContent,
+        confirmDisabled: Boolean(confirmButton.disabled),
+        toasts
+      };
+    });
+
+    expect(result.textareaValue).toContain('Ama\tA1\tExcellent');
+    expect(result.summary).toContain('2 students ready to import');
+    expect(result.confirmDisabled).toBe(false);
+    expect(result.toasts[result.toasts.length - 1]).toBe('Loaded students.tsv');
   });
 
   test('teacher can add subject end-to-end via UI submit', async ({ page }) => {
@@ -1075,6 +1477,132 @@ test.describe('Class refactor critical regressions', () => {
     expect(result.loadCalls).toEqual([{ classId: 'class_shared', ownerId: 'owner_two' }]);
   });
 
+  test('workflow tools follow the teacher admin developer capability matrix', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const [stateModule, uiModule] = await Promise.all([
+        import('/js/state.js'),
+        import('/js/ui.js')
+      ]);
+
+      const app = stateModule.default || window.TrackerApp;
+      const ui = uiModule.default || app.ui;
+
+      const renderRoleDom = () => {
+        document.body.innerHTML = `
+          <div id="toast"></div>
+          <div id="auth-role-badge"></div>
+          <div class="global-class-switcher"></div>
+          <button id="create-class-btn" type="button"></button>
+          <button id="delete-class-btn" type="button"></button>
+          <div id="backupStatus"></div>
+          <div id="system-tools-backup-status"><span id="system-tools-backup-status-text"></span></div>
+          <button id="backup-btn" type="button"></button>
+          <button id="restore-btn" type="button"></button>
+          <input id="restore-input" type="file">
+          <button id="create-snapshot-btn" type="button"></button>
+          <button id="snapshot-manager-btn" type="button"></button>
+          <button id="reset-btn" type="button"></button>
+          <button id="system-create-restore-point-btn" type="button"></button>
+          <button id="system-restore-points-btn" type="button"></button>
+          <button id="system-export-data-btn" type="button"></button>
+          <button id="system-import-data-btn" type="button"></button>
+          <button id="system-reset-btn" type="button"></button>
+          <button id="export-csv-btn" type="button"></button>
+          <button id="export-excel-btn" type="button"></button>
+          <button id="report-export-pdf-btn" type="button"></button>
+          <button id="report-export-all-pdf-btn" type="button"></button>
+          <button id="admin-dashboard-btn" type="button"></button>
+        `;
+        ui.initDOM();
+      };
+
+      const snapshotRole = (role) => {
+        renderRoleDom();
+        app.state.authUser = { uid: `${role}_uid` };
+        app.setCurrentUserRole(role, { resolved: true });
+        ui.updateRoleBasedUIAccess();
+
+        return {
+          role,
+          headerBackupStatus: Boolean(document.getElementById('backupStatus')),
+          sidebarBackupStatus: Boolean(document.getElementById('system-tools-backup-status')),
+          backup: Boolean(document.getElementById('backup-btn')),
+          restore: Boolean(document.getElementById('restore-btn')),
+          restoreInput: Boolean(document.getElementById('restore-input')),
+          restorePoints: Boolean(document.getElementById('create-snapshot-btn')) && Boolean(document.getElementById('snapshot-manager-btn')),
+          reset: Boolean(document.getElementById('reset-btn')),
+          systemExport: Boolean(document.getElementById('system-export-data-btn')),
+          systemImport: Boolean(document.getElementById('system-import-data-btn')),
+          systemRestorePoints: Boolean(document.getElementById('system-create-restore-point-btn')) && Boolean(document.getElementById('system-restore-points-btn')),
+          systemReset: Boolean(document.getElementById('system-reset-btn')),
+          resultsExport: Boolean(document.getElementById('export-csv-btn')) && Boolean(document.getElementById('export-excel-btn')),
+          reportExport: Boolean(document.getElementById('report-export-pdf-btn')) && Boolean(document.getElementById('report-export-all-pdf-btn')),
+          adminPanel: Boolean(document.getElementById('admin-dashboard-btn'))
+        };
+      };
+
+      return {
+        teacher: snapshotRole('teacher'),
+        admin: snapshotRole('admin'),
+        developer: snapshotRole('developer')
+      };
+    });
+
+    expect(result.teacher).toEqual({
+      role: 'teacher',
+      headerBackupStatus: true,
+      sidebarBackupStatus: true,
+      backup: true,
+      restore: true,
+      restoreInput: true,
+      restorePoints: true,
+      reset: true,
+      systemExport: true,
+      systemImport: true,
+      systemRestorePoints: true,
+      systemReset: true,
+      resultsExport: true,
+      reportExport: true,
+      adminPanel: false
+    });
+
+    expect(result.admin).toEqual({
+      role: 'admin',
+      headerBackupStatus: true,
+      sidebarBackupStatus: true,
+      backup: true,
+      restore: false,
+      restoreInput: false,
+      restorePoints: false,
+      reset: false,
+      systemExport: true,
+      systemImport: false,
+      systemRestorePoints: false,
+      systemReset: false,
+      resultsExport: true,
+      reportExport: true,
+      adminPanel: true
+    });
+
+    expect(result.developer).toEqual({
+      role: 'developer',
+      headerBackupStatus: true,
+      sidebarBackupStatus: true,
+      backup: true,
+      restore: true,
+      restoreInput: true,
+      restorePoints: true,
+      reset: true,
+      systemExport: true,
+      systemImport: true,
+      systemRestorePoints: true,
+      systemReset: true,
+      resultsExport: true,
+      reportExport: true,
+      adminPanel: true
+    });
+  });
+
   test('admin write remains blocked in UI submit path', async ({ page }) => {
     const result = await page.evaluate(async () => {
       const [stateModule, uiModule, studentsModule] = await Promise.all([
@@ -1265,6 +1793,140 @@ test.describe('Class refactor critical regressions', () => {
     expect(uiSource).toContain("formatFixedOrFallback: function (value, decimals = 1, fallback = '—') {");
     expect(dbSource).toContain('const normalizeLogScalar = (value, fallback = \'\') => {');
     expect(dbSource).toContain('const timestampIso = getActivityLogTimestampIso(payload);');
+  });
+
+  test('admin activity logs support text search with filter-aware empty feedback', async ({ page }) => {
+    const adminSource = readWorkspaceFile('admin.html');
+    const adminJsSource = readWorkspaceFile('js/admin.js');
+    const activityFilterSource = readWorkspaceFile('js/admin-activity-filter-utils.js');
+    const activityUtilsSource = readWorkspaceFile('js/admin-activity-utils.js');
+
+    expect(adminSource).toContain('id="activity-search-input"');
+    expect(adminJsSource).toContain("searchTerm: dom.activitySearchInput?.value || ''");
+    expect(adminJsSource).toContain("debounceAdminTask('activitySearchDebounceTimer'");
+    expect(activityFilterSource).toContain('const buildActivitySearchHaystack = (entry = {}) => {');
+    expect(activityUtilsSource).toContain("statusMessage: 'No activity logs match the current filters.'");
+
+    const result = await page.evaluate(async () => {
+      const activityFilterModule = await import('/js/admin-activity-filter-utils.js');
+      const activityUtilsModule = await import('/js/admin-activity-utils.js');
+      const entries = [
+        {
+          action: 'student_added',
+          targetLabel: 'Ama Mensah',
+          userEmail: 'teacher1@example.com',
+          className: 'Math A',
+          ownerName: 'Teacher One',
+          classId: 'class_a',
+          ownerId: 'owner_1',
+          dataOwnerUserId: 'owner_1'
+        },
+        {
+          action: 'student_deleted',
+          targetLabel: 'Kojo Owusu',
+          userEmail: 'teacher2@example.com',
+          className: 'Science B',
+          ownerName: 'Teacher Two',
+          classId: 'class_b',
+          ownerId: 'owner_2',
+          dataOwnerUserId: 'owner_2'
+        }
+      ];
+
+      const targetFiltered = activityFilterModule.filterAdminActivityEntries(entries, {
+        searchTerm: 'ama'
+      });
+      const classFiltered = activityFilterModule.filterAdminActivityEntries(entries, {
+        searchTerm: 'science b',
+        selectedClassKey: 'owner_2::class_b'
+      });
+      const userFiltered = activityFilterModule.filterAdminActivityEntries(entries, {
+        searchTerm: 'teacher2@example.com'
+      });
+      const noMatchFeedback = activityUtilsModule.buildActivityLogsLoadFeedbackState({
+        visibleCount: 0,
+        hasActiveFilters: true
+      });
+
+      return {
+        targetFilteredCount: targetFiltered.filteredEntries.length,
+        targetClassOptionCount: targetFiltered.entriesForClassFilter.length,
+        classFilteredCount: classFiltered.filteredEntries.length,
+        classFilteredAction: classFiltered.filteredEntries[0]?.action || '',
+        userFilteredCount: userFiltered.filteredEntries.length,
+        noMatchStatus: noMatchFeedback.statusMessage,
+        noMatchType: noMatchFeedback.statusType
+      };
+    });
+
+    expect(result.targetFilteredCount).toBe(1);
+    expect(result.targetClassOptionCount).toBe(1);
+    expect(result.classFilteredCount).toBe(1);
+    expect(result.classFilteredAction).toBe('student_deleted');
+    expect(result.userFilteredCount).toBe(1);
+    expect(result.noMatchStatus).toBe('No activity logs match the current filters.');
+    expect(result.noMatchType).toBe('warning');
+  });
+
+  test('admin activity log clear filters reset all criteria and shared active-filter state', async ({ page }) => {
+    const adminSource = readWorkspaceFile('admin.html');
+    const adminJsSource = readWorkspaceFile('js/admin.js');
+    const activityFilterSource = readWorkspaceFile('js/admin-activity-filter-utils.js');
+
+    expect(adminSource).toContain('id="clear-activity-filters-btn"');
+    expect(adminJsSource).toContain('const updateActivityFilterControls = () => {');
+    expect(adminJsSource).toContain("dom.clearActivityFiltersBtn?.addEventListener('click', async () => {");
+    expect(adminJsSource).toContain("dom.activitySearchInput.value = '';");
+    expect(adminJsSource).toContain("dom.activityUserFilter.value = '';");
+    expect(adminJsSource).toContain("dom.activityClassFilter.value = '';");
+    expect(adminJsSource).toContain("dom.activityActionFilter.value = '';");
+    expect(adminJsSource).toContain("dom.activitySortFilter.value = 'desc';");
+    expect(adminJsSource).toContain('updateActivityFilterControls();');
+    expect(adminJsSource).toContain('await loadActivityLogs();');
+    expect(activityFilterSource).toContain("hasActiveFilters: Boolean(normalizedUserId || normalizedClassKey || normalizedAction || normalizedSearchTerm || normalizedSort !== 'desc')");
+
+    const result = await page.evaluate(async () => {
+      const activityFilterModule = await import('/js/admin-activity-filter-utils.js');
+      const inactiveQuery = activityFilterModule.buildActivityLogsQueryState();
+      const searchQuery = activityFilterModule.buildActivityLogsQueryState({
+        searchTerm: '  Ama  '
+      });
+      const userQuery = activityFilterModule.buildActivityLogsQueryState({
+        userId: ' teacher_1 '
+      });
+      const sortQuery = activityFilterModule.buildActivityLogsQueryState({
+        sort: 'asc'
+      });
+      const resetQuery = activityFilterModule.buildActivityLogsQueryState({
+        searchTerm: '',
+        userId: '',
+        classKey: '',
+        action: '',
+        sort: 'desc'
+      });
+
+      return {
+        inactiveHasActiveFilters: inactiveQuery.hasActiveFilters,
+        searchHasActiveFilters: searchQuery.hasActiveFilters,
+        normalizedSearchTerm: searchQuery.selectedSearchTerm,
+        userHasActiveFilters: userQuery.hasActiveFilters,
+        normalizedUserId: userQuery.selectedUserId,
+        sortHasActiveFilters: sortQuery.hasActiveFilters,
+        normalizedSort: sortQuery.selectedSort,
+        resetHasActiveFilters: resetQuery.hasActiveFilters,
+        resetSort: resetQuery.selectedSort
+      };
+    });
+
+    expect(result.inactiveHasActiveFilters).toBe(false);
+    expect(result.searchHasActiveFilters).toBe(true);
+    expect(result.normalizedSearchTerm).toBe('ama');
+    expect(result.userHasActiveFilters).toBe(true);
+    expect(result.normalizedUserId).toBe('teacher_1');
+    expect(result.sortHasActiveFilters).toBe(true);
+    expect(result.normalizedSort).toBe('asc');
+    expect(result.resetHasActiveFilters).toBe(false);
+    expect(result.resetSort).toBe('desc');
   });
 
   test('admin student registry global reads flow through the service layer', async () => {
