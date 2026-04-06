@@ -1945,6 +1945,23 @@ const ui = {
       if (app.dom.notesModal) app.dom.notesModal.classList.add('active');
     },
 
+    handlePerformanceAnalysisAction: function (action, studentId) {
+      const normalizedAction = String(action || '').trim().toLowerCase();
+      const normalizedStudentId = String(studentId || '').trim();
+      if (!normalizedAction || !normalizedStudentId) {
+        return;
+      }
+
+      if (normalizedAction === 'notes') {
+        this.openNotes(normalizedStudentId);
+        return;
+      }
+
+      if (normalizedAction === 'report') {
+        this.openReport(normalizedStudentId);
+      }
+    },
+
     saveNotes: async function () {
       if (!this.ensureWritableAction('Notes saving')) {
         return;
@@ -3127,6 +3144,22 @@ const ui = {
             const trigger = e.target.closest('[data-performance-category]');
             if (!trigger) return;
             this.openPerformanceCategory(trigger.dataset.performanceCategory);
+          });
+        }
+
+        if (app.dom.performanceFilteredList) {
+          app.dom.performanceFilteredList.addEventListener('click', (e) => {
+            const trigger = e.target.closest('[data-student-action]');
+            if (!trigger) return;
+            this.handlePerformanceAnalysisAction(trigger.dataset.studentAction, trigger.dataset.studentId);
+          });
+        }
+
+        if (app.dom.performanceInterventionNeededList) {
+          app.dom.performanceInterventionNeededList.addEventListener('click', (e) => {
+            const trigger = e.target.closest('[data-student-action]');
+            if (!trigger) return;
+            this.handlePerformanceAnalysisAction(trigger.dataset.studentAction, trigger.dataset.studentId);
           });
         }
 

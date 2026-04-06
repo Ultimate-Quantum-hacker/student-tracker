@@ -188,6 +188,52 @@ const dashboardUi = {
     this.renderPerformanceAnalysisPanel();
   },
 
+  buildPerformanceStudentActionMarkup: function (student = null, options = {}) {
+    const normalizedStudentId = String(student?.id || '').trim();
+    if (!normalizedStudentId) {
+      return '';
+    }
+
+    const normalizedStatusKey = String(options?.statusKey || '').trim().toLowerCase();
+    const hasNotes = Boolean(String(student?.notes || '').trim());
+    const isInterventionStatus = normalizedStatusKey === 'at-risk' || normalizedStatusKey === 'borderline';
+    const notesLabel = this.isReadOnlyRoleContext()
+      ? (isInterventionStatus ? 'View Support Note' : 'View Notes')
+      : isInterventionStatus
+        ? (hasNotes ? 'Update Support Note' : 'Add Support Note')
+        : (hasNotes ? 'View Notes' : 'Add Note');
+
+    return `
+      <div class="performance-analysis-actions">
+        <button type="button" class="btn btn-secondary btn-sm performance-analysis-action" data-student-action="notes" data-student-id="${app.utils.esc(normalizedStudentId)}">${app.utils.esc(notesLabel)}</button>
+        <button type="button" class="btn btn-secondary btn-sm performance-analysis-action" data-student-action="report" data-student-id="${app.utils.esc(normalizedStudentId)}">View Report</button>
+      </div>
+    `;
+  },
+
+  buildPerformanceStudentMetaText: function (student = null, options = {}) {
+    const normalizedLatestExam = String(options?.latestExam || '').trim();
+    const normalizedStatusKey = String(options?.statusKey || '').trim().toLowerCase();
+    const metaParts = [];
+
+    if (normalizedLatestExam) {
+      metaParts.push(`Latest exam: ${normalizedLatestExam}`);
+    }
+
+    const weakestSubject = student?.id
+      ? String(app.analytics.getWeakestSubject(student) || '').trim()
+      : '';
+    if (weakestSubject && weakestSubject !== '—') {
+      metaParts.push(`Weakest: ${weakestSubject}`);
+    }
+
+    if (options?.includeSupportState || normalizedStatusKey === 'at-risk' || normalizedStatusKey === 'borderline') {
+      metaParts.push(String(student?.notes || '').trim() ? 'Support note ready' : 'No support note yet');
+    }
+
+    return metaParts.join(' • ') || 'No exam data yet';
+  },
+
   renderPerformanceAnalysisPanel: function () {
     if (!app.dom.performanceCategorySelect || !app.dom.performanceCategoryCounts || !app.dom.performanceFilteredList || !app.dom.performanceInterventionNeededList) return;
 
@@ -206,6 +252,7 @@ const dashboardUi = {
     app.dom.performanceCategorySelect.value = app.state.selectedPerformanceCategory;
 
     const { groups, latestExam } = app.analytics.groupStudentsByStatus();
+    const studentLookup = new Map((app.state.students || []).map(student => [student.id, student]));
     app.dom.performanceCategoryCounts.innerHTML = categories.map(option => {
       const count = (groups[option.key] || []).length;
       return `<div class="performance-count-chip risk-${option.key}"><span>${option.label}</span><strong>${count}</strong></div>`;
@@ -213,33 +260,64 @@ const dashboardUi = {
 
     const selectedList = groups[app.state.selectedPerformanceCategory] || [];
     const selectedLabel = categories.find(option => option.key === app.state.selectedPerformanceCategory)?.label || 'Category';
-    const selectedRows = selectedList.map(item => `
-      <div class="performance-analysis-item">
-        <div>
-          <div class="performance-analysis-name">${app.utils.esc(item.name)}</div>
-          <div class="performance-analysis-meta">${latestExam ? `Latest exam: ${app.utils.esc(latestExam)}` : 'No exam data yet'}</div>
+    const selectedRows = selectedList.map((item) => {
+      const student = studentLookup.get(item.id) || {
+        id: item.id,
+        name: item.name,
+        notes: ''
+      };
+      const metaText = this.buildPerformanceStudentMetaText(student, {
+        latestExam,
+        statusKey: app.state.selectedPerformanceCategory,
+        includeSupportState: app.state.selectedPerformanceCategory === 'at-risk' || app.state.selectedPerformanceCategory === 'borderline'
+      });
+      return `
+        <div class="performance-analysis-item">
+          <div>
+            <div class="performance-analysis-name">${app.utils.esc(student.name || item.name)}</div>
+            <div class="performance-analysis-meta">${app.utils.esc(metaText)}</div>
+          </div>
+          <div class="performance-analysis-side">
+            <span class="risk-pill status-pill risk-${app.state.selectedPerformanceCategory}">${selectedLabel}</span>
+            <span class="performance-analysis-avg">${item.average !== null && item.average !== undefined ? item.average.toFixed(1) + '%' : 'N/A'}</span>
+            ${this.buildPerformanceStudentActionMarkup(student, {
+              statusKey: app.state.selectedPerformanceCategory
+            })}
+          </div>
         </div>
-        <div class="performance-analysis-side">
-          <span class="risk-pill status-pill risk-${app.state.selectedPerformanceCategory}">${selectedLabel}</span>
-          <span class="performance-analysis-avg">${item.average !== null && item.average !== undefined ? item.average.toFixed(1) + '%' : 'N/A'}</span>
-        </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
 
     app.dom.performanceFilteredList.innerHTML = selectedRows || `<p class="performance-analysis-empty">No students in ${selectedLabel} category.</p>`;
 
-    const interventionRows = (groups['at-risk'] || []).map(item => `
-      <div class="performance-analysis-item intervention">
-        <div>
-          <div class="performance-analysis-name">${app.utils.esc(item.name)}</div>
-          <div class="performance-analysis-meta">Immediate support recommended</div>
+    const interventionRows = (groups['at-risk'] || []).map((item) => {
+      const student = studentLookup.get(item.id) || {
+        id: item.id,
+        name: item.name,
+        notes: ''
+      };
+      const detailText = this.buildPerformanceStudentMetaText(student, {
+        latestExam,
+        statusKey: 'at-risk',
+        includeSupportState: true
+      });
+      const metaText = detailText ? `Immediate support recommended • ${detailText}` : 'Immediate support recommended';
+      return `
+        <div class="performance-analysis-item intervention">
+          <div>
+            <div class="performance-analysis-name">${app.utils.esc(student.name || item.name)}</div>
+            <div class="performance-analysis-meta">${app.utils.esc(metaText)}</div>
+          </div>
+          <div class="performance-analysis-side">
+            <span class="risk-pill status-pill risk-at-risk">Intervention Needed</span>
+            <span class="performance-analysis-avg">${item.average !== null && item.average !== undefined ? item.average.toFixed(1) + '%' : 'N/A'}</span>
+            ${this.buildPerformanceStudentActionMarkup(student, {
+              statusKey: 'at-risk'
+            })}
+          </div>
         </div>
-        <div class="performance-analysis-side">
-          <span class="risk-pill status-pill risk-at-risk">Intervention Needed</span>
-          <span class="performance-analysis-avg">${item.average !== null && item.average !== undefined ? item.average.toFixed(1) + '%' : 'N/A'}</span>
-        </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
     app.dom.performanceInterventionNeededList.innerHTML = interventionRows || '<p class="performance-analysis-empty">No students currently in At Risk category.</p>';
   },
 

@@ -1266,6 +1266,168 @@ test.describe('Class refactor critical regressions', () => {
     expect(result.submittedPayload?.date).toBeTruthy();
   });
 
+  test('performance analysis actions launch supported notes and report workflows', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const [stateModule, uiModule] = await Promise.all([
+        import('/js/state.js'),
+        import('/js/ui.js')
+      ]);
+
+      const app = stateModule.default || window.TrackerApp;
+      const ui = uiModule.default || app.ui;
+
+      document.body.innerHTML = `
+        <div id="toast"></div>
+        <div class="global-class-switcher"><div class="class-switcher-main">
+          <button id="class-prev-btn" type="button"></button>
+          <div id="class-dropdown" class="class-dropdown">
+            <button id="class-dropdown-toggle" type="button"><span id="class-dropdown-value"></span></button>
+            <div id="class-dropdown-menu" class="class-dropdown-menu"></div>
+          </div>
+          <button id="class-next-btn" type="button"></button>
+          <button id="create-class-btn" type="button"></button>
+          <button id="delete-class-btn" type="button"></button>
+        </div><p id="class-name-display"></p></div>
+        <div id="admin-readonly-banner" hidden><span id="admin-readonly-label"></span></div>
+        <div id="empty-msg"></div>
+        <select id="performance-category-select"></select>
+        <div id="performance-category-counts"></div>
+        <div id="performance-filtered-list"></div>
+        <div id="performance-intervention-needed-list"></div>
+        <div id="notes-modal" class="modal-overlay"><div class="modal"><h3 id="notes-modal-title"></h3><textarea id="notes-textarea"></textarea><button id="notes-save-btn" type="button">Save</button><button id="notes-cancel-btn" type="button">Cancel</button></div></div>
+        <div id="report-modal" class="modal-overlay"><button id="report-close-btn" type="button">Close</button><button id="report-print-btn" type="button">Print</button><button id="report-export-pdf-btn" type="button">Export PDF</button><button id="report-export-all-pdf-btn" type="button">Export All</button><span id="report-export-status"></span><div id="report-card-container"></div></div>
+      `;
+
+      ui.init();
+      ui.bindEvents();
+
+      app.setCurrentUserRole('teacher', { resolved: true });
+      app.state.isLoading = false;
+      app.state.selectedPerformanceCategory = 'borderline';
+      app.state.classes = [
+        { id: 'class_teacher', name: 'Teacher Class', ownerId: 'owner_teacher', ownerName: 'Teacher Owner' }
+      ];
+      app.state.currentClassId = 'class_teacher';
+      app.state.currentClassOwnerId = 'owner_teacher';
+      app.state.currentClassName = 'Teacher Class';
+      app.state.students = [
+        { id: 'student_borderline', name: 'Borderline Student', notes: '', scores: {} },
+        { id: 'student_risk', name: 'Risk Student', notes: 'Check homework completion', scores: {} }
+      ];
+      app.state.subjects = [
+        { id: 'subject_math', name: 'Math' },
+        { id: 'subject_english', name: 'English' }
+      ];
+      app.state.exams = [
+        { id: 'exam_1', title: 'Mock 1', name: 'Mock 1' }
+      ];
+      app.syncDataContext();
+      app.heatmap = {
+        renderHeatmap() {}
+      };
+      app.analytics = {
+        ...(app.analytics || {}),
+        getPerformanceCategories() {
+          return [
+            { key: 'strong', label: 'Strong' },
+            { key: 'good', label: 'Good' },
+            { key: 'average', label: 'Average' },
+            { key: 'borderline', label: 'Borderline' },
+            { key: 'at-risk', label: 'At Risk' }
+          ];
+        },
+        groupStudentsByStatus() {
+          return {
+            latestExam: 'Mock 1',
+            groups: {
+              strong: [],
+              good: [],
+              average: [],
+              borderline: [
+                { id: 'student_borderline', name: 'Borderline Student', average: 49.4 }
+              ],
+              'at-risk': [
+                { id: 'student_risk', name: 'Risk Student', average: 35.2 }
+              ]
+            }
+          };
+        },
+        getWeakestSubject(student) {
+          return student?.id === 'student_risk' ? 'Math' : 'English';
+        },
+        calcAverages(student) {
+          if (student?.id === 'student_risk') {
+            return { Math: 35, English: 36 };
+          }
+          return { Math: 52, English: 47 };
+        },
+        getStudentOverallAverage(student) {
+          return student?.id === 'student_risk' ? 35.2 : 49.4;
+        },
+        getLastTwoExams() {
+          return { previousExam: null, latestExam: 'Mock 1' };
+        },
+        getTotal(student) {
+          return student?.id === 'student_risk' ? 35.2 : 49.4;
+        },
+        getStudentStatus(student) {
+          return student?.id === 'student_risk' ? 'at-risk' : 'borderline';
+        },
+        getScore(student, subject) {
+          if (student?.id === 'student_risk') {
+            return subject?.name === 'Math' ? 35 : 36;
+          }
+          return subject?.name === 'Math' ? 52 : 47;
+        }
+      };
+
+      ui.renderPerformanceAnalysisPanel();
+
+      const filteredListText = document.getElementById('performance-filtered-list')?.textContent || '';
+      const interventionListText = document.getElementById('performance-intervention-needed-list')?.textContent || '';
+
+      const interventionNotesButton = document.querySelector('#performance-intervention-needed-list [data-student-action="notes"]');
+      interventionNotesButton?.click();
+      const notesState = {
+        notesId: app.state.notesId,
+        modalActive: document.getElementById('notes-modal')?.classList.contains('active') || false,
+        title: document.getElementById('notes-modal-title')?.textContent || '',
+        value: document.getElementById('notes-textarea')?.value || '',
+        label: interventionNotesButton?.textContent?.trim() || ''
+      };
+
+      document.getElementById('notes-modal')?.classList.remove('active');
+
+      const filteredReportButton = document.querySelector('#performance-filtered-list [data-student-action="report"]');
+      filteredReportButton?.click();
+      const reportState = {
+        modalActive: document.getElementById('report-modal')?.classList.contains('active') || false,
+        text: document.getElementById('report-card-container')?.textContent || ''
+      };
+
+      return {
+        filteredListText,
+        interventionListText,
+        notesState,
+        reportState
+      };
+    });
+
+    expect(result.filteredListText).toContain('Borderline Student');
+    expect(result.filteredListText).toContain('Weakest: English');
+    expect(result.filteredListText).toContain('View Report');
+    expect(result.interventionListText).toContain('Risk Student');
+    expect(result.interventionListText).toContain('Support note ready');
+    expect(result.notesState.label).toBe('Update Support Note');
+    expect(result.notesState.notesId).toBe('student_risk');
+    expect(result.notesState.modalActive).toBe(true);
+    expect(result.notesState.title).toBe('Risk Student');
+    expect(result.notesState.value).toBe('Check homework completion');
+    expect(result.reportState.modalActive).toBe(true);
+    expect(result.reportState.text).toContain('Borderline Student');
+    expect(result.reportState.text).toContain('Teacher Notes');
+  });
+
   test('teacher class controls stay enabled after switching classes', async ({ page }) => {
     const result = await page.evaluate(async () => {
       const [stateModule, uiModule] = await Promise.all([

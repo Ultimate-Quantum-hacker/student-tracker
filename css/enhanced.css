@@ -321,6 +321,8 @@ body.dark-mode{--intervention-bg:rgba(220,38,38,.18);--intervention-border:rgba(
 .performance-analysis-name{font-weight:600;color:var(--text)}
 .performance-analysis-meta{font-size:.78rem;color:var(--text-secondary)}
 .performance-analysis-side{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;justify-content:flex-end}
+.performance-analysis-actions{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap}
+.performance-analysis-action{white-space:nowrap}
 .performance-analysis-avg{font-weight:700;font-size:.82rem}
 .performance-analysis-empty{font-size:.85rem;color:var(--text-secondary);padding:.4rem 0}
 

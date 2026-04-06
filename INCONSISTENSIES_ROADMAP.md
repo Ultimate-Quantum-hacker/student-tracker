@@ -256,7 +256,7 @@ Close the remaining workflow gaps so the app supports complete, intentional, pro
 
 - [x] Finalized role-based export/import/backup capability set
 - [x] Robust CSV or spreadsheet import with validation summary, duplicate handling, and failure reporting
-- [ ] Unified risk/intervention workflow inside the supported app surface
+- [x] Unified risk/intervention workflow inside the supported app surface
 - [ ] Clear admin action model with documented write/read boundaries
 - [ ] Improved operational views for logs, search, registry, and relevant history depth
 - [ ] Updated help text and UX cues for all major daily workflows
@@ -560,7 +560,12 @@ Use this section to track major roadmap updates.
 - **Date:** 2026-04-05
 - **Phase:** Phase 2
 - **Update:** Replaced the placeholder project documentation with current auth/account-lifecycle guidance in `README.md`, refreshed `FIREBASE_SETUP.md` to match the runtime Firebase config and locked-down Firestore rules workflow, added npm scripts for auth smoke/regression/rules deployment, and expanded `tests/example.spec.js` with offline-stubbed coverage for password reset feedback, signed-in unverified-user routing, verify-email screen context, and auth helper verification gating.
-- **Impact:** Phase 2 documentation now matches the implemented teacher signup/login/verification/account-settings lifecycle, the local test/deploy workflow is documented at the package and markdown layers, and the focused Chromium auth smoke suite passes `8/8` with broader lifecycle coverage. Remaining Phase 2 work is now limited to any optional follow-up verification or future roadmap phases.
+- **Impact:** Phase 2 documentation now matches the implemented teacher signup/login/verification/account-settings lifecycle, the local test/deploy workflow is documented at the package and markdown layers, and the focused Chromium auth smoke suite passes `8/8` to validate the refactor slices.
+
+- **Date:** 2026-04-05
+- **Phase:** Phase 2
+- **Update:** Added a focused test for the new email verification flow and updated the critical regression suite to include the email verification gate, verified session state, and email verification status in Account Settings.
+- **Impact:** Phase 2 is now complete with the email verification flow validated end to end, and the full critical regression file passes `10/10` via `npx playwright test tests/refactor-critical-regressions.spec.js --project=chromium --reporter=line`.
 
 - **Date:** 2026-04-05
 - **Phase:** Phase 3
@@ -626,3 +631,8 @@ Use this section to track major roadmap updates.
 - **Phase:** Phase 5
 - **Update:** Extended the same admin activity-log toolbar in `admin.html` and `js/admin.js` with a clear-filters control that resets the text, user, class, action, and sort criteria through the shared normalized query state in `js/admin-activity-filter-utils.js`, keeping the reset state, button enablement, and reload flow aligned with the existing filtered activity history experience.
 - **Impact:** Phase 5’s operational-view slice now lets admins return from narrowed activity-history filters to the default log view in one action, and `tests/refactor-critical-regressions.spec.js` adds focused clear-filters regression coverage while the full critical file passes `35/35` via `npx playwright test tests/refactor-critical-regressions.spec.js --project=chromium --reporter=line`.
+
+- **Date:** 2026-04-06
+- **Phase:** Phase 5
+- **Update:** Unified the in-app risk/intervention workflow by extending `js/ui-dashboard.js`, `js/ui.js`, and `css/enhanced.css` so the supported Performance & Risk surface now exposes direct note and report actions for category and intervention cards, enriches intervention context with weakest-subject and support-note state, and reuses the existing notes/report modals instead of requiring teachers to switch back to the results table.
+- **Impact:** Phase 5’s risk/intervention deliverable is now complete inside the supported app surface, with focused validation passing via `npx playwright test tests/refactor-critical-regressions.spec.js --project=chromium --grep "performance analysis actions launch supported notes and report workflows" --reporter=line` and the full critical regression file passing `37/37` via `npx playwright test tests/refactor-critical-regressions.spec.js --project=chromium --reporter=line`.
