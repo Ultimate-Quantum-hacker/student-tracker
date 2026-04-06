@@ -361,7 +361,6 @@ const students = {
     const s = appRef.state.students.find(x => x.id === uid);
     if (!s) return;
     console.log('Editing student:', uid);
-    console.log('User:', auth?.currentUser?.uid || 'unknown');
     appRef.state.editingId = uid;
     if (appRef.dom.editInput) {
       appRef.dom.editInput.value = s.name;
@@ -394,7 +393,6 @@ const students = {
 
     try {
       console.log('Editing student:', uid);
-      console.log('User:', auth?.currentUser?.uid || 'unknown');
       await appRef.updateStudent(uid, { name: newName });
       appRef.state.editingId = null;
       appRef.dom.editModal?.classList.remove('active');

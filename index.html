@@ -210,7 +210,8 @@
       left: 0;
       width: 100%;
       height: 100%;
-      background: rgba(10, 15, 30, 0.85);
+      padding: 1.5rem;
+      background: radial-gradient(circle at top, rgba(59, 130, 246, 0.14), transparent 42%), rgba(10, 15, 30, 0.82);
       backdrop-filter: blur(8px);
       -webkit-backdrop-filter: blur(8px);
       display: flex;
@@ -220,27 +221,70 @@
     }
 
     .loader-content {
+      width: min(100%, 320px);
       min-width: 220px;
-      padding: 1.4rem 1.6rem;
-      border-radius: 24px;
+      padding: 1.45rem 1.6rem 1.5rem;
+      border-radius: 28px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.45rem;
       text-align: center;
-      background: linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(2, 6, 23, 0.88));
-      border: 1px solid rgba(148, 163, 184, 0.16);
-      box-shadow: 0 24px 80px rgba(2, 6, 23, 0.45);
+      background: linear-gradient(180deg, rgba(15, 23, 42, 0.94), rgba(2, 6, 23, 0.9));
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      box-shadow: 0 28px 80px rgba(2, 6, 23, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    }
+
+    .loader-logo-shell {
+      position: relative;
+      display: grid;
+      place-items: center;
+      width: 88px;
+      height: 88px;
+      margin-bottom: 0.1rem;
+    }
+
+    .loader-orbit {
+      position: absolute;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.24);
+      animation: loader-orbit-spin 3.6s linear infinite;
+    }
+
+    .loader-orbit-outer {
+      inset: 0;
+    }
+
+    .loader-orbit-inner {
+      inset: 12px;
+      opacity: 0.72;
+      animation-duration: 2.4s;
+      animation-direction: reverse;
     }
 
     .loader-logo {
-      width: 70px;
-      height: 70px;
+      position: relative;
+      z-index: 1;
+      width: 64px;
+      height: 64px;
       object-fit: contain;
-      animation: pulse 1.2s infinite ease-in-out;
+      animation: pulse 1.7s infinite ease-in-out;
       filter: drop-shadow(0 0 20px rgba(56, 189, 248, 0.3));
     }
 
+    .loader-status {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: #93c5fd;
+    }
+
     .loader-text {
-      margin-top: 10px;
-      font-size: 14px;
-      color: #cbd5e1;
+      margin-top: 0;
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: #e2e8f0;
       letter-spacing: 0.02em;
     }
 
@@ -253,27 +297,31 @@
     @keyframes pulse {
       0% {
         transform: scale(1);
-        opacity: 0.8;
+        opacity: 0.86;
       }
 
       50% {
-        transform: scale(1.15);
+        transform: scale(1.08);
         opacity: 1;
       }
 
       100% {
         transform: scale(1);
-        opacity: 0.8;
+        opacity: 0.86;
       }
     }
 
-    /* First-time tutorial overlay */
+    @keyframes loader-orbit-spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
     #pwa-tutorial {
+      display: none;
       position: fixed;
       inset: 0;
-      background: rgba(15, 23, 42, 0.86);
-      color: #e5e7eb;
-      display: none;
+      background: rgba(2, 6, 23, 0.78);
       align-items: center;
       justify-content: center;
       z-index: 9998;
@@ -378,7 +426,12 @@
 
   <div id="global-loader" class="global-loader hidden" role="status" aria-live="polite" aria-hidden="true">
     <div class="loader-content">
-      <img src="icons/launchericon-192x192.png" alt="Student Performance Tracker" class="loader-logo">
+      <div class="loader-logo-shell" aria-hidden="true">
+        <span class="loader-orbit loader-orbit-outer"></span>
+        <span class="loader-orbit loader-orbit-inner"></span>
+        <img src="icons/launchericon-192x192.png" alt="Student Performance Tracker" class="loader-logo">
+      </div>
+      <div class="loader-status">Please wait</div>
       <div id="global-loader-text" class="loader-text">Processing...</div>
     </div>
   </div>
@@ -784,7 +837,7 @@
   <div class="modal-overlay" id="edit-modal"><div class="modal"><h3>Edit Name</h3><input type="text" id="edit-name-input" maxlength="60"><div class="modal-actions"><button class="btn btn-secondary" id="edit-cancel-btn">Cancel</button><button class="btn btn-primary" id="edit-save-btn">Save</button></div></div></div>
   <div class="modal-overlay" id="delete-modal"><div class="modal"><h3>Delete Record</h3><p id="delete-confirm-msg">Are you sure?</p><div class="modal-actions"><button class="btn btn-secondary" id="delete-cancel-btn">Cancel</button><button class="btn btn-danger" id="delete-confirm-btn">Delete</button></div></div></div>
   <div class="modal-overlay" id="bulk-class-delete-modal"><div class="modal bulk-class-delete-modal"><div class="bulk-class-delete-header"><div class="bulk-class-delete-heading"><span class="bulk-class-delete-kicker">Class cleanup</span><h3>Delete Classes</h3></div><span class="bulk-class-delete-chip">Moves to Trash</span></div><p class="bulk-class-delete-note">Select the classes you want to move to Trash. You can restore them later from Trash.</p><div class="bulk-class-delete-status-panel"><p id="bulk-class-delete-summary" class="bulk-class-delete-summary" aria-live="polite">0 classes selected</p><p id="bulk-class-delete-hint" class="bulk-class-delete-hint" aria-live="polite">Select classes to review what will be moved to Trash.</p></div><div class="bulk-class-delete-toolbar"><button type="button" class="btn btn-secondary" id="bulk-class-delete-select-all-btn">Select All</button><button type="button" class="btn btn-secondary" id="bulk-class-delete-clear-btn">Clear</button></div><div id="bulk-class-delete-list" class="bulk-class-delete-list"></div><div class="modal-actions bulk-class-delete-actions"><button class="btn btn-secondary" id="bulk-class-delete-cancel-btn">Cancel</button><button class="btn btn-danger" id="bulk-class-delete-confirm-btn">Delete Selected</button></div></div></div>
-  <div class="modal-overlay" id="bulk-import-modal"><div class="modal"><h3>Bulk Add Students</h3><input type="file" id="bulk-import-file-input" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain"><textarea id="bulk-import-textarea" rows="8" placeholder="Enter one name per line..."></textarea><p id="bulk-import-summary" aria-live="polite">Paste names to preview the import summary.</p><div class="modal-actions"><button class="btn btn-secondary" id="bulk-import-cancel-btn">Cancel</button><button class="btn btn-primary" id="bulk-import-confirm-btn">Add All</button></div></div></div>
+  <div class="modal-overlay" id="bulk-import-modal"><div class="modal bulk-import-modal"><h3>Bulk Add Students</h3><label class="bulk-import-file-label" for="bulk-import-file-input">Import from file</label><input type="file" id="bulk-import-file-input" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain" aria-describedby="bulk-import-file-help"><p id="bulk-import-file-help" class="bulk-import-file-help">Accepted files: .csv, .tsv, or .txt. You can also paste one student per line below.</p><textarea id="bulk-import-textarea" rows="8" placeholder="Enter one name per line..."></textarea><p id="bulk-import-summary" aria-live="polite">Paste names to preview the import summary.</p><div class="modal-actions"><button class="btn btn-secondary" id="bulk-import-cancel-btn">Cancel</button><button class="btn btn-primary" id="bulk-import-confirm-btn">Add All</button></div></div></div>
   <div class="modal-overlay" id="notes-modal"><div class="modal"><h3 id="notes-modal-title">Student Notes</h3><textarea id="notes-textarea" rows="5" placeholder="Enter observations..."></textarea><div class="modal-actions"><button class="btn btn-secondary" id="notes-cancel-btn">Cancel</button><button class="btn btn-primary" id="notes-save-btn">Save Notes</button></div></div></div>
   <div class="modal-overlay" id="reset-modal"><div class="modal"><h3>Start New Class</h3><p>Start fresh for a new class? Current class data will be replaced after a backup is created.</p><div class="modal-actions"><button class="btn btn-secondary" id="reset-cancel-btn">Keep Current Class</button><button class="btn btn-danger" id="reset-confirm-btn">Start Fresh</button></div></div></div>
   <div class="modal-overlay" id="report-modal"><div class="modal modal-lg"><div class="modal-actions"><button class="btn btn-primary" id="report-print-btn">Print</button><button class="btn btn-secondary" id="report-export-pdf-btn">Export as PDF</button><button class="btn btn-secondary" id="report-export-all-pdf-btn">Export All Reports</button><span id="report-export-status" class="report-export-status" aria-live="polite"></span><button class="btn btn-secondary" id="report-close-btn">Close</button></div><div id="report-card-container"></div></div></div>

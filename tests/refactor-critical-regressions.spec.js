@@ -997,6 +997,17 @@ test.describe('Class refactor critical regressions', () => {
     expect(result.invalidOnlyDisabled).toBe(true);
   });
 
+  test('bulk import modal guidance and loader shell markup remain present in the app shell', async () => {
+    const indexSource = readWorkspaceFile('index.html');
+    const enhancedCss = readWorkspaceFile('css/enhanced.css');
+
+    expect(indexSource).toContain('aria-describedby="bulk-import-file-help"');
+    expect(indexSource).toContain('Accepted files: .csv, .tsv, or .txt. You can also paste one student per line below.');
+    expect(enhancedCss).toContain('.bulk-import-file-help{');
+    expect(indexSource).toContain('class="loader-logo-shell"');
+    expect(indexSource).toContain('class="loader-status">Please wait</div>');
+  });
+
   test('bulk import accepts tab-separated spreadsheet rows with a header row', async ({ page }) => {
     const result = await page.evaluate(async () => {
       const [stateModule, studentsModule] = await Promise.all([
@@ -1135,6 +1146,110 @@ test.describe('Class refactor critical regressions', () => {
     expect(result.summary).toContain('2 students ready to import');
     expect(result.confirmDisabled).toBe(false);
     expect(result.toasts[result.toasts.length - 1]).toBe('Loaded students.tsv');
+  });
+
+  test('edit student action opens the modal and saves the updated name', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const [stateModule, uiModule, studentsModule] = await Promise.all([
+        import('/js/state.js'),
+        import('/js/ui.js'),
+        import('/js/students.js')
+      ]);
+
+      const app = stateModule.default || window.TrackerApp;
+      const ui = uiModule.default || app.ui;
+      const students = studentsModule.default || app.students;
+      const toasts = [];
+      let refreshCount = 0;
+      let savedCall = null;
+
+      document.body.innerHTML = `
+        <div id="toast"></div>
+        <div class="global-class-switcher"><div class="class-switcher-main">
+          <button id="class-prev-btn" type="button"></button>
+          <div id="class-dropdown" class="class-dropdown">
+            <button id="class-dropdown-toggle" type="button"><span id="class-dropdown-value"></span></button>
+            <div id="class-dropdown-menu" class="class-dropdown-menu"></div>
+          </div>
+          <button id="class-next-btn" type="button"></button>
+          <button id="create-class-btn" type="button"></button>
+          <button id="delete-class-btn" type="button"></button>
+        </div><p id="class-name-display"></p></div>
+        <div id="admin-readonly-banner" hidden><span id="admin-readonly-label"></span></div>
+        <div id="empty-msg"></div>
+        <form id="add-student-form"><input id="student-name-input" /><button type="submit">Add</button></form>
+        <form id="addMockForm"><input id="mockNameInput" /><button type="submit">Add Exam</button></form>
+        <form id="addSubjectForm"><input id="subjectNameInput" /><button type="submit">Add Subject</button></form>
+        <div id="student-list"><button type="button" class="student-chip-action" data-student-action="edit" data-student-id="student_1">Edit</button></div>
+        <div id="edit-modal" class="modal-overlay"><div class="modal"><input id="edit-name-input" type="text"><button id="edit-cancel-btn" type="button">Cancel</button><button id="edit-save-btn" type="button">Save</button></div></div>
+        <div id="mockList"></div>
+        <div id="subjectList"></div>
+      `;
+
+      app.students = students;
+      ui.init();
+      ui.bindEvents();
+      ui.showToast = (message) => {
+        toasts.push(String(message || ''));
+      };
+      ui.refreshUI = () => {
+        refreshCount += 1;
+      };
+      ui.withLoader = async (task) => task();
+
+      app.setCurrentUserRole('teacher', { resolved: true });
+      app.state.isLoading = false;
+      app.state.classes = [
+        { id: 'class_teacher', name: 'Teacher Class', ownerId: 'owner_teacher', ownerName: 'Teacher Owner' }
+      ];
+      app.state.currentClassId = 'class_teacher';
+      app.state.currentClassOwnerId = 'owner_teacher';
+      app.state.students = [
+        { id: 'student_1', name: 'Ama Mensah', scores: {} }
+      ];
+      app.syncDataContext();
+      app.updateStudent = async (studentId, patch) => {
+        savedCall = {
+          studentId,
+          patch: JSON.parse(JSON.stringify(patch || {}))
+        };
+        return { id: studentId, ...patch };
+      };
+
+      document.querySelector('[data-student-action="edit"]')?.click();
+
+      const modalStateAfterOpen = {
+        active: document.getElementById('edit-modal')?.classList.contains('active') || false,
+        value: document.getElementById('edit-name-input')?.value || '',
+        editingId: app.state.editingId
+      };
+
+      document.getElementById('edit-name-input').value = 'Ama Boateng';
+      await document.getElementById('edit-save-btn').onclick();
+
+      return {
+        modalStateAfterOpen,
+        savedCall,
+        modalActiveAfterSave: document.getElementById('edit-modal')?.classList.contains('active') || false,
+        editingIdAfterSave: app.state.editingId,
+        refreshCount,
+        toasts
+      };
+    });
+
+    expect(result.modalStateAfterOpen).toEqual({
+      active: true,
+      value: 'Ama Mensah',
+      editingId: 'student_1'
+    });
+    expect(result.savedCall).toEqual({
+      studentId: 'student_1',
+      patch: { name: 'Ama Boateng' }
+    });
+    expect(result.modalActiveAfterSave).toBe(false);
+    expect(result.editingIdAfterSave).toBeNull();
+    expect(result.refreshCount).toBe(1);
+    expect(result.toasts[result.toasts.length - 1]).toBe('Student updated');
   });
 
   test('teacher can add subject end-to-end via UI submit', async ({ page }) => {
