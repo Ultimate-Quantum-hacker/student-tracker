@@ -1716,11 +1716,25 @@ const ui = {
       }
 
       if (!filteredStudents.length) {
-        const emptyLabel = students.length ? 'No students match your search' : 'No students added yet';
+        const emptyState = students.length
+          ? {
+              title: 'No students match your search.',
+              message: 'Try a different name or clear the roster search to see every student.'
+            }
+          : isReadOnly
+            ? {
+                title: 'No students available in this class.',
+                message: readOnlyTitle
+              }
+            : {
+                title: 'No students added yet.',
+                message: 'Use Add Student or Bulk Import to build this class roster.'
+              };
         app.dom.studentList.innerHTML = `
           <div class="student-roster-empty">
             <span class="student-roster-empty-icon" aria-hidden="true">👥</span>
-            <p>${emptyLabel}</p>
+            <strong>${app.utils.esc(emptyState.title)}</strong>
+            <p>${app.utils.esc(emptyState.message)}</p>
           </div>
         `;
         return;

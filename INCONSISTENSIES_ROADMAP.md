@@ -34,7 +34,7 @@ The roadmap is only complete when:
 | 2 | Auth, Identity, and Account Lifecycle Completion | In Progress | Authentication and user account management become complete and production-ready |
 | 3 | Data Model Hardening and Migration Completion | In Progress | Immutable, migration-safe, id-based data model with no legacy dependency |
 | 4 | Frontend Architecture and Service Layer Consolidation | Completed | Modular codebase with clear boundaries and one authoritative data access layer |
-| 5 | Teacher and Admin Workflow Completion | In Progress | Fully coherent day-to-day workflows with missing feature gaps closed |
+| 5 | Teacher and Admin Workflow Completion | Completed | Fully coherent day-to-day workflows with missing feature gaps closed |
 | 6 | Offline, PWA, Environment, and Deployment Readiness | Not Started | Valid installable PWA, correct environment separation, and complete deployment setup |
 | 7 | Scale, Performance, and Operational Maturity | Not Started | App performs acceptably at larger data volumes and admin operations scale cleanly |
 | 8 | QA, Automation, and Release Governance | Not Started | Turnkey local setup, CI automation, reliable regression coverage, and release gates |
@@ -257,9 +257,9 @@ Close the remaining workflow gaps so the app supports complete, intentional, pro
 - [x] Finalized role-based export/import/backup capability set
 - [x] Robust CSV or spreadsheet import with validation summary, duplicate handling, and failure reporting
 - [x] Unified risk/intervention workflow inside the supported app surface
-- [ ] Clear admin action model with documented write/read boundaries
-- [ ] Improved operational views for logs, search, registry, and relevant history depth
-- [ ] Updated help text and UX cues for all major daily workflows
+- [x] Clear admin action model with documented write/read boundaries
+- [x] Improved operational views for logs, search, registry, and relevant history depth
+- [x] Updated help text and UX cues for all major daily workflows
 
 ## Exit Criteria
 
@@ -636,3 +636,29 @@ Use this section to track major roadmap updates.
 - **Phase:** Phase 5
 - **Update:** Unified the in-app risk/intervention workflow by extending `js/ui-dashboard.js`, `js/ui.js`, and `css/enhanced.css` so the supported Performance & Risk surface now exposes direct note and report actions for category and intervention cards, enriches intervention context with weakest-subject and support-note state, and reuses the existing notes/report modals instead of requiring teachers to switch back to the results table.
 - **Impact:** Phase 5’s risk/intervention deliverable is now complete inside the supported app surface, with focused validation passing via `npx playwright test tests/refactor-critical-regressions.spec.js --project=chromium --grep "performance analysis actions launch supported notes and report workflows" --reporter=line` and the full critical regression file passing `37/37` via `npx playwright test tests/refactor-critical-regressions.spec.js --project=chromium --reporter=line`.
+
+- **Date:** 2026-04-06
+- **Phase:** Phase 5
+- **Update:** Started the admin action-model deliverable by tightening the first explicit read/write boundary slice across `js/admin-user-utils.js`, `js/admin.js`, `js/admin-student-registry-utils.js`, `js/admin-student-registry-markup.js`, and `services/db.js`: admins remain read-only reviewers in the admin panel, while destructive registry deletion and activity-log clearing are now developer-only in both UI policy helpers and service-layer guards.
+- **Impact:** Phase 5’s admin-boundary work now has a validated first slice that aligns the admin panel with the app’s existing read-only admin model, adds clearer disabled-state messaging for destructive controls, and passes focused validation via `npx playwright test tests/refactor-critical-regressions.spec.js --project=chromium --grep "admin destructive panel actions stay developer-only while admins keep read access" --reporter=line` plus the full critical regression file at `38/38` via `npx playwright test tests/refactor-critical-regressions.spec.js --project=chromium --reporter=line`.
+
+- **Date:** 2026-04-06
+- **Phase:** Phase 5
+- **Update:** Extended the same admin action-model work across `admin.html`, `js/admin.js`, and `js/admin-user-utils.js` so the Users panel now presents explicitly read-only admin copy, hides the role-edit select from admins, and keeps developer-only role-management messaging visible in the table instead of implying that admins can edit roles from the directory.
+- **Impact:** Phase 5’s admin-boundary deliverable now has a second validated slice that removes a misleading write-capability cue from the user directory while preserving developer role-management flows, with focused validation passing via `npx playwright test tests/refactor-critical-regressions.spec.js --project=chromium --grep "admin user directory presents read-only copy while developer role management stays explicit" --reporter=line` and the full critical regression file passing `39/39` via `npx playwright test tests/refactor-critical-regressions.spec.js --project=chromium --reporter=line`.
+
+- **Date:** 2026-04-06
+- **Phase:** Phase 5
+- **Update:** Completed the admin action-model deliverable by finishing the remaining role-clarity slice across `admin.html`, `js/admin.js`, and `js/admin-user-utils.js`: the admin panel header now renders a role-aware access summary, the user directory no longer exposes edit-looking controls to read-only admins, destructive registry/log actions remain developer-only in both the UI and service layer, and the registry copy now stays neutral for both admins and developers.
+- **Impact:** Phase 5’s `Clear admin action model with documented write/read boundaries` deliverable is now complete with a coherent read-only-admin / developer-write boundary across panel summary text, users, registry, activity logs, shared capability helpers, and service-layer guards, and `tests/refactor-critical-regressions.spec.js` now passes `40/40` via `npx playwright test tests/refactor-critical-regressions.spec.js --project=chromium --reporter=line` after the new focused admin-boundary regressions were added.
+
+- **Date:** 2026-04-06
+- **Phase:** Phase 5
+- **Update:** Completed the remaining operational history-depth slice in `admin.html`, `js/admin.js`, and `js/admin-activity-filter-utils.js` by adding a selectable activity-log history-depth control, wiring it through the shared normalized query state and cache key, and keeping clear-filters/reset behavior aligned with the existing log search and toolbar workflow.
+- **Impact:** Phase 5’s `Improved operational views for logs, search, registry, and relevant history depth` deliverable is now complete within the current product-surface scope: admins have validated in-app log search, clear-filters recovery, selectable recent-history depth, and the existing dedicated search/registry views, while larger dataset-scaling concerns for search/registry/history remain explicitly deferred to Phase 7; `tests/refactor-critical-regressions.spec.js` now passes `41/41` via `npx playwright test tests/refactor-critical-regressions.spec.js --project=chromium --reporter=line` after the new focused history-depth regressions were added.
+
+- **Date:** 2026-04-06
+- **Phase:** Phase 5
+- **Update:** Completed the final workflow-guidance slice in `js/ui.js` by upgrading the student roster empty/search-empty states with clearer teacher setup guidance, search-recovery messaging, and role-aware read-only copy, and extended `tests/refactor-critical-regressions.spec.js` with a focused regression that locks those roster cues alongside the nearby teacher subject/exam submit flows.
+- **Impact:** Phase 5 is now complete: the remaining `Updated help text and UX cues for all major daily workflows` deliverable is validated across import preview guidance, admin access/read-only workflow messaging, operational log controls, and the final roster empty-state guidance, and the full critical regression file now passes `42/42` via `npx playwright test tests/refactor-critical-regressions.spec.js --project=chromium --reporter=line`.
+

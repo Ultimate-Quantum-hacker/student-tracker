@@ -76,7 +76,8 @@
         <div class="panel-header-main">
           <p class="panel-eyebrow">Administration</p>
           <h1>Admin Panel</h1>
-          <p class="panel-subtitle">Manage users, search global records, and monitor live system activity from a polished SaaS control center.</p>
+          <p class="panel-subtitle">Review users, search global records, and monitor live system activity, with developer-only management controls where allowed.</p>
+          <p id="panel-access-summary" class="panel-status" aria-live="polite">Access summary: loading…</p>
           <p id="panel-last-updated" class="panel-last-updated" aria-live="polite">Last updated: just now</p>
         </div>
         <div class="panel-header-actions">
@@ -153,7 +154,7 @@
           <div class="section-heading">
             <p class="section-kicker">Users</p>
             <h2 id="users-panel-title">User Directory</h2>
-            <p class="panel-subtitle">Search, review, and manage workspace user roles with a consistent admin workflow.</p>
+            <p class="panel-subtitle">Search and review workspace users, with developer-only role management where policy allows.</p>
           </div>
           <div class="admin-field admin-search-field">
             <span class="admin-field-label">Search by name or email</span>
@@ -316,6 +317,16 @@
                 </select>
               </label>
             </div>
+            <div class="admin-field admin-filter-field">
+              <span class="admin-field-label">History depth</span>
+              <label class="filter-shell search-container select-container" aria-label="Limit activity history depth">
+                <select id="activity-limit-filter" class="role-select admin-select-input" aria-label="Limit activity history depth">
+                  <option value="50">Recent 50</option>
+                  <option value="100">Recent 100</option>
+                  <option value="250" selected>Recent 250</option>
+                </select>
+              </label>
+            </div>
             <div class="admin-field admin-filter-action">
               <span class="admin-field-label admin-field-label-hidden" aria-hidden="true">Clear activity filters</span>
               <button id="clear-activity-filters-btn" class="btn btn-secondary" type="button">Clear Filters</button>
@@ -361,7 +372,7 @@
           <div class="section-heading">
             <p class="section-kicker">Registry</p>
             <h2 id="admin-students-title">Global Student Registry</h2>
-            <p class="panel-subtitle">Review all loaded student records across classes in one read-only admin view.</p>
+            <p class="panel-subtitle">Review all loaded student records across classes in one shared registry view.</p>
           </div>
           <div class="admin-students-actions">
             <div class="admin-students-filters">

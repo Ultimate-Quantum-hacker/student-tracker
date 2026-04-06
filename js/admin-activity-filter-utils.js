@@ -93,18 +93,28 @@ export const buildActivityUserFilterState = (users = [], {
   };
 };
 
+const ACTIVITY_LOG_LIMIT_OPTIONS = [50, 100, 250];
+const DEFAULT_ACTIVITY_LOG_LIMIT = 250;
+
+const normalizeActivityLogLimit = (value) => {
+  const parsedLimit = Number.parseInt(value, 10);
+  return ACTIVITY_LOG_LIMIT_OPTIONS.includes(parsedLimit) ? parsedLimit : DEFAULT_ACTIVITY_LOG_LIMIT;
+};
+
 export const buildActivityLogsQueryState = ({
   userId = '',
   classKey = '',
   action = '',
   searchTerm = '',
-  sort = 'desc'
+  sort = 'desc',
+  maxEntries = DEFAULT_ACTIVITY_LOG_LIMIT
 } = {}) => {
   const normalizedUserId = normalizeText(userId);
   const normalizedClassKey = normalizeText(classKey);
   const normalizedAction = normalizeText(action).toLowerCase();
   const normalizedSearchTerm = normalizeText(searchTerm).toLowerCase();
   const normalizedSort = normalizeText(sort).toLowerCase() === 'asc' ? 'asc' : 'desc';
+  const normalizedLimit = normalizeActivityLogLimit(maxEntries);
 
   return {
     selectedUserId: normalizedUserId,
@@ -112,10 +122,12 @@ export const buildActivityLogsQueryState = ({
     selectedAction: normalizedAction,
     selectedSearchTerm: normalizedSearchTerm,
     selectedSort: normalizedSort,
-    hasActiveFilters: Boolean(normalizedUserId || normalizedClassKey || normalizedAction || normalizedSearchTerm || normalizedSort !== 'desc'),
+    selectedLimit: normalizedLimit,
+    hasActiveFilters: Boolean(normalizedUserId || normalizedClassKey || normalizedAction || normalizedSearchTerm || normalizedSort !== 'desc' || normalizedLimit !== DEFAULT_ACTIVITY_LOG_LIMIT),
     activityLogsCacheKey: buildActivityLogsCacheKey({
       userId: normalizedUserId,
-      sort: normalizedSort
+      sort: normalizedSort,
+      maxEntries: normalizedLimit
     })
   };
 };
@@ -164,8 +176,9 @@ export const filterAdminActivityEntries = (entries = [], {
   };
 };
 
-export const buildActivityLogsCacheKey = ({ userId = '', sort = 'desc' } = {}) => {
+export const buildActivityLogsCacheKey = ({ userId = '', sort = 'desc', maxEntries = DEFAULT_ACTIVITY_LOG_LIMIT } = {}) => {
   const normalizedUserId = normalizeText(userId);
   const normalizedSort = normalizeText(sort).toLowerCase() === 'asc' ? 'asc' : 'desc';
-  return `${normalizedUserId}::${normalizedSort}`;
+  const normalizedLimit = normalizeActivityLogLimit(maxEntries);
+  return `${normalizedUserId}::${normalizedSort}::${normalizedLimit}`;
 };

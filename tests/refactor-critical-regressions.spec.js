@@ -1198,7 +1198,78 @@ test.describe('Class refactor critical regressions', () => {
       };
     });
 
-    expect(result.submittedPayload).toEqual({ name: 'Science' });
+    expect(result.submittedPayload?.name).toBe('Science');
+  });
+
+  test('student roster empty states provide setup, search recovery, and read-only guidance', async ({ page }) => {
+    const uiSource = readWorkspaceFile('js/ui.js');
+
+    expect(uiSource).toContain("title: 'No students match your search.'");
+    expect(uiSource).toContain("message: 'Try a different name or clear the roster search to see every student.'");
+    expect(uiSource).toContain("title: 'No students added yet.'");
+    expect(uiSource).toContain("message: 'Use Add Student or Bulk Import to build this class roster.'");
+    expect(uiSource).toContain("title: 'No students available in this class.'");
+
+    const result = await page.evaluate(async () => {
+      const [stateModule, uiModule] = await Promise.all([
+        import('/js/state.js'),
+        import('/js/ui.js')
+      ]);
+
+      const app = stateModule.default || window.TrackerApp;
+      const ui = uiModule.default || app.ui;
+
+      document.body.innerHTML = `
+        <div id="student-count"></div>
+        <div id="student-list"></div>
+      `;
+
+      app.dom.studentCount = document.getElementById('student-count');
+      app.dom.studentList = document.getElementById('student-list');
+
+      app.setCurrentUserRole('teacher', { resolved: true });
+      app.state.students = [];
+      app.state.studentRosterSearchTerm = '';
+      ui.renderStudentChips();
+
+      const teacherEmptyText = app.dom.studentList.textContent.replace(/\s+/g, ' ').trim();
+      const teacherCountText = app.dom.studentCount.textContent;
+
+      app.state.students = [{ id: 'student_1', name: 'Ama Mensah' }];
+      app.state.studentRosterSearchTerm = 'zzz';
+      ui.renderStudentChips();
+
+      const searchEmptyText = app.dom.studentList.textContent.replace(/\s+/g, ' ').trim();
+      const searchCountText = app.dom.studentCount.textContent;
+
+      app.setCurrentUserRole('admin', { resolved: true });
+      app.state.currentClassName = 'Admin View Class';
+      app.getCurrentClassOwnerName = () => 'Owner Example';
+      app.state.students = [];
+      app.state.studentRosterSearchTerm = '';
+      ui.renderStudentChips();
+
+      const readOnlyEmptyText = app.dom.studentList.textContent.replace(/\s+/g, ' ').trim();
+
+      return {
+        teacherEmptyText,
+        teacherCountText,
+        searchEmptyText,
+        searchCountText,
+        readOnlyEmptyText
+      };
+    });
+
+    expect(result.teacherCountText).toBe('0 Students');
+    expect(result.teacherEmptyText).toContain('No students added yet.');
+    expect(result.teacherEmptyText).toContain('Use Add Student or Bulk Import to build this class roster.');
+
+    expect(result.searchCountText).toBe('0 of 1 Student');
+    expect(result.searchEmptyText).toContain('No students match your search.');
+    expect(result.searchEmptyText).toContain('Try a different name or clear the roster search to see every student.');
+
+    expect(result.readOnlyEmptyText).toContain('No students available in this class.');
+    expect(result.readOnlyEmptyText).toContain('Admin cannot modify data (Read-only mode): Admin View Class - Owner Example.');
   });
 
   test('teacher can add exam end-to-end via UI submit', async ({ page }) => {
@@ -1765,6 +1836,185 @@ test.describe('Class refactor critical regressions', () => {
     });
   });
 
+  test('admin destructive panel actions stay developer-only while admins keep read access', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__FIREBASE_CONFIG__ = {
+        apiKey: 'test-api-key',
+        authDomain: 'test-project.firebaseapp.com',
+        projectId: 'test-project',
+        storageBucket: 'test-project.appspot.com',
+        messagingSenderId: '1234567890',
+        appId: '1:1234567890:web:test'
+      };
+    });
+    await page.goto(APP_URL);
+
+    const result = await page.evaluate(async () => {
+      const [adminUserUtils, registryUtils, registryMarkup, firebaseModule, dbModule] = await Promise.all([
+        import('/js/admin-user-utils.js'),
+        import('/js/admin-student-registry-utils.js'),
+        import('/js/admin-student-registry-markup.js'),
+        import('/js/firebase.js'),
+        import('/services/db.js')
+      ]);
+
+      const registryGroups = [{
+        label: 'Class A',
+        students: [{
+          name: 'Student One',
+          ownerId: 'teacher_1',
+          studentId: 'student_1',
+          className: 'Class A',
+          teacherName: 'Teacher One'
+        }]
+      }];
+
+      firebaseModule.auth.currentUser = {
+        uid: 'admin_policy_uid',
+        email: 'admin@example.com',
+        displayName: 'Admin Policy'
+      };
+
+      dbModule.setCurrentUserRoleContext('admin');
+
+      let deleteError = null;
+      let clearError = null;
+
+      try {
+        await dbModule.deleteAdminRegistryStudent({
+          ownerId: 'teacher_1',
+          studentId: 'student_1',
+          studentName: 'Student One'
+        });
+      } catch (error) {
+        deleteError = {
+          code: String(error?.code || ''),
+          message: String(error?.message || '')
+        };
+      }
+
+      try {
+        await dbModule.clearActivityLogs();
+      } catch (error) {
+        clearError = {
+          code: String(error?.code || ''),
+          message: String(error?.message || '')
+        };
+      }
+
+      return {
+        adminCanDeleteRegistry: adminUserUtils.canDeleteAdminRegistryStudents('admin'),
+        adminCanClearLogs: adminUserUtils.canClearAdminActivityLogs('admin'),
+        developerCanDeleteRegistry: adminUserUtils.canDeleteAdminRegistryStudents('developer'),
+        developerCanClearLogs: adminUserUtils.canClearAdminActivityLogs('developer'),
+        adminDeleteRequestState: registryUtils.buildAdminRegistryStudentDeleteRequestState({
+          ownerId: 'teacher_1',
+          studentId: 'student_1',
+          studentName: 'Student One',
+          canDelete: adminUserUtils.canDeleteAdminRegistryStudents('admin')
+        }),
+        developerDeleteRequestState: registryUtils.buildAdminRegistryStudentDeleteRequestState({
+          ownerId: 'teacher_1',
+          studentId: 'student_1',
+          studentName: 'Student One',
+          canDelete: adminUserUtils.canDeleteAdminRegistryStudents('developer')
+        }),
+        adminRegistryMarkup: registryMarkup.buildAdminStudentsTableMarkup(registryGroups, {
+          startIndex: 0,
+          hasActiveCriteria: false,
+          canDelete: adminUserUtils.canDeleteAdminRegistryStudents('admin'),
+          columnCount: 4
+        }),
+        developerRegistryMarkup: registryMarkup.buildAdminStudentsTableMarkup(registryGroups, {
+          startIndex: 0,
+          hasActiveCriteria: false,
+          canDelete: adminUserUtils.canDeleteAdminRegistryStudents('developer'),
+          columnCount: 4
+        }),
+        deleteError,
+        clearError
+      };
+    });
+
+    expect(result.adminCanDeleteRegistry).toBe(false);
+    expect(result.adminCanClearLogs).toBe(false);
+    expect(result.developerCanDeleteRegistry).toBe(true);
+    expect(result.developerCanClearLogs).toBe(true);
+
+    expect(result.adminDeleteRequestState.canSubmitDelete).toBe(false);
+    expect(result.adminDeleteRequestState.statusMessage).toContain('Only developers can delete registry students.');
+    expect(result.developerDeleteRequestState.canSubmitDelete).toBe(true);
+
+    expect(result.adminRegistryMarkup).toContain('Only developers can delete registry students.');
+    expect(result.adminRegistryMarkup).toContain('disabled');
+    expect(result.developerRegistryMarkup).toContain('Delete Student One from the registry');
+    expect(result.developerRegistryMarkup).not.toContain('Only developers can delete registry students.');
+
+    expect(result.deleteError?.code).toBe('READ_ONLY_MODE');
+    expect(result.deleteError?.message).toContain('Only developers can delete student records from the registry');
+    expect(result.clearError?.code).toBe('READ_ONLY_MODE');
+    expect(result.clearError?.message).toContain('Only developers can clear activity logs');
+  });
+
+  test('admin user directory presents read-only copy while developer role management stays explicit', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const adminUserUtils = await import('/js/admin-user-utils.js');
+      const sampleTeacher = {
+        uid: 'teacher_directory_1',
+        role: 'teacher',
+        emailVerified: true,
+        email: 'teacher-directory@example.com'
+      };
+
+      return {
+        adminPolicyLabel: adminUserUtils.getAdminUserRolePolicyLabel(sampleTeacher, { currentRole: 'admin' }),
+        developerPolicyLabel: adminUserUtils.getAdminUserRolePolicyLabel(sampleTeacher, { currentRole: 'developer' })
+      };
+    });
+
+    const adminSource = readWorkspaceFile('admin.html');
+    const adminJsSource = readWorkspaceFile('js/admin.js');
+
+    expect(result.adminPolicyLabel).toBe('Role changes require a developer');
+    expect(result.developerPolicyLabel).toBe('Role can be updated by a developer');
+
+    expect(adminSource).toContain('Review users, search global records, and monitor live system activity, with developer-only management controls where allowed.');
+    expect(adminSource).toContain('Search and review workspace users, with developer-only role management where policy allows.');
+    expect(adminSource).not.toContain('Manage users, search global records, and monitor live system activity from a polished SaaS control center.');
+    expect(adminSource).not.toContain('Search, review, and manage workspace user roles with a consistent admin workflow.');
+
+    expect(adminJsSource).toContain("if (canManageAdminRoles(state.currentRole)) {");
+    expect(adminJsSource).toContain("roleWrap.appendChild(roleSelectShell);");
+    expect(adminJsSource).toContain("actionWrap.innerHTML = buildTableHelperTextMarkup('Developer-only role changes');");
+    expect(adminJsSource).not.toContain("actionWrap.innerHTML = buildTableHelperTextMarkup('View only');");
+  });
+
+  test('admin panel access summary explains read-only admins while registry copy stays shared', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const adminUserUtils = await import('/js/admin-user-utils.js');
+
+      return {
+        adminSummary: adminUserUtils.getAdminPanelAccessSummary('admin'),
+        developerSummary: adminUserUtils.getAdminPanelAccessSummary('developer')
+      };
+    });
+
+    const adminSource = readWorkspaceFile('admin.html');
+    const adminJsSource = readWorkspaceFile('js/admin.js');
+
+    expect(result.adminSummary).toContain('Read-only admin mode: review users, search, registry, and activity history.');
+    expect(result.adminSummary).toContain('A developer is required for role changes and destructive admin actions.');
+    expect(result.developerSummary).toContain('Developer mode: review admin data and manage roles, registry cleanup, and activity-log maintenance where needed.');
+
+    expect(adminSource).toContain('id="panel-access-summary"');
+    expect(adminSource).toContain('Access summary: loading…');
+    expect(adminSource).toContain('Review all loaded student records across classes in one shared registry view.');
+    expect(adminSource).not.toContain('Review all loaded student records across classes in one read-only admin view.');
+
+    expect(adminJsSource).toContain("panelAccessSummary: document.getElementById('panel-access-summary')");
+    expect(adminJsSource).toContain('dom.panelAccessSummary.textContent = getAdminPanelAccessSummary(state.currentRole);');
+  });
+
   test('admin write remains blocked in UI submit path', async ({ page }) => {
     const result = await page.evaluate(async () => {
       const [stateModule, uiModule, studentsModule] = await Promise.all([
@@ -2030,12 +2280,63 @@ test.describe('Class refactor critical regressions', () => {
     expect(result.noMatchType).toBe('warning');
   });
 
+  test('admin activity logs expose history depth controls with normalized cache-aware query state', async ({ page }) => {
+    const adminSource = readWorkspaceFile('admin.html');
+    const adminJsSource = readWorkspaceFile('js/admin.js');
+    const activityFilterSource = readWorkspaceFile('js/admin-activity-filter-utils.js');
+
+    expect(adminSource).toContain('id="activity-limit-filter"');
+    expect(adminSource).toContain('<option value="50">Recent 50</option>');
+    expect(adminSource).toContain('<option value="100">Recent 100</option>');
+    expect(adminSource).toContain('<option value="250" selected>Recent 250</option>');
+    expect(adminJsSource).toContain("activityLimitFilter: document.getElementById('activity-limit-filter')");
+    expect(adminJsSource).toContain("maxEntries: dom.activityLimitFilter?.value || String(ADMIN_ACTIVITY_LOG_FETCH_LIMIT)");
+    expect(adminJsSource).toContain('maxEntries: selectedLimit');
+    expect(activityFilterSource).toContain('const ACTIVITY_LOG_LIMIT_OPTIONS = [50, 100, 250];');
+    expect(activityFilterSource).toContain('return `${normalizedUserId}::${normalizedSort}::${normalizedLimit}`;');
+
+    const result = await page.evaluate(async () => {
+      const activityFilterModule = await import('/js/admin-activity-filter-utils.js');
+      const defaultQuery = activityFilterModule.buildActivityLogsQueryState();
+      const recentQuery = activityFilterModule.buildActivityLogsQueryState({
+        maxEntries: '50'
+      });
+      const invalidLimitQuery = activityFilterModule.buildActivityLogsQueryState({
+        maxEntries: '500'
+      });
+      const scopedQuery = activityFilterModule.buildActivityLogsQueryState({
+        userId: ' owner_1 ',
+        sort: 'asc',
+        maxEntries: '100'
+      });
+
+      return {
+        defaultLimit: defaultQuery.selectedLimit,
+        defaultCacheKey: defaultQuery.activityLogsCacheKey,
+        recentLimit: recentQuery.selectedLimit,
+        recentHasActiveFilters: recentQuery.hasActiveFilters,
+        recentCacheKey: recentQuery.activityLogsCacheKey,
+        invalidLimit: invalidLimitQuery.selectedLimit,
+        scopedCacheKey: scopedQuery.activityLogsCacheKey
+      };
+    });
+
+    expect(result.defaultLimit).toBe(250);
+    expect(result.defaultCacheKey).toBe('::desc::250');
+    expect(result.recentLimit).toBe(50);
+    expect(result.recentHasActiveFilters).toBe(true);
+    expect(result.recentCacheKey).toBe('::desc::50');
+    expect(result.invalidLimit).toBe(250);
+    expect(result.scopedCacheKey).toBe('owner_1::asc::100');
+  });
+
   test('admin activity log clear filters reset all criteria and shared active-filter state', async ({ page }) => {
     const adminSource = readWorkspaceFile('admin.html');
     const adminJsSource = readWorkspaceFile('js/admin.js');
     const activityFilterSource = readWorkspaceFile('js/admin-activity-filter-utils.js');
 
     expect(adminSource).toContain('id="clear-activity-filters-btn"');
+    expect(adminSource).toContain('id="activity-limit-filter"');
     expect(adminJsSource).toContain('const updateActivityFilterControls = () => {');
     expect(adminJsSource).toContain("dom.clearActivityFiltersBtn?.addEventListener('click', async () => {");
     expect(adminJsSource).toContain("dom.activitySearchInput.value = '';");
@@ -2043,9 +2344,10 @@ test.describe('Class refactor critical regressions', () => {
     expect(adminJsSource).toContain("dom.activityClassFilter.value = '';");
     expect(adminJsSource).toContain("dom.activityActionFilter.value = '';");
     expect(adminJsSource).toContain("dom.activitySortFilter.value = 'desc';");
+    expect(adminJsSource).toContain("dom.activityLimitFilter.value = String(ADMIN_ACTIVITY_LOG_FETCH_LIMIT);");
     expect(adminJsSource).toContain('updateActivityFilterControls();');
     expect(adminJsSource).toContain('await loadActivityLogs();');
-    expect(activityFilterSource).toContain("hasActiveFilters: Boolean(normalizedUserId || normalizedClassKey || normalizedAction || normalizedSearchTerm || normalizedSort !== 'desc')");
+    expect(activityFilterSource).toContain("hasActiveFilters: Boolean(normalizedUserId || normalizedClassKey || normalizedAction || normalizedSearchTerm || normalizedSort !== 'desc' || normalizedLimit !== DEFAULT_ACTIVITY_LOG_LIMIT)");
 
     const result = await page.evaluate(async () => {
       const activityFilterModule = await import('/js/admin-activity-filter-utils.js');
@@ -2059,12 +2361,16 @@ test.describe('Class refactor critical regressions', () => {
       const sortQuery = activityFilterModule.buildActivityLogsQueryState({
         sort: 'asc'
       });
+      const limitQuery = activityFilterModule.buildActivityLogsQueryState({
+        maxEntries: '50'
+      });
       const resetQuery = activityFilterModule.buildActivityLogsQueryState({
         searchTerm: '',
         userId: '',
         classKey: '',
         action: '',
-        sort: 'desc'
+        sort: 'desc',
+        maxEntries: '250'
       });
 
       return {
@@ -2075,8 +2381,11 @@ test.describe('Class refactor critical regressions', () => {
         normalizedUserId: userQuery.selectedUserId,
         sortHasActiveFilters: sortQuery.hasActiveFilters,
         normalizedSort: sortQuery.selectedSort,
+        limitHasActiveFilters: limitQuery.hasActiveFilters,
+        normalizedLimit: limitQuery.selectedLimit,
         resetHasActiveFilters: resetQuery.hasActiveFilters,
-        resetSort: resetQuery.selectedSort
+        resetSort: resetQuery.selectedSort,
+        resetLimit: resetQuery.selectedLimit
       };
     });
 
@@ -2087,8 +2396,11 @@ test.describe('Class refactor critical regressions', () => {
     expect(result.normalizedUserId).toBe('teacher_1');
     expect(result.sortHasActiveFilters).toBe(true);
     expect(result.normalizedSort).toBe('asc');
+    expect(result.limitHasActiveFilters).toBe(true);
+    expect(result.normalizedLimit).toBe(50);
     expect(result.resetHasActiveFilters).toBe(false);
     expect(result.resetSort).toBe('desc');
+    expect(result.resetLimit).toBe(250);
   });
 
   test('admin student registry global reads flow through the service layer', async () => {
@@ -2400,6 +2712,12 @@ test.describe('Class refactor critical regressions', () => {
   });
 
   test('fetchAllData migrates legacy root data into class scope with schema markers', async ({ page }) => {
+    const dbSource = readWorkspaceFile('services/db.js');
+    const rulesSource = readWorkspaceFile('firestore.rules');
+
+    expect(dbSource).not.toContain('classMigrationCompletedAt:');
+    expect(rulesSource).not.toContain("'classMigrationCompletedAt'");
+
     await page.addInitScript(() => {
       window.__FIREBASE_CONFIG__ = {
         apiKey: 'test-api-key',
@@ -2518,6 +2836,8 @@ test.describe('Class refactor critical regressions', () => {
         classDataSchemaVersion: classSnapshot.data().dataSchemaVersion,
         migrationStatus: userRootSnapshot.data().classMigrationStatus,
         migrationComplete: userRootSnapshot.data().classMigrationComplete,
+        migrationUpdatedAt: userRootSnapshot.data().classMigrationUpdatedAt,
+        hasMigrationCompletedAt: Object.prototype.hasOwnProperty.call(userRootSnapshot.data() || {}, 'classMigrationCompletedAt'),
         migratedScores: migratedStudentSnapshot.data().scores || {},
         fetchedScores: fetchResult.data.students[0]?.scores || {}
       };
@@ -2528,6 +2848,8 @@ test.describe('Class refactor critical regressions', () => {
     expect(result.classDataSchemaVersion).toBe(2);
     expect(result.migrationStatus).toBe('completed');
     expect(result.migrationComplete).toBe(true);
+    expect(result.migrationUpdatedAt).toBeTruthy();
+    expect(result.hasMigrationCompletedAt).toBe(false);
     expect(result.migratedScores).toEqual({ subject_math: { exam_mock_1: 73 } });
     expect(result.fetchedScores).toEqual({ subject_math: { exam_mock_1: 73 } });
   });

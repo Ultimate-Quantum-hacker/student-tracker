@@ -7,9 +7,21 @@ const ROLE_DEVELOPER = 'developer';
 
 const isAdminOnlyViewerRole = (currentRole = '') => normalizeUserRole(currentRole) === ROLE_ADMIN;
 export const canManageAdminRoles = (currentRole = '') => normalizeUserRole(currentRole) === ROLE_DEVELOPER;
-export const canDeleteAdminRegistryStudents = (currentRole = '') => {
+export const canRunAdminDestructiveActions = (currentRole = '') => normalizeUserRole(currentRole) === ROLE_DEVELOPER;
+export const canDeleteAdminRegistryStudents = (currentRole = '') => canRunAdminDestructiveActions(currentRole);
+export const canClearAdminActivityLogs = (currentRole = '') => canRunAdminDestructiveActions(currentRole);
+
+export const getAdminPanelAccessSummary = (currentRole = '') => {
   const normalizedCurrentRole = normalizeUserRole(currentRole);
-  return normalizedCurrentRole === ROLE_ADMIN || normalizedCurrentRole === ROLE_DEVELOPER;
+  if (normalizedCurrentRole === ROLE_DEVELOPER) {
+    return 'Developer mode: review admin data and manage roles, registry cleanup, and activity-log maintenance where needed.';
+  }
+
+  if (normalizedCurrentRole === ROLE_ADMIN) {
+    return 'Read-only admin mode: review users, search, registry, and activity history. A developer is required for role changes and destructive admin actions.';
+  }
+
+  return 'Restricted access. Admin or developer role required for this panel.';
 };
 
 export const findAdminUserRecord = (users = [], uid = '') => {
@@ -162,7 +174,7 @@ export const getAdminUserRolePolicyLabel = (record = {}, {
   currentRole = ''
 } = {}) => {
   if (!canManageAdminRoles(currentRole)) {
-    return 'View only';
+    return 'Role changes require a developer';
   }
 
   const normalizedRole = normalizeUserRole(record?.role);

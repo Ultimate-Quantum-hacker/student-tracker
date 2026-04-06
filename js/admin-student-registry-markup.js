@@ -52,7 +52,7 @@ const buildAdminStudentsActionMarkup = (student = {}, { canDelete = false } = {}
   const deleteEnabled = Boolean(canDelete);
   const isDisabled = !deleteEnabled || !ownerId || !studentId;
   const buttonTitle = !deleteEnabled
-    ? 'Only admins and developers can delete registry students.'
+    ? 'Only developers can delete registry students.'
     : !ownerId || !studentId
       ? 'This registry row is missing the student identity needed for deletion.'
       : `Delete ${studentName} from the registry`;

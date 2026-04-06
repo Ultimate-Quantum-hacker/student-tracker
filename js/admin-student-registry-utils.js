@@ -822,7 +822,7 @@ export const buildAdminRegistryStudentDeleteRequestState = ({
       normalizedStudentName,
       canSubmitDelete: false,
       progressLabel,
-      statusMessage: 'Only admins and developers can delete registry students.',
+      statusMessage: 'Only developers can delete registry students.',
       statusType: 'warning',
       toastMessage: 'Student deletion unavailable',
       toastType: 'warning',

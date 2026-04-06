@@ -104,6 +104,8 @@ import {
   buildAdminInitErrorFeedbackState,
   canManageAdminRoles,
   canDeleteAdminRegistryStudents,
+  canClearAdminActivityLogs,
+  getAdminPanelAccessSummary,
   canRenderAdminRoleChangeControl,
   getAdminUserRolePolicyLabel,
   getAdminUserAccountSummary,
@@ -159,6 +161,7 @@ const state = {
 
 const dom = {
   roleBadge: document.getElementById('panel-role-badge'),
+  panelAccessSummary: document.getElementById('panel-access-summary'),
   status: document.getElementById('panel-status'),
   usersLoading: document.getElementById('users-loading'),
   tableBody: document.getElementById('users-table-body'),
@@ -206,6 +209,7 @@ const dom = {
   activityClassFilter: document.getElementById('activity-class-filter'),
   activityActionFilter: document.getElementById('activity-action-filter'),
   activitySortFilter: document.getElementById('activity-sort-filter'),
+  activityLimitFilter: document.getElementById('activity-limit-filter'),
   clearActivityFiltersBtn: document.getElementById('clear-activity-filters-btn'),
   refreshActivityBtn: document.getElementById('refresh-activity-btn'),
   clearActivityBtn: document.getElementById('clear-activity-btn'),
@@ -529,6 +533,26 @@ const updatePanelRoleBadge = () => {
   dom.roleBadge.classList.add(getRoleBadgeClass(state.currentRole));
 };
 
+const updatePanelAccessSummary = () => {
+  if (!dom.panelAccessSummary) return;
+  dom.panelAccessSummary.textContent = getAdminPanelAccessSummary(state.currentRole);
+};
+
+const updateAdminActionBoundaryState = () => {
+  if (dom.clearActivityBtn) {
+    const canClearLogs = canClearAdminActivityLogs(state.currentRole);
+
+    dom.clearActivityBtn.disabled = !canClearLogs;
+    if (canClearLogs) {
+      dom.clearActivityBtn.removeAttribute('aria-disabled');
+      dom.clearActivityBtn.removeAttribute('title');
+    } else {
+      dom.clearActivityBtn.setAttribute('aria-disabled', 'true');
+      dom.clearActivityBtn.title = 'Only developers can clear activity logs.';
+    }
+  }
+};
+
 const renderUsersTable = () => {
   if (!dom.tableBody) return;
   const filteredUsers = getFilteredUsers();
@@ -574,10 +598,12 @@ const renderUsersTable = () => {
     const roleWrap = document.createElement('div');
     roleWrap.className = 'role-cell-wrap';
     roleWrap.innerHTML = buildRoleBadgeMarkup(record.role);
-    const roleSelectShell = document.createElement('div');
-    roleSelectShell.className = 'input-shell role-select-shell search-container select-container';
-    roleSelectShell.appendChild(buildRoleSelect(record));
-    roleWrap.appendChild(roleSelectShell);
+    if (canManageAdminRoles(state.currentRole)) {
+      const roleSelectShell = document.createElement('div');
+      roleSelectShell.className = 'input-shell role-select-shell search-container select-container';
+      roleSelectShell.appendChild(buildRoleSelect(record));
+      roleWrap.appendChild(roleSelectShell);
+    }
     roleCell.appendChild(roleWrap);
 
     const createdCell = document.createElement('td');
@@ -608,7 +634,7 @@ const renderUsersTable = () => {
       }
       actionWrap.appendChild(updateBtn);
     } else {
-      actionWrap.innerHTML = buildTableHelperTextMarkup('View only');
+      actionWrap.innerHTML = buildTableHelperTextMarkup('Developer-only role changes');
     }
     actionCell.appendChild(actionWrap);
 
@@ -756,7 +782,8 @@ const getActivityFilterState = () => {
     userId: dom.activityUserFilter?.value || '',
     classKey: dom.activityClassFilter?.value || '',
     action: dom.activityActionFilter?.value || '',
-    sort: dom.activitySortFilter?.value || 'desc'
+    sort: dom.activitySortFilter?.value || 'desc',
+    maxEntries: dom.activityLimitFilter?.value || String(ADMIN_ACTIVITY_LOG_FETCH_LIMIT)
   });
 };
 
@@ -1012,6 +1039,7 @@ const loadActivityLogs = async () => {
     selectedAction,
     selectedSearchTerm,
     selectedSort,
+    selectedLimit,
     activityLogsCacheKey
   } = getActivityFilterState();
 
@@ -1029,7 +1057,7 @@ const loadActivityLogs = async () => {
       entries = await fetchActivityLogs({
         userId: selectedUserId,
         sort: selectedSort,
-        maxEntries: ADMIN_ACTIVITY_LOG_FETCH_LIMIT
+        maxEntries: selectedLimit
       });
       writeAdminRuntimeCache('activityLogs', Array.isArray(entries) ? entries : [], activityLogsCacheKey);
     }
@@ -1053,7 +1081,14 @@ const loadActivityLogs = async () => {
           selectedAction,
           selectedClassKey: resolvedSelectedClassKey
         }).filteredEntries;
-    const hasActiveFilters = Boolean(selectedUserId || resolvedSelectedClassKey || selectedAction || selectedSearchTerm);
+    const hasActiveFilters = Boolean(
+      selectedUserId
+      || resolvedSelectedClassKey
+      || selectedAction
+      || selectedSearchTerm
+      || selectedSort !== 'desc'
+      || selectedLimit !== ADMIN_ACTIVITY_LOG_FETCH_LIMIT
+    );
 
     state.activityLogs = entries;
     state.activityLogsLoaded = true;
@@ -1092,6 +1127,12 @@ const loadActivityLogs = async () => {
 };
 
 const handleClearActivityLogs = async () => {
+  if (!canClearAdminActivityLogs(state.currentRole)) {
+    setActivityStatus('Only developers can clear activity logs.', 'warning');
+    showToast('Activity log clearing unavailable', 'warning');
+    return;
+  }
+
   const clearRequestState = buildActivityLogsClearRequestState();
   const shouldContinue = await requestConfirmation({
     message: clearRequestState.confirmationMessage,
@@ -1226,6 +1267,8 @@ const ensurePanelAccess = async () => {
   console.log('Logged in email:', normalizeText(authUser?.email || '(none)').toLowerCase());
   console.log('Final role:', state.currentRole);
   updatePanelRoleBadge();
+  updatePanelAccessSummary();
+  updateAdminActionBoundaryState();
 
   if (state.currentRole !== ROLE_ADMIN && state.currentRole !== ROLE_DEVELOPER) {
     redirectToDashboard();
@@ -1300,6 +1343,9 @@ const bindEvents = () => {
     if (dom.activitySortFilter) {
       dom.activitySortFilter.value = 'desc';
     }
+    if (dom.activityLimitFilter) {
+      dom.activityLimitFilter.value = String(ADMIN_ACTIVITY_LOG_FETCH_LIMIT);
+    }
     updateActivityFilterControls();
     await loadActivityLogs();
     dom.activitySearchInput?.focus();
@@ -1328,6 +1374,11 @@ const bindEvents = () => {
   });
 
   dom.activitySortFilter?.addEventListener('change', async () => {
+    updateActivityFilterControls();
+    await loadActivityLogs();
+  });
+
+  dom.activityLimitFilter?.addEventListener('change', async () => {
     updateActivityFilterControls();
     await loadActivityLogs();
   });

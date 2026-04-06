@@ -604,6 +604,14 @@ const assertAdminOrDeveloperRole = (operationLabel = 'manage admin data') => {
   return role;
 };
 
+const assertDeveloperRole = (operationLabel = 'manage admin data') => {
+  const role = getCurrentUserRoleContext();
+  if (role !== 'developer') {
+    throw createContextError(ERROR_CODES.READ_ONLY_MODE, `Only developers can ${operationLabel}`);
+  }
+  return role;
+};
+
 const ensureValidClassContext = async (operationLabel = 'access class data', options = {}) => {
   const requireClass = options?.requireClass !== false;
   const requireWritable = options?.requireWritable === true;
@@ -2250,7 +2258,6 @@ const ensureClassMigration = async (userId) => {
 
     await updateMigrationState(userId, 'completed', {
       classMigrationError: null,
-      classMigrationCompletedAt: migrationUpdatedAt,
       classMigrationCountsLegacy: legacyCounts,
       classMigrationCountsClass: classCountsAfterSync,
       activeClassId: classId,
@@ -3944,9 +3951,7 @@ export const fetchAdminGlobalStats = async () => {
 
 export const updateAdminUserRole = async ({ uid = '', name = '', email = '', role = 'teacher' } = {}) => {
   const actorUserId = await ensureAuthenticatedUserId('update user role');
-  if (getCurrentUserRoleContext() !== 'developer') {
-    throw createContextError(ERROR_CODES.READ_ONLY_MODE, 'Only developers can update user roles');
-  }
+  assertDeveloperRole('update user roles');
   if (!isFirebaseConfigured || !db) {
     throw new Error('Firebase unavailable');
   }
@@ -4348,7 +4353,7 @@ export const permanentlyDeleteStudent = async (rawData, studentId) => enqueueWri
 
 export const deleteAdminRegistryStudent = async ({ ownerId = '', studentId = '', studentName = '' } = {}) => enqueueWrite(async () => {
   await ensureAuthenticatedUserId('delete registry student');
-  const actorRole = assertAdminOrDeveloperRole('delete student records from the registry');
+  const actorRole = assertDeveloperRole('delete student records from the registry');
   if (!isFirebaseConfigured || !db) {
     throw new Error('Firebase unavailable');
   }
@@ -4422,7 +4427,7 @@ export const deleteAdminRegistryStudent = async ({ ownerId = '', studentId = '',
 
 export const clearActivityLogs = async () => enqueueWrite(async () => {
   await ensureAuthenticatedUserId('clear activity logs');
-  assertAdminOrDeveloperRole('clear activity logs');
+  assertDeveloperRole('clear activity logs');
   if (!isFirebaseConfigured || !db) {
     return 0;
   }
