@@ -104,6 +104,7 @@ const domIds = {
   bulkClassDeleteModal: 'bulk-class-delete-modal',
   bulkClassDeleteList: 'bulk-class-delete-list',
   bulkClassDeleteSummary: 'bulk-class-delete-summary',
+  bulkClassDeleteHint: 'bulk-class-delete-hint',
   bulkClassDeleteConfirmBtn: 'bulk-class-delete-confirm-btn',
   bulkClassDeleteCancelBtn: 'bulk-class-delete-cancel-btn',
   bulkClassDeleteSelectAllBtn: 'bulk-class-delete-select-all-btn',
@@ -877,21 +878,29 @@ const ui = {
       return `${className} (Teacher: ${ownerName})`;
     },
 
+    getClassInitials: function (name = '') {
+      const words = String(name || '').trim().split(/\s+/).filter(Boolean);
+      if (!words.length) return 'MC';
+      const first = words[0].charAt(0) || '';
+      const second = words.length > 1 ? words[1].charAt(0) : (words[0].charAt(1) || '');
+      return `${first}${second}`.toUpperCase() || 'MC';
+    },
+
     getActiveClassEntry: function () {
       const classes = Array.isArray(app.state.classes) ? app.state.classes : [];
-      const currentClassId = String(app.state.currentClassId || '').trim();
-      const currentOwnerId = String(app.state.currentClassOwnerId || '').trim();
+      const activeClassId = String(app.state.currentClassId || '').trim();
+      const activeOwnerId = String(app.state.currentClassOwnerId || '').trim();
       return classes.find((entry) => {
         const entryClassId = String(entry?.id || '').trim();
         const entryOwnerId = String(entry?.ownerId || '').trim();
-        if (entryClassId !== currentClassId) {
+        if (entryClassId !== activeClassId) {
           return false;
         }
-        if (!currentOwnerId) {
+        if (!activeOwnerId) {
           return true;
         }
-        return entryOwnerId === currentOwnerId;
-      }) || classes.find(entry => String(entry?.id || '').trim() === currentClassId) || null;
+        return entryOwnerId === activeOwnerId;
+      }) || classes.find(entry => String(entry?.id || '').trim() === activeClassId) || null;
     },
 
     getCurrentClassDisplayLabel: function () {
@@ -1137,6 +1146,42 @@ const ui = {
         .filter(Boolean))];
     },
 
+    getBulkClassDeleteSelectionState: function (classes = [], selectedIds = []) {
+      const normalizedClasses = Array.isArray(classes) ? classes : [];
+      const normalizedSelectedIds = Array.isArray(selectedIds) ? selectedIds : [];
+      const totalCount = normalizedClasses.length;
+      const selectedCount = normalizedSelectedIds.length;
+      const currentClassId = String(app.state.currentClassId || '').trim();
+      const allSelected = totalCount > 0 && selectedCount === totalCount;
+      const includesCurrentClass = Boolean(currentClassId) && normalizedSelectedIds.includes(currentClassId);
+      const preventsDeletingAll = allSelected && !app.state.allowEmptyClassCatalog;
+      const summaryMessage = selectedCount
+        ? `${selectedCount} of ${totalCount} class${totalCount === 1 ? '' : 'es'} selected${allSelected ? ' (all)' : ''}`
+        : `${totalCount} class${totalCount === 1 ? '' : 'es'} available`;
+
+      let hintMessage = selectedCount
+        ? 'Selected classes will move to Trash and can be restored later.'
+        : 'Select classes to review what will be moved to Trash.';
+
+      if (preventsDeletingAll) {
+        hintMessage = 'Keep at least one class active. Clear one selection before deleting.';
+      } else if (includesCurrentClass && selectedCount) {
+        hintMessage = selectedCount === 1
+          ? 'The current class is selected. Another class will become active after deletion.'
+          : 'The current class is selected. The app will switch to another remaining class after deletion.';
+      }
+
+      return {
+        totalCount,
+        selectedCount,
+        allSelected,
+        includesCurrentClass,
+        preventsDeletingAll,
+        summaryMessage,
+        hintMessage
+      };
+    },
+
     renderBulkClassDeleteModal: function () {
       if (!app.dom.bulkClassDeleteList || !app.dom.bulkClassDeleteSummary || !app.dom.bulkClassDeleteConfirmBtn) {
         return;
@@ -1150,37 +1195,52 @@ const ui = {
       this.bulkClassDeleteSelection = selectedIds;
 
       if (!classes.length) {
-        app.dom.bulkClassDeleteList.innerHTML = '<div class="bulk-class-delete-empty">No classes available</div>';
+        app.dom.bulkClassDeleteList.innerHTML = '<div class="bulk-class-delete-empty"><strong>No classes available</strong><p>Create a class first to use this menu.</p></div>';
         app.dom.bulkClassDeleteSummary.textContent = 'No classes available';
+        if (app.dom.bulkClassDeleteHint) {
+          app.dom.bulkClassDeleteHint.textContent = 'Create a class first to use this menu.';
+        }
         app.dom.bulkClassDeleteConfirmBtn.disabled = true;
         if (app.dom.bulkClassDeleteSelectAllBtn) app.dom.bulkClassDeleteSelectAllBtn.disabled = true;
         if (app.dom.bulkClassDeleteClearBtn) app.dom.bulkClassDeleteClearBtn.disabled = true;
         return;
       }
 
+      const currentClassId = String(app.state.currentClassId || '').trim();
       app.dom.bulkClassDeleteList.innerHTML = classes.map((entry) => {
         const classId = String(entry?.id || '').trim();
         const className = String(entry?.name || 'My Class').trim() || 'My Class';
         const ownerLabel = this.formatClassOwnerLabel(entry);
         const isSelected = selectedIds.includes(classId);
+        const isCurrentClass = classId === currentClassId;
+        const classInitials = this.getClassInitials(className);
+        const itemMeta = isCurrentClass
+          ? 'Currently active class'
+          : 'Moves to Trash and can be restored later';
         return `
-          <label class="bulk-class-delete-item">
+          <label class="bulk-class-delete-item${isSelected ? ' is-selected' : ''}${isCurrentClass ? ' is-current' : ''}">
             <input type="checkbox" class="bulk-class-delete-checkbox" value="${app.utils.esc(classId)}" ${isSelected ? 'checked' : ''}>
+            <span class="bulk-class-delete-item-selector" aria-hidden="true"><span class="bulk-class-delete-item-selector-icon">✓</span></span>
+            <span class="bulk-class-delete-item-avatar" aria-hidden="true">${app.utils.esc(classInitials)}</span>
             <span class="bulk-class-delete-item-copy">
-              <span class="bulk-class-delete-item-name">${app.utils.esc(className)}</span>
-              ${ownerLabel ? `<span class="bulk-class-delete-item-owner">${app.utils.esc(ownerLabel)}</span>` : ''}
+              <span class="bulk-class-delete-item-topline">
+                <span class="bulk-class-delete-item-name">${app.utils.esc(className)}</span>
+                <span class="bulk-class-delete-item-badges">${isCurrentClass ? '<span class="bulk-class-delete-badge bulk-class-delete-badge-current">Current</span>' : ''}${isSelected ? '<span class="bulk-class-delete-badge bulk-class-delete-badge-selected">Selected</span>' : ''}</span>
+              </span>
+              <span class="bulk-class-delete-item-owner">${app.utils.esc(ownerLabel || 'Teacher: —')}</span>
+              <span class="bulk-class-delete-item-meta">${app.utils.esc(itemMeta)}</span>
             </span>
           </label>`;
       }).join('');
 
-      const selectedCount = selectedIds.length;
-      const allSelected = selectedCount === classes.length;
-      app.dom.bulkClassDeleteSummary.textContent = selectedCount
-        ? `${selectedCount} class${selectedCount === 1 ? '' : 'es'} selected${allSelected ? ' (all)' : ''}`
-        : 'No classes selected';
-      app.dom.bulkClassDeleteConfirmBtn.disabled = selectedCount === 0;
-      if (app.dom.bulkClassDeleteSelectAllBtn) app.dom.bulkClassDeleteSelectAllBtn.disabled = allSelected;
-      if (app.dom.bulkClassDeleteClearBtn) app.dom.bulkClassDeleteClearBtn.disabled = selectedCount === 0;
+      const selectionState = this.getBulkClassDeleteSelectionState(classes, selectedIds);
+      app.dom.bulkClassDeleteSummary.textContent = selectionState.summaryMessage;
+      if (app.dom.bulkClassDeleteHint) {
+        app.dom.bulkClassDeleteHint.textContent = selectionState.hintMessage;
+      }
+      app.dom.bulkClassDeleteConfirmBtn.disabled = selectionState.selectedCount === 0 || selectionState.preventsDeletingAll;
+      if (app.dom.bulkClassDeleteSelectAllBtn) app.dom.bulkClassDeleteSelectAllBtn.disabled = selectionState.allSelected;
+      if (app.dom.bulkClassDeleteClearBtn) app.dom.bulkClassDeleteClearBtn.disabled = selectionState.selectedCount === 0;
     },
 
     openBulkClassDeleteModal: function () {
@@ -1290,6 +1350,16 @@ const ui = {
       const selectedIds = this.getBulkClassDeleteSelection();
       if (!selectedIds.length) {
         this.showToast('Select at least one class');
+        return;
+      }
+
+      const classes = Array.isArray(app.state.classes)
+        ? app.state.classes.filter((entry) => String(entry?.id || '').trim())
+        : [];
+      const selectionState = this.getBulkClassDeleteSelectionState(classes, selectedIds);
+      if (selectionState.preventsDeletingAll) {
+        this.renderBulkClassDeleteModal();
+        this.showToast('Keep at least one class active');
         return;
       }
 

@@ -1558,7 +1558,119 @@ test.describe('Class refactor critical regressions', () => {
     expect(result.currentClassId).toBe('class_two');
     expect(result.createDisabled).toBe(false);
     expect(result.deleteDisabled).toBe(false);
+});
+
+test('bulk delete class modal shows polished selection state and prevents deleting all active classes', async ({ page }) => {
+  const result = await page.evaluate(async () => {
+    const [stateModule, uiModule] = await Promise.all([
+      import('/js/state.js'),
+      import('/js/ui.js')
+    ]);
+
+    const app = stateModule.default || window.TrackerApp;
+    const ui = uiModule.default || app.ui;
+
+    document.body.innerHTML = `
+      <div id="toast"></div>
+      <div class="modal-overlay" id="bulk-class-delete-modal">
+        <div class="modal bulk-class-delete-modal">
+          <div class="bulk-class-delete-header">
+            <div class="bulk-class-delete-heading">
+              <span class="bulk-class-delete-kicker">Class cleanup</span>
+              <h3>Delete Classes</h3>
+            </div>
+            <span class="bulk-class-delete-chip">Moves to Trash</span>
+          </div>
+          <p class="bulk-class-delete-note">Select the classes you want to move to Trash. You can restore them later from Trash.</p>
+          <div class="bulk-class-delete-status-panel">
+            <p id="bulk-class-delete-summary" class="bulk-class-delete-summary"></p>
+            <p id="bulk-class-delete-hint" class="bulk-class-delete-hint"></p>
+          </div>
+          <div class="bulk-class-delete-toolbar">
+            <button type="button" id="bulk-class-delete-select-all-btn">Select All</button>
+            <button type="button" id="bulk-class-delete-clear-btn">Clear</button>
+          </div>
+          <div id="bulk-class-delete-list" class="bulk-class-delete-list"></div>
+          <div class="modal-actions bulk-class-delete-actions">
+            <button id="bulk-class-delete-cancel-btn">Cancel</button>
+            <button id="bulk-class-delete-confirm-btn">Delete Selected</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    ui.init();
+
+    app.setCurrentUserRole('teacher', { resolved: true });
+    app.state.isLoading = false;
+    app.state.allowEmptyClassCatalog = false;
+    app.state.classes = [
+      { id: 'class_alpha', name: 'Alpha Class', ownerId: 'teacher_owner', ownerName: 'Mike' },
+      { id: 'class_beta', name: 'Beta Class', ownerId: 'teacher_owner', ownerName: 'Mike' },
+      { id: 'class_gamma', name: 'Gamma Class', ownerId: 'teacher_owner', ownerName: 'Mike' }
+    ];
+    app.state.currentClassId = 'class_beta';
+    app.state.currentClassOwnerId = 'teacher_owner';
+    app.syncDataContext();
+
+    ui.openBulkClassDeleteModal();
+
+    const currentItem = document.querySelector('.bulk-class-delete-item.is-current');
+    const initialState = {
+      modalActive: document.getElementById('bulk-class-delete-modal')?.classList.contains('active') || false,
+      summary: document.getElementById('bulk-class-delete-summary')?.textContent || '',
+      hint: document.getElementById('bulk-class-delete-hint')?.textContent || '',
+      confirmDisabled: Boolean(document.getElementById('bulk-class-delete-confirm-btn')?.disabled),
+      selectAllDisabled: Boolean(document.getElementById('bulk-class-delete-select-all-btn')?.disabled),
+      clearDisabled: Boolean(document.getElementById('bulk-class-delete-clear-btn')?.disabled),
+      cardCount: document.querySelectorAll('.bulk-class-delete-item').length,
+      selectedCount: document.querySelectorAll('.bulk-class-delete-item.is-selected').length,
+      currentClasses: currentItem?.className || '',
+      currentBadges: Array.from(currentItem?.querySelectorAll('.bulk-class-delete-badge') || []).map(node => node.textContent || ''),
+      currentMeta: currentItem?.querySelector('.bulk-class-delete-item-meta')?.textContent || '',
+      currentOwner: currentItem?.querySelector('.bulk-class-delete-item-owner')?.textContent || '',
+      currentAvatar: currentItem?.querySelector('.bulk-class-delete-item-avatar')?.textContent || ''
+    };
+
+    ui.bulkClassDeleteSelection = ['class_alpha', 'class_beta', 'class_gamma'];
+    ui.renderBulkClassDeleteModal();
+
+    return {
+      initialState,
+      afterSelectAll: {
+        summary: document.getElementById('bulk-class-delete-summary')?.textContent || '',
+        hint: document.getElementById('bulk-class-delete-hint')?.textContent || '',
+        confirmDisabled: Boolean(document.getElementById('bulk-class-delete-confirm-btn')?.disabled),
+        selectAllDisabled: Boolean(document.getElementById('bulk-class-delete-select-all-btn')?.disabled),
+        clearDisabled: Boolean(document.getElementById('bulk-class-delete-clear-btn')?.disabled),
+        selectedCount: document.querySelectorAll('.bulk-class-delete-item.is-selected').length
+      }
+    };
   });
+
+  expect(result.initialState.modalActive).toBe(true);
+  expect(result.initialState.summary).toBe('1 of 3 classes selected');
+  expect(result.initialState.hint).toBe('The current class is selected. Another class will become active after deletion.');
+  expect(result.initialState.confirmDisabled).toBe(false);
+  expect(result.initialState.selectAllDisabled).toBe(false);
+  expect(result.initialState.clearDisabled).toBe(false);
+  expect(result.initialState.cardCount).toBe(3);
+  expect(result.initialState.selectedCount).toBe(1);
+  expect(result.initialState.currentClasses).toContain('is-current');
+  expect(result.initialState.currentClasses).toContain('is-selected');
+  expect(result.initialState.currentBadges).toContain('Current');
+  expect(result.initialState.currentBadges).toContain('Selected');
+  expect(result.initialState.currentMeta).toBe('Currently active class');
+  expect(result.initialState.currentOwner).toBe('Teacher: Mike');
+  expect(result.initialState.currentAvatar).toBe('BC');
+
+  expect(result.afterSelectAll.summary).toBe('3 of 3 classes selected (all)');
+  expect(result.afterSelectAll.hint).toBe('Keep at least one class active. Clear one selection before deleting.');
+  expect(result.afterSelectAll.confirmDisabled).toBe(true);
+  expect(result.afterSelectAll.selectAllDisabled).toBe(true);
+  expect(result.afterSelectAll.clearDisabled).toBe(false);
+  expect(result.afterSelectAll.selectedCount).toBe(3);
+});
 
   test('admin dropdown renders when valid classes exist', async ({ page }) => {
     const result = await page.evaluate(async () => {
