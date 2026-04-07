@@ -1175,6 +1175,53 @@ window.TrackerApp = window.TrackerApp || {};
     });
   };
 
+  app.saveBulkStudentScores = async function (studentEntries = []) {
+    return enqueueStateWrite(async () => {
+      try {
+        const nextStudents = deepClone(app.state.students || []);
+        const nextSubjects = deepClone(app.state.subjects || []);
+        const nextExams = deepClone(app.state.exams || []);
+        const normalizedEntries = (Array.isArray(studentEntries) ? studentEntries : []).map((entry) => {
+          const normalizedStudentId = String(entry?.id || entry?.studentId || '').trim();
+          if (!normalizedStudentId) {
+            return null;
+          }
+
+          const normalizedStudentData = normalizeStudentUpdate({ scores: entry?.scores || {} });
+          if (!Object.prototype.hasOwnProperty.call(normalizedStudentData, 'scores')) {
+            return null;
+          }
+
+          return {
+            id: normalizedStudentId,
+            scores: normalizedStudentData.scores
+          };
+        }).filter(Boolean);
+
+        if (!normalizedEntries.length) {
+          return 0;
+        }
+
+        normalizedEntries.forEach(({ id, scores }) => {
+          const index = nextStudents.findIndex((student) => String(student?.id || '').trim() === id);
+          if (index !== -1) {
+            nextStudents[index] = {
+              ...nextStudents[index],
+              scores
+            };
+          }
+        });
+
+        const saveResult = await dataService.saveBulkStudentScores(app.getRawData(), normalizedEntries);
+        syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult, 'save bulk student scores');
+        return normalizedEntries.length;
+      } catch (error) {
+        console.error('Failed to save bulk student scores:', error);
+        throw error;
+      }
+    });
+  };
+
   app.deleteStudent = async function (studentId) {
     return enqueueStateWrite(async () => {
       try {

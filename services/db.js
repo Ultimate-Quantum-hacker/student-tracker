@@ -19,6 +19,7 @@ import {
   orderBy,
   limit,
   serverTimestamp,
+  writeBatch,
   isFirebaseConfigured,
   auth,
   authReadyPromise,
@@ -2139,6 +2140,61 @@ const ensureUserRootProfileDocument = async (userId) => {
   await setDoc(userRootRef, bootstrapPayload, { merge: true });
 };
 
+const syncCurrentUserRootProfileMetadata = async (userId, currentData = {}) => {
+  const normalizedUserId = normalizeUserId(userId);
+  const existingData = currentData && typeof currentData === 'object' ? currentData : {};
+  if (!isFirebaseConfigured || !db || !normalizedUserId || !Object.keys(existingData).length) {
+    return existingData;
+  }
+
+  const authenticatedUser = auth?.currentUser || null;
+  const patch = {};
+  if (normalizeUserId(existingData.uid || '') !== normalizedUserId) {
+    patch.uid = normalizedUserId;
+  }
+  if (normalizeUserId(existingData.userId || '') !== normalizedUserId) {
+    patch.userId = normalizedUserId;
+  }
+
+  const normalizedEmail = normalizeEmailAddress(authenticatedUser?.email || '');
+  if (normalizedEmail && normalizedEmail !== normalizeEmailAddress(existingData.email || '')) {
+    patch.email = normalizedEmail;
+  }
+
+  const normalizedName = normalizeDisplayName(
+    authenticatedUser?.displayName || existingData.name || authenticatedUser?.email || 'Teacher',
+    'Teacher'
+  );
+  if (normalizedName && normalizedName !== normalizeDisplayName(existingData.name || '', '')) {
+    patch.name = normalizedName;
+  }
+
+  const emailVerified = Boolean(authenticatedUser?.emailVerified);
+  if (!Object.prototype.hasOwnProperty.call(existingData, 'emailVerified') || Boolean(existingData.emailVerified) !== emailVerified) {
+    patch.emailVerified = emailVerified;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(existingData, 'role')) {
+    const normalizedRole = normalizeRole(existingData.role);
+    if (normalizedRole !== String(existingData.role || '').trim().toLowerCase()) {
+      patch.role = normalizedRole;
+    }
+  } else if (getCurrentUserRoleContext() === 'teacher') {
+    patch.role = 'teacher';
+  }
+
+  if (!Object.keys(patch).length) {
+    return existingData;
+  }
+
+  patch.updatedAt = new Date().toISOString();
+  await setDoc(getUserRootRef(normalizedUserId), patch, { merge: true });
+  return {
+    ...existingData,
+    ...patch
+  };
+};
+
 const mergeUserRootMetadata = async (userId, patch = {}) => {
   const normalizedUserId = normalizeUserId(userId);
   if (!isFirebaseConfigured || !db || !normalizedUserId) {
@@ -3829,6 +3885,107 @@ const persistStudentUpdateById = async (studentId, studentData, nextData) => {
   };
 };
 
+const persistBulkStudentScoreUpdates = async (studentScoreEntries = [], nextData) => {
+  const normalizedEntries = asArray(studentScoreEntries).map((entry) => {
+    const normalizedStudentId = String(entry?.studentId || entry?.id || '').trim();
+    if (!normalizedStudentId) {
+      return null;
+    }
+
+    const patch = normalizeStudentPatch({ scores: entry?.scores || {} }, nextData);
+    if (!Object.prototype.hasOwnProperty.call(patch, 'scores')) {
+      return null;
+    }
+
+    return {
+      studentId: normalizedStudentId,
+      scores: patch.scores
+    };
+  }).filter(Boolean);
+
+  if (!normalizedEntries.length) {
+    return {
+      data: nextData,
+      remoteSaved: true,
+      error: null,
+      errorType: null,
+      operation: 'save bulk student scores',
+      offline: false
+    };
+  }
+
+  let lastError = null;
+  let lastErrorType = null;
+
+  for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      const classScope = await ensureValidClassContext('save bulk student scores', { requireWritable: true });
+      const userId = classScope.ownerId;
+      const classId = classScope.classId;
+      const updatedAt = new Date().toISOString();
+
+      await ensureUserRootProfileDocument(userId);
+
+      const batch = writeBatch(db);
+      normalizedEntries.forEach(({ studentId, scores }) => {
+        batch.update(getStudentDocRef(userId, studentId, classId), {
+          scores,
+          userId,
+          ownerId: userId,
+          classId,
+          updatedAt
+        });
+      });
+      batch.set(
+        getClassDocRef(userId, classId),
+        buildClassDocMetadataPatch(userId, classId, updatedAt),
+        { merge: true }
+      );
+      batch.set(getUserRootRef(userId), {
+        userId,
+        activeClassId: classId,
+        updatedAt
+      }, { merge: true });
+      await batch.commit();
+
+      return {
+        data: nextData,
+        remoteSaved: true,
+        error: null,
+        errorType: null,
+        operation: 'save bulk student scores',
+        offline: false,
+        classId
+      };
+    } catch (error) {
+      lastError = error;
+      lastErrorType = classifyFirebaseError(error);
+      console.error('Failed to save bulk student scores via Firebase:', error);
+
+      if (attempt < RETRY_ATTEMPTS && shouldRetry(lastErrorType) && !isNavigatorOffline()) {
+        console.warn(`Retrying save bulk student scores (${attempt + 1}/${RETRY_ATTEMPTS}) after ${lastErrorType} error`);
+        await wait(RETRY_DELAY_MS * attempt);
+        continue;
+      }
+
+      break;
+    }
+  }
+
+  if (!isOfflineError(lastErrorType)) {
+    logOnlineFailure('save bulk student scores', lastErrorType);
+  }
+
+  return {
+    data: nextData,
+    remoteSaved: false,
+    error: lastError,
+    errorType: lastErrorType,
+    operation: 'save bulk student scores',
+    offline: isOfflineError(lastErrorType)
+  };
+};
+
 const persistStudentDeleteById = async (studentId, nextData, studentMeta = {}) => {
   const normalizedStudentId = String(studentId || '').trim();
   const normalizedStudentName = String(studentMeta?.name || '').trim() || 'Student';
@@ -4276,7 +4433,8 @@ export const requestCurrentUserAccountDeletion = async () => enqueueWrite(async 
   }
 
   await ensureUserRootProfileDocument(userId);
-  const userPayload = await readUserRootData(userId);
+  let userPayload = await readUserRootData(userId);
+  userPayload = await syncCurrentUserRootProfileMetadata(userId, userPayload);
   const lifecycle = normalizeUserAccountLifecycleRecord(userPayload, {
     status: ACCOUNT_STATUS_ACTIVE,
     accountDeletionStatus: ACCOUNT_DELETION_STATUS_NONE
@@ -4974,6 +5132,38 @@ export const saveScores = async (rawData, studentId, scores) => enqueueWrite(asy
     student.scores = normalizedScores;
   }
   return persistStudentUpdateById(studentId, { scores: normalizedScores }, next);
+});
+
+export const saveBulkStudentScores = async (rawData, studentScoreEntries = []) => enqueueWrite(async () => {
+  const next = normalizeRawData(rawData);
+  const normalizedEntries = asArray(studentScoreEntries).map((entry) => {
+    const normalizedStudentId = String(entry?.id || entry?.studentId || '').trim();
+    if (!normalizedStudentId) {
+      return null;
+    }
+
+    const normalizedPatch = normalizeStudentPatch({ scores: entry?.scores || {} }, next);
+    if (!Object.prototype.hasOwnProperty.call(normalizedPatch, 'scores')) {
+      return null;
+    }
+
+    return {
+      studentId: normalizedStudentId,
+      scores: normalizedPatch.scores
+    };
+  }).filter(Boolean);
+
+  normalizedEntries.forEach(({ studentId, scores }) => {
+    const studentIndex = next.students.findIndex((student) => String(student?.id || '').trim() === studentId);
+    if (studentIndex !== -1) {
+      next.students[studentIndex] = {
+        ...next.students[studentIndex],
+        scores
+      };
+    }
+  });
+
+  return persistBulkStudentScoreUpdates(normalizedEntries, next);
 });
 
 export const updateSubjects = async (rawData, subjects) => enqueueWrite(async () => {

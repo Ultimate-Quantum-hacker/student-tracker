@@ -50,6 +50,12 @@ service cloud.firestore {
         && request.resource.data.emailVerified == request.auth.token.email_verified;
     }
 
+    function ownerRoleUnchangedOrTeacherDefault() {
+      return request.resource.data.role == resource.data.role
+        || (!('role' in resource.data)
+          && (!('role' in request.resource.data) || request.resource.data.role == 'teacher'));
+    }
+
     function ownerCanUpdateOwnUserDoc(userId) {
       return isOwner(userId)
         && (!('uid' in request.resource.data) || request.resource.data.uid == userId)
@@ -75,10 +81,7 @@ service cloud.firestore {
           'classMigrationCountsLegacy',
           'classMigrationCountsClass'
         ])
-        && (
-          request.resource.data.role == resource.data.role
-          || (!('role' in resource.data) && request.resource.data.role == 'teacher')
-        );
+        && ownerRoleUnchangedOrTeacherDefault();
     }
 
     function ownerCanRequestAccountDeletion(userId) {
@@ -106,10 +109,7 @@ service cloud.firestore {
         && (!('accountDeletionReviewedAt' in request.resource.data) || request.resource.data.accountDeletionReviewedAt == null)
         && (!('accountDeletionReviewedBy' in request.resource.data) || request.resource.data.accountDeletionReviewedBy == '')
         && (!('deletedAt' in request.resource.data) || request.resource.data.deletedAt == null)
-        && (
-          request.resource.data.role == resource.data.role
-          || (!('role' in resource.data) && request.resource.data.role == 'teacher')
-        )
+        && ownerRoleUnchangedOrTeacherDefault()
         && (!('accountDeletionStatus' in resource.data) || resource.data.accountDeletionStatus != 'approved')
         && (!('status' in resource.data) || resource.data.status != 'deleted');
     }
@@ -131,10 +131,7 @@ service cloud.firestore {
         && request.resource.data.deletedAt is timestamp
         && resource.data.accountDeletionStatus == 'approved'
         && (!('status' in resource.data) || resource.data.status != 'deleted')
-        && (
-          request.resource.data.role == resource.data.role
-          || (!('role' in resource.data) && request.resource.data.role == 'teacher')
-        );
+        && ownerRoleUnchangedOrTeacherDefault();
     }
 
     function privilegedCanReviewAccountDeletion(userId) {

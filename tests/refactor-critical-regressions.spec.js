@@ -176,6 +176,28 @@ export const updateDoc = async (ref, patch = {}) => {
 export const deleteDoc = async (ref) => {
   store.delete(pathKey(ref?.path || []));
 };
+export const writeBatch = () => {
+  const operations = [];
+  return {
+    set(ref, data = {}, options = {}) {
+      operations.push(() => setDoc(ref, data, options));
+      return this;
+    },
+    update(ref, patch = {}) {
+      operations.push(() => updateDoc(ref, patch));
+      return this;
+    },
+    delete(ref) {
+      operations.push(() => deleteDoc(ref));
+      return this;
+    },
+    async commit() {
+      for (const operation of operations) {
+        await operation();
+      }
+    }
+  };
+};
 export const query = (target, ...constraints) => ({ type: 'query', target, constraints });
 export const where = (...args) => ({ type: 'where', args });
 export const orderBy = (...args) => ({ type: 'orderBy', args });
@@ -2019,6 +2041,7 @@ test('bulk delete class modal shows polished selection state and prevents deleti
     const authPageSource = readWorkspaceFile('js/auth-page.js');
     const noticesSource = readWorkspaceFile('js/auth-notices.js');
     const uiSource = readWorkspaceFile('js/ui.js');
+    const dbSource = readWorkspaceFile('services/db.js');
     const rulesSource = readWorkspaceFile('firestore.rules');
 
     expect(noticesSource).toContain('export const peekAuthPageNotice = () => peekNotice(AUTH_PAGE_NOTICE_KEY);');
@@ -2030,9 +2053,12 @@ test('bulk delete class modal shows polished selection state and prevents deleti
     expect(uiSource).toContain('requestCurrentUserAccountDeletion');
     expect(uiSource).toContain('finalizeCurrentUserAccountDeletion');
     expect(uiSource).toContain('requestPasswordReset');
+    expect(dbSource).toContain('syncCurrentUserRootProfileMetadata');
+    expect(dbSource).toContain('writeBatch(db)');
     expect(uiSource).toContain('Pending admin review');
     expect(uiSource).toContain('Deletion requests stay pending until an admin reviews them.');
     expect(uiSource).toContain('An admin must review and approve it before you can permanently delete your account.');
+    expect(rulesSource).toContain('function ownerRoleUnchangedOrTeacherDefault()');
     expect(rulesSource).toContain("&& (!('email' in resource.data) || request.resource.data.email == resource.data.email)");
     expect(rulesSource).toContain("&& (!('emailVerified' in resource.data) || request.resource.data.emailVerified == resource.data.emailVerified)");
     expect(rulesSource).toContain('return isAdminRole()');
@@ -2921,12 +2947,99 @@ test('bulk delete class modal shows polished selection state and prevents deleti
       };
     });
 
-    expect(result.hasLegacySubjectKey).toBe(false);
-    expect(result.hasLegacyExamKey).toBe(false);
-    expect(result.scores).toEqual({
-      subject_math: { exam_mock_1: 88 },
-      subject_english: { exam_mock_1: 76 }
+    expect(result.developerReviewState.canReview).toBe(false);
+    expect(result.developerReviewState.statusMessage).toBe('Only admins can review deletion requests.');
+    expect(adminSource).toContain('Admin mode: review users, search, registry, activity history, and account deletion requests.');
+    expect(adminJsSource).toContain("buildTableHelperTextMarkup('Admin-only deletion review')");
+  });
+
+  test('requestCurrentUserAccountDeletion normalizes legacy owner metadata before marking deletion pending', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__FIREBASE_CONFIG__ = {
+        apiKey: 'test-api-key',
+        authDomain: 'test-project.firebaseapp.com',
+        projectId: 'test-project',
+        storageBucket: 'test-project.appspot.com',
+        messagingSenderId: '1234567890',
+        appId: '1:1234567890:web:test'
+      };
     });
+    await page.goto(APP_URL);
+
+    const result = await page.evaluate(async () => {
+      const [firebaseModule, dbModule] = await Promise.all([
+        import('/js/firebase.js'),
+        import('/services/db.js')
+      ]);
+
+      globalThis.__firestoreStore?.clear?.();
+      localStorage.clear();
+      sessionStorage.clear();
+
+      firebaseModule.auth.currentUser = {
+        uid: 'owner_delete',
+        email: 'teacher@example.com',
+        displayName: 'Teacher Delete',
+        emailVerified: true
+      };
+
+      dbModule.setCurrentUserRoleContext('teacher');
+      dbModule.setCurrentClassId('class_delete');
+      dbModule.setCurrentClassOwnerContext('owner_delete', 'Teacher Delete');
+
+      const updatedAt = new Date().toISOString();
+      await firebaseModule.setDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_delete'),
+        {
+          uid: 'owner_delete',
+          userId: 'owner_delete',
+          name: 'Legacy Teacher',
+          email: 'legacy@example.com',
+          emailVerified: false,
+          status: 'active',
+          accountDeletionStatus: 'none',
+          updatedAt
+        },
+        { merge: false }
+      );
+
+      const deletionResult = await dbModule.requestCurrentUserAccountDeletion();
+      const userSnapshot = await firebaseModule.getDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_delete')
+      );
+      const activityLogDocs = await firebaseModule.getDocs(
+        firebaseModule.collection(firebaseModule.db, 'activityLogs')
+      );
+      const activityLogMatch = activityLogDocs.docs.find((entry) => entry.data().action === 'user_account_delete_requested') || null;
+
+      return {
+        remoteSaved: deletionResult.accountDeletionStatus === 'pending',
+        resultRole: deletionResult.role || '',
+        resultEmail: deletionResult.email || '',
+        resultEmailVerified: Boolean(deletionResult.emailVerified),
+        requestedBy: deletionResult.accountDeletionRequestedBy || '',
+        storedRole: userSnapshot.data().role || '',
+        storedEmail: userSnapshot.data().email || '',
+        storedEmailVerified: Boolean(userSnapshot.data().emailVerified),
+        storedDeletionStatus: userSnapshot.data().accountDeletionStatus || '',
+        storedRequestedBy: userSnapshot.data().accountDeletionRequestedBy || '',
+        hasActivityLog: Boolean(activityLogMatch),
+        activityRole: activityLogMatch?.data()?.userRole || ''
+      };
+    });
+
+    expect(result.remoteSaved).toBe(true);
+    expect(result.resultRole).toBe('teacher');
+    expect(result.resultEmail).toBe('teacher@example.com');
+    expect(result.resultEmailVerified).toBe(true);
+    expect(result.requestedBy).toBe('owner_delete');
+    expect(result.storedRole).toBe('teacher');
+    expect(result.storedEmail).toBe('teacher@example.com');
+    expect(result.storedEmailVerified).toBe(true);
+    expect(result.storedDeletionStatus).toBe('pending');
+    expect(result.storedRequestedBy).toBe('owner_delete');
+    expect(result.hasActivityLog).toBe(true);
+    expect(result.activityRole).toBe('teacher');
   });
 
   test('service student write paths normalize label keyed scores to ids before persistence', async ({ page }) => {
@@ -3020,9 +3133,23 @@ test('bulk delete class modal shows polished selection state and prevents deleti
       const saveScoresResult = await dbModule.saveScores(rawData, 'student_1', {
         Math: { 'Mock 1': 84 }
       });
+      const bulkSaveResult = await dbModule.saveBulkStudentScores({
+        students: [
+          { id: 'student_1', name: 'Student One', scores: { Math: { 'Mock 1': 84 } } },
+          { id: 'student_2', name: 'Student Two', scores: { Math: { 'Mock 1': 91 } } }
+        ],
+        subjects: [{ id: 'subject_math', name: 'Math' }],
+        exams: [{ id: 'exam_mock_1', title: 'Mock 1', name: 'Mock 1' }]
+      }, [
+        { id: 'student_1', scores: { Math: { 'Mock 1': 88 } } },
+        { id: 'student_2', scores: { Math: { 'Mock 1': 93 } } }
+      ]);
 
       const studentOneSnapshot = await firebaseModule.getDoc(
         firebaseModule.doc(firebaseModule.db, 'users', 'owner_service', 'classes', 'class_service', 'students', 'student_1')
+      );
+      const studentTwoFinalSnapshot = await firebaseModule.getDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'owner_service', 'classes', 'class_service', 'students', 'student_2')
       );
       const classSnapshot = await firebaseModule.getDoc(
         firebaseModule.doc(firebaseModule.db, 'users', 'owner_service', 'classes', 'class_service')
@@ -3031,27 +3158,38 @@ test('bulk delete class modal shows polished selection state and prevents deleti
       const saveStudentScores = saveStudentResult.data.students.find((student) => student.id === 'student_2')?.scores || {};
       const updateStudentScores = updateStudentResult.data.students.find((student) => student.id === 'student_1')?.scores || {};
       const saveScoresData = saveScoresResult.data.students.find((student) => student.id === 'student_1')?.scores || {};
+      const bulkSaveStudentOneScores = bulkSaveResult.data.students.find((student) => student.id === 'student_1')?.scores || {};
+      const bulkSaveStudentTwoScores = bulkSaveResult.data.students.find((student) => student.id === 'student_2')?.scores || {};
       const storedStudentOne = studentOneSnapshot.data().scores || {};
       const storedStudentTwoAfterSaveStudent = studentTwoAfterSaveStudentSnapshot.data().scores || {};
+      const storedStudentTwoAfterBulkSave = studentTwoFinalSnapshot.data().scores || {};
 
       return {
         saveStudentRemote: saveStudentResult.remoteSaved,
         updateStudentRemote: updateStudentResult.remoteSaved,
         saveScoresRemote: saveScoresResult.remoteSaved,
+        bulkSaveRemote: bulkSaveResult.remoteSaved,
         saveStudentSchemaVersion: saveStudentResult.data.schemaVersion,
         saveScoresSchemaVersion: saveScoresResult.data.schemaVersion,
+        bulkSaveSchemaVersion: bulkSaveResult.data.schemaVersion,
         classDataSchemaVersion: classSnapshot.data().dataSchemaVersion,
         saveStudentScores,
         updateStudentScores,
         saveScoresData,
+        bulkSaveStudentOneScores,
+        bulkSaveStudentTwoScores,
         storedStudentOne,
         storedStudentTwoAfterSaveStudent,
+        storedStudentTwoAfterBulkSave,
         legacyFlags: {
           saveStudent: Object.prototype.hasOwnProperty.call(saveStudentScores, 'Math'),
           updateStudent: Object.prototype.hasOwnProperty.call(updateStudentScores, 'Math'),
           saveScores: Object.prototype.hasOwnProperty.call(saveScoresData, 'Math'),
+          bulkSaveStudentOne: Object.prototype.hasOwnProperty.call(bulkSaveStudentOneScores, 'Math'),
+          bulkSaveStudentTwo: Object.prototype.hasOwnProperty.call(bulkSaveStudentTwoScores, 'Math'),
           storedStudentOne: Object.prototype.hasOwnProperty.call(storedStudentOne, 'Math'),
-          storedStudentTwoAfterSaveStudent: Object.prototype.hasOwnProperty.call(storedStudentTwoAfterSaveStudent, 'Math')
+          storedStudentTwoAfterSaveStudent: Object.prototype.hasOwnProperty.call(storedStudentTwoAfterSaveStudent, 'Math'),
+          storedStudentTwoAfterBulkSave: Object.prototype.hasOwnProperty.call(storedStudentTwoAfterBulkSave, 'Math')
         }
       };
     });
@@ -3059,20 +3197,28 @@ test('bulk delete class modal shows polished selection state and prevents deleti
     expect(result.saveStudentRemote).toBe(true);
     expect(result.updateStudentRemote).toBe(true);
     expect(result.saveScoresRemote).toBe(true);
+    expect(result.bulkSaveRemote).toBe(true);
     expect(result.saveStudentSchemaVersion).toBe(2);
     expect(result.saveScoresSchemaVersion).toBe(2);
+    expect(result.bulkSaveSchemaVersion).toBe(2);
     expect(result.classDataSchemaVersion).toBe(2);
     expect(result.saveStudentScores).toEqual({ subject_math: { exam_mock_1: 91 } });
     expect(result.updateStudentScores).toEqual({ subject_math: { exam_mock_1: 82 } });
     expect(result.saveScoresData).toEqual({ subject_math: { exam_mock_1: 84 } });
-    expect(result.storedStudentOne).toEqual({ subject_math: { exam_mock_1: 84 } });
+    expect(result.bulkSaveStudentOneScores).toEqual({ subject_math: { exam_mock_1: 88 } });
+    expect(result.bulkSaveStudentTwoScores).toEqual({ subject_math: { exam_mock_1: 93 } });
+    expect(result.storedStudentOne).toEqual({ subject_math: { exam_mock_1: 88 } });
     expect(result.storedStudentTwoAfterSaveStudent).toEqual({ subject_math: { exam_mock_1: 91 } });
+    expect(result.storedStudentTwoAfterBulkSave).toEqual({ subject_math: { exam_mock_1: 93 } });
     expect(result.legacyFlags).toEqual({
       saveStudent: false,
       updateStudent: false,
       saveScores: false,
+      bulkSaveStudentOne: false,
+      bulkSaveStudentTwo: false,
       storedStudentOne: false,
-      storedStudentTwoAfterSaveStudent: false
+      storedStudentTwoAfterSaveStudent: false,
+      storedStudentTwoAfterBulkSave: false
     });
   });
 

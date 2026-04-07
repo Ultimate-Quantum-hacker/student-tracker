@@ -543,19 +543,27 @@ const students = {
         return;
       }
 
-      if (app.snapshots && typeof app.snapshots.saveSnapshot === 'function') {
-        app.snapshots.saveSnapshot('Auto Backup Before Bulk Score Save');
-      }
-
       const changedStudents = new Map();
+      const studentLookup = new Map((app.state.students || []).map((student) => [String(student?.id || '').trim(), student]));
       inputs.forEach(input => {
         const studentId = input.dataset.sid;
         const subjectId = resolveSubjectScoreKey(app, input.dataset.sub || '');
         const score = app.analytics.normalizeScore(input.value);
 
         if (studentId && subjectId) {
-          const stateStudent = app.state.students.find(s => s.id === studentId);
+          const stateStudent = studentLookup.get(String(studentId || '').trim());
           if (!stateStudent) return;
+
+          const currentExamScores = stateStudent?.scores?.[subjectId];
+          const hasCurrentScore = Boolean(
+            currentExamScores
+            && typeof currentExamScores === 'object'
+            && Object.prototype.hasOwnProperty.call(currentExamScores, exam.id)
+          );
+          const currentScore = hasCurrentScore ? app.analytics.normalizeScore(currentExamScores[exam.id]) : null;
+          if (hasCurrentScore && currentScore === score) {
+            return;
+          }
 
           if (!changedStudents.has(studentId)) {
             changedStudents.set(studentId, {
@@ -572,7 +580,16 @@ const students = {
         }
       });
 
-      await Promise.all(Array.from(changedStudents.values()).map(student => app.updateStudent(student.id, { scores: student.scores })));
+      if (!changedStudents.size) {
+        ui.showToast('No score changes to save');
+        return;
+      }
+
+      if (app.snapshots && typeof app.snapshots.saveSnapshot === 'function') {
+        app.snapshots.saveSnapshot('Auto Backup Before Bulk Score Save');
+      }
+
+      await app.saveBulkStudentScores(Array.from(changedStudents.values()));
       ui.refreshUI();
       ui.showToast("Class scores saved");
     } catch (error) {
