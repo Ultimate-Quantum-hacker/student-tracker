@@ -6,10 +6,13 @@ service cloud.firestore {
     }
 
     function requesterRole() {
-      return isSignedIn()
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-          ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
-          : 'teacher';
+      return !isSignedIn()
+        ? 'teacher'
+        : isDeveloperAccountEmail()
+          ? 'developer'
+          : exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+            : 'teacher';
     }
 
     function requesterEmail() {

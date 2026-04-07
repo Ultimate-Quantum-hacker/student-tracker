@@ -2594,6 +2594,7 @@ test('bulk delete class modal shows polished selection state and prevents deleti
     expect(rulesSource).toContain('function isSignedIn() {');
     expect(rulesSource).toContain('function isOwner(userId) {');
     expect(rulesSource).toContain('function requesterRole() {');
+    expect(rulesSource).toContain(": isDeveloperAccountEmail()");
     expect(rulesSource).toContain('function canReadOwnerScopedData(userId) {');
     expect(rulesSource).toContain('function canReadAllTeacherData() {');
     expect(rulesSource).toContain('function canReadActivityLogsRole() {');
