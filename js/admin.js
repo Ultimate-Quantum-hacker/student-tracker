@@ -693,6 +693,8 @@ const renderUsersTable = () => {
           ? accountSummary
           : 'Developer-only role changes';
       actionHelperMarkup.push(buildTableHelperTextMarkup(helperMessage));
+    } else if (!canReviewDeletionRequest) {
+      actionHelperMarkup.push(buildTableHelperTextMarkup('Admin-only deletion review'));
     }
 
     if (hasPendingDeletionRequest && canReviewDeletionRequest) {

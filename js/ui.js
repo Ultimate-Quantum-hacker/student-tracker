@@ -1018,7 +1018,7 @@ const ui = {
 
       if (lifecycle.accountDeletionStatus === ACCOUNT_DELETION_STATUS_PENDING) {
         return {
-          label: requestedAtLabel ? `Pending since ${requestedAtLabel}` : 'Pending admin or developer review',
+          label: requestedAtLabel ? `Pending since ${requestedAtLabel}` : 'Pending admin review',
           tone: 'pending',
           help: 'Your deletion request is pending review. Once approved, return here to finalize deletion.',
           buttonLabel: 'Deletion Request Pending',
@@ -1043,7 +1043,7 @@ const ui = {
       return {
         label: 'No request submitted',
         tone: 'inactive',
-        help: 'Deletion requests stay pending until an admin or developer reviews them.',
+        help: 'Deletion requests stay pending until an admin reviews them.',
         buttonLabel: 'Request Account Deletion',
         disableDeleteButton: false,
         canRequest: true,
@@ -1359,7 +1359,7 @@ const ui = {
       const shouldContinue = window.confirm(
         deletionState.canFinalize
           ? 'Delete this account permanently? This removes your account data, signs you out, and cannot be undone.'
-          : 'Submit an account deletion request? An admin or developer must review and approve it before you can permanently delete your account.'
+          : 'Submit an account deletion request? An admin must review and approve it before you can permanently delete your account.'
       );
       if (!shouldContinue) {
         return;

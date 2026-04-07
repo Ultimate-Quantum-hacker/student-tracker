@@ -2019,6 +2019,7 @@ test('bulk delete class modal shows polished selection state and prevents deleti
     const authPageSource = readWorkspaceFile('js/auth-page.js');
     const noticesSource = readWorkspaceFile('js/auth-notices.js');
     const uiSource = readWorkspaceFile('js/ui.js');
+    const rulesSource = readWorkspaceFile('firestore.rules');
 
     expect(noticesSource).toContain('export const peekAuthPageNotice = () => peekNotice(AUTH_PAGE_NOTICE_KEY);');
     expect(appSource).toContain('if (notice?.message && !queuedNotice?.message)');
@@ -2029,6 +2030,12 @@ test('bulk delete class modal shows polished selection state and prevents deleti
     expect(uiSource).toContain('requestCurrentUserAccountDeletion');
     expect(uiSource).toContain('finalizeCurrentUserAccountDeletion');
     expect(uiSource).toContain('requestPasswordReset');
+    expect(uiSource).toContain('Pending admin review');
+    expect(uiSource).toContain('Deletion requests stay pending until an admin reviews them.');
+    expect(uiSource).toContain('An admin must review and approve it before you can permanently delete your account.');
+    expect(rulesSource).toContain("&& (!('email' in resource.data) || request.resource.data.email == resource.data.email)");
+    expect(rulesSource).toContain("&& (!('emailVerified' in resource.data) || request.resource.data.emailVerified == resource.data.emailVerified)");
+    expect(rulesSource).toContain('return isAdminRole()');
   });
 
   test('workflow tools follow the teacher admin developer capability matrix', async ({ page }) => {
@@ -2333,10 +2340,22 @@ test('bulk delete class modal shows polished selection state and prevents deleti
   test('admin panel access summary explains read-only admins while registry copy stays shared', async ({ page }) => {
     const result = await page.evaluate(async () => {
       const adminUserUtils = await import('/js/admin-user-utils.js');
+      const sampleDeletionRecord = {
+        uid: 'teacher_deletion_1',
+        name: 'Teacher Deletion',
+        accountDeletionStatus: 'pending',
+        status: 'active'
+      };
 
       return {
         adminSummary: adminUserUtils.getAdminPanelAccessSummary('admin'),
-        developerSummary: adminUserUtils.getAdminPanelAccessSummary('developer')
+        developerSummary: adminUserUtils.getAdminPanelAccessSummary('developer'),
+        adminCanReviewDeletion: adminUserUtils.canReviewAdminAccountDeletion('admin'),
+        developerCanReviewDeletion: adminUserUtils.canReviewAdminAccountDeletion('developer'),
+        developerReviewState: adminUserUtils.buildAdminUserDeletionReviewState(sampleDeletionRecord, {
+          currentRole: 'developer',
+          decision: 'approve'
+        })
       };
     });
 
@@ -2345,7 +2364,11 @@ test('bulk delete class modal shows polished selection state and prevents deleti
 
     expect(result.adminSummary).toContain('Admin mode: review users, search, registry, activity history, and account deletion requests.');
     expect(result.adminSummary).toContain('A developer is still required for role changes and destructive admin actions.');
-    expect(result.developerSummary).toContain('Developer mode: review admin data, manage roles, review account deletion requests, and handle registry cleanup and activity-log maintenance where needed.');
+    expect(result.developerSummary).toContain('Developer mode: review admin data, manage roles, and handle registry cleanup and activity-log maintenance where needed.');
+    expect(result.adminCanReviewDeletion).toBe(true);
+    expect(result.developerCanReviewDeletion).toBe(false);
+    expect(result.developerReviewState.canReview).toBe(false);
+    expect(result.developerReviewState.statusMessage).toBe('Only admins can review deletion requests.');
 
     expect(adminSource).toContain('id="panel-access-summary"');
     expect(adminSource).toContain('Access summary: loading…');
@@ -2354,6 +2377,7 @@ test('bulk delete class modal shows polished selection state and prevents deleti
 
     expect(adminJsSource).toContain("panelAccessSummary: document.getElementById('panel-access-summary')");
     expect(adminJsSource).toContain('dom.panelAccessSummary.textContent = getAdminPanelAccessSummary(state.currentRole);');
+    expect(adminJsSource).toContain("buildTableHelperTextMarkup('Admin-only deletion review')");
   });
 
   test('admin write remains blocked in UI submit path', async ({ page }) => {

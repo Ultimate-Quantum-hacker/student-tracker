@@ -28,13 +28,13 @@ export const canDeleteAdminRegistryStudents = (currentRole = '') => canRunAdminD
 export const canClearAdminActivityLogs = (currentRole = '') => canRunAdminDestructiveActions(currentRole);
 export const canReviewAdminAccountDeletion = (currentRole = '') => {
   const normalizedCurrentRole = normalizeUserRole(currentRole);
-  return normalizedCurrentRole === ROLE_ADMIN || normalizedCurrentRole === ROLE_DEVELOPER;
+  return normalizedCurrentRole === ROLE_ADMIN;
 };
 
 export const getAdminPanelAccessSummary = (currentRole = '') => {
   const normalizedCurrentRole = normalizeUserRole(currentRole);
   if (normalizedCurrentRole === ROLE_DEVELOPER) {
-    return 'Developer mode: review admin data, manage roles, review account deletion requests, and handle registry cleanup and activity-log maintenance where needed.';
+    return 'Developer mode: review admin data, manage roles, and handle registry cleanup and activity-log maintenance where needed.';
   }
 
   if (normalizedCurrentRole === ROLE_ADMIN) {
@@ -151,7 +151,7 @@ export const buildAdminUserDeletionReviewState = (record = {}, {
       canReview: false,
       normalizedDecision,
       progressLabel,
-      statusMessage: 'Only admins and developers can review deletion requests.',
+      statusMessage: 'Only admins can review deletion requests.',
       statusType: 'warning',
       confirmationMessage: ''
     };

@@ -730,6 +730,14 @@ const assertAdminOrDeveloperRole = (operationLabel = 'manage admin data') => {
   return role;
 };
 
+const assertAdminRole = (operationLabel = 'manage admin data') => {
+  const role = getCurrentUserRoleContext();
+  if (role !== 'admin') {
+    throw createContextError(ERROR_CODES.READ_ONLY_MODE, `Only admins can ${operationLabel}`);
+  }
+  return role;
+};
+
 const assertDeveloperRole = (operationLabel = 'manage admin data') => {
   const role = getCurrentUserRoleContext();
   if (role !== 'developer') {
@@ -4327,7 +4335,7 @@ export const requestCurrentUserAccountDeletion = async () => enqueueWrite(async 
 
 export const reviewAdminUserAccountDeletion = async ({ uid = '', decision = '' } = {}) => enqueueWrite(async () => {
   const actorUserId = await ensureAuthenticatedUserId('review account deletion');
-  assertAdminOrDeveloperRole('review account deletion');
+  assertAdminRole('review account deletion');
   if (!isFirebaseConfigured || !db) {
     throw new Error('Firebase unavailable');
   }
