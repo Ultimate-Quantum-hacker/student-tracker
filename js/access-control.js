@@ -101,6 +101,9 @@ const ROLE_HIERARCHY = {
 };
 
 const unique = (values = []) => Array.from(new Set((Array.isArray(values) ? values : []).filter(Boolean)));
+const hasAllPermissions = (availablePermissions = [], requiredPermissions = []) => {
+  return requiredPermissions.every((permission) => availablePermissions.includes(permission));
+};
 
 export const normalizeUserRole = (role) => {
   const normalized = String(role || '').trim().toLowerCase();
@@ -130,6 +133,27 @@ export const resolvePermissionsForRole = (role, permissions = []) => {
     return normalizedPermissions;
   }
   return getDefaultPermissionsForRole(role);
+};
+
+export const inferRoleFromPermissions = (permissions = [], fallbackRole = DEFAULT_USER_ROLE) => {
+  const normalizedPermissions = normalizePermissions(permissions);
+  const normalizedFallbackRole = normalizeUserRole(fallbackRole);
+  if (!normalizedPermissions.length) {
+    return normalizedFallbackRole;
+  }
+  if (hasAllPermissions(normalizedPermissions, getDefaultPermissionsForRole(ROLE_DEVELOPER))) {
+    return ROLE_DEVELOPER;
+  }
+  if (hasAllPermissions(normalizedPermissions, getDefaultPermissionsForRole(ROLE_ADMIN))) {
+    return ROLE_ADMIN;
+  }
+  if (hasAllPermissions(normalizedPermissions, getDefaultPermissionsForRole(ROLE_HEAD_TEACHER))) {
+    return ROLE_HEAD_TEACHER;
+  }
+  if (hasAllPermissions(normalizedPermissions, getDefaultPermissionsForRole(ROLE_TEACHER))) {
+    return ROLE_TEACHER;
+  }
+  return normalizedFallbackRole;
 };
 
 export const getRoleHierarchyRank = (role) => {

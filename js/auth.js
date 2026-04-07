@@ -50,6 +50,7 @@ import {
   normalizeUserRole,
   normalizePermissions,
   resolvePermissionsForRole,
+  inferRoleFromPermissions,
   getDefaultPermissionsForRole,
   buildResolvedAccessProfile,
   buildRolePermissionPayload,
@@ -107,6 +108,7 @@ export {
   normalizeUserRole,
   normalizePermissions as normalizeUserPermissions,
   resolvePermissionsForRole as resolveUserPermissions,
+  inferRoleFromPermissions,
   getDefaultPermissionsForRole,
   buildResolvedAccessProfile,
   buildRolePermissionPayload,
@@ -133,6 +135,7 @@ export {
 
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
 const normalizeName = (name) => String(name || '').trim();
+const DEVELOPER_ACCOUNT_EMAIL = 'pokumike2@gmail.com';
 const INITIAL_AUTH_STATE_TIMEOUT_MS = 10000;
 const PROFILE_RESOLUTION_TIMEOUT_MS = 10000;
 const PROFILE_NAME_MAX_LENGTH = 80;
@@ -216,6 +219,8 @@ export const isDeletedAccountProfile = (profile = {}) => {
   return normalizeAccountStatus(profile?.status) === ACCOUNT_STATUS_DELETED;
 };
 
+export const isDeveloperAccountEmail = (email = '') => normalizeEmail(email) === DEVELOPER_ACCOUNT_EMAIL;
+
 const normalizeAccountDeletionRecord = (profile = {}, fallback = {}) => ({
   status: normalizeAccountStatus(profile?.status ?? fallback?.status),
   accountDeletionStatus: normalizeAccountDeletionStatus(profile?.accountDeletionStatus ?? fallback?.accountDeletionStatus),
@@ -226,42 +231,89 @@ const normalizeAccountDeletionRecord = (profile = {}, fallback = {}) => ({
   deletedAt: profile?.deletedAt ?? fallback?.deletedAt ?? null
 });
 
-const normalizeProfileRecord = (profile = {}, fallback = {}) => ({
-  uid: String(profile?.uid || fallback?.uid || '').trim(),
-  role: normalizeUserRole(profile?.role || fallback?.role),
-  permissions: resolvePermissionsForRole(
-    profile?.role || fallback?.role,
-    profile?.permissions ?? fallback?.permissions ?? []
-  ),
-  name: normalizeProfileName(profile?.name ?? fallback?.name),
-  email: normalizeEmail(profile?.email ?? fallback?.email),
-  emailVerified: Boolean(profile?.emailVerified ?? fallback?.emailVerified),
-  createdAt: profile?.createdAt ?? fallback?.createdAt ?? null,
-  updatedAt: profile?.updatedAt ?? fallback?.updatedAt ?? null,
-  messageUnreadCount: normalizeUnreadMessageCount(profile?.messageUnreadCount ?? fallback?.messageUnreadCount),
-  lastMessageAt: profile?.lastMessageAt ?? fallback?.lastMessageAt ?? null,
-  ...normalizeAccountDeletionRecord(profile, fallback)
-});
-
-const getUserProfileRef = (uid) => doc(db, 'users', String(uid || '').trim());
-
-const resolveProfileRole = (_authUser, existingRole = '') => {
-  const normalizedExistingRole = normalizeUserRole(existingRole);
-  if (normalizedExistingRole === ROLE_DEVELOPER) {
-    return ROLE_DEVELOPER;
-  }
+const resolveNonDeveloperRole = (existingRole = '', fallbackRole = ROLE_TEACHER) => {
+  const normalizedExistingRole = String(existingRole || '').trim().toLowerCase();
   if (normalizedExistingRole === ROLE_ADMIN) {
     return ROLE_ADMIN;
   }
   if (normalizedExistingRole === ROLE_HEAD_TEACHER) {
     return ROLE_HEAD_TEACHER;
   }
-
+  if (normalizedExistingRole === ROLE_TEACHER || normalizedExistingRole === ROLE_LEGACY_USER) {
+    return ROLE_TEACHER;
+  }
+  const normalizedFallbackRole = normalizeUserRole(fallbackRole);
+  if (normalizedFallbackRole === ROLE_ADMIN) {
+    return ROLE_ADMIN;
+  }
+  if (normalizedFallbackRole === ROLE_HEAD_TEACHER) {
+    return ROLE_HEAD_TEACHER;
+  }
   return ROLE_TEACHER;
 };
 
+const resolveProfileAccessPayload = (authUser = {}, existingRole = '', existingPermissions = []) => {
+  if (isDeveloperAccountEmail(authUser?.email)) {
+    return buildRolePermissionPayload(ROLE_DEVELOPER);
+  }
+  const resolvedRole = resolveProfileRole(authUser, existingRole, existingPermissions);
+  const inferredRole = inferRoleFromPermissions(existingPermissions, resolvedRole);
+  if (inferredRole === ROLE_DEVELOPER) {
+    return buildRolePermissionPayload(resolveNonDeveloperRole(existingRole, resolvedRole));
+  }
+  return buildRolePermissionPayload(resolvedRole, existingPermissions);
+};
+
+const normalizeProfileRecord = (profile = {}, fallback = {}) => {
+  const accessProfile = resolveProfileAccessPayload(
+    {
+      uid: profile?.uid || fallback?.uid || '',
+      name: profile?.name ?? fallback?.name,
+      email: profile?.email ?? fallback?.email
+    },
+    profile?.role || fallback?.role,
+    profile?.permissions ?? fallback?.permissions ?? []
+  );
+  return {
+    uid: String(profile?.uid || fallback?.uid || '').trim(),
+    role: accessProfile.role,
+    permissions: accessProfile.permissions,
+    name: normalizeProfileName(profile?.name ?? fallback?.name),
+    email: normalizeEmail(profile?.email ?? fallback?.email),
+    emailVerified: Boolean(profile?.emailVerified ?? fallback?.emailVerified),
+    createdAt: profile?.createdAt ?? fallback?.createdAt ?? null,
+    updatedAt: profile?.updatedAt ?? fallback?.updatedAt ?? null,
+    messageUnreadCount: normalizeUnreadMessageCount(profile?.messageUnreadCount ?? fallback?.messageUnreadCount),
+    lastMessageAt: profile?.lastMessageAt ?? fallback?.lastMessageAt ?? null,
+    ...normalizeAccountDeletionRecord(profile, fallback)
+  };
+};
+
+const getUserProfileRef = (uid) => doc(db, 'users', String(uid || '').trim());
+
+const resolveProfileRole = (authUser, existingRole = '', existingPermissions = []) => {
+  if (isDeveloperAccountEmail(authUser?.email)) {
+    return ROLE_DEVELOPER;
+  }
+  const normalizedExistingRole = String(existingRole || '').trim().toLowerCase();
+  if (normalizedExistingRole === ROLE_ADMIN) {
+    return ROLE_ADMIN;
+  }
+  if (normalizedExistingRole === ROLE_HEAD_TEACHER) {
+    return ROLE_HEAD_TEACHER;
+  }
+  if (normalizedExistingRole === ROLE_TEACHER || normalizedExistingRole === ROLE_LEGACY_USER) {
+    return ROLE_TEACHER;
+  }
+  const inferredRole = inferRoleFromPermissions(existingPermissions, ROLE_TEACHER);
+  if (inferredRole === ROLE_DEVELOPER) {
+    return resolveNonDeveloperRole(existingRole, ROLE_TEACHER);
+  }
+  return inferredRole;
+};
+
 const sanitizeProfilePayload = (authUser, existingRole = '', existingPermissions = []) => {
-  const rolePayload = buildRolePermissionPayload(resolveProfileRole(authUser, existingRole), existingPermissions);
+  const rolePayload = resolveProfileAccessPayload(authUser, existingRole, existingPermissions);
   return {
     uid: String(authUser?.uid || '').trim(),
     role: rolePayload.role,
@@ -283,15 +335,14 @@ const ensureUserProfileDocument = async (authUser) => {
   console.log('Logged in email:', normalizedEmail || '(none)');
 
   if (!uid || !isFirebaseConfigured || !db) {
-    const fallbackRole = resolveProfileRole(authUser);
-    const fallbackPermissions = resolvePermissionsForRole(fallbackRole);
+    const fallbackAccessProfile = resolveProfileAccessPayload(authUser);
     console.log('Firestore role:', undefined);
-    console.log('Assigned role:', fallbackRole);
-    console.log('Final role:', fallbackRole);
+    console.log('Assigned role:', fallbackAccessProfile.role);
+    console.log('Final role:', fallbackAccessProfile.role);
     return {
       uid,
-      role: fallbackRole,
-      permissions: fallbackPermissions,
+      role: fallbackAccessProfile.role,
+      permissions: fallbackAccessProfile.permissions,
       name: normalizeProfileName(authUser?.name),
       email: normalizedEmail,
       emailVerified,
@@ -346,15 +397,17 @@ const ensureUserProfileDocument = async (authUser) => {
   const normalizedName = normalizeProfileName(data.name || authUser?.name);
   const profileEmail = normalizeEmail(data.email || '');
   const resolvedEmailForProfile = normalizedEmail || profileEmail;
-  const resolvedRole = resolveProfileRole(
+  const resolvedAccessProfile = resolveProfileAccessPayload(
     {
       uid,
       name: normalizedName,
       email: resolvedEmailForProfile
     },
-    data.role
+    data.role,
+    data.permissions
   );
-  const resolvedPermissions = resolvePermissionsForRole(resolvedRole, data.permissions);
+  const resolvedRole = resolvedAccessProfile.role;
+  const resolvedPermissions = resolvedAccessProfile.permissions;
 
   const patch = {};
   if (String(data.uid || '').trim() !== uid) {

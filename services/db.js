@@ -36,6 +36,7 @@ import {
   ACCOUNT_DELETION_STATUS_PENDING,
   ACCOUNT_DELETION_STATUS_APPROVED,
   ACCOUNT_DELETION_STATUS_REJECTED,
+  isDeveloperAccountEmail,
   normalizeAccountStatus,
   normalizeAccountDeletionStatus
 } from '../js/auth.js';
@@ -46,6 +47,7 @@ import {
   ROLE_DEVELOPER,
   normalizeUserRole as normalizeAccessRole,
   normalizePermissions,
+  inferRoleFromPermissions,
   buildRolePermissionPayload,
   canAccessAdminPanel,
   canReadAllData,
@@ -130,7 +132,9 @@ const buildClassDocMetadataPatch = (ownerId, classId, updatedAt, extra = {}) => 
 const buildUserRootBootstrapPayload = (userId) => {
   const normalizedUserId = normalizeUserId(userId);
   const authenticatedUser = auth?.currentUser || null;
-  const accessProfile = buildRolePermissionPayload(ROLE_TEACHER);
+  const accessProfile = isDeveloperAccountEmail(authenticatedUser?.email)
+    ? buildRolePermissionPayload(ROLE_DEVELOPER)
+    : buildRolePermissionPayload(ROLE_TEACHER);
   return {
     uid: normalizedUserId,
     userId: normalizedUserId,
@@ -185,6 +189,36 @@ const writeRecentFetchAllDataCache = ({ scopeKey = '', classId = '', ownerId = '
 };
 const normalizeRole = (value) => normalizeAccessRole(value);
 const normalizeEmailAddress = (value) => String(value || '').trim().toLowerCase();
+const resolveNonDeveloperStoredRole = (role = '', fallbackRole = ROLE_TEACHER) => {
+  const normalizedStoredRole = String(role || '').trim().toLowerCase();
+  if (normalizedStoredRole === ROLE_ADMIN) {
+    return ROLE_ADMIN;
+  }
+  if (normalizedStoredRole === ROLE_HEAD_TEACHER) {
+    return ROLE_HEAD_TEACHER;
+  }
+  if (normalizedStoredRole === ROLE_TEACHER) {
+    return ROLE_TEACHER;
+  }
+  const normalizedFallbackRole = normalizeRole(fallbackRole);
+  if (normalizedFallbackRole === ROLE_ADMIN) {
+    return ROLE_ADMIN;
+  }
+  if (normalizedFallbackRole === ROLE_HEAD_TEACHER) {
+    return ROLE_HEAD_TEACHER;
+  }
+  return ROLE_TEACHER;
+};
+const resolveStoredAccessProfile = (role = '', permissions = [], fallbackRole = ROLE_TEACHER, email = '') => {
+  if (isDeveloperAccountEmail(email)) {
+    return buildRolePermissionPayload(ROLE_DEVELOPER);
+  }
+  const resolvedRole = inferRoleFromPermissions(permissions, role || fallbackRole);
+  if (resolvedRole === ROLE_DEVELOPER) {
+    return buildRolePermissionPayload(resolveNonDeveloperStoredRole(role, fallbackRole));
+  }
+  return buildRolePermissionPayload(resolvedRole, permissions || []);
+};
 const normalizeUserAccountLifecycleRecord = (payload = {}, fallback = {}) => ({
   status: normalizeAccountStatus(payload?.status ?? fallback?.status),
   accountDeletionStatus: normalizeAccountDeletionStatus(payload?.accountDeletionStatus ?? fallback?.accountDeletionStatus),
@@ -211,7 +245,7 @@ const buildUserLifecycleTargetLabel = (payload = {}, fallbackUserId = '') => {
 const buildPrivilegedUserLifecycleRecord = (payload = {}, fallbackUserId = '') => {
   const uid = normalizeUserId(payload?.uid || payload?.userId || fallbackUserId);
   const email = normalizeEmailAddress(payload?.email || '');
-  const accessProfile = buildRolePermissionPayload(payload?.role || ROLE_TEACHER, payload?.permissions || []);
+  const accessProfile = resolveStoredAccessProfile(payload?.role || '', payload?.permissions || [], ROLE_TEACHER, email);
   return {
     uid,
     name: normalizeDisplayName(payload?.name || payload?.displayName || email || uid || 'Teacher', 'Teacher'),
@@ -285,7 +319,7 @@ const isManageablePanelRole = (role = '') => {
   return normalizedRole === ROLE_TEACHER || normalizedRole === ROLE_HEAD_TEACHER || normalizedRole === ROLE_ADMIN;
 };
 const buildPrivilegedRoleUpdatePolicyState = (userPayload = {}, nextRole = 'teacher') => {
-  const currentRole = normalizeRole(userPayload?.role || ROLE_TEACHER);
+  const currentRole = resolveStoredAccessProfile(userPayload?.role || '', userPayload?.permissions || [], ROLE_TEACHER, userPayload?.email || '').role;
   const normalizedNextRole = normalizeRole(nextRole);
   const lifecycle = normalizeUserAccountLifecycleRecord(userPayload);
 
@@ -2259,12 +2293,18 @@ const syncCurrentUserRootProfileMetadata = async (userId, currentData = {}) => {
     patch.emailVerified = emailVerified;
   }
 
-  if (Object.prototype.hasOwnProperty.call(existingData, 'role')) {
-    const accessProfile = buildRolePermissionPayload(existingData.role, existingData.permissions || []);
-    if (accessProfile.role !== String(existingData.role || '').trim().toLowerCase()) {
+  const existingPermissions = normalizePermissions(existingData.permissions || [], []);
+  const hasStoredAccessMetadata = Object.prototype.hasOwnProperty.call(existingData, 'role') || existingPermissions.length > 0;
+  if (hasStoredAccessMetadata) {
+    const accessProfile = resolveStoredAccessProfile(
+      existingData.role || '',
+      existingPermissions,
+      getCurrentUserRoleContext() || ROLE_TEACHER,
+      existingData.email || normalizedEmail || ''
+    );
+    if (accessProfile.role !== normalizeRole(existingData.role || '')) {
       patch.role = accessProfile.role;
     }
-    const existingPermissions = normalizePermissions(existingData.permissions || [], []);
     if (JSON.stringify(existingPermissions) !== JSON.stringify(accessProfile.permissions)) {
       patch.permissions = accessProfile.permissions;
     }

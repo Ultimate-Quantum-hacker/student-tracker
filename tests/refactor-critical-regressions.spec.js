@@ -513,6 +513,39 @@ test.describe('Class refactor critical regressions', () => {
     });
   });
 
+  test('hardcoded developer email policy coexists with inferred non-developer privileged roles', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const [authModule, accessModule] = await Promise.all([
+        import('/js/auth.js'),
+        import('/js/access-control.js')
+      ]);
+      const adminPermissions = accessModule.buildRolePermissionPayload('admin').permissions;
+      const headTeacherPermissions = accessModule.buildRolePermissionPayload('head_teacher').permissions;
+
+      return {
+        hardcodedDeveloper: authModule.isDeveloperAccountEmail('pokumike2@gmail.com'),
+        nonDeveloper: authModule.isDeveloperAccountEmail('teacher@example.com'),
+        inferredAdmin: accessModule.inferRoleFromPermissions(adminPermissions, 'teacher'),
+        inferredHeadTeacher: accessModule.inferRoleFromPermissions(headTeacherPermissions, 'teacher')
+      };
+    });
+
+    const authSource = readWorkspaceFile('js/auth.js');
+    const dbSource = readWorkspaceFile('services/db.js');
+
+    expect(result.hardcodedDeveloper).toBe(true);
+    expect(result.nonDeveloper).toBe(false);
+    expect(result.inferredAdmin).toBe('admin');
+    expect(result.inferredHeadTeacher).toBe('head_teacher');
+
+    expect(authSource).toContain("const DEVELOPER_ACCOUNT_EMAIL = 'pokumike2@gmail.com';");
+    expect(authSource).toContain('export const isDeveloperAccountEmail = (email = \'\') => normalizeEmail(email) === DEVELOPER_ACCOUNT_EMAIL;');
+    expect(authSource).toContain('inferRoleFromPermissions(');
+    expect(dbSource).toContain('const resolveStoredAccessProfile = (role = \'\', permissions = [], fallbackRole = ROLE_TEACHER, email = \'\') => {');
+    expect(dbSource).toContain('const resolvedRole = inferRoleFromPermissions(permissions, role || fallbackRole);');
+    expect(dbSource).toContain('if (isDeveloperAccountEmail(email)) {');
+  });
+
   test('teacher write flows retain writable class-scoped context', async ({ page }) => {
     const result = await page.evaluate(async () => {
       const [stateModule, studentsModule] = await Promise.all([
@@ -596,7 +629,9 @@ test.describe('Class refactor critical regressions', () => {
     expect(rulesSource).toContain("request.resource.data.role == 'teacher'");
     expect(rulesSource).toContain("'createdAt'");
     expect(dbSource).toContain('const buildUserRootBootstrapPayload = (userId) => {');
-    expect(dbSource).toContain('const accessProfile = buildRolePermissionPayload(ROLE_TEACHER);');
+    expect(dbSource).toContain('const accessProfile = isDeveloperAccountEmail(authenticatedUser?.email)');
+    expect(dbSource).toContain('? buildRolePermissionPayload(ROLE_DEVELOPER)');
+    expect(dbSource).toContain(': buildRolePermissionPayload(ROLE_TEACHER);');
     expect(dbSource).toContain('role: accessProfile.role');
     expect(dbSource).toContain('permissions: accessProfile.permissions');
     expect(dbSource).toContain('const ensureUserRootProfileDocument = async (userId) => {');
@@ -2572,9 +2607,8 @@ test('bulk delete class modal shows polished selection state and prevents deleti
     expect(rulesSource).toContain('allow create: if isSignedIn();');
     expect(rulesSource).toContain('allow read, delete: if isPrivilegedUser();');
     expect(rulesSource).toContain('get(/databases/$(database)/documents/users/$(request.auth.uid))');
-    expect(hardcodedDeveloperSource).not.toContain('pokumike2@gmail.com');
-    expect(hardcodedDeveloperSource).not.toContain('isDeveloperAccountEmail');
-    expect(hardcodedDeveloperSource).not.toContain('isDeveloperAccountEmailValue');
+    expect(hardcodedDeveloperSource).toContain('pokumike2@gmail.com');
+    expect(hardcodedDeveloperSource).toContain('isDeveloperAccountEmail');
   });
 
   test('stale deleted class selection has validated fallback path', async () => {
