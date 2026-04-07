@@ -129,6 +129,9 @@ const sidebar = {
         if (sectionId === 'bulk-scores') {
           window.TrackerApp.ui.renderBulkTable();
         }
+        if (sectionId === 'messages') {
+          window.TrackerApp.ui.openMessagesSection();
+        }
         if (sectionId === 'account-settings') {
           window.TrackerApp.ui.renderAccountSettings({ preserveFeedback: true });
         }

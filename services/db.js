@@ -54,7 +54,16 @@ import {
   canReadActivityLogs,
   canManageSystemConfig,
   canReviewAccountDeletion,
-  canWriteClassData
+  canWriteClassData,
+  canSendMessages,
+  canReceiveMessages,
+  canReplyToMessages,
+  canMessageAudienceType,
+  formatUserRoleLabel,
+  MESSAGE_AUDIENCE_ALL,
+  MESSAGE_AUDIENCE_ROLE,
+  MESSAGE_AUDIENCE_INDIVIDUAL,
+  MESSAGE_AUDIENCE_CLASS
 } from '../js/access-control.js';
 
 const CACHE_KEY_PREFIX = 'studentAppData';
@@ -63,7 +72,13 @@ const CLASSES_SUBCOLLECTION = 'classes';
 const STUDENTS_SUBCOLLECTION = 'students';
 const SUBJECTS_SUBCOLLECTION = 'subjects';
 const EXAMS_SUBCOLLECTION = 'exams';
+const MESSAGES_SUBCOLLECTION = 'messages';
 const ACTIVITY_LOGS_COLLECTION = 'activityLogs';
+const MESSAGE_MAILBOX_INBOX = 'inbox';
+const MESSAGE_MAILBOX_SENT = 'sent';
+const MESSAGE_SUBJECT_MAX_LENGTH = 140;
+const MESSAGE_BODY_MAX_LENGTH = 5000;
+const MESSAGE_PREVIEW_MAX_LENGTH = 180;
 const DEFAULT_CLASS_NAME = 'My Class';
 const TRASH_RETENTION_DAYS = 3;
 const ACTIVITY_LOG_RETENTION_DAYS = 90;
@@ -414,6 +429,312 @@ const toIsoDateString = (value) => {
     return null;
   }
   return parsed.toISOString();
+};
+
+const normalizeMessageMailbox = (value) => {
+  return String(value || '').trim().toLowerCase() === MESSAGE_MAILBOX_SENT
+    ? MESSAGE_MAILBOX_SENT
+    : MESSAGE_MAILBOX_INBOX;
+};
+
+const normalizeMessageAudienceType = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === MESSAGE_AUDIENCE_ALL) {
+    return MESSAGE_AUDIENCE_ALL;
+  }
+  if (normalized === MESSAGE_AUDIENCE_ROLE) {
+    return MESSAGE_AUDIENCE_ROLE;
+  }
+  if (normalized === MESSAGE_AUDIENCE_CLASS) {
+    return MESSAGE_AUDIENCE_CLASS;
+  }
+  return MESSAGE_AUDIENCE_INDIVIDUAL;
+};
+
+const normalizeMessageSubject = (value) => {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MESSAGE_SUBJECT_MAX_LENGTH);
+};
+
+const normalizeMessageBody = (value) => {
+  return String(value || '')
+    .replace(/\r\n/g, '\n')
+    .trim()
+    .slice(0, MESSAGE_BODY_MAX_LENGTH);
+};
+
+const buildMessagePreview = (value = '') => {
+  const normalized = String(value || '').replace(/\s+/g, ' ').trim();
+  if (normalized.length <= MESSAGE_PREVIEW_MAX_LENGTH) {
+    return normalized;
+  }
+  return `${normalized.slice(0, MESSAGE_PREVIEW_MAX_LENGTH - 1).trimEnd()}…`;
+};
+
+const buildMessageParticipantLabel = (name = '', email = '', userId = '', fallback = 'Teacher') => {
+  const normalizedName = normalizeDisplayName(name || email || userId || fallback, fallback);
+  const normalizedEmail = normalizeEmailAddress(email || '');
+  if (normalizedEmail && normalizedName && normalizedName !== normalizedEmail) {
+    return `${normalizedName} (${normalizedEmail})`;
+  }
+  return normalizedName || normalizedEmail || userId || fallback;
+};
+
+const normalizeMessageRecipientEntry = (record = {}, fallbackUserId = '') => {
+  const uid = normalizeUserId(record?.uid || record?.userId || record?.recipientUserId || record?.senderId || fallbackUserId);
+  if (!uid) {
+    return null;
+  }
+  const email = normalizeEmailAddress(record?.email || record?.recipientEmail || record?.senderEmail || '');
+  const role = normalizeRole(record?.role || record?.recipientRole || record?.senderRole || ROLE_TEACHER);
+  const permissions = normalizePermissions(record?.permissions || []);
+  const name = normalizeDisplayName(record?.name || record?.recipientName || record?.senderName || email || uid || 'Teacher', 'Teacher');
+  return {
+    uid,
+    name,
+    email,
+    role,
+    permissions,
+    displayLabel: buildMessageParticipantLabel(name, email, uid, 'Teacher'),
+    receivesMessages: record?.receivesMessages === false
+      ? false
+      : canReceiveMessages(role, permissions) || record?.receivesMessages === true
+  };
+};
+
+const buildMessageRecipientsSummaryLabel = (recipients = []) => {
+  const normalizedRecipients = asArray(recipients)
+    .map(entry => normalizeMessageRecipientEntry(entry))
+    .filter(Boolean);
+  if (!normalizedRecipients.length) {
+    return 'No recipients';
+  }
+  if (normalizedRecipients.length === 1) {
+    return normalizedRecipients[0].displayLabel || 'Recipient';
+  }
+  const firstLabel = String(normalizedRecipients[0]?.displayLabel || 'Recipient').trim() || 'Recipient';
+  const remainingCount = normalizedRecipients.length - 1;
+  return `${firstLabel} and ${remainingCount} other${remainingCount === 1 ? '' : 's'}`;
+};
+
+const buildMessageAudienceLabel = ({
+  audienceType = MESSAGE_AUDIENCE_INDIVIDUAL,
+  audienceLabel = '',
+  recipients = [],
+  audienceRole = '',
+  audienceClassName = ''
+} = {}) => {
+  const explicitLabel = String(audienceLabel || '').trim();
+  if (explicitLabel) {
+    return explicitLabel;
+  }
+
+  const normalizedAudienceType = normalizeMessageAudienceType(audienceType);
+  if (normalizedAudienceType === MESSAGE_AUDIENCE_ALL) {
+    return 'All eligible users';
+  }
+  if (normalizedAudienceType === MESSAGE_AUDIENCE_ROLE) {
+    return audienceRole ? `${formatUserRoleLabel(audienceRole)} users` : 'Selected role';
+  }
+  if (normalizedAudienceType === MESSAGE_AUDIENCE_CLASS) {
+    return audienceClassName ? `Class owner: ${audienceClassName}` : 'Selected class';
+  }
+  return buildMessageRecipientsSummaryLabel(recipients);
+};
+
+const buildMessageDirectoryUserRecord = (payload = {}, fallbackUserId = '') => {
+  const email = normalizeEmailAddress(payload?.email || '');
+  const accessProfile = resolveStoredAccessProfile(payload?.role || '', payload?.permissions || [], ROLE_TEACHER, email);
+  const lifecycle = normalizeUserAccountLifecycleRecord(payload);
+  const recipient = normalizeMessageRecipientEntry({
+    uid: payload?.uid || payload?.userId || fallbackUserId,
+    name: payload?.name || payload?.displayName || email || fallbackUserId || 'Teacher',
+    email,
+    role: accessProfile.role,
+    permissions: accessProfile.permissions,
+    receivesMessages: canReceiveMessages(accessProfile.role, accessProfile.permissions)
+  }, fallbackUserId);
+  if (!recipient) {
+    return null;
+  }
+  return {
+    ...recipient,
+    status: lifecycle.status,
+    accountDeletionStatus: lifecycle.accountDeletionStatus,
+    receivesMessages: recipient.receivesMessages && lifecycle.status !== ACCOUNT_STATUS_DELETED
+  };
+};
+
+const normalizeMessageRecord = (messageId, payload = {}) => {
+  const mailbox = normalizeMessageMailbox(payload?.mailbox);
+  const senderId = normalizeUserId(payload?.senderId || '');
+  const senderName = normalizeDisplayName(payload?.senderName || payload?.senderDisplayName || payload?.senderEmail || senderId || 'Teacher', 'Teacher');
+  const senderEmail = normalizeEmailAddress(payload?.senderEmail || '');
+  const senderRole = normalizeRole(payload?.senderRole || ROLE_TEACHER);
+  const recipientUserIds = asArray(payload?.recipientUserIds).map(value => normalizeUserId(value)).filter(Boolean);
+  const recipientUserId = normalizeUserId(payload?.recipientUserId || recipientUserIds[0] || '');
+  const recipientName = normalizeDisplayName(payload?.recipientName || payload?.recipientDisplayName || payload?.recipientEmail || recipientUserId || 'Recipient', 'Recipient');
+  const recipientEmail = normalizeEmailAddress(payload?.recipientEmail || '');
+  const recipientRole = normalizeRole(payload?.recipientRole || ROLE_TEACHER);
+  const recipientCount = Math.max(1, Number(payload?.recipientCount || recipientUserIds.length || (recipientUserId ? 1 : 0)) || 1);
+  const subject = normalizeMessageSubject(payload?.subject || '');
+  const body = normalizeMessageBody(payload?.body || '');
+  const sentAt = toIsoDateString(payload?.sentAt) || toIsoDateString(payload?.createdAt) || toIsoDateString(payload?.updatedAt);
+  const createdAt = toIsoDateString(payload?.createdAt) || sentAt;
+  const updatedAt = toIsoDateString(payload?.updatedAt) || sentAt;
+  const audienceType = normalizeMessageAudienceType(payload?.audienceType);
+  const audienceRole = normalizeRole(payload?.audienceRole || '');
+  const audienceClassId = normalizeClassId(payload?.audienceClassId || payload?.classId || '');
+  const audienceClassName = String(payload?.audienceClassName || '').trim();
+  const counterpartLabel = mailbox === MESSAGE_MAILBOX_INBOX
+    ? buildMessageParticipantLabel(senderName, senderEmail, senderId, 'Teacher')
+    : recipientCount > 1
+      ? `${recipientCount} recipients`
+      : buildMessageParticipantLabel(recipientName, recipientEmail, recipientUserId, 'Recipient');
+  const recipientLabel = recipientCount > 1
+    ? `${recipientCount} recipients`
+    : buildMessageParticipantLabel(recipientName, recipientEmail, recipientUserId, 'Recipient');
+
+  return {
+    id: String(messageId || payload?.id || '').trim(),
+    mailbox,
+    threadId: String(payload?.threadId || payload?.id || messageId || '').trim(),
+    parentMessageId: String(payload?.parentMessageId || '').trim(),
+    replyToMessageId: String(payload?.replyToMessageId || '').trim(),
+    fromSentMessageId: String(payload?.fromSentMessageId || '').trim(),
+    isReply: Boolean(payload?.isReply || payload?.parentMessageId),
+    senderId,
+    senderName,
+    senderEmail,
+    senderRole,
+    recipientUserId,
+    recipientName,
+    recipientEmail,
+    recipientRole,
+    recipientUserIds,
+    recipientCount,
+    subject: subject || '(No subject)',
+    body,
+    bodyPreview: buildMessagePreview(payload?.bodyPreview || body),
+    audienceType,
+    audienceRole,
+    audienceClassId,
+    audienceClassName,
+    audienceLabel: buildMessageAudienceLabel({
+      audienceType,
+      audienceLabel: payload?.audienceLabel,
+      recipients: recipientCount <= 1
+        ? [{ uid: recipientUserId, name: recipientName, email: recipientEmail, role: recipientRole }]
+        : [],
+      audienceRole,
+      audienceClassName
+    }),
+    counterpartLabel,
+    recipientLabel,
+    isRead: mailbox === MESSAGE_MAILBOX_SENT ? true : Boolean(payload?.isRead),
+    readAt: toIsoDateString(payload?.readAt),
+    sentAt,
+    createdAt,
+    updatedAt,
+    sortAt: sentAt || updatedAt || createdAt || ''
+  };
+};
+
+const buildMessageRoleAudienceOptions = (users = []) => {
+  const counts = new Map();
+  asArray(users).forEach((user) => {
+    const normalizedRole = normalizeRole(user?.role || '');
+    if (!normalizedRole) {
+      return;
+    }
+    counts.set(normalizedRole, (counts.get(normalizedRole) || 0) + 1);
+  });
+  return Array.from(counts.entries())
+    .map(([role, count]) => ({
+      value: role,
+      role,
+      count,
+      label: `${formatUserRoleLabel(role)} (${count})`
+    }))
+    .sort((left, right) => String(left.label || '').localeCompare(String(right.label || '')));
+};
+
+const buildMessageClassAudienceOptions = (classes = [], actorUserId = '') => {
+  const normalizedActorUserId = normalizeUserId(actorUserId);
+  const seen = new Set();
+  return asArray(classes)
+    .map((entry) => {
+      const id = normalizeClassId(entry?.id || entry?.classId || '');
+      const ownerId = normalizeUserId(entry?.ownerId || entry?.userId || '');
+      const dedupeKey = `${id}:${ownerId}`;
+      if (!id || !ownerId || ownerId === normalizedActorUserId || seen.has(dedupeKey)) {
+        return null;
+      }
+      seen.add(dedupeKey);
+      const name = normalizeClassName(entry?.name || entry?.className || '', '');
+      const ownerName = normalizeDisplayName(entry?.ownerName || ownerId || 'Teacher', 'Teacher');
+      const ownerRole = normalizeRole(entry?.ownerRole || ROLE_TEACHER);
+      return {
+        id,
+        name,
+        ownerId,
+        ownerName,
+        ownerRole,
+        label: name ? `${name} - ${ownerName}` : ownerName
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => String(left.label || '').localeCompare(String(right.label || '')));
+};
+
+const readMessageDirectoryUsers = async () => {
+  if (!isFirebaseConfigured || !db) {
+    return [];
+  }
+  const snapshot = await getDocs(collection(db, USERS_COLLECTION));
+  const users = [];
+  snapshot.forEach((entry) => {
+    const record = buildMessageDirectoryUserRecord(entry.data() || {}, entry.id);
+    if (!record?.uid || !record.receivesMessages) {
+      return;
+    }
+    users.push(record);
+  });
+  return users.sort((left, right) => {
+    const leftLabel = String(left?.name || left?.email || left?.uid || '').trim().toLowerCase();
+    const rightLabel = String(right?.name || right?.email || right?.uid || '').trim().toLowerCase();
+    return leftLabel.localeCompare(rightLabel);
+  });
+};
+
+const syncCurrentUserMessageMetadata = async (userId, messages = []) => {
+  const normalizedUserId = normalizeUserId(userId);
+  const unreadCount = asArray(messages).filter((message) => {
+    return normalizeMessageMailbox(message?.mailbox) === MESSAGE_MAILBOX_INBOX && !Boolean(message?.isRead);
+  }).length;
+  const lastMessageAt = asArray(messages)
+    .map(message => String(message?.sentAt || message?.updatedAt || message?.createdAt || '').trim())
+    .find(Boolean) || null;
+
+  if (normalizedUserId && normalizedUserId === getAuthenticatedUserId()) {
+    try {
+      await mergeUserRootMetadata(normalizedUserId, {
+        userId: normalizedUserId,
+        messageUnreadCount: unreadCount,
+        lastMessageAt,
+        updatedAt: new Date().toISOString()
+      });
+    } catch (error) {
+      console.warn('Failed to sync current user message metadata:', error);
+    }
+  }
+
+  return {
+    unreadCount,
+    lastMessageAt
+  };
 };
 
 const toCollectionDocId = (prefix, label, index) => {
@@ -2232,6 +2553,8 @@ const createMissingClassError = (operationLabel = 'access class data') => {
 
 const getCacheKeyForUser = (userId, classId = '') => `${CACHE_KEY_PREFIX}:${userId}:${normalizeClassId(classId) || 'default'}`;
 const getUserRootRef = (userId) => doc(db, USERS_COLLECTION, userId);
+const getMessagesCollectionRef = (userId) => collection(db, USERS_COLLECTION, userId, MESSAGES_SUBCOLLECTION);
+const getMessageDocRef = (userId, messageId) => doc(db, USERS_COLLECTION, userId, MESSAGES_SUBCOLLECTION, messageId);
 const getStudentsCollectionRef = (userId, classId = getCurrentClassContext()) => getClassStudentsCollectionRef(userId, normalizeClassId(classId));
 const getSubjectsCollectionRef = (userId, classId = getCurrentClassContext()) => getClassSubjectsCollectionRef(userId, normalizeClassId(classId));
 const getExamsCollectionRef = (userId, classId = getCurrentClassContext()) => getClassExamsCollectionRef(userId, normalizeClassId(classId));
@@ -2478,6 +2801,475 @@ const readUserRootData = async (userId) => {
 
   const snapshot = await getDoc(getUserRootRef(userId));
   return snapshot.exists() ? (snapshot.data() || {}) : {};
+};
+
+const buildCurrentMessageSenderProfile = async (userId) => {
+  const normalizedUserId = normalizeUserId(userId);
+  const userRootData = normalizedUserId ? await readUserRootData(normalizedUserId) : {};
+  return {
+    uid: normalizedUserId,
+    name: normalizeDisplayName(userRootData?.name || getAuthenticatedUserDisplayName(), 'Teacher'),
+    email: normalizeEmailAddress(userRootData?.email || auth?.currentUser?.email || ''),
+    role: normalizeRole(userRootData?.role || getCurrentUserRoleContext() || ROLE_TEACHER)
+  };
+};
+
+const resolveOutboundMessageRecipients = async (payload = {}, actorUserId = '') => {
+  const normalizedAudienceType = normalizeMessageAudienceType(payload?.audienceType);
+  const audienceDirectory = await fetchMessageAudienceDirectory();
+  let recipients = [];
+  let audienceRole = '';
+  let audienceClassId = '';
+  let audienceClassName = '';
+
+  if (normalizedAudienceType === MESSAGE_AUDIENCE_ALL) {
+    recipients = audienceDirectory.users || [];
+  } else if (normalizedAudienceType === MESSAGE_AUDIENCE_ROLE) {
+    audienceRole = normalizeRole(payload?.audienceRole || payload?.role || '');
+    if (!audienceRole) {
+      throw new Error('Select a role to continue');
+    }
+    recipients = asArray(audienceDirectory.users).filter(user => normalizeRole(user?.role || '') === audienceRole);
+  } else if (normalizedAudienceType === MESSAGE_AUDIENCE_CLASS) {
+    audienceClassId = normalizeClassId(payload?.audienceClassId || payload?.classId || '');
+    if (!audienceClassId) {
+      throw new Error('Select a class to continue');
+    }
+    const classEntry = asArray(audienceDirectory.classes).find(entry => normalizeClassId(entry?.id || '') === audienceClassId) || null;
+    if (!classEntry) {
+      throw new Error('Select a class to continue');
+    }
+    audienceClassName = normalizeClassName(classEntry?.name || classEntry?.label || '', '');
+    const classOwner = normalizeMessageRecipientEntry({
+      uid: classEntry?.ownerId,
+      name: classEntry?.ownerName,
+      role: classEntry?.ownerRole,
+      receivesMessages: true
+    });
+    recipients = classOwner ? [classOwner] : [];
+  } else {
+    const recipientUserId = normalizeUserId(payload?.recipientUserId || payload?.uid || '');
+    if (!recipientUserId) {
+      throw new Error('Select a recipient to continue');
+    }
+    recipients = asArray(audienceDirectory.users).filter(user => normalizeUserId(user?.uid || '') === recipientUserId);
+  }
+
+  const normalizedRecipients = [];
+  const seen = new Set();
+  asArray(recipients).forEach((recipient) => {
+    const normalizedRecipient = normalizeMessageRecipientEntry(recipient);
+    if (!normalizedRecipient?.uid || normalizedRecipient.uid === normalizeUserId(actorUserId) || !normalizedRecipient.receivesMessages || seen.has(normalizedRecipient.uid)) {
+      return;
+    }
+    seen.add(normalizedRecipient.uid);
+    normalizedRecipients.push(normalizedRecipient);
+  });
+
+  if (!normalizedRecipients.length) {
+    throw new Error('No eligible recipients found for the selected audience');
+  }
+
+  return {
+    audienceType: normalizedAudienceType,
+    audienceRole,
+    audienceClassId,
+    audienceClassName,
+    recipients: normalizedRecipients,
+    audienceLabel: buildMessageAudienceLabel({
+      audienceType: normalizedAudienceType,
+      recipients: normalizedRecipients,
+      audienceRole,
+      audienceClassName,
+      audienceLabel: payload?.audienceLabel
+    })
+  };
+};
+
+const deliverMessageCopies = async ({
+  actorUserId = '',
+  senderProfile = {},
+  recipients = [],
+  audienceType = MESSAGE_AUDIENCE_INDIVIDUAL,
+  audienceRole = '',
+  audienceClassId = '',
+  audienceClassName = '',
+  audienceLabel = '',
+  subject = '',
+  body = '',
+  threadId = '',
+  parentMessageId = '',
+  isReply = false
+} = {}) => {
+  const normalizedActorUserId = normalizeUserId(actorUserId);
+  if (!normalizedActorUserId || !isFirebaseConfigured || !db) {
+    throw new Error('Firebase unavailable');
+  }
+
+  const normalizedRecipients = [];
+  const seen = new Set();
+  asArray(recipients).forEach((recipient) => {
+    const normalizedRecipient = normalizeMessageRecipientEntry(recipient);
+    if (!normalizedRecipient?.uid || normalizedRecipient.uid === normalizedActorUserId || !normalizedRecipient.receivesMessages || seen.has(normalizedRecipient.uid)) {
+      return;
+    }
+    seen.add(normalizedRecipient.uid);
+    normalizedRecipients.push(normalizedRecipient);
+  });
+
+  if (!normalizedRecipients.length) {
+    throw new Error('At least one recipient is required');
+  }
+
+  const normalizedSubject = normalizeMessageSubject(subject);
+  const normalizedBody = normalizeMessageBody(body);
+  if (!normalizedSubject) {
+    throw new Error('Subject is required');
+  }
+  if (!normalizedBody) {
+    throw new Error('Message body is required');
+  }
+
+  const createdAt = new Date().toISOString();
+  const senderId = normalizeUserId(senderProfile?.uid || normalizedActorUserId);
+  const senderName = normalizeDisplayName(senderProfile?.name || getAuthenticatedUserDisplayName(), 'Teacher');
+  const senderEmail = normalizeEmailAddress(senderProfile?.email || auth?.currentUser?.email || '');
+  const senderRole = normalizeRole(senderProfile?.role || getCurrentUserRoleContext() || ROLE_TEACHER);
+  const senderMessagesRef = getMessagesCollectionRef(normalizedActorUserId);
+  const sentRef = doc(senderMessagesRef);
+  const resolvedThreadId = String(threadId || parentMessageId || sentRef.id).trim() || sentRef.id;
+  const resolvedAudienceType = normalizeMessageAudienceType(audienceType);
+  const resolvedAudienceLabel = buildMessageAudienceLabel({
+    audienceType: resolvedAudienceType,
+    audienceLabel,
+    recipients: normalizedRecipients,
+    audienceRole,
+    audienceClassName
+  });
+  const recipientSummaryLabel = buildMessageRecipientsSummaryLabel(normalizedRecipients);
+  const singleRecipient = normalizedRecipients.length === 1 ? normalizedRecipients[0] : null;
+  const recipientUserIds = normalizedRecipients.map(recipient => recipient.uid);
+  const recipientRootRecords = await Promise.all(normalizedRecipients.map(async (recipient) => {
+    const rootData = await readUserRootData(recipient.uid);
+    return [recipient.uid, rootData];
+  }));
+  const recipientRootMap = new Map(recipientRootRecords);
+  const batch = writeBatch(db);
+  const basePayload = {
+    threadId: resolvedThreadId,
+    parentMessageId: String(parentMessageId || '').trim(),
+    replyToMessageId: String(parentMessageId || '').trim(),
+    isReply: Boolean(isReply || parentMessageId),
+    senderId,
+    senderName,
+    senderEmail,
+    senderRole,
+    subject: normalizedSubject,
+    body: normalizedBody,
+    bodyPreview: buildMessagePreview(normalizedBody),
+    audienceType: resolvedAudienceType,
+    audienceRole: normalizeRole(audienceRole || ''),
+    audienceClassId: normalizeClassId(audienceClassId || ''),
+    audienceClassName: String(audienceClassName || '').trim(),
+    audienceLabel: resolvedAudienceLabel,
+    recipientCount: normalizedRecipients.length,
+    sentAt: serverTimestamp(),
+    createdAt,
+    updatedAt: createdAt
+  };
+
+  batch.set(sentRef, {
+    id: sentRef.id,
+    mailbox: MESSAGE_MAILBOX_SENT,
+    ...basePayload,
+    recipientUserId: singleRecipient?.uid || '',
+    recipientName: singleRecipient?.name || recipientSummaryLabel,
+    recipientEmail: singleRecipient?.email || '',
+    recipientRole: singleRecipient?.role || ROLE_TEACHER,
+    recipientUserIds,
+    recipientLabel: recipientSummaryLabel,
+    isRead: true,
+    readAt: serverTimestamp()
+  }, { merge: true });
+
+  const inboxMessages = [];
+  normalizedRecipients.forEach((recipient) => {
+    const inboxRef = doc(getMessagesCollectionRef(recipient.uid));
+    const inboxPayload = {
+      id: inboxRef.id,
+      mailbox: MESSAGE_MAILBOX_INBOX,
+      ...basePayload,
+      recipientUserId: recipient.uid,
+      recipientName: recipient.name,
+      recipientEmail: recipient.email,
+      recipientRole: recipient.role,
+      recipientUserIds: [recipient.uid],
+      recipientLabel: recipient.displayLabel,
+      fromSentMessageId: sentRef.id,
+      isRead: false,
+      readAt: null
+    };
+    batch.set(inboxRef, inboxPayload, { merge: true });
+
+    const existingRootData = recipientRootMap.get(recipient.uid) || {};
+    if (Object.keys(existingRootData).length) {
+      const existingUnreadCount = Number.isFinite(Number(existingRootData?.messageUnreadCount))
+        ? Math.max(0, Math.floor(Number(existingRootData.messageUnreadCount)))
+        : 0;
+      batch.set(getUserRootRef(recipient.uid), {
+        userId: recipient.uid,
+        messageUnreadCount: existingUnreadCount + 1,
+        lastMessageAt: createdAt,
+        updatedAt: createdAt
+      }, { merge: true });
+    }
+
+    inboxMessages.push(normalizeMessageRecord(inboxRef.id, {
+      ...inboxPayload,
+      sentAt: createdAt,
+      readAt: null
+    }));
+  });
+
+  await batch.commit();
+
+  try {
+    await mergeUserRootMetadata(normalizedActorUserId, {
+      userId: normalizedActorUserId,
+      lastMessageAt: createdAt,
+      updatedAt: createdAt
+    });
+  } catch (error) {
+    console.warn('Failed to update sender message metadata:', error);
+  }
+
+  return {
+    threadId: resolvedThreadId,
+    recipientCount: normalizedRecipients.length,
+    audienceLabel: resolvedAudienceLabel,
+    inboxMessages,
+    sentMessage: normalizeMessageRecord(sentRef.id, {
+      id: sentRef.id,
+      mailbox: MESSAGE_MAILBOX_SENT,
+      ...basePayload,
+      recipientUserId: singleRecipient?.uid || '',
+      recipientName: singleRecipient?.name || recipientSummaryLabel,
+      recipientEmail: singleRecipient?.email || '',
+      recipientRole: singleRecipient?.role || ROLE_TEACHER,
+      recipientUserIds,
+      recipientLabel: recipientSummaryLabel,
+      isRead: true,
+      readAt: createdAt,
+      sentAt: createdAt
+    })
+  };
+};
+
+export const fetchCurrentUserMessages = async () => {
+  const userId = await ensureAuthenticatedUserId('read messages');
+  if (!isFirebaseConfigured || !db) {
+    return {
+      messages: [],
+      unreadCount: 0,
+      lastMessageAt: null
+    };
+  }
+
+  const snapshot = await getDocs(query(getMessagesCollectionRef(userId), orderBy('sentAt', 'desc')));
+  const messages = [];
+  snapshot.forEach((entry) => {
+    const record = normalizeMessageRecord(entry.id, entry.data() || {});
+    if (!record.id) {
+      return;
+    }
+    messages.push(record);
+  });
+
+  messages.sort((left, right) => {
+    const leftTime = new Date(left?.sortAt || 0).getTime() || 0;
+    const rightTime = new Date(right?.sortAt || 0).getTime() || 0;
+    return rightTime - leftTime;
+  });
+
+  const metadata = await syncCurrentUserMessageMetadata(userId, messages);
+  return {
+    messages,
+    unreadCount: metadata.unreadCount,
+    lastMessageAt: metadata.lastMessageAt
+  };
+};
+
+export const fetchMessageAudienceDirectory = async () => {
+  const actorUserId = await ensureAuthenticatedUserId('read message audience directory');
+  const actorRole = getCurrentUserRoleContext();
+  const actorPermissions = getCurrentUserPermissionsContext();
+  const capabilities = {
+    canSend: canSendMessages(actorRole, actorPermissions),
+    canReply: canReplyToMessages(actorRole, actorPermissions),
+    canMessageIndividuals: canMessageAudienceType(MESSAGE_AUDIENCE_INDIVIDUAL, actorRole, actorPermissions),
+    canMessageRoles: canMessageAudienceType(MESSAGE_AUDIENCE_ROLE, actorRole, actorPermissions),
+    canMessageClasses: canMessageAudienceType(MESSAGE_AUDIENCE_CLASS, actorRole, actorPermissions),
+    canMessageAll: canMessageAudienceType(MESSAGE_AUDIENCE_ALL, actorRole, actorPermissions)
+  };
+
+  let users = [];
+  if (capabilities.canMessageIndividuals || capabilities.canMessageRoles || capabilities.canMessageAll) {
+    users = (await readMessageDirectoryUsers()).filter((entry) => {
+      return normalizeUserId(entry?.uid || '') && normalizeUserId(entry?.uid || '') !== actorUserId && entry.receivesMessages;
+    });
+  }
+
+  let classes = [];
+  if (capabilities.canMessageClasses) {
+    try {
+      const classCatalog = await fetchClassCatalog();
+      classes = buildMessageClassAudienceOptions(classCatalog?.classes || [], actorUserId);
+    } catch (error) {
+      console.warn('Failed to build class messaging directory:', error);
+    }
+  }
+
+  return {
+    users,
+    roles: capabilities.canMessageRoles || capabilities.canMessageAll ? buildMessageRoleAudienceOptions(users) : [],
+    classes,
+    capabilities
+  };
+};
+
+export const sendMessage = async (payload = {}) => {
+  const actorUserId = await ensureAuthenticatedUserId('send messages');
+  const actorRole = getCurrentUserRoleContext();
+  const actorPermissions = getCurrentUserPermissionsContext();
+  if (!canSendMessages(actorRole, actorPermissions)) {
+    throw createContextError(ERROR_CODES.READ_ONLY_MODE, 'You do not have permission to send messages');
+  }
+
+  const resolvedAudienceType = normalizeMessageAudienceType(payload?.audienceType);
+  if (!canMessageAudienceType(resolvedAudienceType, actorRole, actorPermissions)) {
+    throw createContextError(ERROR_CODES.READ_ONLY_MODE, 'You do not have permission to message that audience');
+  }
+
+  const senderProfile = await buildCurrentMessageSenderProfile(actorUserId);
+  const recipientSelection = await resolveOutboundMessageRecipients(payload, actorUserId);
+  return deliverMessageCopies({
+    actorUserId,
+    senderProfile,
+    recipients: recipientSelection.recipients,
+    audienceType: recipientSelection.audienceType,
+    audienceRole: recipientSelection.audienceRole,
+    audienceClassId: recipientSelection.audienceClassId,
+    audienceClassName: recipientSelection.audienceClassName,
+    audienceLabel: recipientSelection.audienceLabel,
+    subject: payload?.subject,
+    body: payload?.body,
+    threadId: payload?.threadId,
+    parentMessageId: payload?.parentMessageId,
+    isReply: false
+  });
+};
+
+export const replyToMessage = async (messageId = '', payload = {}) => {
+  const actorUserId = await ensureAuthenticatedUserId('reply to message');
+  const actorRole = getCurrentUserRoleContext();
+  const actorPermissions = getCurrentUserPermissionsContext();
+  if (!canReplyToMessages(actorRole, actorPermissions)) {
+    throw createContextError(ERROR_CODES.READ_ONLY_MODE, 'You do not have permission to reply to messages');
+  }
+
+  const normalizedMessageId = String(messageId || '').trim();
+  if (!normalizedMessageId) {
+    throw new Error('Message id is required');
+  }
+
+  const messageSnapshot = await getDoc(getMessageDocRef(actorUserId, normalizedMessageId));
+  if (!messageSnapshot.exists()) {
+    throw new Error('The selected message could not be found');
+  }
+
+  const messageRecord = normalizeMessageRecord(messageSnapshot.id, messageSnapshot.data() || {});
+  const directRecipient = messageRecord.mailbox === MESSAGE_MAILBOX_INBOX
+    ? normalizeMessageRecipientEntry({
+      uid: messageRecord.senderId,
+      name: messageRecord.senderName,
+      email: messageRecord.senderEmail,
+      role: messageRecord.senderRole,
+      receivesMessages: true
+    })
+    : messageRecord.recipientCount === 1
+      ? normalizeMessageRecipientEntry({
+        uid: messageRecord.recipientUserId,
+        name: messageRecord.recipientName,
+        email: messageRecord.recipientEmail,
+        role: messageRecord.recipientRole,
+        receivesMessages: true
+      })
+      : null;
+
+  if (!directRecipient?.uid || directRecipient.uid === actorUserId) {
+    throw new Error('Replies are only available for direct conversations');
+  }
+
+  const existingSubject = normalizeMessageSubject(messageRecord.subject || 'Message');
+  const replySubject = normalizeMessageSubject(payload?.subject || '') || (
+    existingSubject.toLowerCase().startsWith('re:') ? existingSubject : `Re: ${existingSubject}`
+  );
+  const senderProfile = await buildCurrentMessageSenderProfile(actorUserId);
+  return deliverMessageCopies({
+    actorUserId,
+    senderProfile,
+    recipients: [directRecipient],
+    audienceType: MESSAGE_AUDIENCE_INDIVIDUAL,
+    audienceLabel: directRecipient.displayLabel,
+    subject: replySubject,
+    body: payload?.body,
+    threadId: messageRecord.threadId || messageRecord.id,
+    parentMessageId: messageRecord.id,
+    isReply: true
+  });
+};
+
+export const markMessageAsRead = async (messageId = '') => {
+  const actorUserId = await ensureAuthenticatedUserId('mark message as read');
+  const normalizedMessageId = String(messageId || '').trim();
+  if (!normalizedMessageId || !isFirebaseConfigured || !db) {
+    return false;
+  }
+
+  const messageRef = getMessageDocRef(actorUserId, normalizedMessageId);
+  const snapshot = await getDoc(messageRef);
+  if (!snapshot.exists()) {
+    return false;
+  }
+
+  const messageRecord = normalizeMessageRecord(snapshot.id, snapshot.data() || {});
+  if (messageRecord.mailbox !== MESSAGE_MAILBOX_INBOX || messageRecord.isRead) {
+    return false;
+  }
+
+  const updatedAt = new Date().toISOString();
+  const currentRootData = await readUserRootData(actorUserId);
+  const existingUnreadCount = Number.isFinite(Number(currentRootData?.messageUnreadCount))
+    ? Math.max(0, Math.floor(Number(currentRootData.messageUnreadCount)))
+    : 0;
+
+  await updateDoc(messageRef, {
+    isRead: true,
+    readAt: serverTimestamp(),
+    updatedAt
+  });
+
+  try {
+    await mergeUserRootMetadata(actorUserId, {
+      userId: actorUserId,
+      messageUnreadCount: Math.max(0, existingUnreadCount - 1),
+      updatedAt
+    });
+  } catch (error) {
+    console.warn('Failed to update unread metadata after marking a message as read:', error);
+  }
+
+  return true;
 };
 
 const ensureDefaultClassDocument = async (userId) => {

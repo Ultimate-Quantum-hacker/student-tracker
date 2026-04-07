@@ -96,6 +96,7 @@ const setResolvedUserRole = async (authUser) => {
   app.state.unreadMessageCount = Number.isFinite(Number(resolvedProfile?.messageUnreadCount))
     ? Math.max(0, Math.floor(Number(resolvedProfile.messageUnreadCount)))
     : 0;
+  app.state.messageLastMessageAt = resolvedProfile?.lastMessageAt ?? app.state.messageLastMessageAt ?? null;
   app.setCurrentUserRole(normalizedRole, {
     resolved: true,
     permissions: resolvedProfile?.permissions || []
@@ -192,6 +193,16 @@ const clearLoadedDataForLogout = () => {
   app.state.currentClassOwnerRole = 'teacher';
   app.state.allowEmptyClassCatalog = false;
   app.state.unreadMessageCount = 0;
+  app.state.messages = [];
+  app.state.selectedMessageId = '';
+  app.state.messageMailboxFilter = 'all';
+  app.state.messageDirectory = {
+    users: [],
+    roles: [],
+    classes: [],
+    capabilities: {}
+  };
+  app.state.messageLastMessageAt = null;
   if (typeof app.applyRawData === 'function') {
     app.applyRawData(emptyData);
   } else {
@@ -206,6 +217,9 @@ const clearLoadedDataForLogout = () => {
   app.state.dashboardStudentCount = null;
   if (typeof app.clearCurrentUserRole === 'function') {
     app.clearCurrentUserRole();
+  }
+  if (ui && typeof ui.resetMessagingState === 'function') {
+    ui.resetMessagingState();
   }
 };
 

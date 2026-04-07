@@ -6,10 +6,25 @@
 import app from './state.js';
 import { auth } from './firebase.js';
 import {
+  fetchCurrentUserMessages,
+  fetchMessageAudienceDirectory,
   finalizeCurrentUserAccountDeletion,
+  markMessageAsRead,
+  replyToMessage,
   requestCurrentUserAccountDeletion,
+  sendMessage,
   syncCurrentUserClassOwnerName
 } from '../services/db.js';
+import {
+  MESSAGE_AUDIENCE_ALL,
+  MESSAGE_AUDIENCE_CLASS,
+  MESSAGE_AUDIENCE_INDIVIDUAL,
+  MESSAGE_AUDIENCE_ROLE,
+  canMessageAudienceType,
+  canReceiveMessages,
+  canReplyToMessages,
+  canSendMessages
+} from './access-control.js';
 import {
   ACCOUNT_DELETION_STATUS_APPROVED,
   ACCOUNT_DELETION_STATUS_NONE,
@@ -180,6 +195,43 @@ const domIds = {
   accountSettingsResetBtn: 'account-settings-reset-btn',
   accountSettingsPasswordResetBtn: 'account-settings-password-reset-btn',
   accountSettingsDeleteBtn: 'account-settings-delete-btn',
+  messagesSidebarItem: 'messages-sidebar-item',
+  messagesSidebarBadge: 'messages-sidebar-badge',
+  messagesSectionStatus: 'messages-section-status',
+  messagesUnreadBadge: 'messages-unread-badge',
+  messagesRefreshBtn: 'messages-refresh-btn',
+  messagesComposeBtn: 'messages-compose-btn',
+  messagesFilterAll: 'messages-filter-all',
+  messagesFilterInbox: 'messages-filter-inbox',
+  messagesFilterSent: 'messages-filter-sent',
+  messagesListStatus: 'messages-list-status',
+  messagesList: 'messages-list',
+  messagesDetailEmpty: 'messages-detail-empty',
+  messagesDetail: 'messages-detail',
+  messagesDetailMailbox: 'messages-detail-mailbox',
+  messageReplyBtn: 'message-reply-btn',
+  messagesDetailSubject: 'messages-detail-subject',
+  messagesDetailMeta: 'messages-detail-meta',
+  messagesDetailAudience: 'messages-detail-audience',
+  messagesDetailRecipient: 'messages-detail-recipient',
+  messagesDetailBody: 'messages-detail-body',
+  messageComposeModal: 'message-compose-modal',
+  messageComposeForm: 'message-compose-form',
+  messageComposeTitle: 'message-compose-title',
+  messageComposeSubtitle: 'message-compose-subtitle',
+  messageComposeFeedback: 'message-compose-feedback',
+  messageComposeAudienceType: 'message-compose-audience-type',
+  messageComposeRecipientGroup: 'message-compose-recipient-group',
+  messageComposeRecipientSelect: 'message-compose-recipient-select',
+  messageComposeRoleGroup: 'message-compose-role-group',
+  messageComposeRoleSelect: 'message-compose-role-select',
+  messageComposeClassGroup: 'message-compose-class-group',
+  messageComposeClassSelect: 'message-compose-class-select',
+  messageComposeSubject: 'message-compose-subject',
+  messageComposeBody: 'message-compose-body',
+  messageComposeMeta: 'message-compose-meta',
+  messageComposeCancelBtn: 'message-compose-cancel-btn',
+  messageComposeSubmitBtn: 'message-compose-submit-btn',
   authRoleBadge: 'auth-role-badge'
 };
 
@@ -212,6 +264,18 @@ const ui = {
   hasPromptedForMissingClass: false,
   hasBoundClassDropdownEvents: false,
   hasBoundAccessGuardEvents: false,
+  messageDataLoaded: false,
+  messageDirectoryLoaded: false,
+  isLoadingMessages: false,
+  isLoadingMessageDirectory: false,
+  isSubmittingMessage: false,
+  messagesRequest: null,
+  messageDirectoryRequest: null,
+  messageComposeState: {
+    mode: 'compose',
+    replyToMessageId: '',
+    recipientUserId: ''
+  },
   bulkClassDeleteSelection: [],
   isSavingAccountSettings: false,
   accountSettingsBusyAction: '',
@@ -318,6 +382,7 @@ const ui = {
       const normalizedRole = normalizeUserRole(role);
       if (normalizedRole === 'developer') return 'Developer';
       if (normalizedRole === 'admin') return 'Admin';
+      if (normalizedRole === 'head_teacher') return 'Head Teacher';
       return 'Teacher';
     },
 
@@ -971,6 +1036,902 @@ const ui = {
       }
 
       return parsed.toLocaleString();
+    },
+
+    getMessageRoleContext: function () {
+      if (typeof app.getCurrentUserRole === 'function') {
+        return normalizeUserRole(app.getCurrentUserRole());
+      }
+      return normalizeUserRole(app.state.currentUserRole || app.state.authUser?.role || 'teacher');
+    },
+
+    getMessagePermissionsContext: function () {
+      if (typeof app.getCurrentUserPermissions === 'function') {
+        const permissions = app.getCurrentUserPermissions();
+        if (Array.isArray(permissions)) {
+          return permissions;
+        }
+      }
+      return Array.isArray(app.state.currentUserPermissions) ? app.state.currentUserPermissions : [];
+    },
+
+    getMessages: function () {
+      return Array.isArray(app.state.messages) ? app.state.messages : [];
+    },
+
+    getMessageDirectory: function () {
+      const directory = app.state.messageDirectory || {};
+      return {
+        users: Array.isArray(directory?.users) ? directory.users : [],
+        roles: Array.isArray(directory?.roles) ? directory.roles : [],
+        classes: Array.isArray(directory?.classes) ? directory.classes : [],
+        capabilities: directory?.capabilities && typeof directory.capabilities === 'object'
+          ? directory.capabilities
+          : {}
+      };
+    },
+
+    getMessagingCapabilities: function () {
+      const role = this.getMessageRoleContext();
+      const permissions = this.getMessagePermissionsContext();
+      const directoryCapabilities = this.getMessageDirectory().capabilities;
+      return {
+        canReceive: canReceiveMessages(role, permissions),
+        canSend: directoryCapabilities.canSend ?? canSendMessages(role, permissions),
+        canReply: directoryCapabilities.canReply ?? canReplyToMessages(role, permissions),
+        canMessageIndividuals: directoryCapabilities.canMessageIndividuals ?? canMessageAudienceType(MESSAGE_AUDIENCE_INDIVIDUAL, role, permissions),
+        canMessageRoles: directoryCapabilities.canMessageRoles ?? canMessageAudienceType(MESSAGE_AUDIENCE_ROLE, role, permissions),
+        canMessageClasses: directoryCapabilities.canMessageClasses ?? canMessageAudienceType(MESSAGE_AUDIENCE_CLASS, role, permissions),
+        canMessageAll: directoryCapabilities.canMessageAll ?? canMessageAudienceType(MESSAGE_AUDIENCE_ALL, role, permissions)
+      };
+    },
+
+    resetMessagingState: function () {
+      this.messageDataLoaded = false;
+      this.messageDirectoryLoaded = false;
+      this.isLoadingMessages = false;
+      this.isLoadingMessageDirectory = false;
+      this.isSubmittingMessage = false;
+      this.messagesRequest = null;
+      this.messageDirectoryRequest = null;
+      this.messageComposeState = {
+        mode: 'compose',
+        replyToMessageId: '',
+        recipientUserId: ''
+      };
+      if (app.dom.messageComposeModal) {
+        app.dom.messageComposeModal.classList.remove('active');
+      }
+    },
+
+    updateMessageBadges: function () {
+      const unreadCount = Number.isFinite(Number(app.state.unreadMessageCount))
+        ? Math.max(0, Math.floor(Number(app.state.unreadMessageCount)))
+        : 0;
+      const badgeLabel = unreadCount > 99 ? '99+' : String(unreadCount);
+      if (app.dom.messagesSidebarBadge) {
+        app.dom.messagesSidebarBadge.textContent = badgeLabel;
+        app.dom.messagesSidebarBadge.hidden = unreadCount === 0;
+      }
+      if (app.dom.messagesUnreadBadge) {
+        app.dom.messagesUnreadBadge.textContent = unreadCount === 1 ? '1 unread' : `${unreadCount} unread`;
+        app.dom.messagesUnreadBadge.hidden = unreadCount === 0;
+      }
+    },
+
+    syncLocalMessageMetadata: function ({ unreadCount = 0, lastMessageAt = null } = {}) {
+      const normalizedUnreadCount = Number.isFinite(Number(unreadCount))
+        ? Math.max(0, Math.floor(Number(unreadCount)))
+        : 0;
+      app.state.unreadMessageCount = normalizedUnreadCount;
+      app.state.messageLastMessageAt = lastMessageAt || null;
+      if (app.state.authUser?.uid) {
+        app.state.authUser = {
+          ...(app.state.authUser || {}),
+          messageUnreadCount: normalizedUnreadCount,
+          lastMessageAt: lastMessageAt || null
+        };
+      }
+      this.updateMessageBadges();
+    },
+
+    applyMessagesPayload: function (payload = {}, { preserveSelection = true } = {}) {
+      const nextMessages = Array.isArray(payload?.messages) ? payload.messages : [];
+      app.state.messages = nextMessages;
+      this.syncLocalMessageMetadata({
+        unreadCount: payload?.unreadCount ?? app.state.unreadMessageCount,
+        lastMessageAt: payload?.lastMessageAt ?? nextMessages[0]?.sentAt ?? nextMessages[0]?.updatedAt ?? null
+      });
+      const currentSelection = String(app.state.selectedMessageId || '').trim();
+      const hasSelection = preserveSelection && nextMessages.some((message) => {
+        return String(message?.id || '').trim() === currentSelection;
+      });
+      app.state.selectedMessageId = hasSelection ? currentSelection : String(nextMessages[0]?.id || '').trim();
+    },
+
+    ensureMessagesLoaded: async function (force = false) {
+      const authUid = String(app.state.authUser?.uid || '').trim();
+      const capabilities = this.getMessagingCapabilities();
+      const hasAccess = capabilities.canReceive || capabilities.canSend || capabilities.canReply;
+      if (!authUid || !hasAccess) {
+        return [];
+      }
+      if (this.messagesRequest) {
+        return this.messagesRequest;
+      }
+      if (!force && this.messageDataLoaded) {
+        return this.getMessages();
+      }
+      this.isLoadingMessages = true;
+      this.renderMessagesSection();
+      this.messagesRequest = fetchCurrentUserMessages()
+        .then((payload) => {
+          this.messageDataLoaded = true;
+          this.applyMessagesPayload(payload, { preserveSelection: !force });
+          return payload;
+        })
+        .catch((error) => {
+          console.error('Failed to load messages:', error);
+          this.showToast('Failed to load messages');
+          throw error;
+        })
+        .finally(() => {
+          this.isLoadingMessages = false;
+          this.messagesRequest = null;
+          this.renderMessagesSection();
+        });
+      return this.messagesRequest;
+    },
+
+    ensureMessageDirectoryLoaded: async function (force = false) {
+      const authUid = String(app.state.authUser?.uid || '').trim();
+      const capabilities = this.getMessagingCapabilities();
+      if (!authUid || (!capabilities.canSend && !capabilities.canReply)) {
+        return this.getMessageDirectory();
+      }
+      if (this.messageDirectoryRequest) {
+        return this.messageDirectoryRequest;
+      }
+      if (!force && this.messageDirectoryLoaded) {
+        return this.getMessageDirectory();
+      }
+      this.isLoadingMessageDirectory = true;
+      this.renderMessageComposeControls();
+      this.messageDirectoryRequest = fetchMessageAudienceDirectory()
+        .then((directory) => {
+          app.state.messageDirectory = {
+            users: Array.isArray(directory?.users) ? directory.users : [],
+            roles: Array.isArray(directory?.roles) ? directory.roles : [],
+            classes: Array.isArray(directory?.classes) ? directory.classes : [],
+            capabilities: directory?.capabilities && typeof directory.capabilities === 'object'
+              ? directory.capabilities
+              : {}
+          };
+          this.messageDirectoryLoaded = true;
+          return app.state.messageDirectory;
+        })
+        .catch((error) => {
+          console.error('Failed to load message recipients:', error);
+          this.showToast('Failed to load message recipients');
+          throw error;
+        })
+        .finally(() => {
+          this.isLoadingMessageDirectory = false;
+          this.messageDirectoryRequest = null;
+          this.renderMessagesSection();
+          this.renderMessageComposeControls();
+        });
+      return this.messageDirectoryRequest;
+    },
+
+    refreshMessagesData: async function (force = false) {
+      try {
+        await this.ensureMessagesLoaded(force);
+        if (this.getMessagingCapabilities().canSend && (force || this.messageDirectoryLoaded)) {
+          await this.ensureMessageDirectoryLoaded(force);
+        }
+      } catch (error) {
+        console.error('Failed to refresh messages:', error);
+      }
+    },
+
+    formatMessageMailboxLabel: function (mailbox = '') {
+      return String(mailbox || '').trim().toLowerCase() === 'sent' ? 'Sent' : 'Inbox';
+    },
+
+    getFilteredMessages: function () {
+      const messages = this.getMessages();
+      const filter = String(app.state.messageMailboxFilter || 'all').trim().toLowerCase();
+      if (filter === 'inbox' || filter === 'sent') {
+        return messages.filter(message => String(message?.mailbox || '').trim().toLowerCase() === filter);
+      }
+      return messages;
+    },
+
+    syncMessageSelectionToFilter: function () {
+      const filteredMessages = this.getFilteredMessages();
+      const selectedMessageId = String(app.state.selectedMessageId || '').trim();
+      if (selectedMessageId && filteredMessages.some((message) => {
+        return String(message?.id || '').trim() === selectedMessageId;
+      })) {
+        return selectedMessageId;
+      }
+      app.state.selectedMessageId = String(filteredMessages[0]?.id || '').trim();
+      return app.state.selectedMessageId;
+    },
+
+    getSelectedMessageRecord: function () {
+      const selectedMessageId = this.syncMessageSelectionToFilter();
+      return this.getFilteredMessages().find((message) => {
+        return String(message?.id || '').trim() === selectedMessageId;
+      }) || null;
+    },
+
+    formatMessageBodyHtml: function (value = '') {
+      const normalizedValue = String(value || '').trim();
+      if (!normalizedValue) {
+        return '<span class="messages-detail-empty-copy">No message body provided.</span>';
+      }
+      return app.utils.esc(normalizedValue).replace(/\n/g, '<br>');
+    },
+
+    getReplyTargetForMessage: function (message = null) {
+      if (!message) {
+        return null;
+      }
+      const actorUserId = String(app.state.authUser?.uid || '').trim();
+      if (String(message?.mailbox || '').trim().toLowerCase() === 'inbox') {
+        const senderId = String(message?.senderId || '').trim();
+        if (!senderId || senderId === actorUserId) {
+          return null;
+        }
+        return {
+          uid: senderId,
+          name: String(message?.senderName || '').trim(),
+          email: String(message?.senderEmail || '').trim(),
+          role: String(message?.senderRole || '').trim(),
+          label: String(message?.senderName || message?.senderEmail || senderId).trim()
+        };
+      }
+      if (Number(message?.recipientCount || 0) !== 1) {
+        return null;
+      }
+      const recipientUserId = String(message?.recipientUserId || '').trim();
+      if (!recipientUserId || recipientUserId === actorUserId) {
+        return null;
+      }
+      return {
+        uid: recipientUserId,
+        name: String(message?.recipientName || '').trim(),
+        email: String(message?.recipientEmail || '').trim(),
+        role: String(message?.recipientRole || '').trim(),
+        label: String(message?.recipientLabel || message?.recipientName || message?.recipientEmail || recipientUserId).trim()
+      };
+    },
+
+    renderSelectedMessageDetail: function (message = null) {
+      if (!app.dom.messagesDetail || !app.dom.messagesDetailEmpty) {
+        return;
+      }
+      const capabilities = this.getMessagingCapabilities();
+      const replyTarget = this.getReplyTargetForMessage(message);
+      if (!message) {
+        app.dom.messagesDetail.hidden = true;
+        app.dom.messagesDetailEmpty.hidden = false;
+        if (app.dom.messageReplyBtn) {
+          app.dom.messageReplyBtn.hidden = true;
+          app.dom.messageReplyBtn.disabled = true;
+          app.dom.messageReplyBtn.dataset.messageId = '';
+        }
+        return;
+      }
+
+      app.dom.messagesDetail.hidden = false;
+      app.dom.messagesDetailEmpty.hidden = true;
+
+      if (app.dom.messagesDetailMailbox) {
+        app.dom.messagesDetailMailbox.textContent = this.formatMessageMailboxLabel(message.mailbox);
+        app.dom.messagesDetailMailbox.dataset.mailbox = String(message?.mailbox || '').trim().toLowerCase();
+      }
+      if (app.dom.messagesDetailSubject) {
+        app.dom.messagesDetailSubject.textContent = String(message?.subject || '(No subject)').trim() || '(No subject)';
+      }
+      if (app.dom.messagesDetailMeta) {
+        const timeLabel = this.formatAccountTimestamp(message?.sentAt || message?.updatedAt, 'Recently');
+        const directionLabel = String(message?.mailbox || '').trim().toLowerCase() === 'sent'
+          ? `To ${String(message?.recipientLabel || message?.counterpartLabel || 'Recipients').trim() || 'Recipients'}`
+          : `From ${String(message?.senderName || message?.senderEmail || 'Unknown sender').trim() || 'Unknown sender'}`;
+        app.dom.messagesDetailMeta.textContent = `${directionLabel} · ${timeLabel}`;
+      }
+      if (app.dom.messagesDetailAudience) {
+        app.dom.messagesDetailAudience.textContent = String(message?.audienceLabel || 'Direct message').trim() || 'Direct message';
+      }
+      if (app.dom.messagesDetailRecipient) {
+        app.dom.messagesDetailRecipient.textContent = String(message?.mailbox || '').trim().toLowerCase() === 'sent'
+          ? (Number(message?.recipientCount || 0) > 1
+              ? `${Number(message?.recipientCount || 0)} recipients`
+              : String(message?.recipientLabel || message?.recipientName || message?.recipientEmail || 'Recipient').trim() || 'Recipient')
+          : String(message?.senderName || message?.senderEmail || 'Unknown sender').trim() || 'Unknown sender';
+      }
+      if (app.dom.messagesDetailBody) {
+        app.dom.messagesDetailBody.innerHTML = this.formatMessageBodyHtml(message?.body || '');
+      }
+      if (app.dom.messageReplyBtn) {
+        const canReply = Boolean(capabilities.canReply && replyTarget?.uid);
+        app.dom.messageReplyBtn.hidden = !canReply;
+        app.dom.messageReplyBtn.disabled = !canReply;
+        app.dom.messageReplyBtn.dataset.messageId = canReply ? String(message?.id || '').trim() : '';
+      }
+    },
+
+    renderMessagesSection: function () {
+      const hasSession = Boolean(app.state.authUser?.uid);
+      const capabilities = this.getMessagingCapabilities();
+      const hasAccess = capabilities.canReceive || capabilities.canSend || capabilities.canReply;
+      const allMessages = this.getMessages();
+      const filteredMessages = this.getFilteredMessages();
+      const selectedMessage = hasSession && hasAccess ? this.getSelectedMessageRecord() : null;
+      const unreadCount = Number.isFinite(Number(app.state.unreadMessageCount))
+        ? Math.max(0, Math.floor(Number(app.state.unreadMessageCount)))
+        : 0;
+
+      this.updateMessageBadges();
+
+      document.querySelectorAll('[data-message-filter]').forEach((button) => {
+        const filter = String(button.dataset.messageFilter || '').trim().toLowerCase();
+        const isActive = filter === String(app.state.messageMailboxFilter || 'all').trim().toLowerCase();
+        button.classList.toggle('active', isActive);
+        button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        button.disabled = !hasAccess;
+      });
+
+      if (app.dom.messagesComposeBtn) {
+        app.dom.messagesComposeBtn.disabled = !capabilities.canSend || this.isSubmittingMessage;
+        app.dom.messagesComposeBtn.title = capabilities.canSend
+          ? 'Compose message'
+          : 'You do not have permission to start new messages';
+      }
+      if (app.dom.messagesRefreshBtn) {
+        app.dom.messagesRefreshBtn.disabled = !hasAccess || this.isLoadingMessages;
+        app.dom.messagesRefreshBtn.textContent = this.isLoadingMessages ? 'Refreshing...' : 'Refresh';
+      }
+      if (app.dom.messagesSectionStatus) {
+        if (!hasSession) {
+          app.dom.messagesSectionStatus.textContent = 'Sign in to access messages.';
+        } else if (!hasAccess) {
+          app.dom.messagesSectionStatus.textContent = 'Messaging is unavailable for this account.';
+        } else if (this.isLoadingMessages) {
+          app.dom.messagesSectionStatus.textContent = 'Loading your inbox...';
+        } else if (app.state.messageLastMessageAt) {
+          app.dom.messagesSectionStatus.textContent = `Last updated ${this.formatAccountTimestamp(app.state.messageLastMessageAt, 'Recently')}`;
+        } else {
+          app.dom.messagesSectionStatus.textContent = 'Check your inbox, replies, and sent messages.';
+        }
+      }
+      if (app.dom.messagesListStatus) {
+        if (!hasSession) {
+          app.dom.messagesListStatus.textContent = 'Sign in to load your inbox.';
+        } else if (!hasAccess) {
+          app.dom.messagesListStatus.textContent = 'Messaging is unavailable.';
+        } else if (this.isLoadingMessages) {
+          app.dom.messagesListStatus.textContent = 'Loading messages...';
+        } else if (!filteredMessages.length) {
+          app.dom.messagesListStatus.textContent = allMessages.length ? 'No messages match this filter.' : 'No messages yet.';
+        } else {
+          const filter = String(app.state.messageMailboxFilter || 'all').trim().toLowerCase();
+          const count = filteredMessages.length;
+          const filterLabel = filter === 'all' ? 'message' : `${filter} message`;
+          app.dom.messagesListStatus.textContent = `${count} ${filterLabel}${count === 1 ? '' : 's'}${unreadCount ? ` · ${unreadCount} unread` : ''}`;
+        }
+      }
+
+      if (app.dom.messagesList) {
+        if (!hasSession || !hasAccess) {
+          app.dom.messagesList.innerHTML = '<div class="messages-empty-state"><strong>Messaging unavailable</strong><p>Sign in with a role that can receive messages to use this feature.</p></div>';
+        } else if (!filteredMessages.length) {
+          const emptyTitle = allMessages.length ? 'No messages in this view' : 'No messages yet';
+          const emptyCopy = allMessages.length
+            ? 'Try another filter or refresh your inbox.'
+            : (capabilities.canSend ? 'Use compose to start a conversation.' : 'Messages sent to you will appear here.');
+          app.dom.messagesList.innerHTML = `<div class="messages-empty-state"><strong>${app.utils.esc(emptyTitle)}</strong><p>${app.utils.esc(emptyCopy)}</p></div>`;
+        } else {
+          app.dom.messagesList.innerHTML = filteredMessages.map((message) => {
+            const messageId = String(message?.id || '').trim();
+            const isActive = messageId && messageId === String(app.state.selectedMessageId || '').trim();
+            const isUnread = String(message?.mailbox || '').trim().toLowerCase() === 'inbox' && !Boolean(message?.isRead);
+            const mailboxLabel = this.formatMessageMailboxLabel(message?.mailbox || 'inbox');
+            return `
+              <button type="button" class="message-list-item${isActive ? ' is-active' : ''}${isUnread ? ' is-unread' : ''}" data-message-id="${app.utils.esc(messageId)}">
+                <div class="message-list-item-topline">
+                  <span class="message-list-item-counterpart">${app.utils.esc(String(message?.counterpartLabel || 'Message').trim() || 'Message')}</span>
+                  <span class="message-list-item-tags">
+                    ${isUnread ? '<span class="message-unread-dot" aria-hidden="true"></span>' : ''}
+                    <span class="message-mailbox-pill" data-mailbox="${app.utils.esc(String(message?.mailbox || 'inbox').trim().toLowerCase())}">${app.utils.esc(mailboxLabel)}</span>
+                  </span>
+                </div>
+                <div class="message-list-item-subject">${app.utils.esc(String(message?.subject || '(No subject)').trim() || '(No subject)')}</div>
+                <div class="message-list-item-preview">${app.utils.esc(String(message?.bodyPreview || message?.body || '').trim() || 'No preview available')}</div>
+                <div class="message-list-item-meta">
+                  <span>${app.utils.esc(String(message?.audienceLabel || 'Direct message').trim() || 'Direct message')}</span>
+                  <span>${app.utils.esc(this.formatAccountTimestamp(message?.sentAt || message?.updatedAt, 'Recently'))}</span>
+                </div>
+              </button>`;
+          }).join('');
+        }
+      }
+
+      this.renderSelectedMessageDetail(selectedMessage);
+    },
+
+    selectMessage: function (messageId = '') {
+      const normalizedMessageId = String(messageId || '').trim();
+      if (!normalizedMessageId) {
+        return;
+      }
+      const message = this.getMessages().find((entry) => {
+        return String(entry?.id || '').trim() === normalizedMessageId;
+      });
+      if (!message) {
+        return;
+      }
+      app.state.selectedMessageId = normalizedMessageId;
+      this.renderMessagesSection();
+      if (String(message?.mailbox || '').trim().toLowerCase() === 'inbox' && !Boolean(message?.isRead)) {
+        void this.markMessageAsReadIfNeeded(normalizedMessageId);
+      }
+    },
+
+    markMessageAsReadIfNeeded: async function (messageId = '') {
+      const normalizedMessageId = String(messageId || '').trim();
+      const message = this.getMessages().find((entry) => {
+        return String(entry?.id || '').trim() === normalizedMessageId;
+      });
+      if (!message || String(message?.mailbox || '').trim().toLowerCase() !== 'inbox' || Boolean(message?.isRead)) {
+        return false;
+      }
+      try {
+        const didMarkRead = await markMessageAsRead(normalizedMessageId);
+        if (!didMarkRead) {
+          return false;
+        }
+        const unreadCount = Number.isFinite(Number(app.state.unreadMessageCount))
+          ? Math.max(0, Math.floor(Number(app.state.unreadMessageCount)))
+          : 0;
+        app.state.messages = this.getMessages().map((entry) => {
+          if (String(entry?.id || '').trim() !== normalizedMessageId) {
+            return entry;
+          }
+          return {
+            ...(entry || {}),
+            isRead: true,
+            readAt: new Date().toISOString()
+          };
+        });
+        this.syncLocalMessageMetadata({
+          unreadCount: Math.max(0, unreadCount - 1),
+          lastMessageAt: app.state.messageLastMessageAt
+        });
+        this.renderMessagesSection();
+        return true;
+      } catch (error) {
+        console.error('Failed to mark message as read:', error);
+        return false;
+      }
+    },
+
+    setMessageMailboxFilter: function (filter = 'all') {
+      const normalizedFilter = ['all', 'inbox', 'sent'].includes(String(filter || '').trim().toLowerCase())
+        ? String(filter || '').trim().toLowerCase()
+        : 'all';
+      app.state.messageMailboxFilter = normalizedFilter;
+      this.renderMessagesSection();
+    },
+
+    buildMessageAudienceOptions: function (mode = 'compose') {
+      if (mode === 'reply') {
+        return [{ value: MESSAGE_AUDIENCE_INDIVIDUAL, label: 'Direct reply' }];
+      }
+      const capabilities = this.getMessagingCapabilities();
+      const options = [];
+      if (capabilities.canMessageIndividuals) {
+        options.push({ value: MESSAGE_AUDIENCE_INDIVIDUAL, label: 'Individual' });
+      }
+      if (capabilities.canMessageRoles) {
+        options.push({ value: MESSAGE_AUDIENCE_ROLE, label: 'Role' });
+      }
+      if (capabilities.canMessageClasses) {
+        options.push({ value: MESSAGE_AUDIENCE_CLASS, label: 'Class' });
+      }
+      if (capabilities.canMessageAll) {
+        options.push({ value: MESSAGE_AUDIENCE_ALL, label: 'All eligible users' });
+      }
+      return options;
+    },
+
+    populateMessageSelect: function (selectElement, options = [], { selectedValue = '', placeholder = 'Select an option', includePlaceholder = true } = {}) {
+      if (!selectElement) {
+        return;
+      }
+      const normalizedOptions = Array.isArray(options) ? options : [];
+      const optionMarkup = normalizedOptions.map((option) => {
+        const value = String(option?.value ?? option?.uid ?? option?.id ?? option?.role ?? '').trim();
+        const label = String(option?.label || option?.name || option?.displayLabel || option?.email || value).trim() || value;
+        return `<option value="${app.utils.esc(value)}">${app.utils.esc(label)}</option>`;
+      });
+      if (includePlaceholder) {
+        optionMarkup.unshift(`<option value="">${app.utils.esc(placeholder)}</option>`);
+      }
+      selectElement.innerHTML = optionMarkup.join('');
+      const normalizedSelectedValue = String(selectedValue || '').trim();
+      const hasSelectedValue = normalizedOptions.some((option) => {
+        const optionValue = String(option?.value ?? option?.uid ?? option?.id ?? option?.role ?? '').trim();
+        return optionValue === normalizedSelectedValue;
+      });
+      if (hasSelectedValue) {
+        selectElement.value = normalizedSelectedValue;
+      } else if (!includePlaceholder && normalizedOptions[0]) {
+        selectElement.value = String(normalizedOptions[0]?.value ?? normalizedOptions[0]?.uid ?? normalizedOptions[0]?.id ?? normalizedOptions[0]?.role ?? '').trim();
+      } else {
+        selectElement.value = '';
+      }
+      selectElement.disabled = !normalizedOptions.length;
+    },
+
+    setMessageComposeFeedback: function (message = '', tone = '') {
+      if (!app.dom.messageComposeFeedback) {
+        return;
+      }
+      const normalizedMessage = String(message || '').trim();
+      app.dom.messageComposeFeedback.textContent = normalizedMessage;
+      app.dom.messageComposeFeedback.hidden = !normalizedMessage;
+      if (tone) {
+        app.dom.messageComposeFeedback.dataset.tone = tone;
+      } else {
+        delete app.dom.messageComposeFeedback.dataset.tone;
+      }
+    },
+
+    updateMessageComposeMeta: function () {
+      if (!app.dom.messageComposeMeta) {
+        return;
+      }
+      const composerState = this.messageComposeState || {};
+      const mode = composerState.mode === 'reply' ? 'reply' : 'compose';
+      const directory = this.getMessageDirectory();
+      const replyMessage = mode === 'reply'
+        ? this.getMessages().find((message) => String(message?.id || '').trim() === String(composerState.replyToMessageId || '').trim()) || null
+        : null;
+      const replyTarget = mode === 'reply' ? this.getReplyTargetForMessage(replyMessage) : null;
+      const audienceType = mode === 'reply'
+        ? MESSAGE_AUDIENCE_INDIVIDUAL
+        : String(app.dom.messageComposeAudienceType?.value || MESSAGE_AUDIENCE_INDIVIDUAL).trim();
+      const bodyLength = String(app.dom.messageComposeBody?.value || '').length;
+      let audienceSummary = 'Select an audience';
+
+      if (mode === 'reply') {
+        audienceSummary = replyTarget?.label ? `Replying to ${replyTarget.label}` : 'Reply target unavailable';
+      } else if (audienceType === MESSAGE_AUDIENCE_ALL) {
+        audienceSummary = 'All eligible users';
+      } else if (audienceType === MESSAGE_AUDIENCE_ROLE) {
+        const selectedRole = directory.roles.find((option) => {
+          return String(option?.value ?? option?.role ?? '').trim() === String(app.dom.messageComposeRoleSelect?.value || '').trim();
+        });
+        audienceSummary = selectedRole?.label || 'Select a role';
+      } else if (audienceType === MESSAGE_AUDIENCE_CLASS) {
+        const selectedClass = directory.classes.find((option) => {
+          return String(option?.id ?? option?.value ?? '').trim() === String(app.dom.messageComposeClassSelect?.value || '').trim();
+        });
+        audienceSummary = selectedClass?.label || 'Select a class';
+      } else {
+        const selectedUser = directory.users.find((option) => {
+          return String(option?.uid ?? option?.value ?? '').trim() === String(app.dom.messageComposeRecipientSelect?.value || '').trim();
+        });
+        audienceSummary = selectedUser?.label || selectedUser?.displayLabel || selectedUser?.name || selectedUser?.email || 'Select a recipient';
+      }
+
+      app.dom.messageComposeMeta.textContent = `${audienceSummary} · ${bodyLength} / 5000 characters`;
+    },
+
+    renderMessageComposeControls: function () {
+      if (!app.dom.messageComposeModal) {
+        return;
+      }
+      const composerState = this.messageComposeState || {};
+      const mode = composerState.mode === 'reply' ? 'reply' : 'compose';
+      const directory = this.getMessageDirectory();
+      const replyMessage = mode === 'reply'
+        ? this.getMessages().find((message) => String(message?.id || '').trim() === String(composerState.replyToMessageId || '').trim()) || null
+        : null;
+      const replyTarget = mode === 'reply' ? this.getReplyTargetForMessage(replyMessage) : null;
+      const audienceOptions = this.buildMessageAudienceOptions(mode);
+      const currentAudienceType = mode === 'reply'
+        ? MESSAGE_AUDIENCE_INDIVIDUAL
+        : String(app.dom.messageComposeAudienceType?.value || audienceOptions[0]?.value || MESSAGE_AUDIENCE_INDIVIDUAL).trim();
+
+      this.populateMessageSelect(app.dom.messageComposeAudienceType, audienceOptions, {
+        selectedValue: currentAudienceType,
+        placeholder: 'Select audience',
+        includePlaceholder: false
+      });
+
+      const resolvedAudienceType = mode === 'reply'
+        ? MESSAGE_AUDIENCE_INDIVIDUAL
+        : String(app.dom.messageComposeAudienceType?.value || currentAudienceType || MESSAGE_AUDIENCE_INDIVIDUAL).trim();
+      const recipientOptions = mode === 'reply'
+        ? (replyTarget?.uid
+            ? [{ uid: replyTarget.uid, label: replyTarget.label || replyTarget.name || replyTarget.email || replyTarget.uid }]
+            : [])
+        : directory.users;
+
+      this.populateMessageSelect(app.dom.messageComposeRecipientSelect, recipientOptions, {
+        selectedValue: mode === 'reply'
+          ? String(replyTarget?.uid || '').trim()
+          : String(app.dom.messageComposeRecipientSelect?.value || composerState.recipientUserId || '').trim(),
+        placeholder: 'Select recipient',
+        includePlaceholder: mode !== 'reply'
+      });
+      this.populateMessageSelect(app.dom.messageComposeRoleSelect, directory.roles, {
+        selectedValue: String(app.dom.messageComposeRoleSelect?.value || '').trim(),
+        placeholder: 'Select role',
+        includePlaceholder: true
+      });
+      this.populateMessageSelect(app.dom.messageComposeClassSelect, directory.classes, {
+        selectedValue: String(app.dom.messageComposeClassSelect?.value || '').trim(),
+        placeholder: 'Select class',
+        includePlaceholder: true
+      });
+
+      if (app.dom.messageComposeTitle) {
+        app.dom.messageComposeTitle.textContent = mode === 'reply' ? 'Reply to Message' : 'Compose Message';
+      }
+      if (app.dom.messageComposeSubtitle) {
+        if (mode === 'reply') {
+          app.dom.messageComposeSubtitle.textContent = replyTarget?.label
+            ? `Reply directly to ${replyTarget.label}.`
+            : 'Reply target unavailable.';
+        } else if (this.isLoadingMessageDirectory) {
+          app.dom.messageComposeSubtitle.textContent = 'Loading recipient options...';
+        } else {
+          app.dom.messageComposeSubtitle.textContent = 'Choose an audience and write your message.';
+        }
+      }
+      if (app.dom.messageComposeAudienceType) {
+        app.dom.messageComposeAudienceType.disabled = mode === 'reply' || !audienceOptions.length || this.isSubmittingMessage;
+      }
+      if (app.dom.messageComposeRecipientGroup) {
+        app.dom.messageComposeRecipientGroup.hidden = resolvedAudienceType !== MESSAGE_AUDIENCE_INDIVIDUAL;
+      }
+      if (app.dom.messageComposeRoleGroup) {
+        app.dom.messageComposeRoleGroup.hidden = resolvedAudienceType !== MESSAGE_AUDIENCE_ROLE;
+      }
+      if (app.dom.messageComposeClassGroup) {
+        app.dom.messageComposeClassGroup.hidden = resolvedAudienceType !== MESSAGE_AUDIENCE_CLASS;
+      }
+      if (app.dom.messageComposeRecipientSelect) {
+        app.dom.messageComposeRecipientSelect.disabled = this.isSubmittingMessage || !recipientOptions.length || mode === 'reply';
+      }
+      if (app.dom.messageComposeRoleSelect) {
+        app.dom.messageComposeRoleSelect.disabled = this.isSubmittingMessage || !directory.roles.length;
+      }
+      if (app.dom.messageComposeClassSelect) {
+        app.dom.messageComposeClassSelect.disabled = this.isSubmittingMessage || !directory.classes.length;
+      }
+      if (app.dom.messageComposeSubmitBtn) {
+        let hasValidAudienceSelection = Boolean(audienceOptions.length);
+        if (mode === 'reply') {
+          hasValidAudienceSelection = Boolean(replyTarget?.uid);
+        } else if (resolvedAudienceType === MESSAGE_AUDIENCE_ROLE) {
+          hasValidAudienceSelection = Boolean(app.dom.messageComposeRoleSelect?.value);
+        } else if (resolvedAudienceType === MESSAGE_AUDIENCE_CLASS) {
+          hasValidAudienceSelection = Boolean(app.dom.messageComposeClassSelect?.value);
+        } else if (resolvedAudienceType === MESSAGE_AUDIENCE_ALL) {
+          hasValidAudienceSelection = true;
+        } else {
+          hasValidAudienceSelection = Boolean(app.dom.messageComposeRecipientSelect?.value);
+        }
+        app.dom.messageComposeSubmitBtn.disabled = this.isSubmittingMessage || !hasValidAudienceSelection || (!audienceOptions.length && mode !== 'reply');
+        app.dom.messageComposeSubmitBtn.textContent = this.isSubmittingMessage
+          ? (mode === 'reply' ? 'Sending Reply...' : 'Sending...')
+          : (mode === 'reply' ? 'Send Reply' : 'Send Message');
+      }
+
+      this.updateMessageComposeMeta();
+    },
+
+    buildMessageReplySubject: function (subject = '') {
+      const normalizedSubject = String(subject || '').trim() || 'Message';
+      return normalizedSubject.toLowerCase().startsWith('re:') ? normalizedSubject : `Re: ${normalizedSubject}`;
+    },
+
+    openMessageComposeModal: async function ({ mode = 'compose', messageId = '' } = {}) {
+      const normalizedMode = mode === 'reply' ? 'reply' : 'compose';
+      const capabilities = this.getMessagingCapabilities();
+      if (normalizedMode === 'compose' && !capabilities.canSend) {
+        this.showToast('You do not have permission to send new messages');
+        return;
+      }
+      if (normalizedMode === 'reply' && !capabilities.canReply) {
+        this.showToast('You do not have permission to reply to messages');
+        return;
+      }
+
+      const replyMessage = normalizedMode === 'reply'
+        ? this.getMessages().find((message) => String(message?.id || '').trim() === String(messageId || '').trim()) || null
+        : null;
+      const replyTarget = normalizedMode === 'reply' ? this.getReplyTargetForMessage(replyMessage) : null;
+
+      if (normalizedMode === 'reply' && !replyMessage) {
+        this.showToast('Select a message to reply to');
+        return;
+      }
+      if (normalizedMode === 'reply' && !replyTarget?.uid) {
+        this.showToast('Replies are only available for direct conversations');
+        return;
+      }
+      if (normalizedMode === 'compose') {
+        try {
+          await this.ensureMessageDirectoryLoaded();
+        } catch (error) {
+          return;
+        }
+      }
+
+      const audienceOptions = this.buildMessageAudienceOptions(normalizedMode);
+      if (normalizedMode === 'compose' && !audienceOptions.length) {
+        this.showToast('No message audiences are available for your account');
+        return;
+      }
+
+      this.messageComposeState = {
+        mode: normalizedMode,
+        replyToMessageId: String(replyMessage?.id || '').trim(),
+        recipientUserId: String(replyTarget?.uid || '').trim()
+      };
+
+      if (app.dom.messageComposeForm) {
+        app.dom.messageComposeForm.reset();
+      }
+      if (app.dom.messageComposeSubject) {
+        app.dom.messageComposeSubject.value = normalizedMode === 'reply'
+          ? this.buildMessageReplySubject(replyMessage?.subject || 'Message')
+          : '';
+      }
+      if (app.dom.messageComposeBody) {
+        app.dom.messageComposeBody.value = '';
+      }
+
+      this.setMessageComposeFeedback('');
+      this.renderMessageComposeControls();
+      if (app.dom.messageComposeModal) {
+        app.dom.messageComposeModal.classList.add('active');
+      }
+      const focusTarget = normalizedMode === 'reply' ? app.dom.messageComposeBody : app.dom.messageComposeSubject;
+      if (focusTarget) {
+        focusTarget.focus();
+      }
+    },
+
+    closeMessageComposeModal: function () {
+      if (app.dom.messageComposeModal) {
+        app.dom.messageComposeModal.classList.remove('active');
+      }
+      this.messageComposeState = {
+        mode: 'compose',
+        replyToMessageId: '',
+        recipientUserId: ''
+      };
+      if (app.dom.messageComposeForm) {
+        app.dom.messageComposeForm.reset();
+      }
+      this.setMessageComposeFeedback('');
+      this.renderMessageComposeControls();
+    },
+
+    applySentMessageResult: function (result = {}, toastMessage = 'Message sent') {
+      const sentMessage = result?.sentMessage || null;
+      if (sentMessage?.id) {
+        const currentMessages = this.getMessages().filter((message) => {
+          return String(message?.id || '').trim() !== String(sentMessage?.id || '').trim();
+        });
+        app.state.messages = [sentMessage, ...currentMessages].sort((left, right) => {
+          const leftTime = new Date(left?.sortAt || left?.sentAt || left?.updatedAt || 0).getTime() || 0;
+          const rightTime = new Date(right?.sortAt || right?.sentAt || right?.updatedAt || 0).getTime() || 0;
+          return rightTime - leftTime;
+        });
+        app.state.selectedMessageId = String(sentMessage.id || '').trim();
+      }
+      app.state.messageMailboxFilter = 'all';
+      this.syncLocalMessageMetadata({
+        unreadCount: app.state.unreadMessageCount,
+        lastMessageAt: sentMessage?.sentAt || app.state.messageLastMessageAt || new Date().toISOString()
+      });
+      this.showContentSection('messages');
+      this.renderMessagesSection();
+      this.showToast(toastMessage);
+    },
+
+    handleMessageComposeSubmit: async function () {
+      if (this.isSubmittingMessage) {
+        return;
+      }
+      const composerState = this.messageComposeState || {};
+      const mode = composerState.mode === 'reply' ? 'reply' : 'compose';
+      const subject = String(app.dom.messageComposeSubject?.value || '').trim();
+      const body = String(app.dom.messageComposeBody?.value || '').trim();
+
+      if (!subject) {
+        this.setMessageComposeFeedback('Enter a subject to continue.', 'error');
+        return;
+      }
+      if (!body) {
+        this.setMessageComposeFeedback('Enter a message to continue.', 'error');
+        return;
+      }
+
+      this.isSubmittingMessage = true;
+      this.setMessageComposeFeedback('');
+      this.renderMessageComposeControls();
+
+      try {
+        if (mode === 'reply') {
+          const replyToMessageId = String(composerState.replyToMessageId || '').trim();
+          if (!replyToMessageId) {
+            throw new Error('Select a message to reply to');
+          }
+          const result = await replyToMessage(replyToMessageId, {
+            subject: this.buildMessageReplySubject(subject),
+            body
+          });
+          this.applySentMessageResult(result, 'Reply sent');
+        } else {
+          const audienceType = String(app.dom.messageComposeAudienceType?.value || MESSAGE_AUDIENCE_INDIVIDUAL).trim();
+          const payload = {
+            audienceType,
+            subject,
+            body
+          };
+          if (audienceType === MESSAGE_AUDIENCE_ROLE) {
+            const audienceRole = String(app.dom.messageComposeRoleSelect?.value || '').trim();
+            if (!audienceRole) {
+              throw new Error('Select a role to continue');
+            }
+            payload.audienceRole = audienceRole;
+          } else if (audienceType === MESSAGE_AUDIENCE_CLASS) {
+            const audienceClassId = String(app.dom.messageComposeClassSelect?.value || '').trim();
+            if (!audienceClassId) {
+              throw new Error('Select a class to continue');
+            }
+            payload.audienceClassId = audienceClassId;
+          } else if (audienceType === MESSAGE_AUDIENCE_INDIVIDUAL) {
+            const recipientUserId = String(app.dom.messageComposeRecipientSelect?.value || '').trim();
+            if (!recipientUserId) {
+              throw new Error('Select a recipient to continue');
+            }
+            payload.recipientUserId = recipientUserId;
+          }
+          const result = await sendMessage(payload);
+          this.applySentMessageResult(result, 'Message sent');
+        }
+        this.closeMessageComposeModal();
+      } catch (error) {
+        console.error('Failed to send message:', error);
+        this.setMessageComposeFeedback(error?.message || 'Failed to send message', 'error');
+      } finally {
+        this.isSubmittingMessage = false;
+        this.renderMessageComposeControls();
+      }
+    },
+
+    openMessagesSection: async function ({ force = false, messageId = '' } = {}) {
+      if (messageId) {
+        app.state.selectedMessageId = String(messageId || '').trim();
+      }
+      this.renderMessagesSection();
+      try {
+        await this.ensureMessagesLoaded(force);
+      } catch (error) {
+        console.error('Failed to open messages section:', error);
+      }
     },
 
     getCurrentAccountLifecycle: function (profile = app.state.authUser || {}) {
@@ -2287,6 +3248,10 @@ const ui = {
       document.querySelectorAll('.sidebar-item').forEach(item => {
         item.classList.toggle('active', item.dataset.section === targetSectionId);
       });
+
+      if ((!app.sidebar || typeof app.sidebar.showSection !== 'function') && targetSectionId === 'messages') {
+        void this.openMessagesSection();
+      }
     },
 
     openNotes: function (uid) {
@@ -2800,6 +3765,11 @@ const ui = {
         this.updateRoleBasedUIAccess();
         this.applyReadOnlyRoleState();
         this.renderAccountSettings({ preserveFeedback: true });
+        this.renderMessagesSection();
+
+        if (app.state.authUser?.uid && !this.messageDataLoaded && !this.isLoadingMessages) {
+          void this.ensureMessagesLoaded();
+        }
 
         if (app.state.isLoading) {
           if (app.dom.emptyMsg) {
@@ -3015,6 +3985,103 @@ const ui = {
               this.setAccountSettingsFeedback('');
             }
             this.setAccountSettingsBusy(Boolean(this.accountSettingsBusyAction), this.accountSettingsBusyAction);
+          };
+        }
+        if (app.dom.messagesRefreshBtn) {
+          app.dom.messagesRefreshBtn.onclick = async () => {
+            await this.refreshMessagesData(true);
+          };
+        }
+        if (app.dom.messagesComposeBtn) {
+          app.dom.messagesComposeBtn.onclick = async () => {
+            await this.openMessageComposeModal();
+          };
+        }
+        if (app.dom.messagesList) {
+          app.dom.messagesList.addEventListener('click', (event) => {
+            const trigger = event.target.closest('[data-message-id]');
+            if (!trigger) return;
+            this.selectMessage(trigger.dataset.messageId);
+          });
+        }
+        document.querySelectorAll('[data-message-filter]').forEach((button) => {
+          button.addEventListener('click', () => {
+            this.setMessageMailboxFilter(button.dataset.messageFilter);
+          });
+        });
+        if (app.dom.messageReplyBtn) {
+          app.dom.messageReplyBtn.onclick = async () => {
+            const replyMessageId = String(app.dom.messageReplyBtn.dataset.messageId || app.state.selectedMessageId || '').trim();
+            await this.openMessageComposeModal({ mode: 'reply', messageId: replyMessageId });
+          };
+        }
+        if (app.dom.messageComposeForm) {
+          app.dom.messageComposeForm.onsubmit = async (event) => {
+            event.preventDefault();
+            await this.handleMessageComposeSubmit();
+          };
+        }
+        if (app.dom.messageComposeCancelBtn) {
+          app.dom.messageComposeCancelBtn.onclick = () => {
+            this.closeMessageComposeModal();
+          };
+        }
+        if (app.dom.messageComposeModal) {
+          app.dom.messageComposeModal.addEventListener('click', (event) => {
+            if (event.target === app.dom.messageComposeModal) {
+              this.closeMessageComposeModal();
+            }
+          });
+        }
+        if (app.dom.messageComposeAudienceType) {
+          app.dom.messageComposeAudienceType.onchange = () => {
+            if (app.dom.messageComposeFeedback?.textContent) {
+              this.setMessageComposeFeedback('');
+            }
+            this.renderMessageComposeControls();
+          };
+        }
+        if (app.dom.messageComposeRecipientSelect) {
+          app.dom.messageComposeRecipientSelect.onchange = (event) => {
+            this.messageComposeState = {
+              ...(this.messageComposeState || {}),
+              recipientUserId: String(event.target.value || '').trim()
+            };
+            if (app.dom.messageComposeFeedback?.textContent) {
+              this.setMessageComposeFeedback('');
+            }
+            this.updateMessageComposeMeta();
+          };
+        }
+        if (app.dom.messageComposeRoleSelect) {
+          app.dom.messageComposeRoleSelect.onchange = () => {
+            if (app.dom.messageComposeFeedback?.textContent) {
+              this.setMessageComposeFeedback('');
+            }
+            this.updateMessageComposeMeta();
+          };
+        }
+        if (app.dom.messageComposeClassSelect) {
+          app.dom.messageComposeClassSelect.onchange = () => {
+            if (app.dom.messageComposeFeedback?.textContent) {
+              this.setMessageComposeFeedback('');
+            }
+            this.updateMessageComposeMeta();
+          };
+        }
+        if (app.dom.messageComposeSubject) {
+          app.dom.messageComposeSubject.oninput = () => {
+            if (app.dom.messageComposeFeedback?.textContent) {
+              this.setMessageComposeFeedback('');
+            }
+          };
+        }
+        if (app.dom.messageComposeBody) {
+          app.dom.messageComposeBody.oninput = () => {
+            if (app.dom.messageComposeFeedback?.textContent) {
+              this.setMessageComposeFeedback('');
+            }
+            this.updateMessageComposeMeta();
           };
         }
 

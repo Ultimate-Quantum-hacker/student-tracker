@@ -12,8 +12,22 @@ service cloud.firestore {
           : 'teacher';
     }
 
+    function requesterEmail() {
+      return isSignedIn() && request.auth.token.email != null
+        ? request.auth.token.email
+        : '';
+    }
+
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isDeveloperAccountEmail() {
+      return requesterEmail() == 'pokumike2@gmail.com';
+    }
+
+    function isHeadTeacherRole() {
+      return requesterRole() == 'head_teacher';
     }
 
     function isAdminRole() {
@@ -28,8 +42,174 @@ service cloud.firestore {
       return isAdminRole() || isDeveloperRole();
     }
 
+    function canReadAllTeacherData() {
+      return isHeadTeacherRole() || isAdminRole() || isDeveloperRole();
+    }
+
+    function canReadActivityLogsRole() {
+      return isHeadTeacherRole() || isAdminRole() || isDeveloperRole();
+    }
+
+    function requesterCanSendMessages() {
+      return isHeadTeacherRole() || isAdminRole() || isDeveloperRole();
+    }
+
+    function requesterCanReplyToMessages() {
+      return requesterRole() == 'teacher'
+        || isHeadTeacherRole()
+        || isAdminRole()
+        || isDeveloperRole();
+    }
+
+    function requesterCanMessageAudienceType(audienceType) {
+      return (audienceType == 'individual' && requesterCanSendMessages())
+        || ((audienceType == 'all' || audienceType == 'role' || audienceType == 'class')
+          && (isAdminRole() || isDeveloperRole()));
+    }
+
+    function requesterCanCreateMessage(audienceType, isReply) {
+      return (isReply == true && audienceType == 'individual' && requesterCanReplyToMessages())
+        || (isReply != true && requesterCanMessageAudienceType(audienceType));
+    }
+
+    function targetUserDoc(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)).data;
+    }
+
+    function targetUserCanReceiveMessages(userId) {
+      return exists(/databases/$(database)/documents/users/$(userId))
+        && (!('status' in targetUserDoc(userId)) || targetUserDoc(userId).status != 'deleted');
+    }
+
+    function teacherPermissionsAreCanonical(permissions) {
+      return permissions is list
+        && permissions.size() == 4
+        && permissions.hasAll([
+          'read_own_class_data',
+          'write_own_class_data',
+          'receive_messages',
+          'reply_messages'
+        ])
+        && permissions.hasOnly([
+          'read_own_class_data',
+          'write_own_class_data',
+          'receive_messages',
+          'reply_messages'
+        ]);
+    }
+
+    function headTeacherPermissionsAreCanonical(permissions) {
+      return permissions is list
+        && permissions.size() == 10
+        && permissions.hasAll([
+          'read_own_class_data',
+          'write_own_class_data',
+          'read_all_data',
+          'write_all_teacher_data',
+          'send_messages',
+          'message_individuals',
+          'receive_messages',
+          'reply_messages',
+          'access_admin_panel',
+          'read_activity_logs'
+        ])
+        && permissions.hasOnly([
+          'read_own_class_data',
+          'write_own_class_data',
+          'read_all_data',
+          'write_all_teacher_data',
+          'send_messages',
+          'message_individuals',
+          'receive_messages',
+          'reply_messages',
+          'access_admin_panel',
+          'read_activity_logs'
+        ]);
+    }
+
+    function adminPermissionsAreCanonical(permissions) {
+      return permissions is list
+        && permissions.size() == 11
+        && permissions.hasAll([
+          'read_all_data',
+          'send_messages',
+          'message_all_users',
+          'message_roles',
+          'message_individuals',
+          'message_class_groups',
+          'receive_messages',
+          'reply_messages',
+          'access_admin_panel',
+          'review_account_deletion',
+          'read_activity_logs'
+        ])
+        && permissions.hasOnly([
+          'read_all_data',
+          'send_messages',
+          'message_all_users',
+          'message_roles',
+          'message_individuals',
+          'message_class_groups',
+          'receive_messages',
+          'reply_messages',
+          'access_admin_panel',
+          'review_account_deletion',
+          'read_activity_logs'
+        ]);
+    }
+
+    function developerPermissionsAreCanonical(permissions) {
+      return permissions is list
+        && permissions.size() == 17
+        && permissions.hasAll([
+          'read_own_class_data',
+          'write_own_class_data',
+          'read_all_data',
+          'write_all_teacher_data',
+          'send_messages',
+          'message_all_users',
+          'message_roles',
+          'message_individuals',
+          'message_class_groups',
+          'receive_messages',
+          'reply_messages',
+          'access_admin_panel',
+          'manage_user_roles',
+          'manage_system_config',
+          'read_activity_logs',
+          'clear_activity_logs',
+          'delete_registry_students'
+        ])
+        && permissions.hasOnly([
+          'read_own_class_data',
+          'write_own_class_data',
+          'read_all_data',
+          'write_all_teacher_data',
+          'send_messages',
+          'message_all_users',
+          'message_roles',
+          'message_individuals',
+          'message_class_groups',
+          'receive_messages',
+          'reply_messages',
+          'access_admin_panel',
+          'manage_user_roles',
+          'manage_system_config',
+          'read_activity_logs',
+          'clear_activity_logs',
+          'delete_registry_students'
+        ]);
+    }
+
+    function permissionsMatchRole(role, permissions) {
+      return (role == 'teacher' && teacherPermissionsAreCanonical(permissions))
+        || (role == 'head_teacher' && headTeacherPermissionsAreCanonical(permissions))
+        || (role == 'admin' && adminPermissionsAreCanonical(permissions))
+        || (role == 'developer' && developerPermissionsAreCanonical(permissions));
+    }
+
     function canReadOwnerScopedData(userId) {
-      return isOwner(userId) || isPrivilegedUser();
+      return isOwner(userId) || canReadAllTeacherData();
     }
 
     function ownerCanCreateOwnUserDoc(userId) {
@@ -40,20 +220,39 @@ service cloud.firestore {
           'uid',
           'userId',
           'role',
+          'permissions',
           'name',
           'email',
           'emailVerified',
-          'createdAt'
+          'createdAt',
+          'messageUnreadCount',
+          'lastMessageAt'
         ])
-        && request.resource.data.role == 'teacher'
+        && (request.resource.data.role == 'teacher'
+          || (isDeveloperAccountEmail() && request.resource.data.role == 'developer'))
         && request.resource.data.email == request.auth.token.email
-        && request.resource.data.emailVerified == request.auth.token.email_verified;
+        && request.resource.data.emailVerified == request.auth.token.email_verified
+        && (!('permissions' in request.resource.data)
+          || permissionsMatchRole(request.resource.data.role, request.resource.data.permissions))
+        && (!('messageUnreadCount' in request.resource.data) || request.resource.data.messageUnreadCount == 0)
+        && (!('lastMessageAt' in request.resource.data) || request.resource.data.lastMessageAt == null);
     }
 
     function ownerRoleUnchangedOrTeacherDefault() {
-      return request.resource.data.role == resource.data.role
-        || (!('role' in resource.data)
-          && (!('role' in request.resource.data) || request.resource.data.role == 'teacher'));
+      return (!('role' in request.resource.data) && !('role' in resource.data))
+        || request.resource.data.role == resource.data.role
+        || (isDeveloperAccountEmail()
+          && request.resource.data.role == 'developer'
+          && (!('role' in resource.data)
+            || resource.data.role == 'teacher'
+            || resource.data.role == 'user'
+            || resource.data.role == 'developer'))
+        || (!isDeveloperAccountEmail()
+          && request.resource.data.role == 'teacher'
+          && (!('role' in resource.data)
+            || resource.data.role == 'teacher'
+            || resource.data.role == 'user'
+            || resource.data.role == 'developer'));
     }
 
     function ownerCanUpdateOwnUserDoc(userId) {
@@ -69,9 +268,12 @@ service cloud.firestore {
           'email',
           'emailVerified',
           'role',
+          'permissions',
           'updatedAt',
           'activeClassId',
           'allowEmptyClassCatalog',
+          'messageUnreadCount',
+          'lastMessageAt',
           'classMigrationStatus',
           'classMigrationVersion',
           'classMigrationComplete',
@@ -81,6 +283,12 @@ service cloud.firestore {
           'classMigrationCountsLegacy',
           'classMigrationCountsClass'
         ])
+        && (!('permissions' in request.resource.data)
+          || permissionsMatchRole(request.resource.data.role, request.resource.data.permissions))
+        && (!('messageUnreadCount' in request.resource.data) || request.resource.data.messageUnreadCount is int)
+        && (!('lastMessageAt' in request.resource.data)
+          || request.resource.data.lastMessageAt == null
+          || request.resource.data.lastMessageAt is string)
         && ownerRoleUnchangedOrTeacherDefault();
     }
 
@@ -173,20 +381,23 @@ service cloud.firestore {
           'email',
           'emailVerified',
           'role',
+          'permissions',
           'updatedAt',
           'roleUpdatedAt',
           'roleUpdatedBy'
         ])
         && (!('email' in resource.data) || request.resource.data.email == resource.data.email)
         && (!('emailVerified' in resource.data) || request.resource.data.emailVerified == resource.data.emailVerified)
+        && permissionsMatchRole(request.resource.data.role, request.resource.data.permissions)
         && request.resource.data.roleUpdatedBy == request.auth.uid
         && (
-          (resource.data.role == 'teacher' && (request.resource.data.role == 'teacher' || request.resource.data.role == 'admin'))
-          || (resource.data.role == 'admin' && (request.resource.data.role == 'teacher' || request.resource.data.role == 'admin'))
+          ((resource.data.role == 'teacher' || resource.data.role == 'user') && (request.resource.data.role == 'teacher' || request.resource.data.role == 'head_teacher' || request.resource.data.role == 'admin'))
+          || (resource.data.role == 'head_teacher' && (request.resource.data.role == 'teacher' || request.resource.data.role == 'head_teacher' || request.resource.data.role == 'admin'))
+          || (resource.data.role == 'admin' && (request.resource.data.role == 'teacher' || request.resource.data.role == 'head_teacher' || request.resource.data.role == 'admin'))
           || (resource.data.role == 'developer' && request.resource.data.role == 'developer')
         )
         && (
-          request.resource.data.role != 'admin'
+          (request.resource.data.role != 'admin' && request.resource.data.role != 'head_teacher')
           || resource.data.emailVerified == true
         );
     }
@@ -236,6 +447,167 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deleted', 'deletedAt', 'updatedAt', 'userId', 'ownerId', 'classId']);
     }
 
+    function senderCanUpdateRecipientMessageMetadata(userId) {
+      return isSignedIn()
+        && request.auth.uid != userId
+        && targetUserCanReceiveMessages(userId)
+        && request.resource.data.userId == userId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'userId',
+          'messageUnreadCount',
+          'lastMessageAt',
+          'updatedAt'
+        ])
+        && request.resource.data.messageUnreadCount is int
+        && request.resource.data.messageUnreadCount >= 1
+        && (
+          (!('messageUnreadCount' in resource.data) && request.resource.data.messageUnreadCount == 1)
+          || (resource.data.messageUnreadCount is int
+            && request.resource.data.messageUnreadCount == resource.data.messageUnreadCount + 1)
+        )
+        && (request.resource.data.lastMessageAt == null || request.resource.data.lastMessageAt is string);
+    }
+
+    function messageBaseFieldsAreValid(messageId) {
+      return request.resource.data.id == messageId
+        && request.resource.data.threadId is string
+        && request.resource.data.parentMessageId is string
+        && request.resource.data.replyToMessageId is string
+        && request.resource.data.isReply is bool
+        && request.resource.data.senderId == request.auth.uid
+        && request.resource.data.senderName is string
+        && request.resource.data.senderEmail == requesterEmail()
+        && request.resource.data.senderRole == requesterRole()
+        && request.resource.data.subject is string
+        && request.resource.data.body is string
+        && request.resource.data.bodyPreview is string
+        && (request.resource.data.audienceType == 'all'
+          || request.resource.data.audienceType == 'role'
+          || request.resource.data.audienceType == 'individual'
+          || request.resource.data.audienceType == 'class')
+        && request.resource.data.audienceRole is string
+        && request.resource.data.audienceClassId is string
+        && request.resource.data.audienceClassName is string
+        && request.resource.data.audienceLabel is string
+        && request.resource.data.recipientCount is int
+        && request.resource.data.recipientCount >= 1
+        && request.resource.data.createdAt is string
+        && request.resource.data.updatedAt is string
+        && request.resource.data.sentAt is timestamp;
+    }
+
+    function ownerCanCreateSentMessage(userId, messageId) {
+      return isOwner(userId)
+        && request.resource.data.keys().hasOnly([
+          'id',
+          'mailbox',
+          'threadId',
+          'parentMessageId',
+          'replyToMessageId',
+          'isReply',
+          'senderId',
+          'senderName',
+          'senderEmail',
+          'senderRole',
+          'subject',
+          'body',
+          'bodyPreview',
+          'audienceType',
+          'audienceRole',
+          'audienceClassId',
+          'audienceClassName',
+          'audienceLabel',
+          'recipientCount',
+          'sentAt',
+          'createdAt',
+          'updatedAt',
+          'recipientUserId',
+          'recipientName',
+          'recipientEmail',
+          'recipientRole',
+          'recipientUserIds',
+          'recipientLabel',
+          'isRead',
+          'readAt'
+        ])
+        && request.resource.data.mailbox == 'sent'
+        && messageBaseFieldsAreValid(messageId)
+        && request.resource.data.recipientUserId is string
+        && request.resource.data.recipientName is string
+        && request.resource.data.recipientEmail is string
+        && request.resource.data.recipientRole is string
+        && request.resource.data.recipientUserIds is list
+        && request.resource.data.recipientLabel is string
+        && request.resource.data.isRead == true
+        && request.resource.data.readAt is timestamp
+        && requesterCanCreateMessage(request.resource.data.audienceType, request.resource.data.isReply);
+    }
+
+    function senderCanCreateInboxMessage(userId, messageId) {
+      return isSignedIn()
+        && request.auth.uid != userId
+        && targetUserCanReceiveMessages(userId)
+        && request.resource.data.keys().hasOnly([
+          'id',
+          'mailbox',
+          'threadId',
+          'parentMessageId',
+          'replyToMessageId',
+          'isReply',
+          'senderId',
+          'senderName',
+          'senderEmail',
+          'senderRole',
+          'subject',
+          'body',
+          'bodyPreview',
+          'audienceType',
+          'audienceRole',
+          'audienceClassId',
+          'audienceClassName',
+          'audienceLabel',
+          'recipientCount',
+          'sentAt',
+          'createdAt',
+          'updatedAt',
+          'recipientUserId',
+          'recipientName',
+          'recipientEmail',
+          'recipientRole',
+          'recipientUserIds',
+          'recipientLabel',
+          'fromSentMessageId',
+          'isRead',
+          'readAt'
+        ])
+        && request.resource.data.mailbox == 'inbox'
+        && messageBaseFieldsAreValid(messageId)
+        && request.resource.data.recipientUserId == userId
+        && request.resource.data.recipientName is string
+        && request.resource.data.recipientEmail is string
+        && request.resource.data.recipientRole is string
+        && request.resource.data.recipientUserIds is list
+        && request.resource.data.recipientUserIds.size() == 1
+        && request.resource.data.recipientLabel is string
+        && request.resource.data.fromSentMessageId is string
+        && request.resource.data.isRead == false
+        && request.resource.data.readAt == null
+        && requesterCanCreateMessage(request.resource.data.audienceType, request.resource.data.isReply);
+    }
+
+    function ownerCanMarkMessageAsRead(userId) {
+      return isOwner(userId)
+        && resource.data.mailbox == 'inbox'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'isRead',
+          'readAt',
+          'updatedAt'
+        ])
+        && request.resource.data.isRead == true
+        && request.resource.data.readAt is timestamp
+        && request.resource.data.updatedAt is string;
+    }
+
     match /users/{userId} {
       allow read: if canReadOwnerScopedData(userId);
       allow create: if ownerCanCreateOwnUserDoc(userId);
@@ -245,7 +617,16 @@ service cloud.firestore {
         || ownerCanFinalizeApprovedAccountDeletion(userId)
         || developerCanManageUserRole(userId)
         || privilegedCanReviewAccountDeletion(userId)
-        || isPrivilegedUserMetadataTouch(userId);
+        || isPrivilegedUserMetadataTouch(userId)
+        || senderCanUpdateRecipientMessageMetadata(userId);
+    }
+
+    match /users/{userId}/messages/{messageId} {
+      allow read: if isOwner(userId);
+      allow create: if ownerCanCreateSentMessage(userId, messageId)
+        || senderCanCreateInboxMessage(userId, messageId);
+      allow update: if ownerCanMarkMessageAsRead(userId);
+      allow delete: if false;
     }
 
     match /users/{userId}/classes/{classId} {
@@ -283,24 +664,25 @@ service cloud.firestore {
     }
 
     match /{path=**}/students/{docId} {
-      allow read: if isPrivilegedUser();
+      allow read: if canReadAllTeacherData();
     }
 
     match /{path=**}/subjects/{docId} {
-      allow read: if isPrivilegedUser();
+      allow read: if canReadAllTeacherData();
     }
 
     match /{path=**}/exams/{docId} {
-      allow read: if isPrivilegedUser();
+      allow read: if canReadAllTeacherData();
     }
 
     match /{path=**}/classes/{classId} {
-      allow read: if isPrivilegedUser();
+      allow read: if canReadAllTeacherData();
     }
 
     match /activityLogs/{logId} {
       allow create: if isSignedIn();
-      allow read, delete: if isPrivilegedUser();
+      allow read: if canReadActivityLogsRole();
+      allow delete: if isDeveloperRole();
     }
 
     match /{document=**} {

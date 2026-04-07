@@ -30,6 +30,16 @@ window.TrackerApp = window.TrackerApp || {};
     currentUserPermissions: [],
     isRoleResolved: false,
     unreadMessageCount: 0,
+    messages: [],
+    selectedMessageId: '',
+    messageMailboxFilter: 'all',
+    messageLastMessageAt: null,
+    messageDirectory: {
+      users: [],
+      roles: [],
+      classes: [],
+      capabilities: {}
+    },
     dashboardStudentCount: null,
     students: [],
     studentTrash: [],
