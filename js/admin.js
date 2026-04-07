@@ -2,12 +2,18 @@ import {
   isFirebaseConfigured,
 } from './firebase.js';
 import {
+  ACCOUNT_DELETION_STATUS_APPROVED,
+  ACCOUNT_DELETION_STATUS_PENDING,
+  ACCOUNT_STATUS_DELETED,
   waitForInitialAuthState,
+  normalizeAccountDeletionStatus,
+  normalizeAccountStatus,
   resolveUserRole,
   normalizeUserRole,
   logoutUser,
   formatAuthError
 } from './auth.js';
+
 import {
   fetchAdminGlobalStats,
   fetchActivityLogs,
@@ -16,9 +22,11 @@ import {
   deleteAdminRegistryStudent,
   clearActivityLogs,
   updateAdminUserRole,
+  reviewAdminUserAccountDeletion,
   fetchGlobalStudentSearchIndex,
   setCurrentUserRoleContext
 } from '../services/db.js';
+
 import { createRuntimeCache } from './admin-runtime-cache.js';
 import {
   escapeHtml,
@@ -93,6 +101,9 @@ import {
   buildAdminGlobalSearchIndexRequestState,
   buildAdminGlobalSearchIndexFeedbackState,
   buildAdminGlobalSearchIndexErrorFeedbackState,
+  buildAdminUserDeletionReviewState,
+  buildAdminUserDeletionReviewFeedbackState,
+  buildAdminUserDeletionReviewErrorFeedbackState,
   buildAdminUserRoleUpdatePrecheckState,
   buildAdminUserRoleUpdateState,
   buildAdminUserRoleUpdateFeedbackState,
@@ -106,6 +117,7 @@ import {
   canDeleteAdminRegistryStudents,
   canClearAdminActivityLogs,
   getAdminPanelAccessSummary,
+  canReviewAdminAccountDeletion,
   canRenderAdminRoleChangeControl,
   getAdminUserRolePolicyLabel,
   getAdminUserAccountSummary,
@@ -473,6 +485,28 @@ const findUserRecord = (uid = '') => {
   return findAdminUserRecord(state.users, uid);
 };
 
+const applyUserLifecycleRecordUpdate = (record, nextRecord = {}) => {
+  if (!record || !nextRecord) {
+    return;
+  }
+
+  record.name = nextRecord.name ?? record.name ?? '';
+  record.email = nextRecord.email ?? record.email ?? '';
+  record.role = nextRecord.role ?? record.role ?? ROLE_TEACHER;
+  record.emailVerified = Boolean(nextRecord.emailVerified ?? record.emailVerified);
+  record.createdAt = nextRecord.createdAt ?? record.createdAt ?? null;
+  record.updatedAt = nextRecord.updatedAt ?? record.updatedAt ?? null;
+  record.roleUpdatedAt = nextRecord.roleUpdatedAt ?? record.roleUpdatedAt ?? null;
+  record.roleUpdatedBy = nextRecord.roleUpdatedBy ?? record.roleUpdatedBy ?? '';
+  record.status = nextRecord.status ?? record.status ?? 'active';
+  record.accountDeletionStatus = nextRecord.accountDeletionStatus ?? record.accountDeletionStatus ?? 'none';
+  record.accountDeletionRequestedAt = nextRecord.accountDeletionRequestedAt ?? record.accountDeletionRequestedAt ?? null;
+  record.accountDeletionRequestedBy = nextRecord.accountDeletionRequestedBy ?? record.accountDeletionRequestedBy ?? '';
+  record.accountDeletionReviewedAt = nextRecord.accountDeletionReviewedAt ?? record.accountDeletionReviewedAt ?? null;
+  record.accountDeletionReviewedBy = nextRecord.accountDeletionReviewedBy ?? record.accountDeletionReviewedBy ?? '';
+  record.deletedAt = nextRecord.deletedAt ?? record.deletedAt ?? null;
+};
+
 const getVisibleUsers = () => {
   return getVisibleAdminUsers(state.users, {
     currentRole: state.currentRole
@@ -496,6 +530,18 @@ const getRolePolicyLabel = (record) => {
   return getAdminUserRolePolicyLabel(record, {
     currentRole: state.currentRole
   });
+};
+
+const getDeletionReviewStatus = (record = {}) => {
+  return normalizeAccountDeletionStatus(record?.accountDeletionStatus || 'none');
+};
+
+const isRoleActionLocked = (record = {}) => {
+  const accountStatus = normalizeAccountStatus(record?.status || 'active');
+  const deletionStatus = getDeletionReviewStatus(record);
+  return accountStatus === ACCOUNT_STATUS_DELETED
+    || deletionStatus === ACCOUNT_DELETION_STATUS_PENDING
+    || deletionStatus === ACCOUNT_DELETION_STATUS_APPROVED;
 };
 
 const buildRoleSelect = (record) => {
@@ -578,6 +624,10 @@ const renderUsersTable = () => {
     const normalizedUserRoleValue = normalizeUserRole(record.role);
     const accountSummary = getAdminUserAccountSummary(record);
     const rolePolicyLabel = getRolePolicyLabel(record);
+    const deletionStatus = getDeletionReviewStatus(record);
+    const roleActionLocked = isRoleActionLocked(record);
+    const canReviewDeletionRequest = canReviewAdminAccountDeletion(state.currentRole);
+    const hasPendingDeletionRequest = deletionStatus === ACCOUNT_DELETION_STATUS_PENDING;
 
     const nameCell = document.createElement('td');
     nameCell.innerHTML = buildIdentityMarkup({
@@ -598,12 +648,13 @@ const renderUsersTable = () => {
     const roleWrap = document.createElement('div');
     roleWrap.className = 'role-cell-wrap';
     roleWrap.innerHTML = buildRoleBadgeMarkup(record.role);
-    if (canManageAdminRoles(state.currentRole)) {
+    if (canManageAdminRoles(state.currentRole) && !roleActionLocked) {
       const roleSelectShell = document.createElement('div');
       roleSelectShell.className = 'input-shell role-select-shell search-container select-container';
       roleSelectShell.appendChild(buildRoleSelect(record));
       roleWrap.appendChild(roleSelectShell);
     }
+
     roleCell.appendChild(roleWrap);
 
     const createdCell = document.createElement('td');
@@ -616,13 +667,15 @@ const renderUsersTable = () => {
     const actionCell = document.createElement('td');
     const actionWrap = document.createElement('div');
     actionWrap.className = 'table-actions-cell';
+    const actionHelperMarkup = [];
 
-    if (canManageAdminRoles(state.currentRole)) {
+    if (canManageAdminRoles(state.currentRole) && !roleActionLocked) {
       const updateBtn = document.createElement('button');
       updateBtn.type = 'button';
       updateBtn.className = 'btn btn-primary';
       updateBtn.dataset.action = 'update-role';
       updateBtn.dataset.userId = record.uid;
+
       updateBtn.textContent = 'Update Role';
       if (!canRenderRoleChangeControl(record)) {
         updateBtn.disabled = true;
@@ -633,13 +686,43 @@ const renderUsersTable = () => {
             : 'Role update is not allowed for this account';
       }
       actionWrap.appendChild(updateBtn);
-    } else {
-      actionWrap.innerHTML = buildTableHelperTextMarkup('Developer-only role changes');
+    } else if (!hasPendingDeletionRequest) {
+      const helperMessage = canManageAdminRoles(state.currentRole)
+        ? rolePolicyLabel
+        : roleActionLocked
+          ? accountSummary
+          : 'Developer-only role changes';
+      actionHelperMarkup.push(buildTableHelperTextMarkup(helperMessage));
+    }
+
+    if (hasPendingDeletionRequest && canReviewDeletionRequest) {
+      const approveBtn = document.createElement('button');
+      approveBtn.type = 'button';
+      approveBtn.className = 'btn btn-primary';
+      approveBtn.dataset.action = 'review-deletion';
+      approveBtn.dataset.userId = record.uid;
+      approveBtn.dataset.decision = 'approve';
+      approveBtn.textContent = 'Approve Request';
+      actionWrap.appendChild(approveBtn);
+
+      const rejectBtn = document.createElement('button');
+      rejectBtn.type = 'button';
+      rejectBtn.className = 'btn btn-secondary';
+      rejectBtn.dataset.action = 'review-deletion';
+      rejectBtn.dataset.userId = record.uid;
+      rejectBtn.dataset.decision = 'reject';
+      rejectBtn.textContent = 'Reject Request';
+      actionWrap.appendChild(rejectBtn);
+    }
+
+    if (!actionWrap.childElementCount && actionHelperMarkup.length) {
+      actionWrap.innerHTML = actionHelperMarkup.join('');
     }
     actionCell.appendChild(actionWrap);
 
     row.appendChild(nameCell);
     row.appendChild(emailCell);
+
     row.appendChild(roleCell);
     row.appendChild(createdCell);
     row.appendChild(actionCell);
@@ -1223,10 +1306,7 @@ const updateUserRole = async (uid, nextRole) => {
       role: roleUpdateState.normalizedNextRole
     });
 
-    record.role = updatedRecord.role;
-    record.emailVerified = Boolean(updatedRecord.emailVerified ?? record.emailVerified);
-    record.roleUpdatedAt = updatedRecord.roleUpdatedAt || record.roleUpdatedAt || null;
-    record.roleUpdatedBy = updatedRecord.roleUpdatedBy || record.roleUpdatedBy || '';
+    applyUserLifecycleRecordUpdate(record, updatedRecord);
     writeAdminRuntimeCache('users', state.users);
     renderUsersTable();
     populateActivityUserFilter();
@@ -1250,10 +1330,73 @@ const updateUserRole = async (uid, nextRole) => {
   }
 };
 
+const reviewUserDeletionRequest = async (uid, decision) => {
+  const record = findUserRecord(uid);
+  if (!record) {
+    setPanelStatus('Unable to find selected user.', 'error');
+    return;
+  }
+
+  const reviewState = buildAdminUserDeletionReviewState(record, {
+    currentRole: state.currentRole,
+    decision
+  });
+
+  if (!reviewState.canReview) {
+    setPanelStatus(reviewState.statusMessage, reviewState.statusType);
+    return;
+  }
+
+  const shouldContinue = await requestConfirmation({
+    message: reviewState.confirmationMessage,
+    confirmLabel: reviewState.confirmLabel,
+    dangerous: reviewState.dangerous
+  });
+
+  if (!shouldContinue) {
+    setPanelStatus(reviewState.canceledStatusMessage, reviewState.canceledStatusType);
+    return;
+  }
+
+  try {
+    setPanelStatus(reviewState.progressStatusMessage);
+    const updatedRecord = await reviewAdminUserAccountDeletion({
+      uid,
+      decision: reviewState.normalizedDecision
+    });
+
+    applyUserLifecycleRecordUpdate(record, updatedRecord);
+    writeAdminRuntimeCache('users', state.users);
+    renderUsersTable();
+    populateActivityUserFilter();
+    const reviewFeedbackState = buildAdminUserDeletionReviewFeedbackState({
+      decision: reviewState.normalizedDecision
+    });
+    setPanelStatus(reviewFeedbackState.statusMessage, reviewFeedbackState.statusType);
+    showToast(reviewFeedbackState.toastMessage, reviewFeedbackState.toastType);
+    markUpdatedNow();
+  } catch (error) {
+    console.error('Failed to review deletion request:', error);
+    const reviewErrorFeedbackState = buildAdminUserDeletionReviewErrorFeedbackState({
+      isPermissionDenied: isPermissionDeniedError(error),
+      errorMessage: formatAuthError(error),
+      decision: reviewState.normalizedDecision
+    });
+    if (isPermissionDeniedError(error)) {
+      setPanelStatus(reviewErrorFeedbackState.statusMessage, reviewErrorFeedbackState.statusType);
+      showToast(reviewErrorFeedbackState.toastMessage, reviewErrorFeedbackState.toastType);
+      return;
+    }
+    setPanelStatus(reviewErrorFeedbackState.statusMessage, reviewErrorFeedbackState.statusType);
+    showToast(reviewErrorFeedbackState.toastMessage, reviewErrorFeedbackState.toastType);
+  }
+};
+
 const ensurePanelAccess = async () => {
   const authUser = await waitForInitialAuthState();
   if (!authUser) {
     redirectToLogin();
+
     return false;
   }
 
@@ -1457,21 +1600,43 @@ const bindEvents = () => {
     if (!uid) return;
 
     const action = normalizeText(trigger.dataset.action || '');
-    if (action !== 'update-role') return;
-    const roleSelect = trigger.closest('tr')?.querySelector('select.role-select');
-    const nextRole = normalizeText(roleSelect?.value || '');
-    if (!nextRole) return;
+    if (action === 'update-role') {
+      const roleSelect = trigger.closest('tr')?.querySelector('select.role-select');
+      const nextRole = normalizeText(roleSelect?.value || '');
+      if (!nextRole) return;
 
-    const roleUpdateState = buildAdminUserRoleUpdateState(findUserRecord(uid), {
-      nextRole,
-      updatableRoles: UPDATABLE_ROLES
+      const roleUpdateState = buildAdminUserRoleUpdateState(findUserRecord(uid), {
+        nextRole,
+        updatableRoles: UPDATABLE_ROLES
+      });
+      trigger.disabled = true;
+      const previousLabel = trigger.textContent;
+      trigger.textContent = roleUpdateState.progressLabel;
+      await updateUserRole(uid, nextRole);
+      trigger.textContent = previousLabel;
+      trigger.disabled = !canRenderRoleChangeControl(findUserRecord(uid));
+      return;
+    }
+
+    if (action !== 'review-deletion') return;
+    const decision = normalizeText(trigger.dataset.decision || '');
+    if (!decision) return;
+
+    const reviewState = buildAdminUserDeletionReviewState(findUserRecord(uid), {
+      currentRole: state.currentRole,
+      decision
     });
+    if (!reviewState.canReview) {
+      await reviewUserDeletionRequest(uid, decision);
+      return;
+    }
+
     trigger.disabled = true;
     const previousLabel = trigger.textContent;
-    trigger.textContent = roleUpdateState.progressLabel;
-    await updateUserRole(uid, nextRole);
+    trigger.textContent = reviewState.progressLabel;
+    await reviewUserDeletionRequest(uid, decision);
     trigger.textContent = previousLabel;
-    trigger.disabled = !canRenderRoleChangeControl(findUserRecord(uid));
+    trigger.disabled = false;
   });
 };
 

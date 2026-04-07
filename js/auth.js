@@ -14,7 +14,8 @@ import {
   updateProfile,
   sendPasswordResetEmail,
   sendEmailVerification,
-  reload
+  reload,
+  deleteUser
 } from './firebase.js';
 
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
@@ -28,6 +29,12 @@ const DEFAULT_USER_ROLE = ROLE_TEACHER;
 const INITIAL_AUTH_STATE_TIMEOUT_MS = 10000;
 const PROFILE_RESOLUTION_TIMEOUT_MS = 10000;
 const PROFILE_NAME_MAX_LENGTH = 80;
+export const ACCOUNT_STATUS_ACTIVE = 'active';
+export const ACCOUNT_STATUS_DELETED = 'deleted';
+export const ACCOUNT_DELETION_STATUS_NONE = 'none';
+export const ACCOUNT_DELETION_STATUS_PENDING = 'pending';
+export const ACCOUNT_DELETION_STATUS_APPROVED = 'approved';
+export const ACCOUNT_DELETION_STATUS_REJECTED = 'rejected';
 
 const createTimeoutError = (code, message) => {
   const error = new Error(message);
@@ -78,6 +85,34 @@ export const normalizeUserRole = (role) => {
 
 const normalizeProfileName = (name) => normalizeName(String(name || '').slice(0, PROFILE_NAME_MAX_LENGTH));
 
+export const normalizeAccountStatus = (status) => {
+  return String(status || '').trim().toLowerCase() === ACCOUNT_STATUS_DELETED
+    ? ACCOUNT_STATUS_DELETED
+    : ACCOUNT_STATUS_ACTIVE;
+};
+
+export const normalizeAccountDeletionStatus = (status) => {
+  const normalized = String(status || '').trim().toLowerCase();
+  if (normalized === ACCOUNT_DELETION_STATUS_PENDING) return ACCOUNT_DELETION_STATUS_PENDING;
+  if (normalized === ACCOUNT_DELETION_STATUS_APPROVED) return ACCOUNT_DELETION_STATUS_APPROVED;
+  if (normalized === ACCOUNT_DELETION_STATUS_REJECTED) return ACCOUNT_DELETION_STATUS_REJECTED;
+  return ACCOUNT_DELETION_STATUS_NONE;
+};
+
+export const isDeletedAccountProfile = (profile = {}) => {
+  return normalizeAccountStatus(profile?.status) === ACCOUNT_STATUS_DELETED;
+};
+
+const normalizeAccountDeletionRecord = (profile = {}, fallback = {}) => ({
+  status: normalizeAccountStatus(profile?.status ?? fallback?.status),
+  accountDeletionStatus: normalizeAccountDeletionStatus(profile?.accountDeletionStatus ?? fallback?.accountDeletionStatus),
+  accountDeletionRequestedAt: profile?.accountDeletionRequestedAt ?? fallback?.accountDeletionRequestedAt ?? null,
+  accountDeletionRequestedBy: String(profile?.accountDeletionRequestedBy ?? fallback?.accountDeletionRequestedBy ?? '').trim(),
+  accountDeletionReviewedAt: profile?.accountDeletionReviewedAt ?? fallback?.accountDeletionReviewedAt ?? null,
+  accountDeletionReviewedBy: String(profile?.accountDeletionReviewedBy ?? fallback?.accountDeletionReviewedBy ?? '').trim(),
+  deletedAt: profile?.deletedAt ?? fallback?.deletedAt ?? null
+});
+
 const normalizeProfileRecord = (profile = {}, fallback = {}) => ({
   uid: String(profile?.uid || fallback?.uid || '').trim(),
   role: normalizeUserRole(profile?.role || fallback?.role),
@@ -85,7 +120,8 @@ const normalizeProfileRecord = (profile = {}, fallback = {}) => ({
   email: normalizeEmail(profile?.email ?? fallback?.email),
   emailVerified: Boolean(profile?.emailVerified ?? fallback?.emailVerified),
   createdAt: profile?.createdAt ?? fallback?.createdAt ?? null,
-  updatedAt: profile?.updatedAt ?? fallback?.updatedAt ?? null
+  updatedAt: profile?.updatedAt ?? fallback?.updatedAt ?? null,
+  ...normalizeAccountDeletionRecord(profile, fallback)
 });
 
 const getUserProfileRef = (uid) => doc(db, 'users', String(uid || '').trim());
@@ -129,7 +165,9 @@ const ensureUserProfileDocument = async (authUser) => {
       name: normalizeProfileName(authUser?.name),
       email: normalizedEmail,
       emailVerified,
-      updatedAt: null
+      createdAt: authUser?.createdAt || null,
+      updatedAt: null,
+      ...normalizeAccountDeletionRecord()
     };
   }
 
@@ -162,7 +200,9 @@ const ensureUserProfileDocument = async (authUser) => {
       name: payload.name,
       email: payload.email,
       emailVerified,
-      updatedAt: null
+      createdAt: authUser?.createdAt || new Date().toISOString(),
+      updatedAt: null,
+      ...normalizeAccountDeletionRecord()
     };
   }
 
@@ -216,7 +256,8 @@ const ensureUserProfileDocument = async (authUser) => {
     email: resolvedEmailForProfile,
     emailVerified,
     createdAt: data.createdAt || null,
-    updatedAt: data.updatedAt || null
+    updatedAt: data.updatedAt || null,
+    ...normalizeAccountDeletionRecord(data)
   };
 };
 
@@ -254,7 +295,8 @@ const toAuthUser = (user) => {
     uid: user.uid,
     name: user.displayName || '',
     email: user.email || '',
-    emailVerified: Boolean(user.emailVerified)
+    emailVerified: Boolean(user.emailVerified),
+    createdAt: user.metadata?.creationTime || null
   };
 };
 
@@ -318,6 +360,9 @@ export const formatAuthError = (error) => {
   if (code.includes('permission-denied')) return 'Access denied. You don\'t have permission.';
   if (code.includes('network-request-failed')) return 'Network error. Please check your internet connection.';
   if (code.includes('too-many-requests')) return 'Too many attempts. Please try again later.';
+  if (code.includes('requires-recent-login') || code.includes('credential-too-old-login-again')) {
+    return 'For security, sign in again and retry this action.';
+  }
 
   return error?.message || 'Authentication failed. Please try again.';
 };
@@ -507,6 +552,19 @@ export const reloadCurrentUserAuthState = async () => {
   );
 
   return toAuthUser(auth.currentUser);
+};
+
+export const deleteCurrentAuthenticatedUser = async () => {
+  if (!auth?.currentUser) {
+    throw new Error('You must be signed in to delete your account.');
+  }
+
+  await withTimeout(
+    () => deleteUser(auth.currentUser),
+    PROFILE_RESOLUTION_TIMEOUT_MS,
+    'auth/delete-timeout',
+    'Timed out while deleting your account.'
+  );
 };
 
 export const logoutUser = async () => {

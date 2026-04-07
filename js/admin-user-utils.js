@@ -1,24 +1,44 @@
-import { normalizeUserRole } from './auth.js';
+import {
+  ACCOUNT_DELETION_STATUS_APPROVED,
+  ACCOUNT_DELETION_STATUS_PENDING,
+  ACCOUNT_DELETION_STATUS_REJECTED,
+  ACCOUNT_STATUS_DELETED,
+  normalizeAccountDeletionStatus,
+  normalizeAccountStatus,
+  normalizeUserRole
+} from './auth.js';
 import { formatRoleLabel, normalizeText } from './admin-display-utils.js';
 
 const ROLE_TEACHER = 'teacher';
 const ROLE_ADMIN = 'admin';
 const ROLE_DEVELOPER = 'developer';
 
+const getAdminUserAccountStatus = (record = {}) => normalizeAccountStatus(record?.status || 'active');
+const getAdminUserDeletionStatus = (record = {}) => normalizeAccountDeletionStatus(record?.accountDeletionStatus || 'none');
+const isDeletedAdminUserRecord = (record = {}) => getAdminUserAccountStatus(record) === ACCOUNT_STATUS_DELETED;
+const hasLockedAdminDeletionRequest = (record = {}) => {
+  const deletionStatus = getAdminUserDeletionStatus(record);
+  return deletionStatus === ACCOUNT_DELETION_STATUS_PENDING || deletionStatus === ACCOUNT_DELETION_STATUS_APPROVED;
+};
+
 const isAdminOnlyViewerRole = (currentRole = '') => normalizeUserRole(currentRole) === ROLE_ADMIN;
 export const canManageAdminRoles = (currentRole = '') => normalizeUserRole(currentRole) === ROLE_DEVELOPER;
 export const canRunAdminDestructiveActions = (currentRole = '') => normalizeUserRole(currentRole) === ROLE_DEVELOPER;
 export const canDeleteAdminRegistryStudents = (currentRole = '') => canRunAdminDestructiveActions(currentRole);
 export const canClearAdminActivityLogs = (currentRole = '') => canRunAdminDestructiveActions(currentRole);
+export const canReviewAdminAccountDeletion = (currentRole = '') => {
+  const normalizedCurrentRole = normalizeUserRole(currentRole);
+  return normalizedCurrentRole === ROLE_ADMIN || normalizedCurrentRole === ROLE_DEVELOPER;
+};
 
 export const getAdminPanelAccessSummary = (currentRole = '') => {
   const normalizedCurrentRole = normalizeUserRole(currentRole);
   if (normalizedCurrentRole === ROLE_DEVELOPER) {
-    return 'Developer mode: review admin data and manage roles, registry cleanup, and activity-log maintenance where needed.';
+    return 'Developer mode: review admin data, manage roles, review account deletion requests, and handle registry cleanup and activity-log maintenance where needed.';
   }
 
   if (normalizedCurrentRole === ROLE_ADMIN) {
-    return 'Read-only admin mode: review users, search, registry, and activity history. A developer is required for role changes and destructive admin actions.';
+    return 'Admin mode: review users, search, registry, activity history, and account deletion requests. A developer is still required for role changes and destructive admin actions.';
   }
 
   return 'Restricted access. Admin or developer role required for this panel.';
@@ -118,6 +138,126 @@ export const buildAdminUsersLoadErrorFeedbackState = ({
   };
 };
 
+export const buildAdminUserDeletionReviewState = (record = {}, {
+  currentRole = '',
+  decision = ''
+} = {}) => {
+  const normalizedDecision = normalizeText(decision).toLowerCase();
+  const targetLabel = normalizeText(record?.name || record?.email || '') || 'this user';
+  const progressLabel = normalizedDecision === 'approve' ? 'Approving...' : 'Rejecting...';
+
+  if (!canReviewAdminAccountDeletion(currentRole)) {
+    return {
+      canReview: false,
+      normalizedDecision,
+      progressLabel,
+      statusMessage: 'Only admins and developers can review deletion requests.',
+      statusType: 'warning',
+      confirmationMessage: ''
+    };
+  }
+
+  if (isDeletedAdminUserRecord(record)) {
+    return {
+      canReview: false,
+      normalizedDecision,
+      progressLabel,
+      statusMessage: 'Deleted accounts do not need review.',
+      statusType: 'warning',
+      confirmationMessage: ''
+    };
+  }
+
+  const deletionStatus = getAdminUserDeletionStatus(record);
+  if (deletionStatus !== ACCOUNT_DELETION_STATUS_PENDING) {
+    return {
+      canReview: false,
+      normalizedDecision,
+      progressLabel,
+      statusMessage: deletionStatus === ACCOUNT_DELETION_STATUS_APPROVED
+        ? 'This deletion request has already been approved.'
+        : deletionStatus === ACCOUNT_DELETION_STATUS_REJECTED
+          ? 'This deletion request has already been rejected.'
+          : 'This account does not have a pending deletion request.',
+      statusType: 'warning',
+      confirmationMessage: ''
+    };
+  }
+
+  if (normalizedDecision !== 'approve' && normalizedDecision !== 'reject') {
+    return {
+      canReview: false,
+      normalizedDecision,
+      progressLabel: 'Reviewing...',
+      statusMessage: 'Choose a valid deletion review action.',
+      statusType: 'warning',
+      confirmationMessage: ''
+    };
+  }
+
+  return {
+    canReview: true,
+    normalizedDecision,
+    progressLabel,
+    statusMessage: '',
+    statusType: '',
+    confirmationMessage: normalizedDecision === 'approve'
+      ? `Approve the deletion request for ${targetLabel}? The user will still need to confirm the final deletion.`
+      : `Reject the deletion request for ${targetLabel}?`,
+    confirmLabel: normalizedDecision === 'approve' ? 'Approve Request' : 'Reject Request',
+    dangerous: normalizedDecision === 'approve',
+    canceledStatusMessage: 'Deletion review canceled.',
+    canceledStatusType: 'warning',
+    progressStatusMessage: normalizedDecision === 'approve'
+      ? 'Approving deletion request...'
+      : 'Rejecting deletion request...'
+  };
+};
+
+export const buildAdminUserDeletionReviewFeedbackState = ({
+  decision = ''
+} = {}) => {
+  const normalizedDecision = normalizeText(decision).toLowerCase();
+  return {
+    statusMessage: normalizedDecision === 'approve'
+      ? 'Deletion request approved.'
+      : 'Deletion request rejected.',
+    statusType: 'success',
+    toastMessage: normalizedDecision === 'approve'
+      ? 'Deletion request approved'
+      : 'Deletion request rejected',
+    toastType: 'success'
+  };
+};
+
+export const buildAdminUserDeletionReviewErrorFeedbackState = ({
+  isPermissionDenied = false,
+  errorMessage = '',
+  decision = ''
+} = {}) => {
+  if (isPermissionDenied) {
+    return {
+      statusMessage: 'Access denied. You do not have permission.',
+      statusType: 'error',
+      toastMessage: 'Permission denied',
+      toastType: 'error'
+    };
+  }
+
+  const normalizedDecision = normalizeText(decision).toLowerCase();
+  const normalizedErrorMessage = normalizeText(errorMessage);
+  return {
+    statusMessage: normalizedErrorMessage
+      ? `Failed to ${normalizedDecision === 'approve' ? 'approve' : 'reject'} deletion request: ${normalizedErrorMessage}`
+      : `Failed to ${normalizedDecision === 'approve' ? 'approve' : 'reject'} deletion request.`,
+    statusType: 'error',
+    toastMessage: normalizedDecision === 'approve'
+      ? 'Failed to approve deletion request'
+      : 'Failed to reject deletion request',
+    toastType: 'error'
+  };
+};
+
 export const buildAdminGlobalStatsLoadErrorFeedbackState = ({
   visibleUserCount = 0
 } = {}) => {
@@ -148,6 +288,10 @@ export const canEditAdminUserRole = (record = {}, {
     return false;
   }
 
+   if (isDeletedAdminUserRecord(record) || hasLockedAdminDeletionRequest(record)) {
+     return false;
+   }
+
   return normalizeUserRole(record?.role) !== ROLE_DEVELOPER;
 };
 
@@ -173,6 +317,18 @@ export const canRenderAdminRoleChangeControl = (record = {}, {
 export const getAdminUserRolePolicyLabel = (record = {}, {
   currentRole = ''
 } = {}) => {
+  if (isDeletedAdminUserRecord(record)) {
+    return 'Deleted accounts cannot be updated';
+  }
+
+  const deletionStatus = getAdminUserDeletionStatus(record);
+  if (deletionStatus === ACCOUNT_DELETION_STATUS_PENDING) {
+    return 'Review the pending deletion request before changing this role';
+  }
+  if (deletionStatus === ACCOUNT_DELETION_STATUS_APPROVED) {
+    return 'Deletion approved; role changes are locked';
+  }
+
   if (!canManageAdminRoles(currentRole)) {
     return 'Role changes require a developer';
   }
@@ -190,6 +346,21 @@ export const getAdminUserRolePolicyLabel = (record = {}, {
 };
 
 export const getAdminUserAccountSummary = (record = {}) => {
+  if (isDeletedAdminUserRecord(record)) {
+    return 'Deleted account';
+  }
+
+  const deletionStatus = getAdminUserDeletionStatus(record);
+  if (deletionStatus === ACCOUNT_DELETION_STATUS_PENDING) {
+    return 'Pending deletion review';
+  }
+  if (deletionStatus === ACCOUNT_DELETION_STATUS_APPROVED) {
+    return 'Deletion approved - awaiting user confirmation';
+  }
+  if (deletionStatus === ACCOUNT_DELETION_STATUS_REJECTED) {
+    return 'Deletion request rejected';
+  }
+
   const normalizedRole = normalizeUserRole(record?.role);
   if (normalizedRole === ROLE_DEVELOPER) {
     return 'Protected system account';
@@ -244,6 +415,43 @@ export const buildAdminUserRoleUpdateState = (record = {}, {
     ? updatableRoles.map((role) => normalizeUserRole(role))
     : [];
   const progressLabel = 'Updating...';
+
+  if (isDeletedAdminUserRecord(record)) {
+    return {
+      currentRole,
+      normalizedNextRole,
+      canUpdate: false,
+      progressLabel,
+      statusMessage: 'Deleted accounts cannot be updated in this panel.',
+      statusType: 'warning',
+      confirmationMessage: ''
+    };
+  }
+
+  const deletionStatus = getAdminUserDeletionStatus(record);
+  if (deletionStatus === ACCOUNT_DELETION_STATUS_PENDING) {
+    return {
+      currentRole,
+      normalizedNextRole,
+      canUpdate: false,
+      progressLabel,
+      statusMessage: 'Review the pending deletion request before changing this role.',
+      statusType: 'warning',
+      confirmationMessage: ''
+    };
+  }
+
+  if (deletionStatus === ACCOUNT_DELETION_STATUS_APPROVED) {
+    return {
+      currentRole,
+      normalizedNextRole,
+      canUpdate: false,
+      progressLabel,
+      statusMessage: 'Deletion approved accounts cannot be updated in this panel.',
+      statusType: 'warning',
+      confirmationMessage: ''
+    };
+  }
 
   if (!normalizedUpdatableRoles.includes(normalizedNextRole)) {
     return {

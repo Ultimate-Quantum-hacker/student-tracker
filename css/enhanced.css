@@ -77,10 +77,6 @@
   transition:grid-template-columns .3s ease;
 }
 
-#app-main.sidebar-collapsed{
-  grid-template-columns:0 1fr;
-}
-
 .sidebar{
   padding:1rem .7rem 1.15rem;
   border-right:1px solid var(--border);
@@ -913,6 +909,10 @@ body.dark-mode .hm-category-badge{color:#f8fafc}
   gap:.55rem;
 }
 
+.auth-session-control #themeToggle{
+  flex-shrink:0;
+}
+
 .auth-role-badge{
   display:inline-flex;
   align-items:center;
@@ -1508,6 +1508,17 @@ button:focus-visible,
   flex-wrap:wrap;
 }
 
+.account-settings-security-actions{
+  justify-content:flex-start;
+}
+
+.account-settings-helper-text{
+  margin:0;
+  font-size:.88rem;
+  line-height:1.5;
+  color:var(--text-secondary);
+}
+
 .account-settings-feedback{
   margin:0;
   font-size:.88rem;
@@ -1571,6 +1582,26 @@ button:focus-visible,
 
 #account-settings-email-status-value[data-tone="inactive"]{
   color:var(--text-secondary);
+}
+
+#account-settings-deletion-status-value[data-tone="inactive"]{
+  color:var(--text-secondary);
+}
+
+#account-settings-deletion-status-value[data-tone="pending"]{
+  color:#d97706;
+}
+
+#account-settings-deletion-status-value[data-tone="approved"]{
+  color:#2563eb;
+}
+
+#account-settings-deletion-status-value[data-tone="rejected"]{
+  color:var(--danger);
+}
+
+#account-settings-deletion-status-value[data-tone="deleted"]{
+  color:var(--danger);
 }
 
 .bulk-entry-controls{

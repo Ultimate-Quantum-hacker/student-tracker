@@ -81,6 +81,90 @@ service cloud.firestore {
         );
     }
 
+    function ownerCanRequestAccountDeletion(userId) {
+      return isOwner(userId)
+        && (!('uid' in request.resource.data) || request.resource.data.uid == userId)
+        && (!('userId' in request.resource.data) || request.resource.data.userId == userId)
+        && (!('email' in request.resource.data) || request.resource.data.email == request.auth.token.email)
+        && (!('emailVerified' in request.resource.data) || request.resource.data.emailVerified == request.auth.token.email_verified)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'uid',
+          'userId',
+          'status',
+          'accountDeletionStatus',
+          'accountDeletionRequestedAt',
+          'accountDeletionRequestedBy',
+          'accountDeletionReviewedAt',
+          'accountDeletionReviewedBy',
+          'deletedAt',
+          'updatedAt'
+        ])
+        && request.resource.data.status == 'active'
+        && request.resource.data.accountDeletionStatus == 'pending'
+        && request.resource.data.accountDeletionRequestedBy == request.auth.uid
+        && request.resource.data.accountDeletionRequestedAt is timestamp
+        && (!('accountDeletionReviewedAt' in request.resource.data) || request.resource.data.accountDeletionReviewedAt == null)
+        && (!('accountDeletionReviewedBy' in request.resource.data) || request.resource.data.accountDeletionReviewedBy == '')
+        && (!('deletedAt' in request.resource.data) || request.resource.data.deletedAt == null)
+        && (
+          request.resource.data.role == resource.data.role
+          || (!('role' in resource.data) && request.resource.data.role == 'teacher')
+        )
+        && (!('accountDeletionStatus' in resource.data) || resource.data.accountDeletionStatus != 'approved')
+        && (!('status' in resource.data) || resource.data.status != 'deleted');
+    }
+
+    function ownerCanFinalizeApprovedAccountDeletion(userId) {
+      return isOwner(userId)
+        && (!('uid' in request.resource.data) || request.resource.data.uid == userId)
+        && (!('userId' in request.resource.data) || request.resource.data.userId == userId)
+        && (!('email' in request.resource.data) || request.resource.data.email == request.auth.token.email)
+        && (!('emailVerified' in request.resource.data) || request.resource.data.emailVerified == request.auth.token.email_verified)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'uid',
+          'userId',
+          'status',
+          'deletedAt',
+          'updatedAt'
+        ])
+        && request.resource.data.status == 'deleted'
+        && request.resource.data.deletedAt is timestamp
+        && resource.data.accountDeletionStatus == 'approved'
+        && (!('status' in resource.data) || resource.data.status != 'deleted')
+        && (
+          request.resource.data.role == resource.data.role
+          || (!('role' in resource.data) && request.resource.data.role == 'teacher')
+        );
+    }
+
+    function privilegedCanReviewAccountDeletion(userId) {
+      return isPrivilegedUser()
+        && (!('uid' in request.resource.data) || request.resource.data.uid == userId)
+        && (!('userId' in request.resource.data) || request.resource.data.userId == userId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'uid',
+          'userId',
+          'accountDeletionStatus',
+          'accountDeletionReviewedAt',
+          'accountDeletionReviewedBy',
+          'updatedAt'
+        ])
+        && (!('status' in resource.data) || resource.data.status != 'deleted')
+        && resource.data.accountDeletionStatus == 'pending'
+        && (
+          request.resource.data.accountDeletionStatus == 'approved'
+          || request.resource.data.accountDeletionStatus == 'rejected'
+        )
+        && request.resource.data.accountDeletionReviewedBy == request.auth.uid
+        && request.resource.data.accountDeletionReviewedAt is timestamp
+        && (!('email' in resource.data) || request.resource.data.email == resource.data.email)
+        && (!('emailVerified' in resource.data) || request.resource.data.emailVerified == resource.data.emailVerified)
+        && (
+          request.resource.data.role == resource.data.role
+          || (!('role' in resource.data) && request.resource.data.role == 'teacher')
+        );
+    }
+
     function developerCanManageUserRole(userId) {
       return isDeveloperRole()
         && request.resource.data.uid == userId
@@ -159,7 +243,12 @@ service cloud.firestore {
       allow read: if canReadOwnerScopedData(userId);
       allow create: if ownerCanCreateOwnUserDoc(userId);
       allow delete: if isOwner(userId) || isDeveloperRole();
-      allow update: if ownerCanUpdateOwnUserDoc(userId) || developerCanManageUserRole(userId) || isPrivilegedUserMetadataTouch(userId);
+      allow update: if ownerCanUpdateOwnUserDoc(userId)
+        || ownerCanRequestAccountDeletion(userId)
+        || ownerCanFinalizeApprovedAccountDeletion(userId)
+        || developerCanManageUserRole(userId)
+        || privilegedCanReviewAccountDeletion(userId)
+        || isPrivilegedUserMetadataTouch(userId);
     }
 
     match /users/{userId}/classes/{classId} {

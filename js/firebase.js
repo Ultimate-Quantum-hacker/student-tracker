@@ -6,7 +6,7 @@
 // Import Firebase SDK modules
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
 import { getFirestore, collection, collectionGroup, doc, addDoc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, query, where, orderBy, limit, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
-import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, setPersistence, browserLocalPersistence, updateProfile, sendPasswordResetEmail, sendEmailVerification, reload } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
+import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, setPersistence, browserLocalPersistence, updateProfile, sendPasswordResetEmail, sendEmailVerification, reload, deleteUser } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
 
 // Firebase configuration
 const PLACEHOLDER_FIREBASE_CONFIG = {
@@ -117,7 +117,8 @@ export {
   updateProfile,
   sendPasswordResetEmail,
   sendEmailVerification,
-  reload
+  reload,
+  deleteUser
 };
 
 // Export app instance and db for potential future use

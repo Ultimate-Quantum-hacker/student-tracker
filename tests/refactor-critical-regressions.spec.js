@@ -257,6 +257,11 @@ export const updateProfile = async (user, profile = {}) => {
 export const sendPasswordResetEmail = async () => {};
 export const sendEmailVerification = async () => {};
 export const reload = async () => {};
+export const deleteUser = async (user) => {
+  if (authState.currentUser && user && authState.currentUser.uid === user.uid) {
+    authState.currentUser = null;
+  }
+};
 `;
 
 const EXTERNAL_LIBRARY_STUB = `
@@ -1789,7 +1794,7 @@ test('bulk delete class modal shows polished selection state and prevents deleti
   expect(result.afterSelectAll.selectedCount).toBe(3);
 });
 
-  test('admin dropdown renders when valid classes exist', async ({ page }) => {
+  test('admin read-only mode keeps global class switcher visible', async ({ page }) => {
     const result = await page.evaluate(async () => {
       const [stateModule, uiModule] = await Promise.all([
         import('/js/state.js'),
@@ -1937,6 +1942,93 @@ test('bulk delete class modal shows polished selection state and prevents deleti
     expect(result.classId).toBe('class_shared');
     expect(result.ownerId).toBe('owner_two');
     expect(result.loadCalls).toEqual([{ classId: 'class_shared', ownerId: 'owner_two' }]);
+  });
+
+  test('account settings render member since and approved deletion actions from lifecycle state', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const [stateModule, uiModule] = await Promise.all([
+        import('/js/state.js'),
+        import('/js/ui.js')
+      ]);
+
+      const app = stateModule.default || window.TrackerApp;
+      const ui = uiModule.default || app.ui;
+
+      document.body.innerHTML = `
+        <div id="toast"></div>
+        <div id="auth-role-badge"></div>
+        <form id="account-settings-form">
+          <input id="account-settings-name-input" type="text">
+          <input id="account-settings-email-input" type="email">
+          <input id="account-settings-role-input" type="text">
+          <input id="account-settings-updated-at-input" type="text">
+          <strong id="account-settings-created-at-value"></strong>
+          <strong id="account-settings-class-value"></strong>
+          <strong id="account-settings-email-status-value"></strong>
+          <strong id="account-settings-session-status"></strong>
+          <strong id="account-settings-deletion-status-value"></strong>
+          <p id="account-settings-deletion-help"></p>
+          <p id="account-settings-feedback" hidden></p>
+          <button id="account-settings-save-btn" type="submit">Save Changes</button>
+          <button id="account-settings-reset-btn" type="button">Discard Changes</button>
+          <button id="account-settings-password-reset-btn" type="button">Send Password Reset</button>
+          <button id="account-settings-delete-btn" type="button">Request Account Deletion</button>
+        </form>
+      `;
+
+      ui.initDOM();
+      app.state.authUser = {
+        uid: 'teacher_account_uid',
+        name: 'Teacher Example',
+        email: 'teacher@example.com',
+        role: 'teacher',
+        emailVerified: true,
+        createdAt: {
+          toDate: () => new Date('2024-01-02T03:04:05.000Z')
+        },
+        status: 'active',
+        accountDeletionStatus: 'approved',
+        accountDeletionReviewedAt: '2024-02-03T04:05:06.000Z'
+      };
+      app.setCurrentUserRole('teacher', { resolved: true });
+
+      ui.renderAccountSettings({ preserveFeedback: false });
+
+      return {
+        memberSince: document.getElementById('account-settings-created-at-value')?.textContent || '',
+        deletionStatus: document.getElementById('account-settings-deletion-status-value')?.textContent || '',
+        deletionHelp: document.getElementById('account-settings-deletion-help')?.textContent || '',
+        deleteLabel: document.getElementById('account-settings-delete-btn')?.textContent || '',
+        deleteDisabled: Boolean(document.getElementById('account-settings-delete-btn')?.disabled),
+        passwordResetLabel: document.getElementById('account-settings-password-reset-btn')?.textContent || '',
+        resetLabel: document.getElementById('account-settings-reset-btn')?.textContent || ''
+      };
+    });
+
+    expect(result.memberSince).not.toBe('Not available');
+    expect(result.deletionStatus).toContain('Approved');
+    expect(result.deletionHelp).toContain('permanently remove your account');
+    expect(result.deleteLabel).toBe('Confirm Delete Account');
+    expect(result.deleteDisabled).toBe(false);
+    expect(result.passwordResetLabel).toBe('Send Password Reset');
+    expect(result.resetLabel).toBe('Discard Changes');
+  });
+
+  test('deleted-account routing and queued auth notices stay protected in source', async () => {
+    const appSource = readWorkspaceFile('js/app.js');
+    const authPageSource = readWorkspaceFile('js/auth-page.js');
+    const noticesSource = readWorkspaceFile('js/auth-notices.js');
+    const uiSource = readWorkspaceFile('js/ui.js');
+
+    expect(noticesSource).toContain('export const peekAuthPageNotice = () => peekNotice(AUTH_PAGE_NOTICE_KEY);');
+    expect(appSource).toContain('if (notice?.message && !queuedNotice?.message)');
+    expect(appSource).toContain('if (isDeletedAccountProfile(resolvedProfile))');
+    expect(appSource).toContain("const themeToggle = document.getElementById('themeToggle');");
+    expect(authPageSource).toContain('if (isDeletedAccountProfile(profile))');
+    expect(authPageSource).toContain("storeAuthPageNotice('This account has been deleted. Sign in with another account to continue.', 'info');");
+    expect(uiSource).toContain('requestCurrentUserAccountDeletion');
+    expect(uiSource).toContain('finalizeCurrentUserAccountDeletion');
+    expect(uiSource).toContain('requestPasswordReset');
   });
 
   test('workflow tools follow the teacher admin developer capability matrix', async ({ page }) => {
@@ -2230,9 +2322,11 @@ test('bulk delete class modal shows polished selection state and prevents deleti
     expect(adminSource).not.toContain('Manage users, search global records, and monitor live system activity from a polished SaaS control center.');
     expect(adminSource).not.toContain('Search, review, and manage workspace user roles with a consistent admin workflow.');
 
-    expect(adminJsSource).toContain("if (canManageAdminRoles(state.currentRole)) {");
+    expect(adminJsSource).toContain("if (canManageAdminRoles(state.currentRole) && !roleActionLocked) {");
     expect(adminJsSource).toContain("roleWrap.appendChild(roleSelectShell);");
-    expect(adminJsSource).toContain("actionWrap.innerHTML = buildTableHelperTextMarkup('Developer-only role changes');");
+    expect(adminJsSource).toContain("const helperMessage = canManageAdminRoles(state.currentRole)");
+    expect(adminJsSource).toContain("          : 'Developer-only role changes';");
+    expect(adminJsSource).toContain("actionHelperMarkup.push(buildTableHelperTextMarkup(helperMessage));");
     expect(adminJsSource).not.toContain("actionWrap.innerHTML = buildTableHelperTextMarkup('View only');");
   });
 
@@ -2249,9 +2343,9 @@ test('bulk delete class modal shows polished selection state and prevents deleti
     const adminSource = readWorkspaceFile('admin.html');
     const adminJsSource = readWorkspaceFile('js/admin.js');
 
-    expect(result.adminSummary).toContain('Read-only admin mode: review users, search, registry, and activity history.');
-    expect(result.adminSummary).toContain('A developer is required for role changes and destructive admin actions.');
-    expect(result.developerSummary).toContain('Developer mode: review admin data and manage roles, registry cleanup, and activity-log maintenance where needed.');
+    expect(result.adminSummary).toContain('Admin mode: review users, search, registry, activity history, and account deletion requests.');
+    expect(result.adminSummary).toContain('A developer is still required for role changes and destructive admin actions.');
+    expect(result.developerSummary).toContain('Developer mode: review admin data, manage roles, review account deletion requests, and handle registry cleanup and activity-log maintenance where needed.');
 
     expect(adminSource).toContain('id="panel-access-summary"');
     expect(adminSource).toContain('Access summary: loading…');

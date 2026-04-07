@@ -28,6 +28,16 @@ import {
   normalizeStudentName,
   assertValidStudentName
 } from '../js/student-name-utils.js';
+import {
+  ACCOUNT_STATUS_ACTIVE,
+  ACCOUNT_STATUS_DELETED,
+  ACCOUNT_DELETION_STATUS_NONE,
+  ACCOUNT_DELETION_STATUS_PENDING,
+  ACCOUNT_DELETION_STATUS_APPROVED,
+  ACCOUNT_DELETION_STATUS_REJECTED,
+  normalizeAccountStatus,
+  normalizeAccountDeletionStatus
+} from '../js/auth.js';
 
 const CACHE_KEY_PREFIX = 'studentAppData';
 const USERS_COLLECTION = 'users';
@@ -158,6 +168,94 @@ const normalizeRole = (value) => {
   return 'teacher';
 };
 const normalizeEmailAddress = (value) => String(value || '').trim().toLowerCase();
+const normalizeUserAccountLifecycleRecord = (payload = {}, fallback = {}) => ({
+  status: normalizeAccountStatus(payload?.status ?? fallback?.status),
+  accountDeletionStatus: normalizeAccountDeletionStatus(payload?.accountDeletionStatus ?? fallback?.accountDeletionStatus),
+  accountDeletionRequestedAt: payload?.accountDeletionRequestedAt ?? fallback?.accountDeletionRequestedAt ?? null,
+  accountDeletionRequestedBy: normalizeUserId(payload?.accountDeletionRequestedBy ?? fallback?.accountDeletionRequestedBy ?? ''),
+  accountDeletionReviewedAt: payload?.accountDeletionReviewedAt ?? fallback?.accountDeletionReviewedAt ?? null,
+  accountDeletionReviewedBy: normalizeUserId(payload?.accountDeletionReviewedBy ?? fallback?.accountDeletionReviewedBy ?? ''),
+  deletedAt: payload?.deletedAt ?? fallback?.deletedAt ?? null
+});
+const isDeletedUserPayload = (payload = {}) => {
+  return normalizeUserAccountLifecycleRecord(payload).status === ACCOUNT_STATUS_DELETED;
+};
+const buildUserLifecycleTargetLabel = (payload = {}, fallbackUserId = '') => {
+  const normalizedUserId = normalizeUserId(payload?.uid || payload?.userId || fallbackUserId);
+  const normalizedEmail = normalizeEmailAddress(payload?.email || '');
+  const normalizedName = normalizeDisplayName(payload?.name || normalizedEmail || normalizedUserId || 'Teacher', 'Teacher');
+
+  if (normalizedEmail && normalizedName && normalizedName !== normalizedEmail) {
+    return `${normalizedName} (${normalizedEmail})`;
+  }
+
+  return normalizedName || normalizedEmail || normalizedUserId || 'Teacher';
+};
+const buildPrivilegedUserLifecycleRecord = (payload = {}, fallbackUserId = '') => {
+  const uid = normalizeUserId(payload?.uid || payload?.userId || fallbackUserId);
+  const email = normalizeEmailAddress(payload?.email || '');
+  return {
+    uid,
+    name: normalizeDisplayName(payload?.name || payload?.displayName || email || uid || 'Teacher', 'Teacher'),
+    email,
+    role: normalizeRole(payload?.role || 'teacher'),
+    emailVerified: Boolean(payload?.emailVerified),
+    createdAt: payload?.createdAt || payload?.updatedAt || null,
+    updatedAt: payload?.updatedAt || null,
+    roleUpdatedAt: payload?.roleUpdatedAt || null,
+    roleUpdatedBy: normalizeUserId(payload?.roleUpdatedBy || ''),
+    ...normalizeUserAccountLifecycleRecord(payload)
+  };
+};
+const readPrivilegedUserLifecycleDirectory = async () => {
+  if (!isFirebaseConfigured || !db) {
+    return {
+      users: [],
+      ownerNameMap: new Map(),
+      ownerRoleMap: new Map(),
+      deletedUserIds: new Set()
+    };
+  }
+
+  const usersSnapshot = await getDocs(collection(db, USERS_COLLECTION));
+  const users = [];
+  const ownerNameMap = new Map();
+  const ownerRoleMap = new Map();
+  const deletedUserIds = new Set();
+
+  usersSnapshot.forEach((entry) => {
+    const payload = entry.data() || {};
+    const uid = normalizeUserId(payload.uid || payload.userId || entry.id || '');
+    if (!uid) {
+      return;
+    }
+
+    const lifecycle = normalizeUserAccountLifecycleRecord(payload);
+    const role = normalizeRole(payload.role || 'teacher');
+    const name = normalizeDisplayName(payload.name || payload.displayName || payload.email || 'Teacher', 'Teacher');
+    const email = normalizeEmailAddress(payload.email || '');
+
+    users.push(buildPrivilegedUserLifecycleRecord({
+      ...payload,
+      uid,
+      name,
+      email,
+      role
+    }, uid));
+    ownerNameMap.set(uid, name);
+    ownerRoleMap.set(uid, role);
+    if (lifecycle.status === ACCOUNT_STATUS_DELETED) {
+      deletedUserIds.add(uid);
+    }
+  });
+
+  return {
+    users,
+    ownerNameMap,
+    ownerRoleMap,
+    deletedUserIds
+  };
+};
 const isVerifiedUserRecord = (payload = {}) => Boolean(payload?.emailVerified);
 const isTeacherOrAdminRole = (role = '') => {
   const normalizedRole = normalizeRole(role);
@@ -166,6 +264,34 @@ const isTeacherOrAdminRole = (role = '') => {
 const buildPrivilegedRoleUpdatePolicyState = (userPayload = {}, nextRole = 'teacher') => {
   const currentRole = normalizeRole(userPayload?.role || 'teacher');
   const normalizedNextRole = normalizeRole(nextRole);
+  const lifecycle = normalizeUserAccountLifecycleRecord(userPayload);
+
+  if (isDeletedUserPayload(userPayload)) {
+    return {
+      currentRole,
+      normalizedNextRole,
+      canUpdate: false,
+      message: 'Deleted accounts cannot be updated in the admin panel.'
+    };
+  }
+
+  if (lifecycle.accountDeletionStatus === ACCOUNT_DELETION_STATUS_PENDING) {
+    return {
+      currentRole,
+      normalizedNextRole,
+      canUpdate: false,
+      message: 'Pending deletion requests must be reviewed before role changes can be made.'
+    };
+  }
+
+  if (lifecycle.accountDeletionStatus === ACCOUNT_DELETION_STATUS_APPROVED) {
+    return {
+      currentRole,
+      normalizedNextRole,
+      canUpdate: false,
+      message: 'Approved deletion requests cannot be updated in the admin panel.'
+    };
+  }
 
   if (currentRole === 'developer' || normalizedNextRole === 'developer') {
     return {
@@ -2467,20 +2593,15 @@ const readGlobalClassCatalogFromFirestore = async (requesterUserId = '') => {
   }
 
   const classesSnapshot = await getDocs(collectionGroup(db, CLASSES_SUBCOLLECTION));
-  let usersSnapshot = null;
+  let ownerNameMap = new Map();
+  let deletedUserIds = new Set();
   try {
-    usersSnapshot = await getDocs(collection(db, USERS_COLLECTION));
+    const privilegedDirectory = await readPrivilegedUserLifecycleDirectory();
+    ownerNameMap = privilegedDirectory.ownerNameMap || new Map();
+    deletedUserIds = privilegedDirectory.deletedUserIds || new Set();
   } catch (error) {
     console.warn('Falling back to class metadata only for global class catalog:', error);
   }
-
-  const ownerNameMap = new Map();
-  usersSnapshot?.forEach((entry) => {
-    const payload = entry.data() || {};
-    const uid = normalizeUserId(payload.uid || entry.id);
-    if (!uid) return;
-    ownerNameMap.set(uid, normalizeDisplayName(payload.name || payload.email || 'Teacher', 'Teacher'));
-  });
 
   const classes = [];
   const metadataPatchTasks = [];
@@ -2490,7 +2611,7 @@ const readGlobalClassCatalogFromFirestore = async (requesterUserId = '') => {
 
     const classId = normalizeClassId(entry.id);
     const ownerId = normalizeUserId(payload.ownerId || payload.userId || getOwnerIdFromClassRefPath(entry.ref?.path));
-    if (!classId || !ownerId) return;
+    if (!classId || !ownerId || deletedUserIds.has(ownerId)) return;
 
     const ownerName = normalizeDisplayName(payload.ownerName || ownerNameMap.get(ownerId) || 'Teacher', 'Teacher');
     const normalizedClass = toClassModel(classId, {
@@ -3867,6 +3988,103 @@ const deleteCollectionDocuments = async (collectionRef) => {
   await Promise.all(operations);
 };
 
+const getAvailableStorageRefs = () => {
+  const refs = [];
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      refs.push(sessionStorage);
+    }
+  } catch {}
+
+  try {
+    if (typeof localStorage !== 'undefined') {
+      refs.push(localStorage);
+    }
+  } catch {}
+
+  return refs;
+};
+
+const clearStorageEntriesMatching = (storageRef, predicate = () => false) => {
+  if (!storageRef || typeof storageRef.length !== 'number') {
+    return;
+  }
+
+  const keysToRemove = [];
+  for (let index = 0; index < storageRef.length; index += 1) {
+    const key = String(storageRef.key(index) || '').trim();
+    if (key && predicate(key)) {
+      keysToRemove.push(key);
+    }
+  }
+
+  keysToRemove.forEach((key) => {
+    storageRef.removeItem(key);
+  });
+};
+
+const clearUserScopedCachedState = (userId = '') => {
+  const normalizedUserId = normalizeUserId(userId);
+  if (!normalizedUserId) {
+    return;
+  }
+
+  const classSelectionKey = getClassSelectionKeyForUser(normalizedUserId);
+  const classSelectionOwnerKey = getClassSelectionOwnerKeyForUser(normalizedUserId);
+  const classCatalogKey = getClassCatalogCacheKeyForUser(normalizedUserId);
+  const rawDataPrefix = `${CACHE_KEY_PREFIX}:${normalizedUserId}:`;
+  const classCatalogPrefix = `${CACHE_KEY_PREFIX}:classes:${normalizedUserId}`;
+
+  getAvailableStorageRefs().forEach((storageRef) => {
+    clearStorageEntriesMatching(storageRef, (key) => {
+      return key === classSelectionKey
+        || key === classSelectionOwnerKey
+        || key === classCatalogKey
+        || key.startsWith(rawDataPrefix)
+        || key.startsWith(classCatalogPrefix);
+    });
+  });
+
+  if (
+    getAuthenticatedUserId() === normalizedUserId
+    || getCurrentUserId() === normalizedUserId
+    || currentClassOwnerId === normalizedUserId
+  ) {
+    setCurrentClassContext('', normalizedUserId, '', '');
+  }
+
+  invalidateRecentFetchAllDataCache();
+  globalClassCatalogCache.loadedAt = 0;
+};
+
+const purgeUserOwnedFirestoreData = async (userId = '') => {
+  const normalizedUserId = normalizeUserId(userId);
+  if (!normalizedUserId || !isFirebaseConfigured || !db) {
+    return;
+  }
+
+  const classesSnapshot = await getDocs(getClassesCollectionRef(normalizedUserId));
+  for (const entry of classesSnapshot.docs || []) {
+    const classId = normalizeClassId(entry.id);
+    if (!classId) {
+      continue;
+    }
+
+    await Promise.all([
+      deleteCollectionDocuments(getStudentsCollectionRef(normalizedUserId, classId)),
+      deleteCollectionDocuments(getSubjectsCollectionRef(normalizedUserId, classId)),
+      deleteCollectionDocuments(getExamsCollectionRef(normalizedUserId, classId))
+    ]);
+    await deleteDoc(entry.ref);
+  }
+
+  await Promise.all([
+    deleteCollectionDocuments(getLegacyStudentsCollectionRef(normalizedUserId)),
+    deleteCollectionDocuments(getLegacySubjectsCollectionRef(normalizedUserId)),
+    deleteCollectionDocuments(getLegacyExamsCollectionRef(normalizedUserId))
+  ]);
+};
+
 export const setCurrentClassId = (classId) => {
   return setCurrentClassContext(classId);
 };
@@ -3930,30 +4148,9 @@ export const fetchAdminUsers = async () => {
     return [];
   }
 
-  const usersSnapshot = await getDocs(collection(db, USERS_COLLECTION));
-  const users = [];
-
-  usersSnapshot.forEach((entry) => {
-    const payload = entry.data() || {};
-    const uid = normalizeUserId(payload.uid || payload.userId || entry.id || '');
-    if (!uid) {
-      return;
-    }
-
-    const email = String(payload.email || '').trim().toLowerCase();
-    const role = normalizeRole(payload.role || 'teacher');
-
-    users.push({
-      uid,
-      name: normalizeDisplayName(payload.name || payload.displayName || email || 'Teacher', 'Teacher'),
-      email,
-      role,
-      emailVerified: Boolean(payload.emailVerified),
-      createdAt: payload.createdAt || payload.updatedAt || null,
-      roleUpdatedAt: payload.roleUpdatedAt || null,
-      roleUpdatedBy: normalizeUserId(payload.roleUpdatedBy || ''),
-      status: String(payload.status || '').trim().toLowerCase() || 'active'
-    });
+  const privilegedDirectory = await readPrivilegedUserLifecycleDirectory();
+  const users = asArray(privilegedDirectory.users).filter((entry) => {
+    return normalizeAccountStatus(entry?.status) !== ACCOUNT_STATUS_DELETED;
   });
 
   return users.sort((a, b) => {
@@ -3970,8 +4167,14 @@ export const fetchGlobalStudentSearchIndex = async () => {
     return [];
   }
 
-  const snapshot = await getDocs(collectionGroup(db, STUDENTS_SUBCOLLECTION));
+  const [snapshot, privilegedDirectory] = await Promise.all([
+    getDocs(collectionGroup(db, STUDENTS_SUBCOLLECTION)),
+    readPrivilegedUserLifecycleDirectory()
+  ]);
   const dedupedStudents = new Map();
+  const ownerNameMap = privilegedDirectory.ownerNameMap || new Map();
+  const ownerRoleMap = privilegedDirectory.ownerRoleMap || new Map();
+  const deletedUserIds = privilegedDirectory.deletedUserIds || new Set();
 
   snapshot.forEach((entry) => {
     const payload = entry.data() || {};
@@ -3984,6 +4187,9 @@ export const fetchGlobalStudentSearchIndex = async () => {
     }
 
     const userId = normalizeUserId(parsedPath.ownerId || payload.ownerId || payload.userId || '');
+    if (!userId || deletedUserIds.has(userId)) {
+      return;
+    }
     const classId = normalizeClassId(parsedPath.classId || payload.classId || '');
     const className = normalizeClassName(payload.className || payload.class || '', '');
     const studentId = String(payload.id || parsedPath.studentDocId || entry.id || '').trim();
@@ -4000,7 +4206,8 @@ export const fetchGlobalStudentSearchIndex = async () => {
       id: studentId,
       studentId,
       name: normalizeStudentName(payload.name, 'Student'),
-      userRole: normalizeRole(payload.userRole || payload.role || 'teacher'),
+      ownerName: ownerNameMap.get(userId) || '',
+      userRole: ownerRoleMap.get(userId) || normalizeRole(payload.userRole || payload.role || 'teacher'),
       isClassScoped: Boolean(classId || parsedPath.isClassScoped)
     };
 
@@ -4024,11 +4231,15 @@ export const fetchAdminGlobalStats = async () => {
     };
   }
 
-  const [usersSnapshot, students, examsSnapshot] = await Promise.all([
-    getDocs(collection(db, USERS_COLLECTION)),
+  const [privilegedDirectory, students, examsSnapshot] = await Promise.all([
+    readPrivilegedUserLifecycleDirectory(),
     fetchGlobalStudentSearchIndex(),
     getDocs(collectionGroup(db, EXAMS_SUBCOLLECTION))
   ]);
+  const deletedUserIds = privilegedDirectory.deletedUserIds || new Set();
+  const activeUsers = asArray(privilegedDirectory.users).filter((entry) => {
+    return normalizeAccountStatus(entry?.status) !== ACCOUNT_STATUS_DELETED;
+  });
 
   let totalExams = 0;
   examsSnapshot.forEach((entry) => {
@@ -4036,15 +4247,208 @@ export const fetchAdminGlobalStats = async () => {
     if (payload.deleted === true) {
       return;
     }
+    const ownerId = normalizeUserId(payload.ownerId || payload.userId || getOwnerIdFromClassRefPath(entry.ref?.path));
+    if (ownerId && deletedUserIds.has(ownerId)) {
+      return;
+    }
     totalExams += 1;
   });
 
   return {
-    totalUsers: usersSnapshot.size,
+    totalUsers: activeUsers.length,
     totalStudents: Array.isArray(students) ? students.length : 0,
     totalExams
   };
 };
+
+export const requestCurrentUserAccountDeletion = async () => enqueueWrite(async () => {
+  const userId = await ensureAuthenticatedUserId('request account deletion');
+  if (!isFirebaseConfigured || !db) {
+    throw new Error('Firebase unavailable');
+  }
+
+  await ensureUserRootProfileDocument(userId);
+  const userPayload = await readUserRootData(userId);
+  const lifecycle = normalizeUserAccountLifecycleRecord(userPayload, {
+    status: ACCOUNT_STATUS_ACTIVE,
+    accountDeletionStatus: ACCOUNT_DELETION_STATUS_NONE
+  });
+
+  if (!normalizeUserId(userPayload.uid || userPayload.userId || userId)) {
+    throw new Error('Unable to resolve your account profile. Sign in again and retry.');
+  }
+  if (lifecycle.status === ACCOUNT_STATUS_DELETED) {
+    throw new Error('This account has already been deleted.');
+  }
+  if (lifecycle.accountDeletionStatus === ACCOUNT_DELETION_STATUS_PENDING) {
+    throw new Error('Your account deletion request is already pending review.');
+  }
+  if (lifecycle.accountDeletionStatus === ACCOUNT_DELETION_STATUS_APPROVED) {
+    throw new Error('Your account deletion request is already approved. Confirm deletion to continue.');
+  }
+
+  const updatedAt = new Date().toISOString();
+  const requestedAt = updatedAt;
+  await setDoc(getUserRootRef(userId), {
+    uid: userId,
+    userId,
+    status: ACCOUNT_STATUS_ACTIVE,
+    accountDeletionStatus: ACCOUNT_DELETION_STATUS_PENDING,
+    accountDeletionRequestedAt: serverTimestamp(),
+    accountDeletionRequestedBy: userId,
+    accountDeletionReviewedAt: null,
+    accountDeletionReviewedBy: '',
+    deletedAt: null,
+    updatedAt
+  }, { merge: true });
+
+  const updatedRecord = buildPrivilegedUserLifecycleRecord({
+    ...userPayload,
+    uid: userId,
+    userId,
+    status: ACCOUNT_STATUS_ACTIVE,
+    accountDeletionStatus: ACCOUNT_DELETION_STATUS_PENDING,
+    accountDeletionRequestedAt: requestedAt,
+    accountDeletionRequestedBy: userId,
+    accountDeletionReviewedAt: null,
+    accountDeletionReviewedBy: '',
+    deletedAt: null,
+    updatedAt
+  }, userId);
+
+  await logActivity('user_account_delete_requested', userId, 'record', {
+    dataOwnerUserId: userId,
+    targetLabel: buildUserLifecycleTargetLabel(updatedRecord, userId),
+    userRole: getCurrentUserRoleContext()
+  });
+
+  return updatedRecord;
+});
+
+export const reviewAdminUserAccountDeletion = async ({ uid = '', decision = '' } = {}) => enqueueWrite(async () => {
+  const actorUserId = await ensureAuthenticatedUserId('review account deletion');
+  assertAdminOrDeveloperRole('review account deletion');
+  if (!isFirebaseConfigured || !db) {
+    throw new Error('Firebase unavailable');
+  }
+
+  const normalizedUid = normalizeUserId(uid);
+  const normalizedDecision = String(decision || '').trim().toLowerCase();
+  if (!normalizedUid) {
+    throw new Error('User id is required');
+  }
+  if (normalizedDecision !== 'approve' && normalizedDecision !== 'reject') {
+    throw new Error('A valid review decision is required.');
+  }
+
+  const userSnapshot = await getDoc(getUserRootRef(normalizedUid));
+  if (!userSnapshot.exists()) {
+    throw new Error('Unable to find the selected user account.');
+  }
+
+  const userPayload = userSnapshot.data() || {};
+  const lifecycle = normalizeUserAccountLifecycleRecord(userPayload, {
+    status: ACCOUNT_STATUS_ACTIVE,
+    accountDeletionStatus: ACCOUNT_DELETION_STATUS_NONE
+  });
+  if (lifecycle.status === ACCOUNT_STATUS_DELETED) {
+    throw new Error('Deleted accounts cannot be reviewed.');
+  }
+  if (lifecycle.accountDeletionStatus !== ACCOUNT_DELETION_STATUS_PENDING) {
+    throw new Error('Only pending deletion requests can be reviewed.');
+  }
+
+  const nextDeletionStatus = normalizedDecision === 'approve'
+    ? ACCOUNT_DELETION_STATUS_APPROVED
+    : ACCOUNT_DELETION_STATUS_REJECTED;
+  const updatedAt = new Date().toISOString();
+  const reviewedAt = updatedAt;
+  await setDoc(getUserRootRef(normalizedUid), {
+    uid: normalizedUid,
+    userId: normalizedUid,
+    accountDeletionStatus: nextDeletionStatus,
+    accountDeletionReviewedAt: serverTimestamp(),
+    accountDeletionReviewedBy: actorUserId,
+    updatedAt
+  }, { merge: true });
+
+  const updatedRecord = buildPrivilegedUserLifecycleRecord({
+    ...userPayload,
+    uid: normalizedUid,
+    userId: normalizedUid,
+    accountDeletionStatus: nextDeletionStatus,
+    accountDeletionReviewedAt: reviewedAt,
+    accountDeletionReviewedBy: actorUserId,
+    updatedAt
+  }, normalizedUid);
+
+  await logActivity(
+    normalizedDecision === 'approve' ? 'user_account_delete_approved' : 'user_account_delete_rejected',
+    normalizedUid,
+    'record',
+    {
+      dataOwnerUserId: normalizedUid,
+      targetLabel: buildUserLifecycleTargetLabel(updatedRecord, normalizedUid),
+      userRole: getCurrentUserRoleContext()
+    }
+  );
+
+  return updatedRecord;
+});
+
+export const finalizeCurrentUserAccountDeletion = async () => enqueueWrite(async () => {
+  const userId = await ensureAuthenticatedUserId('finalize account deletion');
+  if (!isFirebaseConfigured || !db) {
+    throw new Error('Firebase unavailable');
+  }
+
+  const userPayload = await readUserRootData(userId);
+  const lifecycle = normalizeUserAccountLifecycleRecord(userPayload, {
+    status: ACCOUNT_STATUS_ACTIVE,
+    accountDeletionStatus: ACCOUNT_DELETION_STATUS_NONE
+  });
+  if (lifecycle.status === ACCOUNT_STATUS_DELETED) {
+    throw new Error('This account has already been deleted.');
+  }
+  if (lifecycle.accountDeletionStatus !== ACCOUNT_DELETION_STATUS_APPROVED) {
+    throw new Error('Your account deletion request must be approved before final confirmation.');
+  }
+
+  await purgeUserOwnedFirestoreData(userId);
+  const updatedAt = new Date().toISOString();
+  await mergeUserRootMetadata(userId, {
+    uid: userId,
+    activeClassId: '',
+    [ALLOW_EMPTY_CLASS_CATALOG_FIELD]: true,
+    updatedAt
+  });
+  await setDoc(getUserRootRef(userId), {
+    uid: userId,
+    userId,
+    status: ACCOUNT_STATUS_DELETED,
+    deletedAt: serverTimestamp(),
+    updatedAt
+  }, { merge: true });
+
+  clearUserScopedCachedState(userId);
+
+  const deletedRecord = buildPrivilegedUserLifecycleRecord({
+    ...userPayload,
+    uid: userId,
+    userId,
+    status: ACCOUNT_STATUS_DELETED,
+    deletedAt: updatedAt,
+    updatedAt
+  }, userId);
+
+  await logActivity('user_account_deleted', userId, 'record', {
+    dataOwnerUserId: userId,
+    targetLabel: buildUserLifecycleTargetLabel(deletedRecord, userId),
+    userRole: getCurrentUserRoleContext()
+  });
+
+  return deletedRecord;
+});
 
 export const updateAdminUserRole = async ({ uid = '', name = '', email = '', role = 'teacher' } = {}) => {
   const actorUserId = await ensureAuthenticatedUserId('update user role');
@@ -4098,13 +4502,18 @@ export const updateAdminUserRole = async ({ uid = '', name = '', email = '', rol
     userRole: getCurrentUserRoleContext()
   });
 
-  return {
+  return buildPrivilegedUserLifecycleRecord({
+    ...userPayload,
     uid: normalizedUid,
+    userId: normalizedUid,
+    name: resolvedName,
+    email: resolvedEmail,
     role: normalizedRole,
     emailVerified,
+    updatedAt,
     roleUpdatedAt: updatedAt,
     roleUpdatedBy: actorUserId
-  };
+  }, normalizedUid);
 };
 
 export const syncCurrentUserClassOwnerName = async (ownerName = '') => {

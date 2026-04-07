@@ -5,8 +5,28 @@
 
 import app from './state.js';
 import { auth } from './firebase.js';
-import { syncCurrentUserClassOwnerName } from '../services/db.js';
-import { formatAuthError, normalizeUserRole, updateCurrentUserProfile } from './auth.js';
+import {
+  finalizeCurrentUserAccountDeletion,
+  requestCurrentUserAccountDeletion,
+  syncCurrentUserClassOwnerName
+} from '../services/db.js';
+import {
+  ACCOUNT_DELETION_STATUS_APPROVED,
+  ACCOUNT_DELETION_STATUS_NONE,
+  ACCOUNT_DELETION_STATUS_PENDING,
+  ACCOUNT_DELETION_STATUS_REJECTED,
+  ACCOUNT_STATUS_ACTIVE,
+  ACCOUNT_STATUS_DELETED,
+  deleteCurrentAuthenticatedUser,
+  formatAuthError,
+  logoutUser,
+  normalizeAccountDeletionStatus,
+  normalizeAccountStatus,
+  normalizeUserRole,
+  requestPasswordReset,
+  updateCurrentUserProfile
+} from './auth.js';
+import { storeAuthPageNotice } from './auth-notices.js';
 import dashboardUi from './ui-dashboard.js';
 
 // DOM Node References
@@ -153,9 +173,13 @@ const domIds = {
   accountSettingsClassValue: 'account-settings-class-value',
   accountSettingsEmailStatusValue: 'account-settings-email-status-value',
   accountSettingsSessionStatus: 'account-settings-session-status',
+  accountSettingsDeletionStatusValue: 'account-settings-deletion-status-value',
+  accountSettingsDeletionHelp: 'account-settings-deletion-help',
   accountSettingsFeedback: 'account-settings-feedback',
   accountSettingsSaveBtn: 'account-settings-save-btn',
   accountSettingsResetBtn: 'account-settings-reset-btn',
+  accountSettingsPasswordResetBtn: 'account-settings-password-reset-btn',
+  accountSettingsDeleteBtn: 'account-settings-delete-btn',
   authRoleBadge: 'auth-role-badge'
 };
 
@@ -190,6 +214,7 @@ const ui = {
   hasBoundAccessGuardEvents: false,
   bulkClassDeleteSelection: [],
   isSavingAccountSettings: false,
+  accountSettingsBusyAction: '',
   toastTimer: null,
   loaderHideTimer: null,
   loaderRequestCount: 0,
@@ -935,12 +960,95 @@ const ui = {
     },
 
     formatAccountTimestamp: function (value, fallback = 'Not available') {
-      const parsed = new Date(value || '');
+      const resolvedValue = typeof value?.toDate === 'function'
+        ? value.toDate()
+        : value;
+      const parsed = resolvedValue instanceof Date
+        ? resolvedValue
+        : new Date(resolvedValue || '');
       if (Number.isNaN(parsed.getTime())) {
         return fallback;
       }
 
       return parsed.toLocaleString();
+    },
+
+    getCurrentAccountLifecycle: function (profile = app.state.authUser || {}) {
+      return {
+        status: normalizeAccountStatus(profile?.status ?? ACCOUNT_STATUS_ACTIVE),
+        accountDeletionStatus: normalizeAccountDeletionStatus(
+          profile?.accountDeletionStatus ?? ACCOUNT_DELETION_STATUS_NONE
+        ),
+        accountDeletionRequestedAt: profile?.accountDeletionRequestedAt ?? null,
+        accountDeletionReviewedAt: profile?.accountDeletionReviewedAt ?? null,
+        deletedAt: profile?.deletedAt ?? null
+      };
+    },
+
+    getAccountDeletionUiState: function (profile = app.state.authUser || {}) {
+      const lifecycle = this.getCurrentAccountLifecycle(profile);
+      const requestedAtLabel = this.formatAccountTimestamp(lifecycle.accountDeletionRequestedAt, '');
+      const reviewedAtLabel = this.formatAccountTimestamp(lifecycle.accountDeletionReviewedAt, '');
+
+      if (lifecycle.status === ACCOUNT_STATUS_DELETED) {
+        return {
+          label: lifecycle.deletedAt
+            ? `Deleted on ${this.formatAccountTimestamp(lifecycle.deletedAt, 'Not available')}`
+            : 'Account deleted',
+          tone: 'deleted',
+          help: 'This account has already been deleted.',
+          buttonLabel: 'Account Deleted',
+          disableDeleteButton: true,
+          canRequest: false,
+          canFinalize: false
+        };
+      }
+
+      if (lifecycle.accountDeletionStatus === ACCOUNT_DELETION_STATUS_APPROVED) {
+        return {
+          label: reviewedAtLabel ? `Approved on ${reviewedAtLabel}` : 'Approved - final confirmation required',
+          tone: 'approved',
+          help: 'Your request was approved. Select delete account to permanently remove your account and owned data.',
+          buttonLabel: 'Confirm Delete Account',
+          disableDeleteButton: false,
+          canRequest: false,
+          canFinalize: true
+        };
+      }
+
+      if (lifecycle.accountDeletionStatus === ACCOUNT_DELETION_STATUS_PENDING) {
+        return {
+          label: requestedAtLabel ? `Pending since ${requestedAtLabel}` : 'Pending admin or developer review',
+          tone: 'pending',
+          help: 'Your deletion request is pending review. Once approved, return here to finalize deletion.',
+          buttonLabel: 'Deletion Request Pending',
+          disableDeleteButton: true,
+          canRequest: false,
+          canFinalize: false
+        };
+      }
+
+      if (lifecycle.accountDeletionStatus === ACCOUNT_DELETION_STATUS_REJECTED) {
+        return {
+          label: reviewedAtLabel ? `Rejected on ${reviewedAtLabel}` : 'Rejected - you can submit a new request',
+          tone: 'rejected',
+          help: 'Your last deletion request was rejected. You can submit a new request if you still want the account removed.',
+          buttonLabel: 'Request Account Deletion',
+          disableDeleteButton: false,
+          canRequest: true,
+          canFinalize: false
+        };
+      }
+
+      return {
+        label: 'No request submitted',
+        tone: 'inactive',
+        help: 'Deletion requests stay pending until an admin or developer reviews them.',
+        buttonLabel: 'Request Account Deletion',
+        disableDeleteButton: false,
+        canRequest: true,
+        canFinalize: false
+      };
     },
 
     setAccountSettingsFeedback: function (message = '', tone = 'neutral') {
@@ -976,21 +1084,43 @@ const ui = {
       return Boolean(currentValue) && currentValue !== initialValue;
     },
 
-    setAccountSettingsBusy: function (isBusy) {
-      this.isSavingAccountSettings = Boolean(isBusy);
+    setAccountSettingsBusy: function (isBusy, action = '') {
+      const nextBusy = Boolean(isBusy);
+      const normalizedAction = String(action || this.accountSettingsBusyAction || 'save').trim().toLowerCase();
+      this.accountSettingsBusyAction = nextBusy ? normalizedAction : '';
+      this.isSavingAccountSettings = nextBusy && normalizedAction === 'save';
       const hasSession = Boolean(app.state.authUser?.uid);
-      const shouldDisableControls = this.isSavingAccountSettings || !hasSession;
+      const shouldDisableControls = nextBusy || !hasSession;
       const hasPendingChanges = this.hasPendingAccountSettingsChanges();
+      const deletionState = hasSession
+        ? this.getAccountDeletionUiState(app.state.authUser)
+        : {
+          buttonLabel: 'Request Account Deletion',
+          disableDeleteButton: true,
+          canFinalize: false
+        };
 
       if (app.dom.accountSettingsNameInput) {
         app.dom.accountSettingsNameInput.disabled = shouldDisableControls;
       }
       if (app.dom.accountSettingsSaveBtn) {
         app.dom.accountSettingsSaveBtn.disabled = shouldDisableControls || !hasPendingChanges;
-        app.dom.accountSettingsSaveBtn.textContent = this.isSavingAccountSettings ? 'Saving...' : 'Save Changes';
+        app.dom.accountSettingsSaveBtn.textContent = this.accountSettingsBusyAction === 'save' ? 'Saving...' : 'Save Changes';
       }
       if (app.dom.accountSettingsResetBtn) {
         app.dom.accountSettingsResetBtn.disabled = shouldDisableControls || !hasPendingChanges;
+      }
+      if (app.dom.accountSettingsPasswordResetBtn) {
+        app.dom.accountSettingsPasswordResetBtn.disabled = shouldDisableControls;
+        app.dom.accountSettingsPasswordResetBtn.textContent = this.accountSettingsBusyAction === 'password-reset'
+          ? 'Sending...'
+          : 'Send Password Reset';
+      }
+      if (app.dom.accountSettingsDeleteBtn) {
+        app.dom.accountSettingsDeleteBtn.disabled = shouldDisableControls || deletionState.disableDeleteButton;
+        app.dom.accountSettingsDeleteBtn.textContent = this.accountSettingsBusyAction === 'delete'
+          ? (deletionState.canFinalize ? 'Deleting...' : 'Requesting...')
+          : deletionState.buttonLabel;
       }
     },
 
@@ -1003,8 +1133,18 @@ const ui = {
       const normalizedName = String(profile?.name || app.state.authUser?.name || app.state.authUser?.email || '').trim();
       const normalizedEmail = String(profile?.email || app.state.authUser?.email || '').trim();
       const normalizedRole = normalizeUserRole(profile?.role || app.state.authUser?.role || app.state.currentUserRole);
+      const normalizedEmailVerified = Boolean(profile?.emailVerified ?? app.state.authUser?.emailVerified);
       const createdAt = profile?.createdAt ?? app.state.authUser?.createdAt ?? null;
       const updatedAt = profile?.updatedAt ?? app.state.authUser?.updatedAt ?? null;
+      const status = normalizeAccountStatus(profile?.status ?? app.state.authUser?.status ?? ACCOUNT_STATUS_ACTIVE);
+      const accountDeletionStatus = normalizeAccountDeletionStatus(
+        profile?.accountDeletionStatus ?? app.state.authUser?.accountDeletionStatus ?? ACCOUNT_DELETION_STATUS_NONE
+      );
+      const accountDeletionRequestedAt = profile?.accountDeletionRequestedAt ?? app.state.authUser?.accountDeletionRequestedAt ?? null;
+      const accountDeletionRequestedBy = profile?.accountDeletionRequestedBy ?? app.state.authUser?.accountDeletionRequestedBy ?? '';
+      const accountDeletionReviewedAt = profile?.accountDeletionReviewedAt ?? app.state.authUser?.accountDeletionReviewedAt ?? null;
+      const accountDeletionReviewedBy = profile?.accountDeletionReviewedBy ?? app.state.authUser?.accountDeletionReviewedBy ?? '';
+      const deletedAt = profile?.deletedAt ?? app.state.authUser?.deletedAt ?? null;
 
       app.state.authUser = {
         ...(app.state.authUser || {}),
@@ -1012,8 +1152,16 @@ const ui = {
         name: normalizedName,
         email: normalizedEmail,
         role: normalizedRole,
+        emailVerified: normalizedEmailVerified,
         createdAt,
-        updatedAt
+        updatedAt,
+        status,
+        accountDeletionStatus,
+        accountDeletionRequestedAt,
+        accountDeletionRequestedBy,
+        accountDeletionReviewedAt,
+        accountDeletionReviewedBy,
+        deletedAt
       };
 
       if (typeof window !== 'undefined') {
@@ -1076,6 +1224,13 @@ const ui = {
           : normalizedRole === 'admin' || normalizedRole === 'developer'
             ? { label: 'Manual review for this role', tone: 'managed' }
             : { label: 'Pending verification', tone: 'attention' };
+      const deletionState = hasSession
+        ? this.getAccountDeletionUiState(app.state.authUser)
+        : {
+          label: 'Not available',
+          tone: 'inactive',
+          help: 'Sign in to manage password reset and deletion options.'
+        };
       const shouldPreserveDraft = document.activeElement === app.dom.accountSettingsNameInput && !this.isSavingAccountSettings;
       const currentDraftValue = shouldPreserveDraft ? String(app.dom.accountSettingsNameInput?.value || '') : '';
 
@@ -1102,6 +1257,13 @@ const ui = {
         app.dom.accountSettingsEmailStatusValue.textContent = emailStatus.label;
         app.dom.accountSettingsEmailStatusValue.dataset.tone = emailStatus.tone;
       }
+      if (app.dom.accountSettingsDeletionStatusValue) {
+        app.dom.accountSettingsDeletionStatusValue.textContent = deletionState.label;
+        app.dom.accountSettingsDeletionStatusValue.dataset.tone = deletionState.tone;
+      }
+      if (app.dom.accountSettingsDeletionHelp) {
+        app.dom.accountSettingsDeletionHelp.textContent = deletionState.help;
+      }
       if (app.dom.accountSettingsSessionStatus) {
         app.dom.accountSettingsSessionStatus.textContent = hasSession
           ? `Signed in as ${displayName || email || 'User'}`
@@ -1112,7 +1274,7 @@ const ui = {
       if (!preserveFeedback) {
         this.setAccountSettingsFeedback('');
       }
-      this.setAccountSettingsBusy(this.isSavingAccountSettings);
+      this.setAccountSettingsBusy(Boolean(this.accountSettingsBusyAction), this.accountSettingsBusyAction);
     },
 
     saveAccountSettings: async function () {
@@ -1126,7 +1288,7 @@ const ui = {
       this.setAccountSettingsFeedback('');
 
       await this.withLoader(async () => {
-        this.setAccountSettingsBusy(true);
+        this.setAccountSettingsBusy(true, 'save');
         try {
           const profile = await updateCurrentUserProfile({ name: requestedName });
           await syncCurrentUserClassOwnerName(profile?.name || requestedName);
@@ -1149,6 +1311,105 @@ const ui = {
         }
       }, {
         message: 'Saving account settings...'
+      });
+    },
+
+    sendAccountSettingsPasswordReset: async function () {
+      const authUid = String(app.state.authUser?.uid || '').trim();
+      const email = String(app.state.authUser?.email || '').trim();
+      if (!authUid || !email) {
+        this.setAccountSettingsFeedback('You must be signed in with a valid email to reset your password.', 'error');
+        return;
+      }
+
+      this.setAccountSettingsFeedback('');
+
+      await this.withLoader(async () => {
+        this.setAccountSettingsBusy(true, 'password-reset');
+        try {
+          await requestPasswordReset(email);
+          this.setAccountSettingsFeedback(`Password reset instructions were sent to ${email}.`, 'success');
+          this.showToast('Password reset email sent');
+        } catch (error) {
+          console.error('Failed to send password reset email:', error);
+          const message = formatAuthError(error);
+          this.setAccountSettingsFeedback(message, 'error');
+          this.showToast(message);
+        } finally {
+          this.setAccountSettingsBusy(false);
+        }
+      }, {
+        message: 'Sending password reset email...'
+      });
+    },
+
+    handleAccountSettingsDeletionAction: async function () {
+      const authUid = String(app.state.authUser?.uid || '').trim();
+      if (!authUid) {
+        this.setAccountSettingsFeedback('You must be signed in to manage account deletion.', 'error');
+        return;
+      }
+
+      const deletionState = this.getAccountDeletionUiState(app.state.authUser);
+      if (!deletionState.canRequest && !deletionState.canFinalize) {
+        this.setAccountSettingsFeedback(deletionState.help, 'error');
+        return;
+      }
+
+      const shouldContinue = window.confirm(
+        deletionState.canFinalize
+          ? 'Delete this account permanently? This removes your account data, signs you out, and cannot be undone.'
+          : 'Submit an account deletion request? An admin or developer must review and approve it before you can permanently delete your account.'
+      );
+      if (!shouldContinue) {
+        return;
+      }
+
+      await this.withLoader(async () => {
+        this.setAccountSettingsBusy(true, 'delete');
+        try {
+          if (deletionState.canFinalize) {
+            const deletedProfile = await finalizeCurrentUserAccountDeletion();
+            this.syncLocalAccountIdentity({
+              ...deletedProfile,
+              uid: deletedProfile?.uid || authUid
+            });
+
+            storeAuthPageNotice('Your account has been removed. Sign in with another account to continue.', 'success');
+
+            try {
+              await deleteCurrentAuthenticatedUser();
+            } catch (authError) {
+              console.error('Failed to remove authenticated account after finalization:', authError);
+              try {
+                await logoutUser();
+              } catch (logoutError) {
+                console.error('Failed to sign out after account finalization:', logoutError);
+              }
+            }
+
+            window.location.replace('/login.html');
+            return;
+          }
+
+          const updatedProfile = await requestCurrentUserAccountDeletion();
+          this.syncLocalAccountIdentity({
+            ...updatedProfile,
+            uid: updatedProfile?.uid || authUid
+          });
+          this.renderAccountSettings({ preserveFeedback: true });
+          this.setAccountSettingsFeedback('Your account deletion request was submitted for review.', 'success');
+          this.showToast('Deletion request submitted');
+        } catch (error) {
+          console.error('Failed to process account deletion action:', error);
+          const message = formatAuthError(error);
+          this.setAccountSettingsFeedback(message, 'error');
+          this.showToast(message);
+        } finally {
+          this.setAccountSettingsBusy(false);
+        }
+      }, {
+        message: deletionState.canFinalize ? 'Deleting account...' : 'Submitting deletion request...'
       });
     },
 
@@ -2738,12 +2999,22 @@ const ui = {
             this.resetAccountSettingsForm();
           };
         }
+        if (app.dom.accountSettingsPasswordResetBtn) {
+          app.dom.accountSettingsPasswordResetBtn.onclick = async () => {
+            await this.sendAccountSettingsPasswordReset();
+          };
+        }
+        if (app.dom.accountSettingsDeleteBtn) {
+          app.dom.accountSettingsDeleteBtn.onclick = async () => {
+            await this.handleAccountSettingsDeletionAction();
+          };
+        }
         if (app.dom.accountSettingsNameInput) {
           app.dom.accountSettingsNameInput.oninput = () => {
             if (app.dom.accountSettingsFeedback?.textContent) {
               this.setAccountSettingsFeedback('');
             }
-            this.setAccountSettingsBusy(this.isSavingAccountSettings);
+            this.setAccountSettingsBusy(Boolean(this.accountSettingsBusyAction), this.accountSettingsBusyAction);
           };
         }
 

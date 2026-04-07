@@ -33,18 +33,10 @@ const storeNotice = (storageKey, message, tone = 'info') => {
   }));
 };
 
-const consumeNotice = (storageKey) => {
-  const storage = getSessionStorageRef();
-  if (!storage) {
-    return null;
-  }
-
-  const stored = storage.getItem(storageKey);
+const parseStoredNotice = (stored) => {
   if (!stored) {
     return null;
   }
-
-  storage.removeItem(storageKey);
 
   try {
     const parsed = JSON.parse(stored);
@@ -70,11 +62,37 @@ const consumeNotice = (storageKey) => {
   }
 };
 
+const consumeNotice = (storageKey) => {
+  const storage = getSessionStorageRef();
+  if (!storage) {
+    return null;
+  }
+
+  const stored = storage.getItem(storageKey);
+  if (!stored) {
+    return null;
+  }
+
+  storage.removeItem(storageKey);
+
+  return parseStoredNotice(stored);
+};
+
+const peekNotice = (storageKey) => {
+  const storage = getSessionStorageRef();
+  if (!storage) {
+    return null;
+  }
+
+  return parseStoredNotice(storage.getItem(storageKey));
+};
+
 export const storeAuthPageNotice = (message, tone = 'info') => {
   storeNotice(AUTH_PAGE_NOTICE_KEY, message, tone);
 };
 
 export const consumeAuthPageNotice = () => consumeNotice(AUTH_PAGE_NOTICE_KEY);
+export const peekAuthPageNotice = () => peekNotice(AUTH_PAGE_NOTICE_KEY);
 
 export const storeAppToastNotice = (message, tone = 'info') => {
   storeNotice(APP_TOAST_NOTICE_KEY, message, tone);

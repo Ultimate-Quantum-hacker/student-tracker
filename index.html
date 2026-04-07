@@ -1022,7 +1022,7 @@
                   <p id="account-settings-feedback" class="account-settings-feedback" hidden aria-live="polite"></p>
                   <div class="account-settings-actions">
                     <button type="submit" class="btn btn-primary" id="account-settings-save-btn">Save Changes</button>
-                    <button type="button" class="btn btn-secondary" id="account-settings-reset-btn">Reset</button>
+                    <button type="button" class="btn btn-secondary" id="account-settings-reset-btn">Discard Changes</button>
                   </div>
                 </form>
               </div>
@@ -1048,6 +1048,23 @@
                 <div class="account-settings-meta-item">
                   <span class="account-settings-meta-label">Current Class</span>
                   <strong id="account-settings-class-value">No class selected</strong>
+                </div>
+              </div>
+              <div class="page-stack">
+                <div>
+                  <h3>Security Actions</h3>
+                  <p class="section-subtitle">Send a password reset email or manage a deletion request that must be reviewed before final confirmation.</p>
+                </div>
+                <div class="account-settings-meta">
+                  <div class="account-settings-meta-item">
+                    <span class="account-settings-meta-label">Deletion Request</span>
+                    <strong id="account-settings-deletion-status-value">No request submitted</strong>
+                  </div>
+                </div>
+                <p id="account-settings-deletion-help" class="account-settings-helper-text">Deletion requests stay pending until an admin or developer reviews them.</p>
+                <div class="account-settings-actions account-settings-security-actions">
+                  <button type="button" class="btn btn-secondary" id="account-settings-password-reset-btn">Send Password Reset</button>
+                  <button type="button" class="btn btn-danger" id="account-settings-delete-btn">Request Account Deletion</button>
                 </div>
               </div>
             </div>

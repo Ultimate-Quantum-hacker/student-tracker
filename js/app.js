@@ -20,11 +20,13 @@ import {
   formatAuthError,
   isAuthAvailable,
   resolveUserAccountProfile,
+  isDeletedAccountProfile,
   normalizeUserRole,
   shouldBlockForEmailVerification
 } from './auth.js';
 import {
   consumeAppToastNotice,
+  peekAuthPageNotice,
   storeAuthPageNotice
 } from './auth-notices.js';
 
@@ -37,7 +39,8 @@ const LOGIN_PAGE_PATH = '/login.html';
 const VERIFY_EMAIL_PAGE_PATH = '/verify-email.html';
 
 const redirectToLogin = (notice = null) => {
-  if (notice?.message) {
+  const queuedNotice = peekAuthPageNotice();
+  if (notice?.message && !queuedNotice?.message) {
     storeAuthPageNotice(notice.message, notice.tone || 'info');
   }
   if (window.location.pathname.endsWith(LOGIN_PAGE_PATH)) return;
@@ -100,7 +103,14 @@ const setResolvedUserRole = async (authUser) => {
       role: normalizedRole,
       emailVerified: resolvedProfile.emailVerified,
       createdAt: resolvedProfile?.createdAt || app.state.authUser?.createdAt || null,
-      updatedAt: resolvedProfile?.updatedAt || app.state.authUser?.updatedAt || null
+      updatedAt: resolvedProfile?.updatedAt || app.state.authUser?.updatedAt || null,
+      status: resolvedProfile?.status || app.state.authUser?.status || 'active',
+      accountDeletionStatus: resolvedProfile?.accountDeletionStatus || app.state.authUser?.accountDeletionStatus || 'none',
+      accountDeletionRequestedAt: resolvedProfile?.accountDeletionRequestedAt ?? app.state.authUser?.accountDeletionRequestedAt ?? null,
+      accountDeletionRequestedBy: resolvedProfile?.accountDeletionRequestedBy ?? app.state.authUser?.accountDeletionRequestedBy ?? '',
+      accountDeletionReviewedAt: resolvedProfile?.accountDeletionReviewedAt ?? app.state.authUser?.accountDeletionReviewedAt ?? null,
+      accountDeletionReviewedBy: resolvedProfile?.accountDeletionReviewedBy ?? app.state.authUser?.accountDeletionReviewedBy ?? '',
+      deletedAt: resolvedProfile?.deletedAt ?? app.state.authUser?.deletedAt ?? null
     };
   }
 
@@ -135,7 +145,14 @@ const setAuthUserState = (authUser) => {
       role: authUser.role || existingAuthUser?.role || '',
       emailVerified: Boolean(authUser.emailVerified ?? existingAuthUser?.emailVerified),
       createdAt: authUser.createdAt || existingAuthUser?.createdAt || null,
-      updatedAt: authUser.updatedAt || existingAuthUser?.updatedAt || null
+      updatedAt: authUser.updatedAt || existingAuthUser?.updatedAt || null,
+      status: authUser.status || existingAuthUser?.status || 'active',
+      accountDeletionStatus: authUser.accountDeletionStatus || existingAuthUser?.accountDeletionStatus || 'none',
+      accountDeletionRequestedAt: authUser.accountDeletionRequestedAt ?? existingAuthUser?.accountDeletionRequestedAt ?? null,
+      accountDeletionRequestedBy: authUser.accountDeletionRequestedBy ?? existingAuthUser?.accountDeletionRequestedBy ?? '',
+      accountDeletionReviewedAt: authUser.accountDeletionReviewedAt ?? existingAuthUser?.accountDeletionReviewedAt ?? null,
+      accountDeletionReviewedBy: authUser.accountDeletionReviewedBy ?? existingAuthUser?.accountDeletionReviewedBy ?? '',
+      deletedAt: authUser.deletedAt ?? existingAuthUser?.deletedAt ?? null
     }
     : null;
 
@@ -174,6 +191,21 @@ const clearLoadedDataForLogout = () => {
   }
 };
 
+const handleDeletedAccountSession = async () => {
+  try {
+    await logoutUser();
+  } catch (error) {
+    console.error('Failed to sign out deleted account session:', error);
+  }
+
+  setAuthUserState(null);
+  clearLoadedDataForLogout();
+  redirectToLogin({
+    message: 'This account has been deleted. Sign in with another account to continue.',
+    tone: 'info'
+  });
+};
+
 const ensureAuthenticatedSession = async () => {
   if (!isAuthAvailable()) {
     console.error('Authentication service unavailable. Redirecting to login.');
@@ -196,6 +228,10 @@ const ensureAuthenticatedSession = async () => {
 
     setAuthUserState(authUser);
     const resolvedProfile = await setResolvedUserRole(authUser);
+    if (isDeletedAccountProfile(resolvedProfile)) {
+      await handleDeletedAccountSession();
+      return false;
+    }
     if (shouldBlockForEmailVerification(resolvedProfile, resolvedProfile?.role)) {
       redirectToVerification({
         message: 'Verify your email to continue to the dashboard.',
@@ -245,6 +281,10 @@ const handleAuthUserChange = async (authUser) => {
 
   setAuthUserState(authUser);
   const resolvedProfile = await setResolvedUserRole(authUser);
+  if (isDeletedAccountProfile(resolvedProfile)) {
+    await handleDeletedAccountSession();
+    return;
+  }
   if (shouldBlockForEmailVerification(resolvedProfile, resolvedProfile?.role)) {
     redirectToVerification({
       message: 'Verify your email to continue to the dashboard.',
@@ -287,6 +327,7 @@ const ensureLogoutButton = () => {
 
   const headerControls = document.querySelector('.header-controls');
   if (!headerControls) return;
+  const themeToggle = document.getElementById('themeToggle');
 
   const authControl = document.createElement('div');
   authControl.className = 'auth-session-control';
@@ -337,6 +378,9 @@ const ensureLogoutButton = () => {
     }
   });
 
+  if (themeToggle) {
+    authControl.appendChild(themeToggle);
+  }
   authControl.appendChild(avatar);
   authControl.appendChild(roleBadge);
   authControl.appendChild(button);

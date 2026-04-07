@@ -4,6 +4,7 @@ import {
   loginUser,
   requestPasswordReset,
   formatAuthError,
+  isDeletedAccountProfile,
   isAuthAvailable,
   resolveUserAccountProfile,
   shouldBlockForEmailVerification,
@@ -77,6 +78,13 @@ const resolveRedirectTarget = async (authUser) => {
   }
 
   const profile = await resolveAuthProfile(authUser);
+  if (isDeletedAccountProfile(profile)) {
+    return {
+      destination: 'login',
+      profile
+    };
+  }
+
   return {
     destination: shouldBlockForEmailVerification(profile, profile?.role) ? 'verify-email' : 'dashboard',
     profile
@@ -85,7 +93,20 @@ const resolveRedirectTarget = async (authUser) => {
 
 const routeAuthenticatedUser = async (authUser, { verificationRequiredNotice = null, dashboardNotice = null } = {}) => {
   const decision = await resolveRedirectTarget(authUser);
-  if (decision.destination === 'verify-email') {
+  if (decision.destination === 'login') {
+    storeAuthPageNotice('This account has been deleted. Sign in with another account to continue.', 'info');
+    try {
+      await logoutUser();
+    } catch (error) {
+      console.error('Failed to sign out deleted account session:', error);
+    }
+
+    if (window.location.pathname.endsWith(LOGIN_PAGE_PATH)) {
+      window.location.reload();
+    } else {
+      redirectToLogin();
+    }
+  } else if (decision.destination === 'verify-email') {
     if (verificationRequiredNotice?.message) {
       storeAuthPageNotice(verificationRequiredNotice.message, verificationRequiredNotice.tone || 'info');
     }
