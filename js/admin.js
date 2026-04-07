@@ -10,6 +10,7 @@ import {
   normalizeAccountStatus,
   resolveUserRole,
   normalizeUserRole,
+  canAccessAdminPanel,
   logoutUser,
   formatAuthError
 } from './auth.js';
@@ -134,10 +135,12 @@ import {
 const DASHBOARD_PATH = '/index.html';
 const LOGIN_PATH = '/login.html';
 const ROLE_TEACHER = 'teacher';
+const ROLE_HEAD_TEACHER = 'head_teacher';
 const ROLE_ADMIN = 'admin';
 const ROLE_DEVELOPER = 'developer';
-const UPDATABLE_ROLES = [ROLE_TEACHER, ROLE_ADMIN];
+const UPDATABLE_ROLES = [ROLE_TEACHER, ROLE_HEAD_TEACHER, ROLE_ADMIN];
 const THEME_STORAGE_KEY = 'theme';
+
 const ADMIN_STUDENTS_PAGE_SIZE = 50;
 const ADMIN_STUDENTS_TABLE_COLUMN_COUNT = 4;
 const ADMIN_ACTIVITY_LOG_FETCH_LIMIT = 250;
@@ -575,7 +578,7 @@ const updatePanelRoleBadge = () => {
   if (!dom.roleBadge) return;
   const roleLabel = formatRoleLabel(state.currentRole);
   dom.roleBadge.textContent = roleLabel;
-  dom.roleBadge.classList.remove('role-teacher', 'role-admin', 'role-developer', 'role-student');
+  dom.roleBadge.classList.remove('role-teacher', 'role-head-teacher', 'role-admin', 'role-developer', 'role-student');
   dom.roleBadge.classList.add(getRoleBadgeClass(state.currentRole));
 };
 
@@ -687,11 +690,10 @@ const renderUsersTable = () => {
       }
       actionWrap.appendChild(updateBtn);
     } else if (!hasPendingDeletionRequest) {
-      const helperMessage = canManageAdminRoles(state.currentRole)
-        ? rolePolicyLabel
-        : roleActionLocked
-          ? accountSummary
-          : 'Developer-only role changes';
+      const canUpdateRole = canManageAdminRoles(state.currentRole);
+      const helperMessage = canUpdateRole
+        ? 'Developer-managed role changes'
+        : 'Developer-only role changes';
       actionHelperMarkup.push(buildTableHelperTextMarkup(helperMessage));
     } else if (!canReviewDeletionRequest) {
       actionHelperMarkup.push(buildTableHelperTextMarkup('Admin-only deletion review'));
@@ -1415,7 +1417,7 @@ const ensurePanelAccess = async () => {
   updatePanelAccessSummary();
   updateAdminActionBoundaryState();
 
-  if (state.currentRole !== ROLE_ADMIN && state.currentRole !== ROLE_DEVELOPER) {
+  if (!canAccessAdminPanel(state.currentRole)) {
     redirectToDashboard();
     return false;
   }

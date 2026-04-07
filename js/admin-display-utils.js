@@ -1,6 +1,8 @@
 import { normalizeUserRole } from './auth.js';
+import { ROLE_HEAD_TEACHER, formatUserRoleLabel } from './access-control.js';
 
 const ROLE_TEACHER = 'teacher';
+const ROLE_HEAD_TEACHER_KEY = 'head_teacher';
 const ROLE_ADMIN = 'admin';
 const ROLE_DEVELOPER = 'developer';
 const ROLE_STUDENT = 'student';
@@ -85,6 +87,7 @@ const getAvatarToneClass = (role = '') => {
   const normalized = normalizeText(role).toLowerCase();
   if (normalized === ROLE_DEVELOPER) return 'role-developer';
   if (normalized === ROLE_ADMIN) return 'role-admin';
+  if (normalized === ROLE_HEAD_TEACHER_KEY) return 'role-head-teacher';
   if (normalized === ROLE_TEACHER) return 'role-teacher';
   if (normalized === ROLE_STUDENT) return 'role-student';
   return 'role-default';
@@ -285,9 +288,8 @@ export const buildGlobalSearchResultRowMarkup = ({
    const rawRole = normalizeText(role).toLowerCase();
    if (rawRole === ROLE_STUDENT) return 'Student';
    const normalized = normalizeUserRole(role);
-   if (normalized === ROLE_DEVELOPER) return 'Developer';
-   if (normalized === ROLE_ADMIN) return 'Admin';
-   return 'Teacher';
+   if (normalized === ROLE_HEAD_TEACHER || normalized === ROLE_HEAD_TEACHER_KEY) return 'Head Teacher';
+   return formatUserRoleLabel(normalized);
  };
 
  export const getRoleBadgeClass = (role) => {
@@ -296,6 +298,7 @@ export const buildGlobalSearchResultRowMarkup = ({
    const normalized = normalizeUserRole(role);
    if (normalized === ROLE_DEVELOPER) return 'role-developer';
    if (normalized === ROLE_ADMIN) return 'role-admin';
+   if (normalized === ROLE_HEAD_TEACHER || normalized === ROLE_HEAD_TEACHER_KEY) return 'role-head-teacher';
    return 'role-teacher';
  };
 

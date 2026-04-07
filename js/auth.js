@@ -17,15 +17,122 @@ import {
   reload,
   deleteUser
 } from './firebase.js';
+import {
+  DEFAULT_USER_ROLE,
+  ROLE_TEACHER,
+  ROLE_HEAD_TEACHER,
+  ROLE_ADMIN,
+  ROLE_DEVELOPER,
+  ROLE_LEGACY_USER,
+  USER_ROLES,
+  PERMISSION_READ_OWN_CLASS_DATA,
+  PERMISSION_WRITE_OWN_CLASS_DATA,
+  PERMISSION_READ_ALL_DATA,
+  PERMISSION_WRITE_ALL_TEACHER_DATA,
+  PERMISSION_SEND_MESSAGES,
+  PERMISSION_MESSAGE_ALL_USERS,
+  PERMISSION_MESSAGE_ROLES,
+  PERMISSION_MESSAGE_INDIVIDUALS,
+  PERMISSION_MESSAGE_CLASS_GROUPS,
+  PERMISSION_RECEIVE_MESSAGES,
+  PERMISSION_REPLY_MESSAGES,
+  PERMISSION_ACCESS_ADMIN_PANEL,
+  PERMISSION_MANAGE_USER_ROLES,
+  PERMISSION_MANAGE_SYSTEM_CONFIG,
+  PERMISSION_REVIEW_ACCOUNT_DELETION,
+  PERMISSION_READ_ACTIVITY_LOGS,
+  PERMISSION_CLEAR_ACTIVITY_LOGS,
+  PERMISSION_DELETE_REGISTRY_STUDENTS,
+  MESSAGE_AUDIENCE_ALL,
+  MESSAGE_AUDIENCE_ROLE,
+  MESSAGE_AUDIENCE_INDIVIDUAL,
+  MESSAGE_AUDIENCE_CLASS,
+  normalizeUserRole,
+  normalizePermissions,
+  resolvePermissionsForRole,
+  getDefaultPermissionsForRole,
+  buildResolvedAccessProfile,
+  buildRolePermissionPayload,
+  formatUserRoleLabel,
+  hasPermission,
+  hasAnyPermission,
+  canAccessAdminPanel,
+  canReadAllData,
+  canManageUserRoles,
+  canManageSystemConfig,
+  canReviewAccountDeletion,
+  canReadActivityLogs,
+  canClearActivityLogs,
+  canDeleteRegistryStudents,
+  canSendMessages,
+  canReceiveMessages,
+  canReplyToMessages,
+  canMessageAudienceType,
+  canWriteOwnedData,
+  canWriteTeacherScopedData,
+  canWriteClassData,
+  getRoleHierarchyRank
+} from './access-control.js';
+
+export {
+  DEFAULT_USER_ROLE,
+  ROLE_TEACHER,
+  ROLE_HEAD_TEACHER,
+  ROLE_ADMIN,
+  ROLE_DEVELOPER,
+  ROLE_LEGACY_USER,
+  USER_ROLES,
+  PERMISSION_READ_OWN_CLASS_DATA,
+  PERMISSION_WRITE_OWN_CLASS_DATA,
+  PERMISSION_READ_ALL_DATA,
+  PERMISSION_WRITE_ALL_TEACHER_DATA,
+  PERMISSION_SEND_MESSAGES,
+  PERMISSION_MESSAGE_ALL_USERS,
+  PERMISSION_MESSAGE_ROLES,
+  PERMISSION_MESSAGE_INDIVIDUALS,
+  PERMISSION_MESSAGE_CLASS_GROUPS,
+  PERMISSION_RECEIVE_MESSAGES,
+  PERMISSION_REPLY_MESSAGES,
+  PERMISSION_ACCESS_ADMIN_PANEL,
+  PERMISSION_MANAGE_USER_ROLES,
+  PERMISSION_MANAGE_SYSTEM_CONFIG,
+  PERMISSION_REVIEW_ACCOUNT_DELETION,
+  PERMISSION_READ_ACTIVITY_LOGS,
+  PERMISSION_CLEAR_ACTIVITY_LOGS,
+  PERMISSION_DELETE_REGISTRY_STUDENTS,
+  MESSAGE_AUDIENCE_ALL,
+  MESSAGE_AUDIENCE_ROLE,
+  MESSAGE_AUDIENCE_INDIVIDUAL,
+  MESSAGE_AUDIENCE_CLASS,
+  normalizeUserRole,
+  normalizePermissions as normalizeUserPermissions,
+  resolvePermissionsForRole as resolveUserPermissions,
+  getDefaultPermissionsForRole,
+  buildResolvedAccessProfile,
+  buildRolePermissionPayload,
+  formatUserRoleLabel,
+  hasPermission,
+  hasAnyPermission,
+  canAccessAdminPanel,
+  canReadAllData,
+  canManageUserRoles,
+  canManageSystemConfig,
+  canReviewAccountDeletion,
+  canReadActivityLogs,
+  canClearActivityLogs,
+  canDeleteRegistryStudents,
+  canSendMessages,
+  canReceiveMessages,
+  canReplyToMessages,
+  canMessageAudienceType,
+  canWriteOwnedData,
+  canWriteTeacherScopedData,
+  canWriteClassData,
+  getRoleHierarchyRank
+};
 
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
 const normalizeName = (name) => String(name || '').trim();
-const ROLE_TEACHER = 'teacher';
-const LEGACY_ROLE_USER = 'user';
-const ROLE_ADMIN = 'admin';
-const ROLE_DEVELOPER = 'developer';
-const USER_ROLES = [ROLE_TEACHER, ROLE_ADMIN, ROLE_DEVELOPER, LEGACY_ROLE_USER];
-const DEFAULT_USER_ROLE = ROLE_TEACHER;
 const INITIAL_AUTH_STATE_TIMEOUT_MS = 10000;
 const PROFILE_RESOLUTION_TIMEOUT_MS = 10000;
 const PROFILE_NAME_MAX_LENGTH = 80;
@@ -75,15 +182,21 @@ const withTimeout = (operation, timeoutMs, code, message) => {
   });
 };
 
-export const normalizeUserRole = (role) => {
-  const normalized = String(role || '').trim().toLowerCase();
-  if (normalized === LEGACY_ROLE_USER) {
-    return ROLE_TEACHER;
-  }
-  return USER_ROLES.includes(normalized) ? normalized : DEFAULT_USER_ROLE;
-};
-
 const normalizeProfileName = (name) => normalizeName(String(name || '').slice(0, PROFILE_NAME_MAX_LENGTH));
+const sameStringList = (left = [], right = []) => {
+  if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((value, index) => String(value || '') === String(right[index] || ''));
+};
+const normalizeUnreadMessageCount = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return 0;
+  }
+  return Math.floor(parsed);
+};
 
 export const normalizeAccountStatus = (status) => {
   return String(status || '').trim().toLowerCase() === ACCOUNT_STATUS_DELETED
@@ -116,11 +229,17 @@ const normalizeAccountDeletionRecord = (profile = {}, fallback = {}) => ({
 const normalizeProfileRecord = (profile = {}, fallback = {}) => ({
   uid: String(profile?.uid || fallback?.uid || '').trim(),
   role: normalizeUserRole(profile?.role || fallback?.role),
+  permissions: resolvePermissionsForRole(
+    profile?.role || fallback?.role,
+    profile?.permissions ?? fallback?.permissions ?? []
+  ),
   name: normalizeProfileName(profile?.name ?? fallback?.name),
   email: normalizeEmail(profile?.email ?? fallback?.email),
   emailVerified: Boolean(profile?.emailVerified ?? fallback?.emailVerified),
   createdAt: profile?.createdAt ?? fallback?.createdAt ?? null,
   updatedAt: profile?.updatedAt ?? fallback?.updatedAt ?? null,
+  messageUnreadCount: normalizeUnreadMessageCount(profile?.messageUnreadCount ?? fallback?.messageUnreadCount),
+  lastMessageAt: profile?.lastMessageAt ?? fallback?.lastMessageAt ?? null,
   ...normalizeAccountDeletionRecord(profile, fallback)
 });
 
@@ -128,24 +247,33 @@ const getUserProfileRef = (uid) => doc(db, 'users', String(uid || '').trim());
 
 const resolveProfileRole = (_authUser, existingRole = '') => {
   const normalizedExistingRole = normalizeUserRole(existingRole);
+  if (normalizedExistingRole === ROLE_DEVELOPER) {
+    return ROLE_DEVELOPER;
+  }
   if (normalizedExistingRole === ROLE_ADMIN) {
     return ROLE_ADMIN;
   }
-  if (normalizedExistingRole === ROLE_DEVELOPER) {
-    return ROLE_DEVELOPER;
+  if (normalizedExistingRole === ROLE_HEAD_TEACHER) {
+    return ROLE_HEAD_TEACHER;
   }
 
   return ROLE_TEACHER;
 };
 
-const sanitizeProfilePayload = (authUser, existingRole = '') => ({
-  uid: String(authUser?.uid || '').trim(),
-  role: resolveProfileRole(authUser, existingRole),
-  name: normalizeProfileName(authUser?.name),
-  email: normalizeEmail(authUser?.email),
-  emailVerified: Boolean(auth?.currentUser?.emailVerified ?? authUser?.emailVerified),
-  createdAt: serverTimestamp()
-});
+const sanitizeProfilePayload = (authUser, existingRole = '', existingPermissions = []) => {
+  const rolePayload = buildRolePermissionPayload(resolveProfileRole(authUser, existingRole), existingPermissions);
+  return {
+    uid: String(authUser?.uid || '').trim(),
+    role: rolePayload.role,
+    permissions: rolePayload.permissions,
+    name: normalizeProfileName(authUser?.name),
+    email: normalizeEmail(authUser?.email),
+    emailVerified: Boolean(auth?.currentUser?.emailVerified ?? authUser?.emailVerified),
+    createdAt: serverTimestamp(),
+    messageUnreadCount: 0,
+    lastMessageAt: null
+  };
+};
 
 const ensureUserProfileDocument = async (authUser) => {
   const uid = String(authUser?.uid || '').trim();
@@ -156,17 +284,21 @@ const ensureUserProfileDocument = async (authUser) => {
 
   if (!uid || !isFirebaseConfigured || !db) {
     const fallbackRole = resolveProfileRole(authUser);
+    const fallbackPermissions = resolvePermissionsForRole(fallbackRole);
     console.log('Firestore role:', undefined);
     console.log('Assigned role:', fallbackRole);
     console.log('Final role:', fallbackRole);
     return {
       uid,
       role: fallbackRole,
+      permissions: fallbackPermissions,
       name: normalizeProfileName(authUser?.name),
       email: normalizedEmail,
       emailVerified,
       createdAt: authUser?.createdAt || null,
       updatedAt: null,
+      messageUnreadCount: 0,
+      lastMessageAt: null,
       ...normalizeAccountDeletionRecord()
     };
   }
@@ -197,11 +329,14 @@ const ensureUserProfileDocument = async (authUser) => {
     return {
       uid,
       role: payload.role,
+      permissions: payload.permissions,
       name: payload.name,
       email: payload.email,
       emailVerified,
       createdAt: authUser?.createdAt || new Date().toISOString(),
       updatedAt: null,
+      messageUnreadCount: 0,
+      lastMessageAt: null,
       ...normalizeAccountDeletionRecord()
     };
   }
@@ -219,6 +354,7 @@ const ensureUserProfileDocument = async (authUser) => {
     },
     data.role
   );
+  const resolvedPermissions = resolvePermissionsForRole(resolvedRole, data.permissions);
 
   const patch = {};
   if (String(data.uid || '').trim() !== uid) {
@@ -236,6 +372,12 @@ const ensureUserProfileDocument = async (authUser) => {
   if (String(data.role || '').trim().toLowerCase() !== resolvedRole) {
     patch.role = resolvedRole;
   }
+  if (!sameStringList(Array.isArray(data.permissions) ? data.permissions : [], resolvedPermissions)) {
+    patch.permissions = resolvedPermissions;
+  }
+  if (normalizeUnreadMessageCount(data.messageUnreadCount) !== normalizeUnreadMessageCount(data.messageUnreadCount)) {
+    patch.messageUnreadCount = normalizeUnreadMessageCount(data.messageUnreadCount);
+  }
 
   if (Object.keys(patch).length) {
     await withTimeout(
@@ -252,11 +394,14 @@ const ensureUserProfileDocument = async (authUser) => {
   return {
     uid,
     role: resolvedRole,
+    permissions: resolvedPermissions,
     name: normalizedName,
     email: resolvedEmailForProfile,
     emailVerified,
     createdAt: data.createdAt || null,
     updatedAt: data.updatedAt || null,
+    messageUnreadCount: normalizeUnreadMessageCount(data.messageUnreadCount),
+    lastMessageAt: data.lastMessageAt || null,
     ...normalizeAccountDeletionRecord(data)
   };
 };
@@ -276,9 +421,10 @@ export const resolveUserRole = async (authUser) => {
   return normalizeUserRole(profile?.role);
 };
 
+export const isHeadTeacherRole = (role) => normalizeUserRole(role) === ROLE_HEAD_TEACHER;
 export const isDeveloperRole = (role) => normalizeUserRole(role) === 'developer';
 export const isAdminRole = (role) => normalizeUserRole(role) === 'admin';
-export const isPrivilegedRole = (role) => isAdminRole(role) || isDeveloperRole(role);
+export const isPrivilegedRole = (role) => canReadAllData(role) || canAccessAdminPanel(role);
 export const requiresEmailVerificationForRole = (role) => !isPrivilegedRole(role);
 export const shouldBlockForEmailVerification = (authUser = {}, role = authUser?.role) => {
   const uid = String(authUser?.uid || '').trim();

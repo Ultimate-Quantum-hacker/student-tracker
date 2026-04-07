@@ -1,20 +1,25 @@
+import {
+  ROLE_TEACHER,
+  ROLE_HEAD_TEACHER,
+  ROLE_ADMIN,
+  ROLE_DEVELOPER,
+  ROLE_LEGACY_USER,
+  normalizeUserRole,
+  normalizePermissions,
+  resolvePermissionsForRole,
+  hasPermission,
+  canAccessAdminPanel,
+  canWriteClassData,
+  canReadAllData
+} from './access-control.js';
+
 const CURRENT_CLASS_STORAGE_KEY = 'currentClassId';
 const CURRENT_CLASS_OWNER_STORAGE_KEY = 'currentClassOwnerId';
-export const ROLE_TEACHER = 'teacher';
-export const ROLE_LEGACY_USER = 'user';
-export const ROLE_ADMIN = 'admin';
-export const ROLE_DEVELOPER = 'developer';
-const ALLOWED_ROLES = [ROLE_TEACHER, ROLE_ADMIN, ROLE_DEVELOPER, ROLE_LEGACY_USER];
+export { ROLE_TEACHER, ROLE_HEAD_TEACHER, ROLE_ADMIN, ROLE_DEVELOPER, ROLE_LEGACY_USER };
 
 export const normalizeClassStorageId = (value) => String(value || '').trim();
 
-export const normalizeRole = (value) => {
-  const normalized = String(value || '').trim().toLowerCase();
-  if (normalized === ROLE_LEGACY_USER) {
-    return ROLE_TEACHER;
-  }
-  return ALLOWED_ROLES.includes(normalized) ? normalized : ROLE_TEACHER;
-};
+export const normalizeRole = (value) => normalizeUserRole(value);
 
 export const resolveCurrentClassEntry = (state = {}) => {
   const currentClassId = String(state.currentClassId || '').trim();
@@ -141,6 +146,7 @@ export const resolveValidatedClassContext = (classes = [], classId = '', ownerId
     className: String(activeClass?.name || '').trim() || 'My Class',
     ownerId: normalizeClassStorageId(activeClass?.ownerId),
     ownerName: String(activeClass?.ownerName || '').trim() || 'Teacher',
+    ownerRole: normalizeRole(activeClass?.ownerRole),
     isFallback: Boolean(!selectedClass && (normalizedClassId || normalizedOwnerId))
   };
 };
@@ -165,7 +171,8 @@ export const normalizeClassCatalogEntries = (classes = []) => {
         id,
         ownerId,
         name,
-        ownerName
+        ownerName,
+        ownerRole: normalizeRole(entry?.ownerRole)
       };
     })
     .filter(Boolean);
@@ -177,14 +184,23 @@ export const createStateContextApi = (app, dataService) => {
       return normalizeRole(app.state.currentUserRole);
     },
 
-    setCurrentUserRole(role, { resolved = true } = {}) {
+    getCurrentUserPermissions() {
+      return normalizePermissions(app.state.currentUserPermissions);
+    },
+
+    setCurrentUserRole(role, { resolved = true, permissions = [] } = {}) {
       app.state.currentUserRole = normalizeRole(role);
+      app.state.currentUserPermissions = resolvePermissionsForRole(app.state.currentUserRole, permissions);
       app.state.isRoleResolved = Boolean(resolved);
+      if (typeof dataService.setCurrentUserAccessContext === 'function') {
+        dataService.setCurrentUserAccessContext(app.state.currentUserRole, app.state.currentUserPermissions);
+      }
       if (typeof dataService.setCurrentUserRoleContext === 'function') {
         dataService.setCurrentUserRoleContext(app.state.currentUserRole);
       }
       console.log('ROLE:', app.state.currentUserRole);
-      console.log('CAN WRITE:', app.state.currentUserRole !== ROLE_ADMIN);
+      console.log('PERMISSIONS:', app.state.currentUserPermissions);
+      console.log('CAN WRITE:', api.canCurrentRoleWrite());
     },
 
     getCurrentClassOwnerId() {
@@ -212,19 +228,28 @@ export const createStateContextApi = (app, dataService) => {
       return String(app.state.currentClassOwnerName || '').trim() || 'Teacher';
     },
 
+    getCurrentClassOwnerRole() {
+      const classEntry = resolveCurrentClassEntry(app.state);
+      const ownerRole = normalizeRole(classEntry?.ownerRole || app.state.currentClassOwnerRole || ROLE_TEACHER);
+      app.state.currentClassOwnerRole = ownerRole;
+      return ownerRole;
+    },
+
     setCurrentClassOwnerContext() {
       const ownerId = api.getCurrentClassOwnerId();
       const ownerName = api.getCurrentClassOwnerName();
+      const ownerRole = api.getCurrentClassOwnerRole();
       if (typeof dataService.setCurrentClassOwnerContext === 'function') {
-        dataService.setCurrentClassOwnerContext(ownerId, ownerName);
+        dataService.setCurrentClassOwnerContext(ownerId, ownerName, ownerRole);
       }
-      return { ownerId, ownerName };
+      return { ownerId, ownerName, ownerRole };
     },
 
     syncDataContext() {
       const classEntry = resolveCurrentClassEntry(app.state);
       app.state.currentClassOwnerId = String(classEntry?.ownerId || app.state.currentClassOwnerId || getAuthenticatedOwnerFallback(app.state) || '').trim();
       app.state.currentClassOwnerName = String(classEntry?.ownerName || app.state.currentClassOwnerName || '').trim() || 'Teacher';
+      app.state.currentClassOwnerRole = normalizeRole(classEntry?.ownerRole || app.state.currentClassOwnerRole || ROLE_TEACHER);
 
       if (typeof dataService.setCurrentClassId === 'function') {
         dataService.setCurrentClassId(app.state.currentClassId || '');
@@ -237,21 +262,46 @@ export const createStateContextApi = (app, dataService) => {
       return api.getCurrentClassOwnerId();
     },
 
+    hasCurrentPermission(permission) {
+      return hasPermission(permission, api.getCurrentUserRole(), api.getCurrentUserPermissions());
+    },
+
     canCurrentRoleWrite() {
-      return api.getCurrentUserRole() !== ROLE_ADMIN;
+      const currentOwnerId = api.getCurrentClassOwnerId() || '';
+      const authenticatedOwnerId = getAuthenticatedOwnerFallback(app.state) || currentOwnerId || '__current__';
+      return canWriteClassData({
+        actorRole: api.getCurrentUserRole(),
+        actorPermissions: api.getCurrentUserPermissions(),
+        actorUserId: authenticatedOwnerId,
+        ownerId: currentOwnerId || authenticatedOwnerId,
+        ownerRole: api.getCurrentClassOwnerRole()
+      });
     },
 
     isReadOnlyRoleContext() {
       return Boolean(app.state.isRoleResolved) && !api.canCurrentRoleWrite();
     },
 
+    canAccessAdminPanel() {
+      return canAccessAdminPanel(api.getCurrentUserRole(), api.getCurrentUserPermissions());
+    },
+
+    canReadAllData() {
+      return canReadAllData(api.getCurrentUserRole(), api.getCurrentUserPermissions());
+    },
+
     clearCurrentUserRole() {
       app.state.currentUserRole = ROLE_TEACHER;
+      app.state.currentUserPermissions = [];
       app.state.isRoleResolved = false;
     },
 
     isTeacherRole() {
       return api.getCurrentUserRole() === ROLE_TEACHER;
+    },
+
+    isHeadTeacherRole() {
+      return api.getCurrentUserRole() === ROLE_HEAD_TEACHER;
     },
 
     isAdminRole() {

@@ -93,7 +93,13 @@ const setResolvedUserRole = async (authUser) => {
     role: normalizedRole,
     emailVerified: Boolean(profile?.emailVerified ?? authUser?.emailVerified)
   };
-  app.setCurrentUserRole(normalizedRole, { resolved: true });
+  app.state.unreadMessageCount = Number.isFinite(Number(resolvedProfile?.messageUnreadCount))
+    ? Math.max(0, Math.floor(Number(resolvedProfile.messageUnreadCount)))
+    : 0;
+  app.setCurrentUserRole(normalizedRole, {
+    resolved: true,
+    permissions: resolvedProfile?.permissions || []
+  });
 
   if (app.state.authUser?.uid && app.state.authUser.uid === authUser?.uid) {
     app.state.authUser = {
@@ -101,6 +107,7 @@ const setResolvedUserRole = async (authUser) => {
       name: String(resolvedProfile?.name || app.state.authUser?.name || '').trim(),
       email: String(resolvedProfile?.email || app.state.authUser?.email || '').trim(),
       role: normalizedRole,
+      permissions: Array.isArray(resolvedProfile?.permissions) ? resolvedProfile.permissions.slice() : [],
       emailVerified: resolvedProfile.emailVerified,
       createdAt: resolvedProfile?.createdAt || app.state.authUser?.createdAt || null,
       updatedAt: resolvedProfile?.updatedAt || app.state.authUser?.updatedAt || null,
@@ -110,7 +117,9 @@ const setResolvedUserRole = async (authUser) => {
       accountDeletionRequestedBy: resolvedProfile?.accountDeletionRequestedBy ?? app.state.authUser?.accountDeletionRequestedBy ?? '',
       accountDeletionReviewedAt: resolvedProfile?.accountDeletionReviewedAt ?? app.state.authUser?.accountDeletionReviewedAt ?? null,
       accountDeletionReviewedBy: resolvedProfile?.accountDeletionReviewedBy ?? app.state.authUser?.accountDeletionReviewedBy ?? '',
-      deletedAt: resolvedProfile?.deletedAt ?? app.state.authUser?.deletedAt ?? null
+      deletedAt: resolvedProfile?.deletedAt ?? app.state.authUser?.deletedAt ?? null,
+      messageUnreadCount: app.state.unreadMessageCount,
+      lastMessageAt: resolvedProfile?.lastMessageAt ?? app.state.authUser?.lastMessageAt ?? null
     };
   }
 
@@ -143,6 +152,11 @@ const setAuthUserState = (authUser) => {
       name: authUser.name || existingAuthUser?.name || '',
       email: authUser.email || existingAuthUser?.email || '',
       role: authUser.role || existingAuthUser?.role || '',
+      permissions: Array.isArray(authUser.permissions)
+        ? authUser.permissions.slice()
+        : Array.isArray(existingAuthUser?.permissions)
+          ? existingAuthUser.permissions.slice()
+          : [],
       emailVerified: Boolean(authUser.emailVerified ?? existingAuthUser?.emailVerified),
       createdAt: authUser.createdAt || existingAuthUser?.createdAt || null,
       updatedAt: authUser.updatedAt || existingAuthUser?.updatedAt || null,
@@ -152,7 +166,9 @@ const setAuthUserState = (authUser) => {
       accountDeletionRequestedBy: authUser.accountDeletionRequestedBy ?? existingAuthUser?.accountDeletionRequestedBy ?? '',
       accountDeletionReviewedAt: authUser.accountDeletionReviewedAt ?? existingAuthUser?.accountDeletionReviewedAt ?? null,
       accountDeletionReviewedBy: authUser.accountDeletionReviewedBy ?? existingAuthUser?.accountDeletionReviewedBy ?? '',
-      deletedAt: authUser.deletedAt ?? existingAuthUser?.deletedAt ?? null
+      deletedAt: authUser.deletedAt ?? existingAuthUser?.deletedAt ?? null,
+      messageUnreadCount: authUser.messageUnreadCount ?? existingAuthUser?.messageUnreadCount ?? 0,
+      lastMessageAt: authUser.lastMessageAt ?? existingAuthUser?.lastMessageAt ?? null
     }
     : null;
 
@@ -173,7 +189,9 @@ const clearLoadedDataForLogout = () => {
   app.state.currentClassName = 'My Class';
   app.state.currentClassOwnerId = '';
   app.state.currentClassOwnerName = 'Teacher';
+  app.state.currentClassOwnerRole = 'teacher';
   app.state.allowEmptyClassCatalog = false;
+  app.state.unreadMessageCount = 0;
   if (typeof app.applyRawData === 'function') {
     app.applyRawData(emptyData);
   } else {

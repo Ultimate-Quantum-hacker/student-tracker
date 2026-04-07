@@ -39,6 +39,21 @@ import {
   normalizeAccountStatus,
   normalizeAccountDeletionStatus
 } from '../js/auth.js';
+import {
+  ROLE_TEACHER,
+  ROLE_HEAD_TEACHER,
+  ROLE_ADMIN,
+  ROLE_DEVELOPER,
+  normalizeUserRole as normalizeAccessRole,
+  normalizePermissions,
+  buildRolePermissionPayload,
+  canAccessAdminPanel,
+  canReadAllData,
+  canReadActivityLogs,
+  canManageSystemConfig,
+  canReviewAccountDeletion,
+  canWriteClassData
+} from '../js/access-control.js';
 
 const CACHE_KEY_PREFIX = 'studentAppData';
 const USERS_COLLECTION = 'users';
@@ -69,7 +84,9 @@ const ERROR_CODES = {
 let currentClassId = '';
 let currentClassOwnerId = '';
 let currentClassOwnerName = '';
+let currentClassOwnerRole = ROLE_TEACHER;
 let currentUserRoleContext = 'teacher';
+let currentUserPermissionsContext = [];
 let globalClassCatalogCache = {
   ownerUserId: '',
   classes: [],
@@ -113,14 +130,18 @@ const buildClassDocMetadataPatch = (ownerId, classId, updatedAt, extra = {}) => 
 const buildUserRootBootstrapPayload = (userId) => {
   const normalizedUserId = normalizeUserId(userId);
   const authenticatedUser = auth?.currentUser || null;
+  const accessProfile = buildRolePermissionPayload(ROLE_TEACHER);
   return {
     uid: normalizedUserId,
     userId: normalizedUserId,
-    role: 'teacher',
+    role: accessProfile.role,
+    permissions: accessProfile.permissions,
     name: normalizeDisplayName(authenticatedUser?.displayName || authenticatedUser?.email || 'Teacher', 'Teacher'),
     email: normalizeEmailAddress(authenticatedUser?.email || ''),
     emailVerified: Boolean(authenticatedUser?.emailVerified),
-    createdAt: serverTimestamp()
+    createdAt: serverTimestamp(),
+    messageUnreadCount: 0,
+    lastMessageAt: null
   };
 };
 const invalidateRecentFetchAllDataCache = () => {
@@ -162,12 +183,7 @@ const writeRecentFetchAllDataCache = ({ scopeKey = '', classId = '', ownerId = '
   };
   return payload;
 };
-const normalizeRole = (value) => {
-  const normalized = String(value || '').trim().toLowerCase();
-  if (normalized === 'admin') return 'admin';
-  if (normalized === 'developer') return 'developer';
-  return 'teacher';
-};
+const normalizeRole = (value) => normalizeAccessRole(value);
 const normalizeEmailAddress = (value) => String(value || '').trim().toLowerCase();
 const normalizeUserAccountLifecycleRecord = (payload = {}, fallback = {}) => ({
   status: normalizeAccountStatus(payload?.status ?? fallback?.status),
@@ -195,16 +211,22 @@ const buildUserLifecycleTargetLabel = (payload = {}, fallbackUserId = '') => {
 const buildPrivilegedUserLifecycleRecord = (payload = {}, fallbackUserId = '') => {
   const uid = normalizeUserId(payload?.uid || payload?.userId || fallbackUserId);
   const email = normalizeEmailAddress(payload?.email || '');
+  const accessProfile = buildRolePermissionPayload(payload?.role || ROLE_TEACHER, payload?.permissions || []);
   return {
     uid,
     name: normalizeDisplayName(payload?.name || payload?.displayName || email || uid || 'Teacher', 'Teacher'),
     email,
-    role: normalizeRole(payload?.role || 'teacher'),
+    role: accessProfile.role,
+    permissions: accessProfile.permissions,
     emailVerified: Boolean(payload?.emailVerified),
     createdAt: payload?.createdAt || payload?.updatedAt || null,
     updatedAt: payload?.updatedAt || null,
     roleUpdatedAt: payload?.roleUpdatedAt || null,
     roleUpdatedBy: normalizeUserId(payload?.roleUpdatedBy || ''),
+    messageUnreadCount: Number.isFinite(Number(payload?.messageUnreadCount))
+      ? Math.max(0, Math.floor(Number(payload.messageUnreadCount)))
+      : 0,
+    lastMessageAt: payload?.lastMessageAt || null,
     ...normalizeUserAccountLifecycleRecord(payload)
   };
 };
@@ -258,12 +280,12 @@ const readPrivilegedUserLifecycleDirectory = async () => {
   };
 };
 const isVerifiedUserRecord = (payload = {}) => Boolean(payload?.emailVerified);
-const isTeacherOrAdminRole = (role = '') => {
+const isManageablePanelRole = (role = '') => {
   const normalizedRole = normalizeRole(role);
-  return normalizedRole === 'teacher' || normalizedRole === 'admin';
+  return normalizedRole === ROLE_TEACHER || normalizedRole === ROLE_HEAD_TEACHER || normalizedRole === ROLE_ADMIN;
 };
 const buildPrivilegedRoleUpdatePolicyState = (userPayload = {}, nextRole = 'teacher') => {
-  const currentRole = normalizeRole(userPayload?.role || 'teacher');
+  const currentRole = normalizeRole(userPayload?.role || ROLE_TEACHER);
   const normalizedNextRole = normalizeRole(nextRole);
   const lifecycle = normalizeUserAccountLifecycleRecord(userPayload);
 
@@ -294,7 +316,7 @@ const buildPrivilegedRoleUpdatePolicyState = (userPayload = {}, nextRole = 'teac
     };
   }
 
-  if (currentRole === 'developer' || normalizedNextRole === 'developer') {
+  if (currentRole === ROLE_DEVELOPER || normalizedNextRole === ROLE_DEVELOPER) {
     return {
       currentRole,
       normalizedNextRole,
@@ -303,21 +325,25 @@ const buildPrivilegedRoleUpdatePolicyState = (userPayload = {}, nextRole = 'teac
     };
   }
 
-  if (!isTeacherOrAdminRole(currentRole) || !isTeacherOrAdminRole(normalizedNextRole)) {
+  if (!isManageablePanelRole(currentRole) || !isManageablePanelRole(normalizedNextRole)) {
     return {
       currentRole,
       normalizedNextRole,
       canUpdate: false,
-      message: 'Only teacher and admin roles can be managed in the admin panel.'
+      message: 'Only teacher, head teacher, and admin roles can be managed in the admin panel.'
     };
   }
 
-  if (currentRole === 'teacher' && normalizedNextRole === 'admin' && !isVerifiedUserRecord(userPayload)) {
+  if (
+    currentRole === ROLE_TEACHER
+    && (normalizedNextRole === ROLE_HEAD_TEACHER || normalizedNextRole === ROLE_ADMIN)
+    && !isVerifiedUserRecord(userPayload)
+  ) {
     return {
       currentRole,
       normalizedNextRole,
       canUpdate: false,
-      message: 'Only verified teacher accounts can be promoted to admin.'
+      message: 'Only verified teacher accounts can be promoted to head teacher or admin.'
     };
   }
 
@@ -710,23 +736,45 @@ const createContextError = (code, message) => {
   return error;
 };
 
-const canRoleWrite = (role = getCurrentUserRoleContext()) => {
-  return normalizeRole(role) !== 'admin';
+const canRoleWrite = (roleOrOptions = getCurrentUserRoleContext()) => {
+  const options = roleOrOptions && typeof roleOrOptions === 'object' && !Array.isArray(roleOrOptions)
+    ? roleOrOptions
+    : { role: roleOrOptions };
+  const actorUserId = normalizeUserId(options?.actorUserId || getAuthenticatedUserId() || getCurrentUserId());
+  const ownerId = normalizeUserId(options?.ownerId || currentClassOwnerId || actorUserId);
+  const ownerRole = normalizeRole(options?.ownerRole || currentClassOwnerRole || ROLE_TEACHER);
+  const role = normalizeRole(options?.role || getCurrentUserRoleContext());
+  const permissions = normalizePermissions(options?.permissions || currentUserPermissionsContext, currentUserPermissionsContext);
+  return canWriteClassData({
+    actorRole: role,
+    actorPermissions: permissions,
+    actorUserId,
+    ownerId,
+    ownerRole
+  });
 };
 
-const assertWritableRole = (operationLabel = 'modify data') => {
-  const role = getCurrentUserRoleContext();
+const assertWritableRole = (operationLabel = 'modify data', options = {}) => {
+  const role = normalizeRole(options?.role || getCurrentUserRoleContext());
+  const actorUserId = normalizeUserId(options?.actorUserId || getAuthenticatedUserId() || getCurrentUserId());
+  const canWrite = canRoleWrite({
+    role,
+    permissions: options?.permissions || currentUserPermissionsContext,
+    actorUserId,
+    ownerId: options?.ownerId || actorUserId,
+    ownerRole: options?.ownerRole || role || ROLE_TEACHER
+  });
   console.log('ROLE:', role);
-  console.log('CAN WRITE:', canRoleWrite(role));
-  if (!canRoleWrite(role)) {
-    throw createContextError(ERROR_CODES.READ_ONLY_MODE, `Admin read-only mode: cannot ${operationLabel}`);
+  console.log('CAN WRITE:', canWrite);
+  if (!canWrite) {
+    throw createContextError(ERROR_CODES.READ_ONLY_MODE, `You do not have permission to ${operationLabel}`);
   }
 };
 
 const assertAdminOrDeveloperRole = (operationLabel = 'manage admin data') => {
   const role = getCurrentUserRoleContext();
-  if (role !== 'admin' && role !== 'developer') {
-    throw createContextError(ERROR_CODES.READ_ONLY_MODE, `Only admins or developers can ${operationLabel}`);
+  if (!canAccessAdminPanel(role, currentUserPermissionsContext)) {
+    throw createContextError(ERROR_CODES.READ_ONLY_MODE, `Only head teachers, admins, or developers can ${operationLabel}`);
   }
   return role;
 };
@@ -770,6 +818,7 @@ const ensureValidClassContext = async (operationLabel = 'access class data', opt
       ownerId: '',
       className: DEFAULT_CLASS_NAME,
       ownerName: 'Teacher',
+      ownerRole: ROLE_TEACHER,
       role: getCurrentUserRoleContext()
     };
   }
@@ -810,7 +859,17 @@ const ensureValidClassContext = async (operationLabel = 'access class data', opt
 
   const className = normalizeClassName(classPayload?.name || classContext?.className || DEFAULT_CLASS_NAME);
   const ownerName = normalizeDisplayName(classPayload?.ownerName || classContext?.classOwnerName || 'Teacher');
-  setCurrentClassContext(classId, actorUserId, ownerId, ownerName);
+  const ownerRole = normalizeRole(classPayload?.ownerRole || classContext?.classOwnerRole || classPayload?.role || ROLE_TEACHER);
+  if (requireWritable && !canRoleWrite({
+    role: getCurrentUserRoleContext(),
+    permissions: currentUserPermissionsContext,
+    actorUserId,
+    ownerId,
+    ownerRole
+  })) {
+    throw createContextError(ERROR_CODES.READ_ONLY_MODE, `You do not have permission to ${operationLabel}`);
+  }
+  setCurrentClassContext(classId, actorUserId, ownerId, ownerName, ownerRole);
 
   return {
     actorUserId,
@@ -818,6 +877,7 @@ const ensureValidClassContext = async (operationLabel = 'access class data', opt
     ownerId,
     className,
     ownerName,
+    ownerRole,
     role: getCurrentUserRoleContext()
   };
 };
@@ -1649,13 +1709,14 @@ const getFetchScopeKey = (userId = getAuthenticatedUserId() || getCurrentUserId(
   if (!normalizedUserId) {
     return '';
   }
-  return normalizedRole === 'admin' || normalizedRole === 'developer'
+  return canReadAllData(normalizedRole, currentUserPermissionsContext)
     ? `${normalizedUserId}:admin-global`
     : normalizedUserId;
 };
 
-export const setCurrentUserRoleContext = (role = 'teacher') => {
+export const setCurrentUserRoleContext = (role = 'teacher', permissions = currentUserPermissionsContext) => {
   currentUserRoleContext = normalizeRole(role);
+  currentUserPermissionsContext = normalizePermissions(permissions, currentUserPermissionsContext);
   return currentUserRoleContext;
 };
 
@@ -1663,19 +1724,35 @@ export const getCurrentUserRoleContext = () => {
   return normalizeRole(currentUserRoleContext);
 };
 
-export const setCurrentClassOwnerContext = (ownerId = '', ownerName = '') => {
+export const setCurrentUserAccessContext = (role = 'teacher', permissions = []) => {
+  currentUserRoleContext = normalizeRole(role);
+  currentUserPermissionsContext = normalizePermissions(permissions, currentUserPermissionsContext);
+  return {
+    role: currentUserRoleContext,
+    permissions: [...currentUserPermissionsContext]
+  };
+};
+
+export const getCurrentUserPermissionsContext = () => {
+  return normalizePermissions(currentUserPermissionsContext, []);
+};
+
+export const setCurrentClassOwnerContext = (ownerId = '', ownerName = '', ownerRole = ROLE_TEACHER) => {
   currentClassOwnerId = normalizeUserId(ownerId);
   currentClassOwnerName = normalizeDisplayName(ownerName, currentClassOwnerName || 'Teacher');
+  currentClassOwnerRole = normalizeRole(ownerRole || ROLE_TEACHER);
   return {
     ownerId: currentClassOwnerId,
-    ownerName: currentClassOwnerName
+    ownerName: currentClassOwnerName,
+    ownerRole: currentClassOwnerRole
   };
 };
 
 export const getCurrentClassOwnerContext = () => {
   return {
     ownerId: normalizeUserId(currentClassOwnerId),
-    ownerName: normalizeDisplayName(currentClassOwnerName, 'Teacher')
+    ownerName: normalizeDisplayName(currentClassOwnerName, 'Teacher'),
+    ownerRole: normalizeRole(currentClassOwnerRole)
   };
 };
 
@@ -1813,7 +1890,7 @@ const readPersistedClassSelection = (userId) => {
   };
 };
 
-const setCurrentClassContext = (classId, userId = getAuthenticatedUserId(), ownerId = '', ownerName = '') => {
+const setCurrentClassContext = (classId, userId = getAuthenticatedUserId(), ownerId = '', ownerName = '', ownerRole = ROLE_TEACHER) => {
   currentClassId = normalizeClassId(classId);
   const normalizedOwnerId = normalizeUserId(ownerId);
 
@@ -1829,6 +1906,10 @@ const setCurrentClassContext = (classId, userId = getAuthenticatedUserId(), owne
     currentClassOwnerName = '';
   }
 
+  currentClassOwnerRole = normalizedOwnerId
+    ? normalizeRole(ownerRole || currentClassOwnerRole || ROLE_TEACHER)
+    : ROLE_TEACHER;
+
   if (userId) {
     persistClassSelection(userId, currentClassId, currentClassOwnerId);
   }
@@ -1841,12 +1922,14 @@ const toClassModel = (classId, payload = {}) => {
   const id = normalizeClassId(classId);
   const ownerId = normalizeUserId(payload.ownerId || payload.userId || payload.uid || '');
   const ownerName = normalizeDisplayName(payload.ownerName || payload.userName || payload.teacherName || '', 'Teacher');
+  const ownerRole = normalizeRole(payload.ownerRole || payload.userRole || payload.role || ROLE_TEACHER);
   return {
     id,
     name: normalizeClassName(payload.name || payload.title || DEFAULT_CLASS_NAME),
     createdAt: payload.createdAt || null,
     ownerId,
-    ownerName
+    ownerName,
+    ownerRole
   };
 };
 
@@ -1854,13 +1937,15 @@ const toClassTrashEntry = (classId, payload = {}) => {
   const id = normalizeClassId(classId);
   const ownerId = normalizeUserId(payload.ownerId || payload.userId || payload.uid || '');
   const ownerName = normalizeDisplayName(payload.ownerName || payload.userName || payload.teacherName || '', 'Teacher');
+  const ownerRole = normalizeRole(payload.ownerRole || payload.userRole || payload.role || ROLE_TEACHER);
   return {
     id,
     name: normalizeClassName(payload.name || payload.title || DEFAULT_CLASS_NAME),
     createdAt: payload.createdAt || null,
     deletedAt: normalizeDeletedAtValue(payload.deletedAt),
     ownerId,
-    ownerName
+    ownerName,
+    ownerRole
   };
 };
 
@@ -2035,7 +2120,7 @@ const resolveClassIdFromCatalog = (userId, classes = []) => {
 
   const nextClass = findClassEntryBySelection(normalizedClasses, requestedClassId, requestedOwnerId);
   const nextClassId = nextClass?.id || '';
-  setCurrentClassContext(nextClassId, userId, nextClass?.ownerId || '', nextClass?.ownerName || '');
+  setCurrentClassContext(nextClassId, userId, nextClass?.ownerId || '', nextClass?.ownerName || '', nextClass?.ownerRole || ROLE_TEACHER);
   return nextClassId;
 };
 
@@ -2175,12 +2260,18 @@ const syncCurrentUserRootProfileMetadata = async (userId, currentData = {}) => {
   }
 
   if (Object.prototype.hasOwnProperty.call(existingData, 'role')) {
-    const normalizedRole = normalizeRole(existingData.role);
-    if (normalizedRole !== String(existingData.role || '').trim().toLowerCase()) {
-      patch.role = normalizedRole;
+    const accessProfile = buildRolePermissionPayload(existingData.role, existingData.permissions || []);
+    if (accessProfile.role !== String(existingData.role || '').trim().toLowerCase()) {
+      patch.role = accessProfile.role;
+    }
+    const existingPermissions = normalizePermissions(existingData.permissions || [], []);
+    if (JSON.stringify(existingPermissions) !== JSON.stringify(accessProfile.permissions)) {
+      patch.permissions = accessProfile.permissions;
     }
   } else if (getCurrentUserRoleContext() === 'teacher') {
-    patch.role = 'teacher';
+    const accessProfile = buildRolePermissionPayload(ROLE_TEACHER);
+    patch.role = accessProfile.role;
+    patch.permissions = accessProfile.permissions;
   }
 
   if (!Object.keys(patch).length) {
@@ -2366,7 +2457,8 @@ const ensureDefaultClassDocument = async (userId) => {
     createdAt,
     deleted: false,
     deletedAt: null,
-    ownerName
+    ownerName,
+    ownerRole: getCurrentUserRoleContext()
   }));
 
   await mergeUserRootMetadata(userId, {
@@ -2381,7 +2473,8 @@ const ensureDefaultClassDocument = async (userId) => {
     name: DEFAULT_CLASS_NAME,
     createdAt,
     ownerId: userId,
-    ownerName
+    ownerName,
+    ownerRole: getCurrentUserRoleContext()
   });
 };
 
@@ -2587,7 +2680,8 @@ const normalizeClassOwnerMetadata = async (ownerId = '', classId = '', payload =
 
   const hasOwnerId = normalizeUserId(payload?.ownerId || payload?.userId || '') === ownerId;
   const hasOwnerName = String(payload?.ownerName || '').trim().length > 0;
-  if (hasOwnerId && hasOwnerName) {
+  const hasOwnerRole = normalizeRole(payload?.ownerRole || payload?.role || '') === normalizeRole(currentUserRoleContext || ROLE_TEACHER);
+  if (hasOwnerId && hasOwnerName && hasOwnerRole) {
     return;
   }
 
@@ -2599,6 +2693,7 @@ const normalizeClassOwnerMetadata = async (ownerId = '', classId = '', payload =
     id: classId,
     ownerId,
     ownerName,
+    ownerRole: normalizeRole(currentUserRoleContext || ROLE_TEACHER),
     userId: ownerId
   }, { merge: true });
 };
@@ -2608,6 +2703,8 @@ const readClassCatalogFromFirestore = async (userId) => {
   const classes = [];
   const trashClasses = [];
   const metadataPatchTasks = [];
+  const authenticatedUserId = getAuthenticatedUserId();
+  const currentUserRole = getCurrentUserRoleContext();
 
   classesSnapshot.forEach((entry) => {
     const payload = entry.data() || {};
@@ -2619,10 +2716,17 @@ const readClassCatalogFromFirestore = async (userId) => {
       payload.ownerName || (ownerId === getAuthenticatedUserId() ? getAuthenticatedUserDisplayName() : '') || 'Teacher',
       'Teacher'
     );
+    const ownerRole = normalizeRole(
+      payload.ownerRole
+      || payload.userRole
+      || (ownerId === authenticatedUserId ? currentUserRole : payload.role)
+      || ROLE_TEACHER
+    );
     const normalizedPayload = {
       ...payload,
       ownerId,
       ownerName,
+      ownerRole,
       userId: ownerId
     };
 
@@ -2658,10 +2762,12 @@ const readGlobalClassCatalogFromFirestore = async (requesterUserId = '') => {
 
   const classesSnapshot = await getDocs(collectionGroup(db, CLASSES_SUBCOLLECTION));
   let ownerNameMap = new Map();
+  let ownerRoleMap = new Map();
   let deletedUserIds = new Set();
   try {
     const privilegedDirectory = await readPrivilegedUserLifecycleDirectory();
     ownerNameMap = privilegedDirectory.ownerNameMap || new Map();
+    ownerRoleMap = privilegedDirectory.ownerRoleMap || new Map();
     deletedUserIds = privilegedDirectory.deletedUserIds || new Set();
   } catch (error) {
     console.warn('Falling back to class metadata only for global class catalog:', error);
@@ -2678,10 +2784,12 @@ const readGlobalClassCatalogFromFirestore = async (requesterUserId = '') => {
     if (!classId || !ownerId || deletedUserIds.has(ownerId)) return;
 
     const ownerName = normalizeDisplayName(payload.ownerName || ownerNameMap.get(ownerId) || 'Teacher', 'Teacher');
+    const ownerRole = normalizeRole(payload.ownerRole || ownerRoleMap.get(ownerId) || payload.role || ROLE_TEACHER);
     const normalizedClass = toClassModel(classId, {
       ...payload,
       ownerId,
-      ownerName
+      ownerName,
+      ownerRole
     });
     classes.push(normalizedClass);
     metadataPatchTasks.push(normalizeClassOwnerMetadata(ownerId, classId, payload, entry.ref));
@@ -2722,7 +2830,7 @@ const readGlobalClassCatalogFromFirestore = async (requesterUserId = '') => {
 const ensureClassCatalog = async (userId) => {
   const role = getCurrentUserRoleContext();
   const authUserId = getAuthenticatedUserId() || userId;
-  const useGlobalCatalog = role === 'admin' || role === 'developer';
+  const useGlobalCatalog = canReadAllData(role, currentUserPermissionsContext);
   const scopeKey = useGlobalCatalog ? `${authUserId}:admin-global` : authUserId;
   let allowEmptyClassCatalog = false;
 
@@ -2749,7 +2857,7 @@ const ensureActiveClassContext = async (userId, options = {}) => {
   const requireClass = options?.requireClass !== false;
   const role = getCurrentUserRoleContext();
   const authUserId = getAuthenticatedUserId() || userId;
-  const useGlobalCatalog = role === 'admin' || role === 'developer';
+  const useGlobalCatalog = canReadAllData(role, currentUserPermissionsContext);
   const scopeKey = useGlobalCatalog ? `${authUserId}:admin-global` : authUserId;
   if (!isFirebaseConfigured || !db) {
     const classes = readClassCatalogCache(scopeKey);
@@ -2760,7 +2868,8 @@ const ensureActiveClassContext = async (userId, options = {}) => {
     const activeClass = findClassEntryBySelection(classes, classId, currentClassOwnerId || persistedSelection.ownerId || '') || null;
     const classOwnerId = normalizeUserId(activeClass?.ownerId || '');
     const classOwnerName = normalizeDisplayName(activeClass?.ownerName || '', 'Teacher');
-    setCurrentClassContext(classId, authUserId, classOwnerId, classOwnerName);
+    const classOwnerRole = normalizeRole(activeClass?.ownerRole || ROLE_TEACHER);
+    setCurrentClassContext(classId, authUserId, classOwnerId, classOwnerName, classOwnerRole);
     if (requireClass && !classId) {
       throw createMissingClassError('save class data');
     }
@@ -2777,6 +2886,7 @@ const ensureActiveClassContext = async (userId, options = {}) => {
       className,
       classOwnerId,
       classOwnerName,
+      classOwnerRole,
       allowEmptyClassCatalog
     };
   }
@@ -2793,7 +2903,8 @@ const ensureActiveClassContext = async (userId, options = {}) => {
   ) || null;
   const classOwnerId = normalizeUserId(activeClass?.ownerId || '');
   const classOwnerName = normalizeDisplayName(activeClass?.ownerName || '', 'Teacher');
-  setCurrentClassContext(classId, authUserId, classOwnerId, classOwnerName);
+  const classOwnerRole = normalizeRole(activeClass?.ownerRole || ROLE_TEACHER);
+  setCurrentClassContext(classId, authUserId, classOwnerId, classOwnerName, classOwnerRole);
   if (requireClass && !classId) {
     throw createMissingClassError('save class data');
   }
@@ -2810,6 +2921,7 @@ const ensureActiveClassContext = async (userId, options = {}) => {
     className,
     classOwnerId,
     classOwnerName,
+    classOwnerRole,
     allowEmptyClassCatalog: Boolean(catalog?.allowEmptyClassCatalog)
   };
 };
@@ -3288,7 +3400,7 @@ export const logActivity = async (action, targetId, targetType, options = {}) =>
       createdAt: serverTimestamp()
     });
 
-    if (userRole === 'admin' || userRole === 'developer') {
+    if (canReadActivityLogs(userRole, currentUserPermissionsContext)) {
       try {
         await trimActivityLogCollection();
       } catch (error) {
@@ -3305,7 +3417,9 @@ export const logActivity = async (action, targetId, targetType, options = {}) =>
 
 export const fetchActivityLogs = async ({ userId = '', sort = 'desc', maxEntries = MAX_ACTIVITY_LOGS } = {}) => {
   await ensureAuthenticatedUserId('read activity logs');
-  assertAdminOrDeveloperRole('read activity logs');
+  if (!canReadActivityLogs(getCurrentUserRoleContext(), currentUserPermissionsContext)) {
+    throw createContextError(ERROR_CODES.READ_ONLY_MODE, 'You do not have permission to read activity logs');
+  }
   if (!isFirebaseConfigured || !db) {
     return [];
   }
@@ -3446,7 +3560,7 @@ export const fetchAllData = async () => {
   const role = getCurrentUserRoleContext();
   const getScopeKey = () => {
     const scopedAuthId = authUserId || getAuthenticatedUserId() || userId;
-    return role === 'admin' || role === 'developer' ? `${scopedAuthId}:admin-global` : scopedAuthId;
+    return canReadAllData(role, currentUserPermissionsContext) ? `${scopedAuthId}:admin-global` : scopedAuthId;
   };
   try {
     userId = await ensureActiveUserId('fetch data');
@@ -4261,7 +4375,7 @@ export const getCurrentClassId = () => {
 export const fetchClassCatalog = async () => {
   const userId = await ensureAuthenticatedUserId('fetch class catalog');
   const role = getCurrentUserRoleContext();
-  const cacheScopeKey = role === 'admin' || role === 'developer' ? `${userId}:admin-global` : userId;
+  const cacheScopeKey = canReadAllData(role, currentUserPermissionsContext) ? `${userId}:admin-global` : userId;
 
   if (!isFirebaseConfigured || !db) {
     const cachedClasses = readClassCatalogCache(cacheScopeKey);
@@ -4270,7 +4384,7 @@ export const fetchClassCatalog = async () => {
     const { classId, className } = resolveActiveClassModel(userId, cachedClasses);
     const persistedSelection = readPersistedClassSelection(userId);
     const activeClass = findClassEntryBySelection(cachedClasses, classId, currentClassOwnerId || persistedSelection.ownerId || '') || null;
-    setCurrentClassContext(classId, userId, activeClass?.ownerId || '', activeClass?.ownerName || '');
+    setCurrentClassContext(classId, userId, activeClass?.ownerId || '', activeClass?.ownerName || '', activeClass?.ownerRole || ROLE_TEACHER);
     console.log('Classes:', cachedClasses.length);
     console.log('Selected class:', classId || '(none)');
     console.log('Owner ID:', activeClass?.ownerId || '(none)');
@@ -4289,7 +4403,7 @@ export const fetchClassCatalog = async () => {
   const { classId, className } = resolveActiveClassModel(userId, classes);
   const persistedSelection = readPersistedClassSelection(userId);
   const activeClass = findClassEntryBySelection(classes, classId, currentClassOwnerId || persistedSelection.ownerId || '') || null;
-  setCurrentClassContext(classId, userId, activeClass?.ownerId || '', activeClass?.ownerName || '');
+  setCurrentClassContext(classId, userId, activeClass?.ownerId || '', activeClass?.ownerName || '', activeClass?.ownerRole || ROLE_TEACHER);
   writeClassCatalogCache(cacheScopeKey, classes, trashClasses);
   globalClassCatalogCache.loadedAt = 0;
 
@@ -4493,7 +4607,9 @@ export const requestCurrentUserAccountDeletion = async () => enqueueWrite(async 
 
 export const reviewAdminUserAccountDeletion = async ({ uid = '', decision = '' } = {}) => enqueueWrite(async () => {
   const actorUserId = await ensureAuthenticatedUserId('review account deletion');
-  assertAdminRole('review account deletion');
+  if (!canReviewAccountDeletion(getCurrentUserRoleContext(), currentUserPermissionsContext)) {
+    throw createContextError(ERROR_CODES.READ_ONLY_MODE, 'Only admins or developers can review account deletion');
+  }
   if (!isFirebaseConfigured || !db) {
     throw new Error('Firebase unavailable');
   }
@@ -4645,6 +4761,7 @@ export const updateAdminUserRole = async ({ uid = '', name = '', email = '', rol
 
   const currentRole = policyState.currentRole;
   const normalizedRole = policyState.normalizedNextRole;
+  const accessProfile = buildRolePermissionPayload(normalizedRole);
   const resolvedEmail = normalizeEmailAddress(normalizedEmail || userPayload.email || '');
   const resolvedName = normalizeDisplayName(name || userPayload.name || resolvedEmail || 'Teacher', 'Teacher');
   const emailVerified = isVerifiedUserRecord(userPayload);
@@ -4655,16 +4772,29 @@ export const updateAdminUserRole = async ({ uid = '', name = '', email = '', rol
     userId: normalizedUid,
     name: resolvedName,
     email: resolvedEmail,
-    role: normalizedRole,
+    role: accessProfile.role,
+    permissions: accessProfile.permissions,
     emailVerified,
     updatedAt,
     roleUpdatedAt: updatedAt,
     roleUpdatedBy: actorUserId
   }, { merge: true });
 
+  const classSnapshots = await getDocs(getClassesCollectionRef(normalizedUid));
+  const classRoleUpdateTasks = [];
+  classSnapshots.forEach((entry) => {
+    classRoleUpdateTasks.push(setDoc(entry.ref, {
+      ownerRole: accessProfile.role,
+      updatedAt
+    }, { merge: true }));
+  });
+  if (classRoleUpdateTasks.length) {
+    await Promise.allSettled(classRoleUpdateTasks);
+  }
+
   await logActivity('user_role_updated', normalizedUid, 'record', {
     dataOwnerUserId: normalizedUid,
-    targetLabel: `${resolvedName || resolvedEmail || normalizedUid} (${currentRole} to ${normalizedRole})`,
+    targetLabel: `${resolvedName || resolvedEmail || normalizedUid} (${currentRole} to ${accessProfile.role})`,
     userRole: getCurrentUserRoleContext()
   });
 
@@ -4674,7 +4804,8 @@ export const updateAdminUserRole = async ({ uid = '', name = '', email = '', rol
     userId: normalizedUid,
     name: resolvedName,
     email: resolvedEmail,
-    role: normalizedRole,
+    role: accessProfile.role,
+    permissions: accessProfile.permissions,
     emailVerified,
     updatedAt,
     roleUpdatedAt: updatedAt,
@@ -4722,6 +4853,7 @@ export const syncCurrentUserClassOwnerName = async (ownerName = '') => {
 export const createClass = async (className) => {
   assertWritableRole('create class');
   const userId = await ensureAuthenticatedUserId('create class');
+  const cacheScopeKey = getFetchScopeKey(userId);
   const normalizedName = normalizeClassName(className, DEFAULT_CLASS_NAME);
   const createdAt = new Date().toISOString();
   const ownerName = getAuthenticatedUserDisplayName();
@@ -4734,7 +4866,8 @@ export const createClass = async (className) => {
     createdAt,
     deleted: false,
     deletedAt: null,
-    ownerName
+    ownerName,
+    ownerRole: getCurrentUserRoleContext()
   }));
 
   const catalog = await ensureClassCatalog(userId);
@@ -4745,11 +4878,12 @@ export const createClass = async (className) => {
     name: normalizedName,
     createdAt,
     ownerId: userId,
-    ownerName
+    ownerName,
+    ownerRole: getCurrentUserRoleContext()
   }]);
-  writeClassCatalogCache(userId, nextClasses, trashClasses);
+  writeClassCatalogCache(cacheScopeKey, nextClasses, trashClasses);
   globalClassCatalogCache.loadedAt = 0;
-  setCurrentClassContext(classId, userId, userId, ownerName);
+  setCurrentClassContext(classId, userId, userId, ownerName, getCurrentUserRoleContext());
 
   await mergeUserRootMetadata(userId, {
     userId,
@@ -4759,7 +4893,7 @@ export const createClass = async (className) => {
   });
 
   return {
-    class: toClassModel(classId, { name: normalizedName, createdAt, ownerId: userId, ownerName }),
+    class: toClassModel(classId, { name: normalizedName, createdAt, ownerId: userId, ownerName, ownerRole: getCurrentUserRoleContext() }),
     classes: nextClasses,
     currentClassId: classId,
     currentClassName: normalizedName,
@@ -4773,6 +4907,7 @@ const deleteClassesInternal = async (classIds = [], options = {}) => {
 
   assertWritableRole(operationLabel);
   const userId = await ensureAuthenticatedUserId(operationLabel);
+  const cacheScopeKey = getFetchScopeKey(userId);
   const normalizedClassIds = [...new Set(asArray(classIds).map(classId => normalizeClassId(classId)).filter(Boolean))];
   if (!normalizedClassIds.length) {
     throw new Error('Select at least one class');
@@ -4787,6 +4922,17 @@ const deleteClassesInternal = async (classIds = [], options = {}) => {
 
   if (selectedClasses.some(entry => !entry)) {
     throw new Error('One or more selected classes are unavailable');
+  }
+
+  const unauthorizedClass = selectedClasses.find((classEntry) => !canRoleWrite({
+    role: getCurrentUserRoleContext(),
+    permissions: currentUserPermissionsContext,
+    actorUserId: userId,
+    ownerId: normalizeUserId(classEntry?.ownerId || ''),
+    ownerRole: normalizeRole(classEntry?.ownerRole || ROLE_TEACHER)
+  }));
+  if (unauthorizedClass) {
+    throw createContextError(ERROR_CODES.READ_ONLY_MODE, `You do not have permission to ${operationLabel}`);
   }
 
   const remainingClasses = sortClasses(classes.filter(entry => !normalizedClassIds.includes(entry.id)));
@@ -4807,7 +4953,8 @@ const deleteClassesInternal = async (classIds = [], options = {}) => {
       createdAt: classEntry?.createdAt || null,
       deletedAt: updatedAt,
       ownerId: classOwnerId,
-      ownerName: classEntry?.ownerName || getAuthenticatedUserDisplayName()
+      ownerName: classEntry?.ownerName || getAuthenticatedUserDisplayName(),
+      ownerRole: normalizeRole(classEntry?.ownerRole || ROLE_TEACHER)
     };
   });
 
@@ -4817,7 +4964,8 @@ const deleteClassesInternal = async (classIds = [], options = {}) => {
       createdAt: classEntry.createdAt || null,
       deleted: true,
       deletedAt: serverTimestamp(),
-      ownerName: classEntry.ownerName || getAuthenticatedUserDisplayName()
+      ownerName: classEntry.ownerName || getAuthenticatedUserDisplayName(),
+      ownerRole: classEntry.ownerRole || ROLE_TEACHER
     }), { merge: true });
   }));
 
@@ -4825,7 +4973,7 @@ const deleteClassesInternal = async (classIds = [], options = {}) => {
     ...deletedEntries,
     ...trashClasses.filter(entry => !normalizedClassIds.includes(entry.id))
   ]);
-  writeClassCatalogCache(userId, remainingClasses, nextTrashClasses);
+  writeClassCatalogCache(cacheScopeKey, remainingClasses, nextTrashClasses);
   globalClassCatalogCache.loadedAt = 0;
 
   const { classId: nextClassId, className: nextClassName } = resolveActiveClassModel(userId, remainingClasses);
@@ -4870,6 +5018,7 @@ export const deleteClasses = async (classIds = []) => {
 export const restoreClass = async (classId) => {
   assertWritableRole('restore class');
   const userId = await ensureAuthenticatedUserId('restore class');
+  const cacheScopeKey = getFetchScopeKey(userId);
   const normalizedClassId = normalizeClassId(classId);
   if (!normalizedClassId) {
     throw new Error('Class id is required');
@@ -4888,13 +5037,23 @@ export const restoreClass = async (classId) => {
   if (!classOwnerId) {
     throw createContextError(ERROR_CODES.MISSING_OWNER_ID, 'Class owner metadata is missing');
   }
+  if (!canRoleWrite({
+    role: getCurrentUserRoleContext(),
+    permissions: currentUserPermissionsContext,
+    actorUserId: userId,
+    ownerId: classOwnerId,
+    ownerRole: normalizeRole(classEntry.ownerRole || ROLE_TEACHER)
+  })) {
+    throw createContextError(ERROR_CODES.READ_ONLY_MODE, 'You do not have permission to restore class');
+  }
 
   await setDoc(getClassDocRef(classOwnerId, normalizedClassId), buildClassDocMetadataPatch(classOwnerId, normalizedClassId, updatedAt, {
     name: classEntry.name,
     createdAt: classEntry.createdAt || null,
     deleted: false,
     deletedAt: null,
-    ownerName: classEntry.ownerName || getAuthenticatedUserDisplayName()
+    ownerName: classEntry.ownerName || getAuthenticatedUserDisplayName(),
+    ownerRole: normalizeRole(classEntry.ownerRole || ROLE_TEACHER)
   }), { merge: true });
 
   const nextClasses = sortClasses([
@@ -4904,11 +5063,12 @@ export const restoreClass = async (classId) => {
       name: classEntry.name,
       createdAt: classEntry.createdAt || null,
       ownerId: classOwnerId,
-      ownerName: classEntry.ownerName || getAuthenticatedUserDisplayName()
+      ownerName: classEntry.ownerName || getAuthenticatedUserDisplayName(),
+      ownerRole: normalizeRole(classEntry.ownerRole || ROLE_TEACHER)
     }
   ]);
   const nextTrashClasses = sortClassTrashEntries(trashClasses.filter(entry => entry.id !== normalizedClassId));
-  writeClassCatalogCache(userId, nextClasses, nextTrashClasses);
+  writeClassCatalogCache(cacheScopeKey, nextClasses, nextTrashClasses);
   globalClassCatalogCache.loadedAt = 0;
 
   const { classId: nextClassId, className: nextClassName } = resolveActiveClassModel(userId, nextClasses);
@@ -4931,6 +5091,7 @@ export const restoreClass = async (classId) => {
 export const permanentlyDeleteClass = async (classId) => {
   assertWritableRole('permanently delete class');
   const userId = await ensureAuthenticatedUserId('permanently delete class');
+  const cacheScopeKey = getFetchScopeKey(userId);
   const normalizedClassId = normalizeClassId(classId);
   if (!normalizedClassId) {
     throw new Error('Class id is required');
@@ -4947,6 +5108,15 @@ export const permanentlyDeleteClass = async (classId) => {
   if (!classOwnerId) {
     throw createContextError(ERROR_CODES.MISSING_OWNER_ID, 'Class owner metadata is missing');
   }
+  if (!canRoleWrite({
+    role: getCurrentUserRoleContext(),
+    permissions: currentUserPermissionsContext,
+    actorUserId: userId,
+    ownerId: classOwnerId,
+    ownerRole: normalizeRole(classEntry.ownerRole || ROLE_TEACHER)
+  })) {
+    throw createContextError(ERROR_CODES.READ_ONLY_MODE, 'You do not have permission to permanently delete class');
+  }
 
   await Promise.all([
     deleteCollectionDocuments(getStudentsCollectionRef(classOwnerId, normalizedClassId)),
@@ -4957,7 +5127,7 @@ export const permanentlyDeleteClass = async (classId) => {
 
   const updatedAt = new Date().toISOString();
   const nextTrashClasses = sortClassTrashEntries(trashClasses.filter(entry => entry.id !== normalizedClassId));
-  writeClassCatalogCache(userId, classes, nextTrashClasses);
+  writeClassCatalogCache(cacheScopeKey, classes, nextTrashClasses);
   globalClassCatalogCache.loadedAt = 0;
 
   const { classId: nextClassId, className: nextClassName } = resolveActiveClassModel(userId, classes);

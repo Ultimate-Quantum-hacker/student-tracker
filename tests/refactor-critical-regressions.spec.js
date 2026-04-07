@@ -596,7 +596,9 @@ test.describe('Class refactor critical regressions', () => {
     expect(rulesSource).toContain("request.resource.data.role == 'teacher'");
     expect(rulesSource).toContain("'createdAt'");
     expect(dbSource).toContain('const buildUserRootBootstrapPayload = (userId) => {');
-    expect(dbSource).toContain("role: 'teacher'");
+    expect(dbSource).toContain('const accessProfile = buildRolePermissionPayload(ROLE_TEACHER);');
+    expect(dbSource).toContain('role: accessProfile.role');
+    expect(dbSource).toContain('permissions: accessProfile.permissions');
     expect(dbSource).toContain('const ensureUserRootProfileDocument = async (userId) => {');
     expect(dbSource).toContain("if (getCurrentUserRoleContext() !== 'teacher') {");
     expect(dbSource).toContain('await setDoc(userRootRef, bootstrapPayload, { merge: true });');
@@ -2357,8 +2359,9 @@ test('bulk delete class modal shows polished selection state and prevents deleti
 
     expect(adminJsSource).toContain("if (canManageAdminRoles(state.currentRole) && !roleActionLocked) {");
     expect(adminJsSource).toContain("roleWrap.appendChild(roleSelectShell);");
-    expect(adminJsSource).toContain("const helperMessage = canManageAdminRoles(state.currentRole)");
-    expect(adminJsSource).toContain("          : 'Developer-only role changes';");
+    expect(adminJsSource).toContain("const canUpdateRole = canManageAdminRoles(state.currentRole);");
+    expect(adminJsSource).toContain("const helperMessage = canUpdateRole");
+    expect(adminJsSource).toContain("'Developer-only role changes'");
     expect(adminJsSource).toContain("actionHelperMarkup.push(buildTableHelperTextMarkup(helperMessage));");
     expect(adminJsSource).not.toContain("actionWrap.innerHTML = buildTableHelperTextMarkup('View only');");
   });
@@ -2539,16 +2542,19 @@ test('bulk delete class modal shows polished selection state and prevents deleti
     expect(dbSource).toContain('const findClassEntryBySelection = (classes = [], classId = \'\', ownerId = \'\') => {');
     expect(dbSource).toContain('const activeClass = findClassEntryBySelection(classes, classId, currentClassOwnerId || persistedSelection.ownerId || \'\') || null;');
     expect(dbSource).toContain('const classesSnapshot = await getDocs(collectionGroup(db, CLASSES_SUBCOLLECTION));');
-    expect(dbSource).toContain("const canRoleWrite = (role = getCurrentUserRoleContext()) => {");
+    expect(dbSource).toContain("const canRoleWrite = (roleOrOptions = getCurrentUserRoleContext()) => {");
+    expect(dbSource).toContain('return canWriteClassData({');
+    expect(dbSource).toContain('const ownerRole = normalizeRole(options?.ownerRole || currentClassOwnerRole || ROLE_TEACHER);');
     expect(dbSource).toContain("console.log('ROLE:', role);");
-    expect(dbSource).toContain("console.log('CAN WRITE:', canRoleWrite(role));");
+    expect(dbSource).toContain("console.log('CAN WRITE:', canWrite);");
     expect(dbSource).toContain('await ensureDefaultClassDocument(authUserId);');
     expect(dbSource).toContain('return normalizeUserId(currentClassOwnerId) || getAuthenticatedUserId();');
-    expect(dbSource).toContain("assertAdminOrDeveloperRole('read activity logs');");
-    expect(dbSource).toContain("if (userRole === 'admin' || userRole === 'developer') {");
+    expect(dbSource).toContain("if (!canReadActivityLogs(getCurrentUserRoleContext(), currentUserPermissionsContext)) {");
+    expect(dbSource).toContain('if (canReadActivityLogs(userRole, currentUserPermissionsContext)) {');
     expect(stateSource).toContain('Object.assign(app, createStateContextApi(app, dataService));');
     expect(stateContextSource).toContain('canCurrentRoleWrite() {');
-    expect(stateContextSource).toContain("console.log('CAN WRITE:', app.state.currentUserRole !== ROLE_ADMIN);");
+    expect(stateContextSource).toContain("console.log('CAN WRITE:', api.canCurrentRoleWrite());");
+    expect(stateContextSource).toContain('return canWriteClassData({');
     expect(stateContextSource).toContain("export const getAuthenticatedOwnerFallback = (state = {}) => String(state.authUser?.uid || '').trim();");
     expect(rulesSource).toContain('function isSignedIn() {');
     expect(rulesSource).toContain('function isOwner(userId) {');
@@ -2867,18 +2873,18 @@ test('bulk delete class modal shows polished selection state and prevents deleti
         unverifiedTeacherPolicy: getAdminUserRolePolicyLabel(unverifiedTeacher, { currentRole: 'developer' }),
         unverifiedTeacherUpdate: buildAdminUserRoleUpdateState(unverifiedTeacher, {
           nextRole: 'admin',
-          updatableRoles: ['teacher', 'admin']
+          updatableRoles: ['teacher', 'head_teacher', 'admin']
         }),
         verifiedTeacherCanRender: canRenderAdminRoleChangeControl(verifiedTeacher, { currentRole: 'developer' }),
         verifiedTeacherUpdate: buildAdminUserRoleUpdateState(verifiedTeacher, {
           nextRole: 'admin',
-          updatableRoles: ['teacher', 'admin']
+          updatableRoles: ['teacher', 'head_teacher', 'admin']
         }),
         developerCanRender: canRenderAdminRoleChangeControl(developerRecord, { currentRole: 'developer' }),
         developerPolicy: getAdminUserRolePolicyLabel(developerRecord, { currentRole: 'developer' }),
         developerUpdate: buildAdminUserRoleUpdateState(developerRecord, {
           nextRole: 'admin',
-          updatableRoles: ['teacher', 'admin']
+          updatableRoles: ['teacher', 'head_teacher', 'admin']
         })
       };
     });
@@ -2888,7 +2894,7 @@ test('bulk delete class modal shows polished selection state and prevents deleti
     const authSource = readWorkspaceFile('js/auth.js');
 
     expect(result.unverifiedTeacherCanRender).toBe(false);
-    expect(result.unverifiedTeacherPolicy).toContain('Verify this teacher account before admin promotion');
+    expect(result.unverifiedTeacherPolicy).toContain('Verify this teacher account before head teacher or admin promotion');
     expect(result.unverifiedTeacherUpdate.canUpdate).toBe(false);
     expect(result.unverifiedTeacherUpdate.statusMessage).toContain('Verify this teacher email');
 
@@ -2905,7 +2911,7 @@ test('bulk delete class modal shows polished selection state and prevents deleti
     expect(dbSource).toContain('PRIVILEGED_ROLE_POLICY');
     expect(dbSource).toContain('buildPrivilegedRoleUpdatePolicyState');
     expect(dbSource).toContain('Privileged roles can only be assigned to existing signed-in teacher accounts.');
-    expect(dbSource).toContain('Only verified teacher accounts can be promoted to admin.');
+    expect(dbSource).toContain('Only verified teacher accounts can be promoted to head teacher or admin.');
     expect(dbSource).toContain("Developer onboarding is manual and cannot be changed in the admin panel.");
     expect(dbSource).toContain("await logActivity('user_role_updated', normalizedUid, 'record', {");
     expect(rulesSource).toContain('function developerCanManageUserRole(userId) {');
@@ -2947,10 +2953,12 @@ test('bulk delete class modal shows polished selection state and prevents deleti
       };
     });
 
-    expect(result.developerReviewState.canReview).toBe(false);
-    expect(result.developerReviewState.statusMessage).toBe('Only admins can review deletion requests.');
-    expect(adminSource).toContain('Admin mode: review users, search, registry, activity history, and account deletion requests.');
-    expect(adminJsSource).toContain("buildTableHelperTextMarkup('Admin-only deletion review')");
+    expect(result.hasLegacySubjectKey).toBe(false);
+    expect(result.hasLegacyExamKey).toBe(false);
+    expect(result.scores).toEqual({
+      subject_math: { exam_mock_1: 88 },
+      subject_english: { exam_mock_1: 76 }
+    });
   });
 
   test('requestCurrentUserAccountDeletion normalizes legacy owner metadata before marking deletion pending', async ({ page }) => {

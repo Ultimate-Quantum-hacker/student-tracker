@@ -8,8 +8,19 @@ import {
   normalizeUserRole
 } from './auth.js';
 import { formatRoleLabel, normalizeText } from './admin-display-utils.js';
+import {
+  ROLE_HEAD_TEACHER,
+  canManageUserRoles,
+  canManageSystemConfig,
+  canReviewAccountDeletion,
+  canReadAllData,
+  canReadActivityLogs,
+  canClearActivityLogs,
+  canDeleteRegistryStudents
+} from './access-control.js';
 
 const ROLE_TEACHER = 'teacher';
+const ROLE_HEAD_TEACHER_KEY = 'head_teacher';
 const ROLE_ADMIN = 'admin';
 const ROLE_DEVELOPER = 'developer';
 
@@ -21,20 +32,26 @@ const hasLockedAdminDeletionRequest = (record = {}) => {
   return deletionStatus === ACCOUNT_DELETION_STATUS_PENDING || deletionStatus === ACCOUNT_DELETION_STATUS_APPROVED;
 };
 
-const isAdminOnlyViewerRole = (currentRole = '') => normalizeUserRole(currentRole) === ROLE_ADMIN;
-export const canManageAdminRoles = (currentRole = '') => normalizeUserRole(currentRole) === ROLE_DEVELOPER;
-export const canRunAdminDestructiveActions = (currentRole = '') => normalizeUserRole(currentRole) === ROLE_DEVELOPER;
+const isRestrictedAdminViewerRole = (currentRole = '') => {
+  const normalizedCurrentRole = normalizeUserRole(currentRole);
+  return normalizedCurrentRole === ROLE_ADMIN || normalizedCurrentRole === ROLE_HEAD_TEACHER || normalizedCurrentRole === ROLE_HEAD_TEACHER_KEY;
+};
+export const canManageAdminRoles = (currentRole = '') => canManageUserRoles(currentRole);
+export const canRunAdminDestructiveActions = (currentRole = '') => canManageSystemConfig(currentRole);
 export const canDeleteAdminRegistryStudents = (currentRole = '') => canRunAdminDestructiveActions(currentRole);
 export const canClearAdminActivityLogs = (currentRole = '') => canRunAdminDestructiveActions(currentRole);
 export const canReviewAdminAccountDeletion = (currentRole = '') => {
-  const normalizedCurrentRole = normalizeUserRole(currentRole);
-  return normalizedCurrentRole === ROLE_ADMIN;
+  return canReviewAccountDeletion(currentRole);
 };
 
 export const getAdminPanelAccessSummary = (currentRole = '') => {
   const normalizedCurrentRole = normalizeUserRole(currentRole);
   if (normalizedCurrentRole === ROLE_DEVELOPER) {
     return 'Developer mode: review admin data, manage roles, and handle registry cleanup and activity-log maintenance where needed.';
+  }
+
+  if (normalizedCurrentRole === ROLE_HEAD_TEACHER || normalizedCurrentRole === ROLE_HEAD_TEACHER_KEY) {
+    return 'Head teacher mode: review all academic data, supervise teacher-owned records, and coordinate messaging. Developer-only role changes and destructive maintenance remain locked.';
   }
 
   if (normalizedCurrentRole === ROLE_ADMIN) {
@@ -58,7 +75,7 @@ export const getVisibleAdminUsers = (users = [], {
   currentRole = ''
 } = {}) => {
   const records = Array.isArray(users) ? users : [];
-  if (!isAdminOnlyViewerRole(currentRole)) {
+  if (!isRestrictedAdminViewerRole(currentRole)) {
     return records.slice();
   }
 
@@ -311,7 +328,7 @@ export const canRenderAdminRoleChangeControl = (record = {}, {
     return canPromoteTeacherRecordToAdmin(record);
   }
 
-  return normalizedRole === ROLE_ADMIN;
+  return normalizedRole === ROLE_ADMIN || normalizedRole === ROLE_HEAD_TEACHER || normalizedRole === ROLE_HEAD_TEACHER_KEY;
 };
 
 export const getAdminUserRolePolicyLabel = (record = {}, {
@@ -339,7 +356,7 @@ export const getAdminUserRolePolicyLabel = (record = {}, {
   }
 
   if (normalizedRole === ROLE_TEACHER && !Boolean(record?.emailVerified)) {
-    return 'Verify this teacher account before admin promotion';
+    return 'Verify this teacher account before head teacher or admin promotion';
   }
 
   return 'Role can be updated by a developer';
@@ -368,6 +385,10 @@ export const getAdminUserAccountSummary = (record = {}) => {
 
   if (normalizedRole === ROLE_ADMIN) {
     return 'Privileged workspace member';
+  }
+
+  if (normalizedRole === ROLE_HEAD_TEACHER || normalizedRole === ROLE_HEAD_TEACHER_KEY) {
+    return 'Academic leadership account';
   }
 
   if (Boolean(record?.emailVerified)) {
@@ -459,7 +480,7 @@ export const buildAdminUserRoleUpdateState = (record = {}, {
       normalizedNextRole,
       canUpdate: false,
       progressLabel,
-      statusMessage: 'Only teacher and admin roles can be assigned in this panel.',
+      statusMessage: 'Only teacher, head teacher, and admin roles can be assigned in this panel.',
       statusType: 'warning',
       confirmationMessage: ''
     };
@@ -477,13 +498,17 @@ export const buildAdminUserRoleUpdateState = (record = {}, {
     };
   }
 
-  if (currentRole === ROLE_TEACHER && normalizedNextRole === ROLE_ADMIN && !isEmailVerified) {
+  if (
+    currentRole === ROLE_TEACHER
+    && (normalizedNextRole === ROLE_ADMIN || normalizedNextRole === ROLE_HEAD_TEACHER || normalizedNextRole === ROLE_HEAD_TEACHER_KEY)
+    && !isEmailVerified
+  ) {
     return {
       currentRole,
       normalizedNextRole,
       canUpdate: false,
       progressLabel,
-      statusMessage: 'Verify this teacher email before promoting the account to admin.',
+      statusMessage: 'Verify this teacher email before promoting the account to head teacher or admin.',
       statusType: 'warning',
       confirmationMessage: ''
     };
@@ -597,7 +622,7 @@ export const getVisibleAdminActivityEntries = (entries = [], users = [], {
   currentRole = ''
 } = {}) => {
   const normalizedEntries = Array.isArray(entries) ? entries : [];
-  if (!isAdminOnlyViewerRole(currentRole)) {
+  if (!isRestrictedAdminViewerRole(currentRole)) {
     return normalizedEntries;
   }
 
@@ -618,7 +643,7 @@ export const shouldIncludeAdminOwner = (userId = '', users = [], {
     return false;
   }
 
-  if (!isAdminOnlyViewerRole(currentRole)) {
+  if (!isRestrictedAdminViewerRole(currentRole)) {
     return true;
   }
 
