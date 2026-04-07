@@ -994,6 +994,8 @@ body.dark-mode .auth-role-badge[data-role="developer"]{
 
 .admin-readonly-banner[hidden]{display:none !important}
 
+[hidden]{display:none !important}
+
 .admin-readonly-icon{font-size:1rem}
 
 body.dark-mode .admin-readonly-banner{

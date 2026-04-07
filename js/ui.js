@@ -4050,7 +4050,7 @@ const ui = {
             if (app.dom.messageComposeFeedback?.textContent) {
               this.setMessageComposeFeedback('');
             }
-            this.updateMessageComposeMeta();
+            this.renderMessageComposeControls();
           };
         }
         if (app.dom.messageComposeRoleSelect) {
@@ -4058,7 +4058,7 @@ const ui = {
             if (app.dom.messageComposeFeedback?.textContent) {
               this.setMessageComposeFeedback('');
             }
-            this.updateMessageComposeMeta();
+            this.renderMessageComposeControls();
           };
         }
         if (app.dom.messageComposeClassSelect) {
@@ -4066,7 +4066,7 @@ const ui = {
             if (app.dom.messageComposeFeedback?.textContent) {
               this.setMessageComposeFeedback('');
             }
-            this.updateMessageComposeMeta();
+            this.renderMessageComposeControls();
           };
         }
         if (app.dom.messageComposeSubject) {
