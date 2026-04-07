@@ -127,11 +127,7 @@ export const getDefaultPermissionsForRole = (role) => {
   return ROLE_PERMISSION_MAP[normalizedRole] ? ROLE_PERMISSION_MAP[normalizedRole].slice() : ROLE_PERMISSION_MAP[DEFAULT_USER_ROLE].slice();
 };
 
-export const resolvePermissionsForRole = (role, permissions = []) => {
-  const normalizedPermissions = normalizePermissions(permissions);
-  if (normalizedPermissions.length) {
-    return normalizedPermissions;
-  }
+export const resolvePermissionsForRole = (role, _permissions = []) => {
   return getDefaultPermissionsForRole(role);
 };
 

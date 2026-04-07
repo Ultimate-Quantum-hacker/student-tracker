@@ -546,6 +546,36 @@ test.describe('Class refactor critical regressions', () => {
     expect(dbSource).toContain('if (isDeveloperAccountEmail(email)) {');
   });
 
+  test('canonical role defaults preserve admin messaging access and teacher replies', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const accessModule = await import('/js/access-control.js');
+      return {
+        adminCanReply: accessModule.canReplyToMessages('admin', ['read_all_data']),
+        adminCanSend: accessModule.canSendMessages('admin', ['read_all_data']),
+        adminCanMessageAll: accessModule.canMessageAudienceType(accessModule.MESSAGE_AUDIENCE_ALL, 'admin', ['read_all_data']),
+        adminCanMessageRoles: accessModule.canMessageAudienceType(accessModule.MESSAGE_AUDIENCE_ROLE, 'admin', ['read_all_data']),
+        adminCanMessageClasses: accessModule.canMessageAudienceType(accessModule.MESSAGE_AUDIENCE_CLASS, 'admin', ['read_all_data']),
+        teacherCanReply: accessModule.canReplyToMessages('teacher', ['read_own_class_data']),
+        teacherCanReceive: accessModule.canReceiveMessages('teacher', ['read_own_class_data']),
+        teacherCanSend: accessModule.canSendMessages('teacher', ['read_own_class_data'])
+      };
+    });
+
+    const accessSource = readWorkspaceFile('js/access-control.js');
+
+    expect(result.adminCanReply).toBe(true);
+    expect(result.adminCanSend).toBe(true);
+    expect(result.adminCanMessageAll).toBe(true);
+    expect(result.adminCanMessageRoles).toBe(true);
+    expect(result.adminCanMessageClasses).toBe(true);
+    expect(result.teacherCanReply).toBe(true);
+    expect(result.teacherCanReceive).toBe(true);
+    expect(result.teacherCanSend).toBe(false);
+
+    expect(accessSource).toContain('export const resolvePermissionsForRole = (role, _permissions = []) => {');
+    expect(accessSource).toContain('return getDefaultPermissionsForRole(role);');
+  });
+
   test('teacher write flows retain writable class-scoped context', async ({ page }) => {
     const result = await page.evaluate(async () => {
       const [stateModule, studentsModule] = await Promise.all([
