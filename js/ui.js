@@ -283,6 +283,7 @@ const ui = {
   messageNewIds: new Set(),
   messageDetailAnimationFrame: null,
   lastMessagesListMarkup: '',
+  messageListScrollTop: 0,
   messageComposeState: {
     mode: 'compose',
     replyToMessageId: '',
@@ -1108,6 +1109,7 @@ const ui = {
       this.messageDirectoryRequest = null;
       this.messageNewIds = new Set();
       this.lastMessagesListMarkup = '';
+      this.messageListScrollTop = 0;
       if (this.messageDetailAnimationFrame) {
         window.cancelAnimationFrame(this.messageDetailAnimationFrame);
         this.messageDetailAnimationFrame = null;
@@ -1124,6 +1126,38 @@ const ui = {
       if (app.dom.messageComposeModal) {
         app.dom.messageComposeModal.classList.remove('active');
       }
+    },
+
+    syncSectionShellState: function (sectionId = '') {
+      const normalizedSectionId = String(sectionId || '').trim().toLowerCase();
+      const isMessagesSection = normalizedSectionId === 'messages';
+      document.body.classList.toggle('messages-section-active', isMessagesSection);
+      const appMain = document.getElementById('app-main');
+      if (appMain) {
+        appMain.classList.toggle('messages-section-active', isMessagesSection);
+      }
+      const mainContent = document.querySelector('.main-content');
+      if (mainContent) {
+        mainContent.classList.toggle('messages-section-active', isMessagesSection);
+      }
+    },
+
+    captureMessageListScrollPosition: function () {
+      if (app.dom.messagesList) {
+        this.messageListScrollTop = Math.max(0, Number(app.dom.messagesList.scrollTop) || 0);
+      }
+      return this.messageListScrollTop;
+    },
+
+    restoreMessageListScrollPosition: function (scrollTop = this.messageListScrollTop) {
+      if (!app.dom.messagesList) {
+        return;
+      }
+      const nextScrollTop = Number.isFinite(Number(scrollTop))
+        ? Math.max(0, Number(scrollTop))
+        : Math.max(0, Number(this.messageListScrollTop) || 0);
+      app.dom.messagesList.scrollTop = nextScrollTop;
+      this.messageListScrollTop = Math.max(0, Number(app.dom.messagesList.scrollTop) || 0);
     },
 
     updateMessageBadges: function () {
@@ -1672,7 +1706,7 @@ const ui = {
       this.animateMessageDetail();
     },
 
-    renderMessagesSection: function () {
+    renderMessagesSection: function ({ preserveListScroll = true } = {}) {
       const hasSession = Boolean(app.state.authUser?.uid);
       const capabilities = this.getMessagingCapabilities();
       const hasAccess = capabilities.canReceive || capabilities.canSend || capabilities.canReply;
@@ -1680,6 +1714,7 @@ const ui = {
       const unreadCount = Number.isFinite(Number(app.state.unreadMessageCount))
         ? Math.max(0, Math.floor(Number(app.state.unreadMessageCount)))
         : 0;
+      const preservedMessageListScrollTop = preserveListScroll ? this.captureMessageListScrollPosition() : 0;
 
       this.updateMessageBadges();
       this.syncMessageFilterControls(allMessages, { hasAccess });
@@ -1788,6 +1823,12 @@ const ui = {
           app.dom.messagesList.innerHTML = nextMessagesListMarkup;
           this.lastMessagesListMarkup = nextMessagesListMarkup;
         }
+        if (preserveListScroll) {
+          this.restoreMessageListScrollPosition(preservedMessageListScrollTop);
+        } else {
+          app.dom.messagesList.scrollTop = 0;
+          this.messageListScrollTop = 0;
+        }
       }
 
       this.renderSelectedMessageDetail(selectedMessage);
@@ -1877,12 +1918,12 @@ const ui = {
         ? String(filter || '').trim().toLowerCase()
         : 'all';
       app.state.messageMailboxFilter = normalizedFilter;
-      this.renderMessagesSection();
+      this.renderMessagesSection({ preserveListScroll: false });
     },
 
     setMessageSearchTerm: function (searchTerm = '') {
       app.state.messageSearchTerm = String(searchTerm || '').trimStart();
-      this.renderMessagesSection();
+      this.renderMessagesSection({ preserveListScroll: false });
     },
 
     setMessageTypeFilter: function (filter = 'all') {
@@ -1890,12 +1931,12 @@ const ui = {
         ? String(filter || '').trim().toLowerCase()
         : 'all';
       app.state.messageTypeFilter = normalizedFilter;
-      this.renderMessagesSection();
+      this.renderMessagesSection({ preserveListScroll: false });
     },
 
     setMessageRoleFilter: function (filter = 'all') {
       app.state.messageRoleFilter = String(filter || 'all').trim().toLowerCase() || 'all';
-      this.renderMessagesSection();
+      this.renderMessagesSection({ preserveListScroll: false });
     },
 
     setMessageDateFilter: function (filter = 'all') {
@@ -1903,7 +1944,7 @@ const ui = {
         ? String(filter || '').trim().toLowerCase()
         : 'all';
       app.state.messageDateFilter = normalizedFilter;
-      this.renderMessagesSection();
+      this.renderMessagesSection({ preserveListScroll: false });
     },
 
     buildMessageAudienceOptions: function (mode = 'compose') {
@@ -2307,6 +2348,7 @@ const ui = {
       if (messageId) {
         app.state.selectedMessageId = String(messageId || '').trim();
       }
+      this.syncSectionShellState('messages');
       this.renderMessagesSection();
       try {
         await this.ensureMessagesLoaded(force);
@@ -3618,6 +3660,8 @@ const ui = {
         return;
       }
 
+      this.syncSectionShellState(targetSectionId);
+
       if (app.sidebar && typeof app.sidebar.showSection === 'function') {
         app.sidebar.showSection(targetSectionId);
       } else {
@@ -4405,6 +4449,9 @@ const ui = {
           };
         }
         if (app.dom.messagesList) {
+          app.dom.messagesList.addEventListener('scroll', () => {
+            this.messageListScrollTop = Math.max(0, Number(app.dom.messagesList?.scrollTop) || 0);
+          }, { passive: true });
           app.dom.messagesList.addEventListener('click', (event) => {
             const trigger = event.target.closest('[data-message-id]');
             if (!trigger) return;

@@ -121,6 +121,10 @@ const sidebar = {
     const sections = document.querySelectorAll('.content-section');
     sections.forEach(section => section.classList.remove('active'));
 
+    if (window.TrackerApp && window.TrackerApp.ui && typeof window.TrackerApp.ui.syncSectionShellState === 'function') {
+      window.TrackerApp.ui.syncSectionShellState(sectionId);
+    }
+
     const activeSection = document.getElementById(sectionId);
     if (activeSection) {
       activeSection.classList.add('active');
