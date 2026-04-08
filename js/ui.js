@@ -1982,27 +1982,29 @@ const ui = {
         ? MESSAGE_AUDIENCE_INDIVIDUAL
         : String(app.dom.messageComposeAudienceType?.value || MESSAGE_AUDIENCE_INDIVIDUAL).trim();
       const bodyLength = String(app.dom.messageComposeBody?.value || '').length;
-      let audienceSummary = 'Select an audience';
+      let audienceSummary = 'Select who to message';
 
       if (mode === 'reply') {
         audienceSummary = replyTarget?.label ? `Replying to ${replyTarget.label}` : 'Reply target unavailable';
       } else if (audienceType === MESSAGE_AUDIENCE_ALL) {
-        audienceSummary = 'All eligible users';
+        audienceSummary = 'To all eligible users';
       } else if (audienceType === MESSAGE_AUDIENCE_ROLE) {
         const selectedRole = directory.roles.find((option) => {
           return String(option?.value ?? option?.role ?? '').trim() === String(app.dom.messageComposeRoleSelect?.value || '').trim();
         });
-        audienceSummary = selectedRole?.label || 'Select a role';
+        audienceSummary = selectedRole?.label ? `To ${selectedRole.label}` : 'Select a role';
       } else if (audienceType === MESSAGE_AUDIENCE_CLASS) {
         const selectedClass = directory.classes.find((option) => {
           return String(option?.id ?? option?.value ?? '').trim() === String(app.dom.messageComposeClassSelect?.value || '').trim();
         });
-        audienceSummary = selectedClass?.label || 'Select a class';
+        audienceSummary = selectedClass?.label ? `To ${selectedClass.label}` : 'Select a class';
       } else {
         const selectedUser = directory.users.find((option) => {
           return String(option?.uid ?? option?.value ?? '').trim() === String(app.dom.messageComposeRecipientSelect?.value || '').trim();
         });
-        audienceSummary = selectedUser?.label || selectedUser?.displayLabel || selectedUser?.name || selectedUser?.email || 'Select a recipient';
+        audienceSummary = selectedUser
+          ? `To ${selectedUser.label || selectedUser.displayLabel || selectedUser.name || selectedUser.email || 'recipient'}`
+          : 'Select a recipient';
       }
 
       app.dom.messageComposeMeta.textContent = `${audienceSummary} · ${bodyLength} / 5000 characters`;
@@ -2026,7 +2028,7 @@ const ui = {
 
       this.populateMessageSelect(app.dom.messageComposeAudienceType, audienceOptions, {
         selectedValue: currentAudienceType,
-        placeholder: 'Select audience',
+        placeholder: 'Select who to message',
         includePlaceholder: false
       });
 
@@ -2068,7 +2070,7 @@ const ui = {
         } else if (this.isLoadingMessageDirectory) {
           app.dom.messageComposeSubtitle.textContent = 'Loading recipient options...';
         } else {
-          app.dom.messageComposeSubtitle.textContent = 'Choose an audience and write your message.';
+          app.dom.messageComposeSubtitle.textContent = 'Choose who to message and write your message.';
         }
       }
       if (app.dom.messageComposeAudienceType) {

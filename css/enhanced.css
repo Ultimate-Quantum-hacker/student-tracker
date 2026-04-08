@@ -3624,12 +3624,10 @@ body.dark-mode .card:hover, body.dark-mode .stat-card:hover {
 .message-list-item-preview {
   color: var(--text-secondary, #475569);
   font-size: 0.91rem;
-  line-height: 1.55;
-  display: -webkit-box;
-  line-clamp: 2;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  line-height: 1.45;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .message-list-item-meta {
@@ -3719,7 +3717,7 @@ body.dark-mode .card:hover, body.dark-mode .stat-card:hover {
 }
 
 .messages-detail-body {
-  flex: 1;
+  flex: 0 1 auto;
   padding: 1.05rem 1.15rem;
   border: 1px solid var(--border, #e2e8f0);
   border-radius: 16px;
@@ -4131,7 +4129,7 @@ body.role-loading #reset-btn {
   justify-content: flex-end;
   gap: 0.7rem;
   flex-wrap: wrap;
-  margin-top: auto;
+  margin-top: 0.25rem;
 }
 
 body.dark-mode .header-message-alert {
