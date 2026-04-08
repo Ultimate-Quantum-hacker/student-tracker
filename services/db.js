@@ -3229,9 +3229,10 @@ export const replyToMessage = async (messageId = '', payload = {}) => {
   });
 };
 
-export const markMessageAsRead = async (messageId = '') => {
-  const actorUserId = await ensureAuthenticatedUserId('mark message as read');
+const setMessageReadState = async (messageId = '', isRead = true) => {
+  const actorUserId = await ensureAuthenticatedUserId(isRead ? 'mark message as read' : 'mark message as unread');
   const normalizedMessageId = String(messageId || '').trim();
+  const nextReadState = Boolean(isRead);
   if (!normalizedMessageId || !isFirebaseConfigured || !db) {
     return false;
   }
@@ -3243,7 +3244,7 @@ export const markMessageAsRead = async (messageId = '') => {
   }
 
   const messageRecord = normalizeMessageRecord(snapshot.id, snapshot.data() || {});
-  if (messageRecord.mailbox !== MESSAGE_MAILBOX_INBOX || messageRecord.isRead) {
+  if (messageRecord.mailbox !== MESSAGE_MAILBOX_INBOX || messageRecord.isRead === nextReadState) {
     return false;
   }
 
@@ -3254,22 +3255,30 @@ export const markMessageAsRead = async (messageId = '') => {
     : 0;
 
   await updateDoc(messageRef, {
-    isRead: true,
-    readAt: serverTimestamp(),
+    isRead: nextReadState,
+    readAt: nextReadState ? serverTimestamp() : null,
     updatedAt
   });
 
   try {
     await mergeUserRootMetadata(actorUserId, {
       userId: actorUserId,
-      messageUnreadCount: Math.max(0, existingUnreadCount - 1),
+      messageUnreadCount: Math.max(0, existingUnreadCount + (nextReadState ? -1 : 1)),
       updatedAt
     });
   } catch (error) {
-    console.warn('Failed to update unread metadata after marking a message as read:', error);
+    console.warn('Failed to update unread metadata after changing a message read state:', error);
   }
 
   return true;
+};
+
+export const markMessageAsRead = async (messageId = '') => {
+  return setMessageReadState(messageId, true);
+};
+
+export const markMessageAsUnread = async (messageId = '') => {
+  return setMessageReadState(messageId, false);
 };
 
 const ensureDefaultClassDocument = async (userId) => {

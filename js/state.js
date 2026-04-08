@@ -33,6 +33,10 @@ window.TrackerApp = window.TrackerApp || {};
     messages: [],
     selectedMessageId: '',
     messageMailboxFilter: 'all',
+    messageSearchTerm: '',
+    messageRoleFilter: 'all',
+    messageDateFilter: 'all',
+    messageTypeFilter: 'all',
     messageLastMessageAt: null,
     messageDirectory: {
       users: [],

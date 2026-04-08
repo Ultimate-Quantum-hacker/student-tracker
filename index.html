@@ -773,10 +773,11 @@
     }
   </style>
 </head>
-<body>
+<body class="role-loading">
   <!-- Splash / loading -->
   <div id="app-splash">
     <div class="app-splash-card">
+      <div class="app-splash-icon">📘</div>
       <div class="app-splash-brand">
         <div class="app-splash-logo-shell" aria-hidden="true">
           <span class="app-splash-ring app-splash-ring-outer"></span>
@@ -874,6 +875,11 @@
           <button class="btn btn-icon" id="themeToggle" title="Toggle Theme"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></button>
           <button class="btn btn-icon btn-danger reset-icon" id="reset-btn" title="Start New Class"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg></button>
         </div>
+
+        <button class="header-message-alert" id="header-message-alert" type="button" hidden>
+          <span class="header-message-alert-icon" aria-hidden="true">✉</span>
+          <span id="header-message-alert-text">0 unread messages</span>
+        </button>
 
         <!-- Custom install button (shown by JS when eligible) -->
         <button class="btn btn-primary header-install-btn" id="install-btn" title="Install app">
@@ -999,6 +1005,10 @@
             <p id="messages-section-status" class="section-subtitle">Check your inbox, replies, and sent messages.</p>
           </div>
           <div class="section-controls">
+            <label class="messages-search-field" for="messages-search-input">
+              <span class="messages-search-icon" aria-hidden="true">⌕</span>
+              <input type="search" id="messages-search-input" class="search-input" placeholder="Search messages">
+            </label>
             <div class="messages-header-actions">
               <span id="messages-unread-badge" class="messages-unread-badge" hidden>0 unread</span>
               <button type="button" class="btn btn-secondary btn-sm" id="messages-refresh-btn">Refresh</button>
@@ -1009,10 +1019,40 @@
         <div class="card messages-card">
           <div class="messages-layout">
             <div class="messages-list-panel">
-              <div class="messages-filter-group" role="tablist" aria-label="Message filters">
-                <button type="button" class="messages-filter-btn active" id="messages-filter-all" data-message-filter="all">All</button>
-                <button type="button" class="messages-filter-btn" id="messages-filter-inbox" data-message-filter="inbox">Inbox</button>
-                <button type="button" class="messages-filter-btn" id="messages-filter-sent" data-message-filter="sent">Sent</button>
+              <div class="messages-filter-toolbar">
+                <div class="messages-filter-group" role="tablist" aria-label="Message filters">
+                  <button type="button" class="messages-filter-btn active" id="messages-filter-all" data-message-filter="all">All</button>
+                  <button type="button" class="messages-filter-btn" id="messages-filter-inbox" data-message-filter="inbox">Inbox <span id="messages-filter-inbox-badge" class="messages-filter-count" hidden>0</span></button>
+                  <button type="button" class="messages-filter-btn" id="messages-filter-sent" data-message-filter="sent">Sent</button>
+                </div>
+                <div class="messages-advanced-filters">
+                  <div class="messages-inline-filter">
+                    <label for="messages-type-filter">Type</label>
+                    <select id="messages-type-filter">
+                      <option value="all">All types</option>
+                      <option value="reply">Replies</option>
+                      <option value="individual">Direct</option>
+                      <option value="role">Role</option>
+                      <option value="class">Class</option>
+                      <option value="all_users">Broadcast</option>
+                    </select>
+                  </div>
+                  <div class="messages-inline-filter">
+                    <label for="messages-role-filter">Role</label>
+                    <select id="messages-role-filter">
+                      <option value="all">All roles</option>
+                    </select>
+                  </div>
+                  <div class="messages-inline-filter">
+                    <label for="messages-date-filter">Date</label>
+                    <select id="messages-date-filter">
+                      <option value="all">Any time</option>
+                      <option value="today">Today</option>
+                      <option value="week">Last 7 days</option>
+                      <option value="month">Last 30 days</option>
+                    </select>
+                  </div>
+                </div>
               </div>
               <p id="messages-list-status" class="messages-list-status" aria-live="polite">Loading messages...</p>
               <div id="messages-list" class="messages-list" aria-live="polite"></div>
@@ -1025,8 +1065,7 @@
               </div>
               <article id="messages-detail" class="messages-detail" hidden>
                 <div class="messages-detail-topbar">
-                  <span id="messages-detail-mailbox" class="message-mailbox-pill">Inbox</span>
-                  <button type="button" class="btn btn-secondary btn-sm" id="message-reply-btn">Reply</button>
+                  <span id="messages-detail-mailbox" class="message-mailbox-pill">Unread</span>
                 </div>
                 <div class="messages-detail-header-block">
                   <h3 id="messages-detail-subject">Subject</h3>
@@ -1034,15 +1073,20 @@
                 </div>
                 <dl class="messages-detail-summary">
                   <div class="messages-detail-summary-item">
-                    <dt>Audience</dt>
+                    <dt>To</dt>
                     <dd id="messages-detail-audience">-</dd>
                   </div>
                   <div class="messages-detail-summary-item">
-                    <dt>Participants</dt>
+                    <dt>From</dt>
                     <dd id="messages-detail-recipient">-</dd>
                   </div>
                 </dl>
+                <div class="messages-detail-divider" aria-hidden="true"></div>
                 <div id="messages-detail-body" class="messages-detail-body"></div>
+                <div class="messages-detail-actions">
+                  <button type="button" class="btn btn-secondary btn-sm" id="message-mark-toggle-btn">Mark as read</button>
+                  <button type="button" class="btn btn-primary btn-sm" id="message-reply-btn">Reply</button>
+                </div>
               </article>
             </div>
           </div>
@@ -1313,7 +1357,7 @@
   <div class="modal-overlay" id="reset-modal"><div class="modal"><h3>Start New Class</h3><p>Start fresh for a new class? Current class data will be replaced after a backup is created.</p><div class="modal-actions"><button class="btn btn-secondary" id="reset-cancel-btn">Keep Current Class</button><button class="btn btn-danger" id="reset-confirm-btn">Start Fresh</button></div></div></div>
   <div class="modal-overlay" id="report-modal"><div class="modal modal-lg"><div class="modal-actions"><button class="btn btn-primary" id="report-print-btn">Print</button><button class="btn btn-secondary" id="report-export-pdf-btn">Export as PDF</button><button class="btn btn-secondary" id="report-export-all-pdf-btn">Export All Reports</button><span id="report-export-status" class="report-export-status" aria-live="polite"></span><button class="btn btn-secondary" id="report-close-btn">Close</button></div><div id="report-card-container"></div></div></div>
   <div class="modal-overlay" id="snapshot-modal"><div class="modal modal-lg snapshot-modal"><h3>Restore Points</h3><p class="snapshot-modal-note">Create manual restore points and roll back safely if needed.</p><div id="snapshot-list" class="snapshot-list"></div><div class="modal-actions"><button class="btn btn-secondary" id="snapshot-close-btn">Close</button></div></div></div>
-  <div class="modal-overlay" id="message-compose-modal"><div class="modal message-compose-modal"><div class="page-stack"><div><h3 id="message-compose-title">Compose Message</h3><p id="message-compose-subtitle" class="section-subtitle">Choose an audience and write your message.</p></div><form id="message-compose-form" class="page-stack"><p id="message-compose-feedback" class="account-settings-feedback" hidden aria-live="polite"></p><div class="form-row"><div class="form-group"><label for="message-compose-audience-type">Audience</label><select id="message-compose-audience-type"></select></div><div class="form-group" id="message-compose-recipient-group"><label for="message-compose-recipient-select">Recipient</label><select id="message-compose-recipient-select"></select></div><div class="form-group" id="message-compose-role-group" hidden><label for="message-compose-role-select">Role</label><select id="message-compose-role-select"></select></div><div class="form-group" id="message-compose-class-group" hidden><label for="message-compose-class-select">Class</label><select id="message-compose-class-select"></select></div></div><div class="form-group"><label for="message-compose-subject">Subject</label><input type="text" id="message-compose-subject" maxlength="140" placeholder="Enter subject" required></div><div class="form-group"><label for="message-compose-body">Message</label><textarea id="message-compose-body" rows="8" maxlength="5000" placeholder="Write your message" required></textarea></div><p id="message-compose-meta" class="section-subtitle" aria-live="polite">Message body: 0 / 5000</p><div class="modal-actions"><button type="button" class="btn btn-secondary" id="message-compose-cancel-btn">Cancel</button><button type="submit" class="btn btn-primary" id="message-compose-submit-btn">Send Message</button></div></form></div></div></div>
+  <div class="modal-overlay" id="message-compose-modal"><div class="modal message-compose-modal"><div class="page-stack"><div><h3 id="message-compose-title">Compose Message</h3><p id="message-compose-subtitle" class="section-subtitle">Choose an audience and write your message.</p></div><form id="message-compose-form" class="page-stack"><p id="message-compose-feedback" class="account-settings-feedback" hidden aria-live="polite"></p><div class="form-row"><div class="form-group"><label for="message-compose-audience-type">To</label><select id="message-compose-audience-type"></select></div><div class="form-group" id="message-compose-recipient-group"><label for="message-compose-recipient-select">Recipient</label><select id="message-compose-recipient-select"></select></div><div class="form-group" id="message-compose-role-group" hidden><label for="message-compose-role-select">Role</label><select id="message-compose-role-select"></select></div><div class="form-group" id="message-compose-class-group" hidden><label for="message-compose-class-select">Class</label><select id="message-compose-class-select"></select></div></div><div class="form-group"><label for="message-compose-subject">Subject</label><input type="text" id="message-compose-subject" maxlength="140" placeholder="Enter subject" required></div><div class="form-group"><label for="message-compose-body">Message</label><textarea id="message-compose-body" rows="8" maxlength="5000" placeholder="Write your message" required></textarea></div><p id="message-compose-meta" class="section-subtitle" aria-live="polite">Message body: 0 / 5000</p><div class="modal-actions"><button type="button" class="btn btn-secondary" id="message-compose-cancel-btn">Cancel</button><button type="submit" class="btn btn-primary" id="message-compose-submit-btn">Send Message</button></div></form></div></div></div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <footer style="text-align:center;padding:0.75rem 1.5rem;font-size:0.75rem;color:#64748b;">

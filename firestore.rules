@@ -11,7 +11,13 @@ service cloud.firestore {
         : isDeveloperAccountEmail()
           ? 'developer'
           : exists(/databases/$(database)/documents/users/$(request.auth.uid))
-            ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+            ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'head_teacher'
+              ? 'head_teacher'
+              : get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+                ? 'admin'
+                : get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'developer'
+                  ? 'developer'
+                  : 'teacher'
             : 'teacher';
     }
 
@@ -598,7 +604,7 @@ service cloud.firestore {
         && requesterCanCreateMessage(request.resource.data.audienceType, request.resource.data.isReply);
     }
 
-    function ownerCanMarkMessageAsRead(userId) {
+    function ownerCanToggleMessageReadState(userId) {
       return isOwner(userId)
         && resource.data.mailbox == 'inbox'
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -606,8 +612,10 @@ service cloud.firestore {
           'readAt',
           'updatedAt'
         ])
-        && request.resource.data.isRead == true
-        && request.resource.data.readAt is timestamp
+        && (
+          (request.resource.data.isRead == true && request.resource.data.readAt is timestamp)
+          || (request.resource.data.isRead == false && request.resource.data.readAt == null)
+        )
         && request.resource.data.updatedAt is string;
     }
 
@@ -628,7 +636,7 @@ service cloud.firestore {
       allow read: if isOwner(userId);
       allow create: if ownerCanCreateSentMessage(userId, messageId)
         || senderCanCreateInboxMessage(userId, messageId);
-      allow update: if ownerCanMarkMessageAsRead(userId);
+      allow update: if ownerCanToggleMessageReadState(userId);
       allow delete: if false;
     }
 

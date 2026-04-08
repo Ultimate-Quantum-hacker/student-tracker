@@ -10,6 +10,7 @@ import {
   fetchMessageAudienceDirectory,
   finalizeCurrentUserAccountDeletion,
   markMessageAsRead,
+  markMessageAsUnread,
   replyToMessage,
   requestCurrentUserAccountDeletion,
   sendMessage,
@@ -195,20 +196,28 @@ const domIds = {
   accountSettingsResetBtn: 'account-settings-reset-btn',
   accountSettingsPasswordResetBtn: 'account-settings-password-reset-btn',
   accountSettingsDeleteBtn: 'account-settings-delete-btn',
+  headerMessageAlert: 'header-message-alert',
+  headerMessageAlertText: 'header-message-alert-text',
   messagesSidebarItem: 'messages-sidebar-item',
   messagesSidebarBadge: 'messages-sidebar-badge',
   messagesSectionStatus: 'messages-section-status',
   messagesUnreadBadge: 'messages-unread-badge',
+  messagesSearchInput: 'messages-search-input',
   messagesRefreshBtn: 'messages-refresh-btn',
   messagesComposeBtn: 'messages-compose-btn',
   messagesFilterAll: 'messages-filter-all',
   messagesFilterInbox: 'messages-filter-inbox',
+  messagesFilterInboxBadge: 'messages-filter-inbox-badge',
   messagesFilterSent: 'messages-filter-sent',
+  messagesTypeFilter: 'messages-type-filter',
+  messagesRoleFilter: 'messages-role-filter',
+  messagesDateFilter: 'messages-date-filter',
   messagesListStatus: 'messages-list-status',
   messagesList: 'messages-list',
   messagesDetailEmpty: 'messages-detail-empty',
   messagesDetail: 'messages-detail',
   messagesDetailMailbox: 'messages-detail-mailbox',
+  messageMarkToggleBtn: 'message-mark-toggle-btn',
   messageReplyBtn: 'message-reply-btn',
   messagesDetailSubject: 'messages-detail-subject',
   messagesDetailMeta: 'messages-detail-meta',
@@ -271,6 +280,9 @@ const ui = {
   isSubmittingMessage: false,
   messagesRequest: null,
   messageDirectoryRequest: null,
+  messageNewIds: new Set(),
+  messageDetailAnimationFrame: null,
+  lastMessagesListMarkup: '',
   messageComposeState: {
     mode: 'compose',
     replyToMessageId: '',
@@ -1094,11 +1106,21 @@ const ui = {
       this.isSubmittingMessage = false;
       this.messagesRequest = null;
       this.messageDirectoryRequest = null;
+      this.messageNewIds = new Set();
+      this.lastMessagesListMarkup = '';
+      if (this.messageDetailAnimationFrame) {
+        window.cancelAnimationFrame(this.messageDetailAnimationFrame);
+        this.messageDetailAnimationFrame = null;
+      }
       this.messageComposeState = {
         mode: 'compose',
         replyToMessageId: '',
         recipientUserId: ''
       };
+      app.state.messageSearchTerm = '';
+      app.state.messageRoleFilter = 'all';
+      app.state.messageDateFilter = 'all';
+      app.state.messageTypeFilter = 'all';
       if (app.dom.messageComposeModal) {
         app.dom.messageComposeModal.classList.remove('active');
       }
@@ -1109,14 +1131,82 @@ const ui = {
         ? Math.max(0, Math.floor(Number(app.state.unreadMessageCount)))
         : 0;
       const badgeLabel = unreadCount > 99 ? '99+' : String(unreadCount);
+      const unreadSummary = unreadCount === 1 ? '1 unread message' : `${unreadCount} unread messages`;
+      const shouldShowUnreadState = unreadCount > 0 && Boolean(app.state.authUser?.uid);
       if (app.dom.messagesSidebarBadge) {
         app.dom.messagesSidebarBadge.textContent = badgeLabel;
-        app.dom.messagesSidebarBadge.hidden = unreadCount === 0;
+        app.dom.messagesSidebarBadge.hidden = !shouldShowUnreadState;
       }
       if (app.dom.messagesUnreadBadge) {
         app.dom.messagesUnreadBadge.textContent = unreadCount === 1 ? '1 unread' : `${unreadCount} unread`;
-        app.dom.messagesUnreadBadge.hidden = unreadCount === 0;
+        app.dom.messagesUnreadBadge.hidden = !shouldShowUnreadState;
+        app.dom.messagesUnreadBadge.dataset.unreadState = shouldShowUnreadState ? 'active' : 'idle';
       }
+      if (app.dom.messagesFilterInboxBadge) {
+        app.dom.messagesFilterInboxBadge.textContent = badgeLabel;
+        app.dom.messagesFilterInboxBadge.hidden = !shouldShowUnreadState;
+      }
+      if (app.dom.messagesSidebarItem) {
+        app.dom.messagesSidebarItem.classList.toggle('has-unread', shouldShowUnreadState);
+      }
+      if (app.dom.headerMessageAlert) {
+        app.dom.headerMessageAlert.hidden = !shouldShowUnreadState;
+        app.dom.headerMessageAlert.classList.toggle('has-unread', shouldShowUnreadState);
+        app.dom.headerMessageAlert.setAttribute('aria-label', shouldShowUnreadState ? unreadSummary : 'No unread messages');
+      }
+      if (app.dom.headerMessageAlertText) {
+        app.dom.headerMessageAlertText.textContent = unreadSummary;
+      }
+    },
+
+    isMessageUnread: function (message = null) {
+      return String(message?.mailbox || '').trim().toLowerCase() === 'inbox' && !Boolean(message?.isRead);
+    },
+
+    isNewMessage: function (message = null) {
+      const messageId = String(message?.id || '').trim();
+      return Boolean(messageId && this.isMessageUnread(message) && this.messageNewIds.has(messageId));
+    },
+
+    getMessageStatusLabel: function (message = null) {
+      if (!message) {
+        return 'Inbox';
+      }
+      if (String(message?.mailbox || '').trim().toLowerCase() === 'sent') {
+        return 'Sent';
+      }
+      if (this.isNewMessage(message)) {
+        return 'New';
+      }
+      if (this.isMessageUnread(message)) {
+        return 'Unread';
+      }
+      return 'Read';
+    },
+
+    getMessageRoleValue: function (role = '') {
+      const normalizedRole = String(role || '').trim();
+      return normalizedRole ? normalizeUserRole(normalizedRole) : '';
+    },
+
+    getMessageCounterpartRole: function (message = null) {
+      const mailbox = String(message?.mailbox || '').trim().toLowerCase();
+      return mailbox === 'sent'
+        ? this.getMessageRoleValue(message?.recipientRole || '')
+        : this.getMessageRoleValue(message?.senderRole || '');
+    },
+
+    getMessageCounterpartLabel: function (message = null) {
+      if (!message) {
+        return 'Message';
+      }
+      if (String(message?.mailbox || '').trim().toLowerCase() === 'sent') {
+        if (Number(message?.recipientCount || 0) > 1) {
+          return `To ${Number(message?.recipientCount || 0)} recipients`;
+        }
+        return `To ${String(message?.recipientLabel || message?.recipientName || message?.recipientEmail || 'Recipient').trim() || 'Recipient'}`;
+      }
+      return String(message?.senderName || message?.senderEmail || message?.counterpartLabel || 'Message').trim() || 'Message';
     },
 
     syncLocalMessageMetadata: function ({ unreadCount = 0, lastMessageAt = null } = {}) {
@@ -1136,7 +1226,27 @@ const ui = {
     },
 
     applyMessagesPayload: function (payload = {}, { preserveSelection = true } = {}) {
+      const previousMessages = this.getMessages();
       const nextMessages = Array.isArray(payload?.messages) ? payload.messages : [];
+      const previousMessageIds = new Set(previousMessages.map((message) => {
+        return String(message?.id || '').trim();
+      }).filter(Boolean));
+      const nextUnreadIds = new Set(nextMessages.filter((message) => {
+        return this.isMessageUnread(message);
+      }).map((message) => {
+        return String(message?.id || '').trim();
+      }).filter(Boolean));
+      const retainedNewIds = new Set(Array.from(this.messageNewIds).filter((messageId) => {
+        return nextUnreadIds.has(messageId);
+      }));
+      if (previousMessageIds.size) {
+        nextUnreadIds.forEach((messageId) => {
+          if (!previousMessageIds.has(messageId)) {
+            retainedNewIds.add(messageId);
+          }
+        });
+      }
+      this.messageNewIds = retainedNewIds;
       app.state.messages = nextMessages;
       this.syncLocalMessageMetadata({
         unreadCount: payload?.unreadCount ?? app.state.unreadMessageCount,
@@ -1239,13 +1349,183 @@ const ui = {
       return String(mailbox || '').trim().toLowerCase() === 'sent' ? 'Sent' : 'Inbox';
     },
 
+    getMessageToLabel: function (message = null) {
+      if (!message) {
+        return 'You';
+      }
+      const mailbox = String(message?.mailbox || '').trim().toLowerCase();
+      const audienceType = String(message?.audienceType || '').trim().toLowerCase();
+      const audienceLabel = String(message?.audienceLabel || '').trim();
+      const recipientLabel = String(message?.recipientLabel || message?.recipientName || message?.recipientEmail || '').trim();
+      if (mailbox === 'sent') {
+        if (Number(message?.recipientCount || 0) > 1) {
+          return `${Number(message?.recipientCount || 0)} recipients`;
+        }
+        return recipientLabel || audienceLabel || 'Recipient';
+      }
+      if (audienceType === MESSAGE_AUDIENCE_INDIVIDUAL) {
+        return 'You';
+      }
+      return audienceLabel || recipientLabel || 'You';
+    },
+
+    getMessageFromLabel: function (message = null) {
+      return String(message?.senderName || message?.senderEmail || 'Unknown sender').trim() || 'Unknown sender';
+    },
+
+    getMessageInitials: function (value = '') {
+      const normalizedValue = String(value || '').trim();
+      if (!normalizedValue) {
+        return 'MS';
+      }
+      const tokens = normalizedValue
+        .replace(/[^a-zA-Z0-9@.\s_-]/g, ' ')
+        .split(/[\s@._-]+/)
+        .map(part => String(part || '').trim())
+        .filter(Boolean);
+      if (!tokens.length) {
+        return normalizedValue.slice(0, 2).toUpperCase();
+      }
+      return tokens.slice(0, 2).map(part => part.charAt(0).toUpperCase()).join('');
+    },
+
+    doesMessageMatchTypeFilter: function (message = null, filter = 'all') {
+      const normalizedFilter = String(filter || 'all').trim().toLowerCase();
+      if (!message || normalizedFilter === 'all') {
+        return true;
+      }
+      if (normalizedFilter === 'reply') {
+        return Boolean(message?.isReply);
+      }
+      const normalizedAudienceType = normalizedFilter === 'all_users' ? MESSAGE_AUDIENCE_ALL : normalizedFilter;
+      return String(message?.audienceType || '').trim().toLowerCase() === normalizedAudienceType;
+    },
+
+    doesMessageMatchRoleFilter: function (message = null, filter = 'all') {
+      const normalizedFilter = String(filter || 'all').trim().toLowerCase();
+      if (!message || normalizedFilter === 'all') {
+        return true;
+      }
+      return this.getMessageCounterpartRole(message) === normalizedFilter;
+    },
+
+    doesMessageMatchDateFilter: function (message = null, filter = 'all') {
+      const normalizedFilter = String(filter || 'all').trim().toLowerCase();
+      if (!message || normalizedFilter === 'all') {
+        return true;
+      }
+      const timestamp = Date.parse(String(message?.sentAt || message?.updatedAt || '').trim());
+      if (!Number.isFinite(timestamp)) {
+        return false;
+      }
+      const now = Date.now();
+      const today = new Date();
+      const sentDate = new Date(timestamp);
+      if (normalizedFilter === 'today') {
+        return sentDate.toDateString() === today.toDateString();
+      }
+      if (normalizedFilter === 'week') {
+        return now - timestamp <= 7 * 24 * 60 * 60 * 1000;
+      }
+      if (normalizedFilter === 'month') {
+        return now - timestamp <= 30 * 24 * 60 * 60 * 1000;
+      }
+      return true;
+    },
+
+    doesMessageMatchSearch: function (message = null, term = '') {
+      const normalizedTerm = String(term || '').trim().toLowerCase();
+      if (!message || !normalizedTerm) {
+        return true;
+      }
+      const searchableFields = [
+        this.getMessageCounterpartLabel(message),
+        this.getMessageToLabel(message),
+        this.getMessageFromLabel(message),
+        message?.subject,
+        message?.bodyPreview,
+        message?.body,
+        message?.audienceLabel
+      ].map(value => String(value || '').trim().toLowerCase()).filter(Boolean);
+      return searchableFields.some(value => value.includes(normalizedTerm));
+    },
+
+    getAvailableMessageRoles: function (messages = []) {
+      const seenRoles = new Set();
+      return (Array.isArray(messages) ? messages : []).reduce((roles, message) => {
+        const role = this.getMessageCounterpartRole(message);
+        if (!role || seenRoles.has(role)) {
+          return roles;
+        }
+        seenRoles.add(role);
+        roles.push({
+          value: role,
+          label: this.formatRoleLabel(role)
+        });
+        return roles;
+      }, []).sort((left, right) => {
+        return String(left?.label || '').localeCompare(String(right?.label || ''));
+      });
+    },
+
+    syncMessageFilterControls: function (messages = [], { hasAccess = true } = {}) {
+      const normalizedMessages = Array.isArray(messages) ? messages : [];
+      const searchTerm = String(app.state.messageSearchTerm || '');
+      const typeFilter = String(app.state.messageTypeFilter || 'all').trim().toLowerCase();
+      const roleFilter = String(app.state.messageRoleFilter || 'all').trim().toLowerCase();
+      const dateFilter = String(app.state.messageDateFilter || 'all').trim().toLowerCase();
+      if (app.dom.messagesSearchInput) {
+        if (app.dom.messagesSearchInput.value !== searchTerm) {
+          app.dom.messagesSearchInput.value = searchTerm;
+        }
+        app.dom.messagesSearchInput.disabled = !hasAccess;
+      }
+      if (app.dom.messagesTypeFilter) {
+        app.dom.messagesTypeFilter.value = typeFilter;
+        app.dom.messagesTypeFilter.disabled = !hasAccess;
+      }
+      if (app.dom.messagesDateFilter) {
+        app.dom.messagesDateFilter.value = dateFilter;
+        app.dom.messagesDateFilter.disabled = !hasAccess;
+      }
+      if (app.dom.messagesRoleFilter) {
+        const roleOptions = this.getAvailableMessageRoles(normalizedMessages);
+        const optionMarkup = ['<option value="all">All roles</option>'].concat(roleOptions.map((option) => {
+          return `<option value="${app.utils.esc(option.value)}">${app.utils.esc(option.label)}</option>`;
+        })).join('');
+        if (app.dom.messagesRoleFilter.innerHTML !== optionMarkup) {
+          app.dom.messagesRoleFilter.innerHTML = optionMarkup;
+        }
+        const nextRoleFilter = roleOptions.some((option) => option.value === roleFilter) ? roleFilter : 'all';
+        app.state.messageRoleFilter = nextRoleFilter;
+        app.dom.messagesRoleFilter.value = nextRoleFilter;
+        app.dom.messagesRoleFilter.disabled = !hasAccess || roleOptions.length === 0;
+      }
+    },
+
     getFilteredMessages: function () {
       const messages = this.getMessages();
-      const filter = String(app.state.messageMailboxFilter || 'all').trim().toLowerCase();
-      if (filter === 'inbox' || filter === 'sent') {
-        return messages.filter(message => String(message?.mailbox || '').trim().toLowerCase() === filter);
-      }
-      return messages;
+      const mailboxFilter = String(app.state.messageMailboxFilter || 'all').trim().toLowerCase();
+      const typeFilter = String(app.state.messageTypeFilter || 'all').trim().toLowerCase();
+      const roleFilter = String(app.state.messageRoleFilter || 'all').trim().toLowerCase();
+      const dateFilter = String(app.state.messageDateFilter || 'all').trim().toLowerCase();
+      const searchTerm = String(app.state.messageSearchTerm || '');
+      return messages.filter((message) => {
+        const mailbox = String(message?.mailbox || '').trim().toLowerCase();
+        if ((mailboxFilter === 'inbox' || mailboxFilter === 'sent') && mailbox !== mailboxFilter) {
+          return false;
+        }
+        if (!this.doesMessageMatchTypeFilter(message, typeFilter)) {
+          return false;
+        }
+        if (!this.doesMessageMatchRoleFilter(message, roleFilter)) {
+          return false;
+        }
+        if (!this.doesMessageMatchDateFilter(message, dateFilter)) {
+          return false;
+        }
+        return this.doesMessageMatchSearch(message, searchTerm);
+      });
     },
 
     syncMessageSelectionToFilter: function () {
@@ -1309,15 +1589,36 @@ const ui = {
       };
     },
 
+    animateMessageDetail: function () {
+      if (!app.dom.messagesDetail) {
+        return;
+      }
+      app.dom.messagesDetail.classList.remove('is-visible');
+      if (this.messageDetailAnimationFrame) {
+        window.cancelAnimationFrame(this.messageDetailAnimationFrame);
+      }
+      this.messageDetailAnimationFrame = window.requestAnimationFrame(() => {
+        app.dom.messagesDetail.classList.add('is-visible');
+        this.messageDetailAnimationFrame = null;
+      });
+    },
+
     renderSelectedMessageDetail: function (message = null) {
       if (!app.dom.messagesDetail || !app.dom.messagesDetailEmpty) {
         return;
       }
       const capabilities = this.getMessagingCapabilities();
       const replyTarget = this.getReplyTargetForMessage(message);
+      const isInboxMessage = String(message?.mailbox || '').trim().toLowerCase() === 'inbox';
       if (!message) {
         app.dom.messagesDetail.hidden = true;
         app.dom.messagesDetailEmpty.hidden = false;
+        app.dom.messagesDetail.classList.remove('is-visible');
+        if (app.dom.messageMarkToggleBtn) {
+          app.dom.messageMarkToggleBtn.hidden = true;
+          app.dom.messageMarkToggleBtn.disabled = true;
+          app.dom.messageMarkToggleBtn.dataset.messageId = '';
+        }
         if (app.dom.messageReplyBtn) {
           app.dom.messageReplyBtn.hidden = true;
           app.dom.messageReplyBtn.disabled = true;
@@ -1330,8 +1631,9 @@ const ui = {
       app.dom.messagesDetailEmpty.hidden = true;
 
       if (app.dom.messagesDetailMailbox) {
-        app.dom.messagesDetailMailbox.textContent = this.formatMessageMailboxLabel(message.mailbox);
-        app.dom.messagesDetailMailbox.dataset.mailbox = String(message?.mailbox || '').trim().toLowerCase();
+        const statusLabel = this.getMessageStatusLabel(message);
+        app.dom.messagesDetailMailbox.textContent = statusLabel;
+        app.dom.messagesDetailMailbox.dataset.mailbox = String(statusLabel || '').trim().toLowerCase();
       }
       if (app.dom.messagesDetailSubject) {
         app.dom.messagesDetailSubject.textContent = String(message?.subject || '(No subject)').trim() || '(No subject)';
@@ -1339,22 +1641,24 @@ const ui = {
       if (app.dom.messagesDetailMeta) {
         const timeLabel = this.formatAccountTimestamp(message?.sentAt || message?.updatedAt, 'Recently');
         const directionLabel = String(message?.mailbox || '').trim().toLowerCase() === 'sent'
-          ? `To ${String(message?.recipientLabel || message?.counterpartLabel || 'Recipients').trim() || 'Recipients'}`
-          : `From ${String(message?.senderName || message?.senderEmail || 'Unknown sender').trim() || 'Unknown sender'}`;
+          ? `To ${this.getMessageToLabel(message)}`
+          : `From ${this.getMessageFromLabel(message)}`;
         app.dom.messagesDetailMeta.textContent = `${directionLabel} · ${timeLabel}`;
       }
       if (app.dom.messagesDetailAudience) {
-        app.dom.messagesDetailAudience.textContent = String(message?.audienceLabel || 'Direct message').trim() || 'Direct message';
+        app.dom.messagesDetailAudience.textContent = this.getMessageToLabel(message);
       }
       if (app.dom.messagesDetailRecipient) {
-        app.dom.messagesDetailRecipient.textContent = String(message?.mailbox || '').trim().toLowerCase() === 'sent'
-          ? (Number(message?.recipientCount || 0) > 1
-              ? `${Number(message?.recipientCount || 0)} recipients`
-              : String(message?.recipientLabel || message?.recipientName || message?.recipientEmail || 'Recipient').trim() || 'Recipient')
-          : String(message?.senderName || message?.senderEmail || 'Unknown sender').trim() || 'Unknown sender';
+        app.dom.messagesDetailRecipient.textContent = this.getMessageFromLabel(message);
       }
       if (app.dom.messagesDetailBody) {
         app.dom.messagesDetailBody.innerHTML = this.formatMessageBodyHtml(message?.body || '');
+      }
+      if (app.dom.messageMarkToggleBtn) {
+        app.dom.messageMarkToggleBtn.hidden = !isInboxMessage;
+        app.dom.messageMarkToggleBtn.disabled = !isInboxMessage;
+        app.dom.messageMarkToggleBtn.dataset.messageId = isInboxMessage ? String(message?.id || '').trim() : '';
+        app.dom.messageMarkToggleBtn.textContent = this.isMessageUnread(message) ? 'Mark as read' : 'Mark as unread';
       }
       if (app.dom.messageReplyBtn) {
         const canReply = Boolean(capabilities.canReply && replyTarget?.uid);
@@ -1362,6 +1666,7 @@ const ui = {
         app.dom.messageReplyBtn.disabled = !canReply;
         app.dom.messageReplyBtn.dataset.messageId = canReply ? String(message?.id || '').trim() : '';
       }
+      this.animateMessageDetail();
     },
 
     renderMessagesSection: function () {
@@ -1369,13 +1674,20 @@ const ui = {
       const capabilities = this.getMessagingCapabilities();
       const hasAccess = capabilities.canReceive || capabilities.canSend || capabilities.canReply;
       const allMessages = this.getMessages();
-      const filteredMessages = this.getFilteredMessages();
-      const selectedMessage = hasSession && hasAccess ? this.getSelectedMessageRecord() : null;
       const unreadCount = Number.isFinite(Number(app.state.unreadMessageCount))
         ? Math.max(0, Math.floor(Number(app.state.unreadMessageCount)))
         : 0;
 
       this.updateMessageBadges();
+      this.syncMessageFilterControls(allMessages, { hasAccess });
+      const mailboxFilter = String(app.state.messageMailboxFilter || 'all').trim().toLowerCase();
+      const hasActiveFilters = mailboxFilter !== 'all'
+        || String(app.state.messageTypeFilter || 'all').trim().toLowerCase() !== 'all'
+        || String(app.state.messageRoleFilter || 'all').trim().toLowerCase() !== 'all'
+        || String(app.state.messageDateFilter || 'all').trim().toLowerCase() !== 'all'
+        || Boolean(String(app.state.messageSearchTerm || '').trim());
+      const filteredMessages = this.getFilteredMessages();
+      const selectedMessage = hasSession && hasAccess ? this.getSelectedMessageRecord() : null;
 
       document.querySelectorAll('[data-message-filter]').forEach((button) => {
         const filter = String(button.dataset.messageFilter || '').trim().toLowerCase();
@@ -1416,47 +1728,62 @@ const ui = {
         } else if (this.isLoadingMessages) {
           app.dom.messagesListStatus.textContent = 'Loading messages...';
         } else if (!filteredMessages.length) {
-          app.dom.messagesListStatus.textContent = allMessages.length ? 'No messages match this filter.' : 'No messages yet.';
+          app.dom.messagesListStatus.textContent = allMessages.length ? 'No messages match the current search or filters.' : 'No messages yet.';
         } else {
-          const filter = String(app.state.messageMailboxFilter || 'all').trim().toLowerCase();
           const count = filteredMessages.length;
-          const filterLabel = filter === 'all' ? 'message' : `${filter} message`;
-          app.dom.messagesListStatus.textContent = `${count} ${filterLabel}${count === 1 ? '' : 's'}${unreadCount ? ` · ${unreadCount} unread` : ''}`;
+          const filterLabel = mailboxFilter === 'all' ? 'message' : `${mailboxFilter} message`;
+          if (hasActiveFilters) {
+            app.dom.messagesListStatus.textContent = `Showing ${count} of ${allMessages.length} ${filterLabel}${allMessages.length === 1 ? '' : 's'}${unreadCount ? ` · ${unreadCount} unread` : ''}`;
+          } else {
+            app.dom.messagesListStatus.textContent = `${count} ${filterLabel}${count === 1 ? '' : 's'}${unreadCount ? ` · ${unreadCount} unread` : ''}`;
+          }
         }
       }
 
       if (app.dom.messagesList) {
+        let nextMessagesListMarkup = '';
         if (!hasSession || !hasAccess) {
-          app.dom.messagesList.innerHTML = '<div class="messages-empty-state"><strong>Messaging unavailable</strong><p>Sign in with a role that can receive messages to use this feature.</p></div>';
+          nextMessagesListMarkup = '<div class="messages-empty-state"><strong>Messaging unavailable</strong><p>Sign in with a role that can receive messages to use this feature.</p></div>';
         } else if (!filteredMessages.length) {
           const emptyTitle = allMessages.length ? 'No messages in this view' : 'No messages yet';
           const emptyCopy = allMessages.length
-            ? 'Try another filter or refresh your inbox.'
+            ? 'Try another search term, filter, or refresh your inbox.'
             : (capabilities.canSend ? 'Use compose to start a conversation.' : 'Messages sent to you will appear here.');
-          app.dom.messagesList.innerHTML = `<div class="messages-empty-state"><strong>${app.utils.esc(emptyTitle)}</strong><p>${app.utils.esc(emptyCopy)}</p></div>`;
+          nextMessagesListMarkup = `<div class="messages-empty-state"><strong>${app.utils.esc(emptyTitle)}</strong><p>${app.utils.esc(emptyCopy)}</p></div>`;
         } else {
-          app.dom.messagesList.innerHTML = filteredMessages.map((message) => {
+          nextMessagesListMarkup = filteredMessages.map((message) => {
             const messageId = String(message?.id || '').trim();
             const isActive = messageId && messageId === String(app.state.selectedMessageId || '').trim();
-            const isUnread = String(message?.mailbox || '').trim().toLowerCase() === 'inbox' && !Boolean(message?.isRead);
-            const mailboxLabel = this.formatMessageMailboxLabel(message?.mailbox || 'inbox');
+            const isUnread = this.isMessageUnread(message);
+            const isNew = this.isNewMessage(message);
+            const counterpartLabel = this.getMessageCounterpartLabel(message);
+            const counterpartRole = this.getMessageCounterpartRole(message) || 'teacher';
+            const preview = String(message?.bodyPreview || message?.body || '').trim() || 'No preview available';
+            const statusChipMarkup = isNew
+              ? '<span class="message-list-item-flag is-new">New</span>'
+              : (isUnread ? '<span class="message-list-item-flag">Unread</span>' : '');
             return `
-              <button type="button" class="message-list-item${isActive ? ' is-active' : ''}${isUnread ? ' is-unread' : ''}" data-message-id="${app.utils.esc(messageId)}">
-                <div class="message-list-item-topline">
-                  <span class="message-list-item-counterpart">${app.utils.esc(String(message?.counterpartLabel || 'Message').trim() || 'Message')}</span>
-                  <span class="message-list-item-tags">
-                    ${isUnread ? '<span class="message-unread-dot" aria-hidden="true"></span>' : ''}
-                    <span class="message-mailbox-pill" data-mailbox="${app.utils.esc(String(message?.mailbox || 'inbox').trim().toLowerCase())}">${app.utils.esc(mailboxLabel)}</span>
-                  </span>
-                </div>
-                <div class="message-list-item-subject">${app.utils.esc(String(message?.subject || '(No subject)').trim() || '(No subject)')}</div>
-                <div class="message-list-item-preview">${app.utils.esc(String(message?.bodyPreview || message?.body || '').trim() || 'No preview available')}</div>
-                <div class="message-list-item-meta">
-                  <span>${app.utils.esc(String(message?.audienceLabel || 'Direct message').trim() || 'Direct message')}</span>
-                  <span>${app.utils.esc(this.formatAccountTimestamp(message?.sentAt || message?.updatedAt, 'Recently'))}</span>
+              <button type="button" class="message-list-item${isActive ? ' is-active' : ''}${isUnread ? ' is-unread' : ''}${isNew ? ' is-new' : ''}" data-message-id="${app.utils.esc(messageId)}">
+                <div class="message-list-item-main">
+                  <span class="message-list-avatar" data-role="${app.utils.esc(counterpartRole)}">${app.utils.esc(this.getMessageInitials(counterpartLabel))}</span>
+                  <div class="message-list-item-content">
+                    <div class="message-list-item-topline">
+                      <span class="message-list-item-counterpart">${app.utils.esc(counterpartLabel)}</span>
+                      <span class="message-list-item-time">${app.utils.esc(this.formatAccountTimestamp(message?.sentAt || message?.updatedAt, 'Recently'))}</span>
+                    </div>
+                    <div class="message-list-item-subject-row">
+                      <span class="message-list-item-subject">${app.utils.esc(String(message?.subject || '(No subject)').trim() || '(No subject)')}</span>
+                      ${statusChipMarkup}
+                    </div>
+                    <div class="message-list-item-preview">${app.utils.esc(preview)}</div>
+                  </div>
                 </div>
               </button>`;
           }).join('');
+        }
+        if (this.lastMessagesListMarkup !== nextMessagesListMarkup) {
+          app.dom.messagesList.innerHTML = nextMessagesListMarkup;
+          this.lastMessagesListMarkup = nextMessagesListMarkup;
         }
       }
 
@@ -1474,6 +1801,7 @@ const ui = {
       if (!message) {
         return;
       }
+      this.messageNewIds.delete(normalizedMessageId);
       app.state.selectedMessageId = normalizedMessageId;
       this.renderMessagesSection();
       if (String(message?.mailbox || '').trim().toLowerCase() === 'inbox' && !Boolean(message?.isRead)) {
@@ -1481,42 +1809,64 @@ const ui = {
       }
     },
 
-    markMessageAsReadIfNeeded: async function (messageId = '') {
+    setMessageReadState: async function (messageId = '', isRead = true) {
       const normalizedMessageId = String(messageId || '').trim();
       const message = this.getMessages().find((entry) => {
         return String(entry?.id || '').trim() === normalizedMessageId;
       });
-      if (!message || String(message?.mailbox || '').trim().toLowerCase() !== 'inbox' || Boolean(message?.isRead)) {
+      const nextReadState = Boolean(isRead);
+      if (!message || String(message?.mailbox || '').trim().toLowerCase() !== 'inbox' || Boolean(message?.isRead) === nextReadState) {
         return false;
       }
       try {
-        const didMarkRead = await markMessageAsRead(normalizedMessageId);
-        if (!didMarkRead) {
+        const didUpdate = nextReadState
+          ? await markMessageAsRead(normalizedMessageId)
+          : await markMessageAsUnread(normalizedMessageId);
+        if (!didUpdate) {
           return false;
         }
         const unreadCount = Number.isFinite(Number(app.state.unreadMessageCount))
           ? Math.max(0, Math.floor(Number(app.state.unreadMessageCount)))
           : 0;
+        this.messageNewIds.delete(normalizedMessageId);
         app.state.messages = this.getMessages().map((entry) => {
           if (String(entry?.id || '').trim() !== normalizedMessageId) {
             return entry;
           }
           return {
             ...(entry || {}),
-            isRead: true,
-            readAt: new Date().toISOString()
+            isRead: nextReadState,
+            readAt: nextReadState ? new Date().toISOString() : null
           };
         });
         this.syncLocalMessageMetadata({
-          unreadCount: Math.max(0, unreadCount - 1),
+          unreadCount: nextReadState ? Math.max(0, unreadCount - 1) : unreadCount + 1,
           lastMessageAt: app.state.messageLastMessageAt
         });
         this.renderMessagesSection();
         return true;
       } catch (error) {
-        console.error('Failed to mark message as read:', error);
+        console.error(`Failed to mark message as ${nextReadState ? 'read' : 'unread'}:`, error);
         return false;
       }
+    },
+
+    markMessageAsReadIfNeeded: async function (messageId = '') {
+      return this.setMessageReadState(messageId, true);
+    },
+
+    toggleSelectedMessageReadState: async function (messageId = '') {
+      const normalizedMessageId = String(messageId || app.state.selectedMessageId || '').trim();
+      if (!normalizedMessageId) {
+        return false;
+      }
+      const message = this.getMessages().find((entry) => {
+        return String(entry?.id || '').trim() === normalizedMessageId;
+      });
+      if (!message || String(message?.mailbox || '').trim().toLowerCase() !== 'inbox') {
+        return false;
+      }
+      return this.setMessageReadState(normalizedMessageId, !Boolean(message?.isRead));
     },
 
     setMessageMailboxFilter: function (filter = 'all') {
@@ -1524,6 +1874,32 @@ const ui = {
         ? String(filter || '').trim().toLowerCase()
         : 'all';
       app.state.messageMailboxFilter = normalizedFilter;
+      this.renderMessagesSection();
+    },
+
+    setMessageSearchTerm: function (searchTerm = '') {
+      app.state.messageSearchTerm = String(searchTerm || '').trimStart();
+      this.renderMessagesSection();
+    },
+
+    setMessageTypeFilter: function (filter = 'all') {
+      const normalizedFilter = ['all', 'reply', 'individual', 'role', 'class', 'all_users'].includes(String(filter || '').trim().toLowerCase())
+        ? String(filter || '').trim().toLowerCase()
+        : 'all';
+      app.state.messageTypeFilter = normalizedFilter;
+      this.renderMessagesSection();
+    },
+
+    setMessageRoleFilter: function (filter = 'all') {
+      app.state.messageRoleFilter = String(filter || 'all').trim().toLowerCase() || 'all';
+      this.renderMessagesSection();
+    },
+
+    setMessageDateFilter: function (filter = 'all') {
+      const normalizedFilter = ['all', 'today', 'week', 'month'].includes(String(filter || '').trim().toLowerCase())
+        ? String(filter || '').trim().toLowerCase()
+        : 'all';
+      app.state.messageDateFilter = normalizedFilter;
       this.renderMessagesSection();
     },
 
@@ -3992,9 +4368,35 @@ const ui = {
             await this.refreshMessagesData(true);
           };
         }
+        if (app.dom.headerMessageAlert) {
+          app.dom.headerMessageAlert.onclick = () => {
+            this.showContentSection('messages');
+            this.setMessageMailboxFilter('inbox');
+          };
+        }
         if (app.dom.messagesComposeBtn) {
           app.dom.messagesComposeBtn.onclick = async () => {
             await this.openMessageComposeModal();
+          };
+        }
+        if (app.dom.messagesSearchInput) {
+          app.dom.messagesSearchInput.oninput = (event) => {
+            this.setMessageSearchTerm(event.target.value);
+          };
+        }
+        if (app.dom.messagesTypeFilter) {
+          app.dom.messagesTypeFilter.onchange = (event) => {
+            this.setMessageTypeFilter(event.target.value);
+          };
+        }
+        if (app.dom.messagesRoleFilter) {
+          app.dom.messagesRoleFilter.onchange = (event) => {
+            this.setMessageRoleFilter(event.target.value);
+          };
+        }
+        if (app.dom.messagesDateFilter) {
+          app.dom.messagesDateFilter.onchange = (event) => {
+            this.setMessageDateFilter(event.target.value);
           };
         }
         if (app.dom.messagesList) {
@@ -4013,6 +4415,12 @@ const ui = {
           app.dom.messageReplyBtn.onclick = async () => {
             const replyMessageId = String(app.dom.messageReplyBtn.dataset.messageId || app.state.selectedMessageId || '').trim();
             await this.openMessageComposeModal({ mode: 'reply', messageId: replyMessageId });
+          };
+        }
+        if (app.dom.messageMarkToggleBtn) {
+          app.dom.messageMarkToggleBtn.onclick = async () => {
+            const messageId = String(app.dom.messageMarkToggleBtn.dataset.messageId || app.state.selectedMessageId || '').trim();
+            await this.toggleSelectedMessageReadState(messageId);
           };
         }
         if (app.dom.messageComposeForm) {
