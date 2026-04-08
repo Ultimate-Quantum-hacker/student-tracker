@@ -1139,6 +1139,17 @@ const ui = {
       const mainContent = document.querySelector('.main-content');
       if (mainContent) {
         mainContent.classList.toggle('messages-section-active', isMessagesSection);
+        if (isMessagesSection) {
+          mainContent.scrollTop = 0;
+        }
+      }
+      if (isMessagesSection) {
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+        if (appMain) {
+          appMain.scrollTop = 0;
+        }
+        window.scrollTo(0, 0);
       }
     },
 
