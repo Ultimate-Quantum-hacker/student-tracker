@@ -3474,6 +3474,7 @@ body.dark-mode .card:hover, body.dark-mode .stat-card:hover {
 .messages-card {
   display: flex;
   flex-direction: column;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -3482,6 +3483,7 @@ body.dark-mode .card:hover, body.dark-mode .stat-card:hover {
   grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
   gap: 1rem;
   align-items: stretch;
+  flex: 1 1 auto;
   min-height: 0;
 }
 
@@ -3491,6 +3493,12 @@ body.dark-mode .card:hover, body.dark-mode .stat-card:hover {
   flex-direction: column;
   gap: 0.8rem;
   min-height: 0;
+}
+
+.messages-list-panel {
+  flex: 1 1 auto;
+  height: 100%;
+  overflow: hidden;
 }
 
 .messages-detail-panel {
@@ -3530,13 +3538,22 @@ body.dark-mode .card:hover, body.dark-mode .stat-card:hover {
   }
 
   #messages.content-section.active .messages-card,
-  #messages.content-section.active .messages-layout {
+  #messages.content-section.active .messages-layout,
+  #messages.content-section.active .messages-list-panel {
     flex: 1 1 auto;
+  }
+
+  #messages.content-section.active .messages-layout,
+  #messages.content-section.active .messages-list-panel,
+  #messages.content-section.active .messages-list {
     height: 100%;
   }
 
   #messages.content-section.active .messages-detail-panel {
-    overflow: auto;
+    align-self: start;
+    max-height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
     overscroll-behavior: contain;
     scrollbar-width: none;
     -ms-overflow-style: none;
@@ -3600,12 +3617,14 @@ body.dark-mode .card:hover, body.dark-mode .stat-card:hover {
   flex: 1 1 auto;
   min-height: 0;
   max-height: none;
+  height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable both-edges;
+  scrollbar-gutter: stable;
   scroll-behavior: smooth;
-  padding-right: 0.15rem;
+  padding-right: 0.2rem;
+  padding-bottom: 0.35rem;
 }
 
 .message-list-item {
@@ -3729,19 +3748,20 @@ body.dark-mode .card:hover, body.dark-mode .stat-card:hover {
 .messages-detail {
   display: flex;
   flex-direction: column;
-  gap: 0.8rem;
+  gap: 0.65rem;
   min-height: 0;
 }
 
 .messages-detail-header-block {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.18rem;
 }
 
 .messages-detail-header-block h3 {
   margin: 0;
   color: var(--text, #0f172a);
+  line-height: 1.2;
 }
 
 .messages-detail-summary {
@@ -3777,12 +3797,12 @@ body.dark-mode .card:hover, body.dark-mode .stat-card:hover {
 
 .messages-detail-body {
   flex: 0 1 auto;
-  padding: 0.95rem 1rem;
+  padding: 0.82rem 0.95rem;
   border: 1px solid var(--border, #e2e8f0);
   border-radius: 16px;
   background: rgba(148, 163, 184, 0.04);
   color: var(--text, #0f172a);
-  line-height: 1.62;
+  line-height: 1.58;
   word-break: break-word;
 }
 
@@ -4048,13 +4068,15 @@ body.role-loading #reset-btn {
   align-items: center;
   gap: 0.55rem;
   flex-wrap: wrap;
+  margin-left: auto;
+  justify-content: flex-end;
 }
 
 .messages-inline-filter {
   display: flex;
   flex-direction: column;
   gap: 0.24rem;
-  min-width: 118px;
+  min-width: 108px;
 }
 
 .messages-inline-filter label {
@@ -4066,12 +4088,12 @@ body.role-loading #reset-btn {
 }
 
 .messages-inline-filter select {
-  min-height: 2.25rem;
+  min-height: 2.16rem;
   border: 1px solid var(--border, #e2e8f0);
   border-radius: 12px;
   background: var(--surface, #fff);
   color: var(--text, #0f172a);
-  padding: 0.46rem 0.64rem;
+  padding: 0.42rem 0.6rem;
   font-size: 0.84rem;
 }
 
@@ -4200,10 +4222,10 @@ body.role-loading #reset-btn {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 0.55rem;
+  gap: 0.45rem;
   flex-wrap: wrap;
-  margin-top: 0.1rem;
-  padding-top: 0.05rem;
+  margin-top: 0;
+  padding-top: 0;
 }
 
 body.dark-mode .header-message-alert {

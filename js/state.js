@@ -54,7 +54,7 @@ window.TrackerApp = window.TrackerApp || {};
     subjects: [],
     scores: [],
     lastBackup: null,
-    theme: 'light',
+    theme: 'dark',
     notesId: null,
     editingId: null,
     deletingId: null,
@@ -1649,8 +1649,11 @@ window.TrackerApp = window.TrackerApp || {};
 
   // Theme management (still uses localStorage for UI preferences)
   app.applyTheme = function (t) {
-    app.state.theme = String(t || app.state.theme || 'light').trim().toLowerCase() === 'dark' ? 'dark' : 'light';
+    app.state.theme = String(t || app.state.theme || 'dark').trim().toLowerCase() === 'dark' ? 'dark' : 'light';
     const isDarkMode = app.state.theme === 'dark';
+
+    document.documentElement.dataset.initialTheme = app.state.theme;
+    document.documentElement.style.colorScheme = app.state.theme;
 
     document.body.classList.toggle('dark', isDarkMode);
     document.body.classList.toggle('dark-mode', isDarkMode);
@@ -1685,7 +1688,7 @@ window.TrackerApp = window.TrackerApp || {};
 
   // Load theme from localStorage on startup
   app.loadTheme = function () {
-    const savedTheme = localStorage.getItem('theme') || 'light';
+    const savedTheme = localStorage.getItem('theme') || 'dark';
     app.applyTheme(savedTheme);
   };
 

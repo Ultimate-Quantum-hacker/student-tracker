@@ -1531,6 +1531,9 @@ const ui = {
         app.dom.messagesDateFilter.value = dateFilter;
         app.dom.messagesDateFilter.disabled = !hasAccess;
       }
+      if (!app.dom.messagesRoleFilter) {
+        app.state.messageRoleFilter = 'all';
+      }
       if (app.dom.messagesRoleFilter) {
         const roleOptions = this.getAvailableMessageRoles(normalizedMessages);
         const optionMarkup = ['<option value="all">All roles</option>'].concat(roleOptions.map((option) => {
@@ -1550,7 +1553,6 @@ const ui = {
       const messages = this.getMessages();
       const mailboxFilter = String(app.state.messageMailboxFilter || 'all').trim().toLowerCase();
       const typeFilter = String(app.state.messageTypeFilter || 'all').trim().toLowerCase();
-      const roleFilter = String(app.state.messageRoleFilter || 'all').trim().toLowerCase();
       const dateFilter = String(app.state.messageDateFilter || 'all').trim().toLowerCase();
       const searchTerm = String(app.state.messageSearchTerm || '');
       return messages.filter((message) => {
@@ -1559,9 +1561,6 @@ const ui = {
           return false;
         }
         if (!this.doesMessageMatchTypeFilter(message, typeFilter)) {
-          return false;
-        }
-        if (!this.doesMessageMatchRoleFilter(message, roleFilter)) {
           return false;
         }
         if (!this.doesMessageMatchDateFilter(message, dateFilter)) {
@@ -1732,7 +1731,6 @@ const ui = {
       const mailboxFilter = String(app.state.messageMailboxFilter || 'all').trim().toLowerCase();
       const hasActiveFilters = mailboxFilter !== 'all'
         || String(app.state.messageTypeFilter || 'all').trim().toLowerCase() !== 'all'
-        || String(app.state.messageRoleFilter || 'all').trim().toLowerCase() !== 'all'
         || String(app.state.messageDateFilter || 'all').trim().toLowerCase() !== 'all'
         || Boolean(String(app.state.messageSearchTerm || '').trim());
       const filteredMessages = this.getFilteredMessages();
