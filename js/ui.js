@@ -1200,13 +1200,11 @@ const ui = {
       if (!message) {
         return 'Message';
       }
+      const senderName = String(message?.senderName || '').trim();
       if (String(message?.mailbox || '').trim().toLowerCase() === 'sent') {
-        if (Number(message?.recipientCount || 0) > 1) {
-          return `To ${Number(message?.recipientCount || 0)} recipients`;
-        }
-        return `To ${String(message?.recipientLabel || message?.recipientName || message?.recipientEmail || 'Recipient').trim() || 'Recipient'}`;
+        return senderName || 'You';
       }
-      return String(message?.senderName || message?.senderEmail || message?.counterpartLabel || 'Message').trim() || 'Message';
+      return senderName || 'Unknown sender';
     },
 
     syncLocalMessageMetadata: function ({ unreadCount = 0, lastMessageAt = null } = {}) {
@@ -1614,6 +1612,13 @@ const ui = {
         app.dom.messagesDetail.hidden = true;
         app.dom.messagesDetailEmpty.hidden = false;
         app.dom.messagesDetail.classList.remove('is-visible');
+        if (app.dom.messagesDetailMailbox) {
+          app.dom.messagesDetailMailbox.hidden = true;
+          app.dom.messagesDetailMailbox.dataset.mailbox = '';
+          if (app.dom.messagesDetailMailbox.parentElement) {
+            app.dom.messagesDetailMailbox.parentElement.hidden = true;
+          }
+        }
         if (app.dom.messageMarkToggleBtn) {
           app.dom.messageMarkToggleBtn.hidden = true;
           app.dom.messageMarkToggleBtn.disabled = true;
@@ -1631,9 +1636,13 @@ const ui = {
       app.dom.messagesDetailEmpty.hidden = true;
 
       if (app.dom.messagesDetailMailbox) {
-        const statusLabel = this.getMessageStatusLabel(message);
-        app.dom.messagesDetailMailbox.textContent = statusLabel;
-        app.dom.messagesDetailMailbox.dataset.mailbox = String(statusLabel || '').trim().toLowerCase();
+        const isUnread = this.isMessageUnread(message);
+        app.dom.messagesDetailMailbox.hidden = !isUnread;
+        app.dom.messagesDetailMailbox.textContent = 'Unread';
+        app.dom.messagesDetailMailbox.dataset.mailbox = isUnread ? 'unread' : '';
+        if (app.dom.messagesDetailMailbox.parentElement) {
+          app.dom.messagesDetailMailbox.parentElement.hidden = !isUnread;
+        }
       }
       if (app.dom.messagesDetailSubject) {
         app.dom.messagesDetailSubject.textContent = String(message?.subject || '(No subject)').trim() || '(No subject)';
@@ -1644,12 +1653,6 @@ const ui = {
           ? `To ${this.getMessageToLabel(message)}`
           : `From ${this.getMessageFromLabel(message)}`;
         app.dom.messagesDetailMeta.textContent = `${directionLabel} · ${timeLabel}`;
-      }
-      if (app.dom.messagesDetailAudience) {
-        app.dom.messagesDetailAudience.textContent = this.getMessageToLabel(message);
-      }
-      if (app.dom.messagesDetailRecipient) {
-        app.dom.messagesDetailRecipient.textContent = this.getMessageFromLabel(message);
       }
       if (app.dom.messagesDetailBody) {
         app.dom.messagesDetailBody.innerHTML = this.formatMessageBodyHtml(message?.body || '');
@@ -1757,11 +1760,11 @@ const ui = {
             const isUnread = this.isMessageUnread(message);
             const isNew = this.isNewMessage(message);
             const counterpartLabel = this.getMessageCounterpartLabel(message);
-            const counterpartRole = this.getMessageCounterpartRole(message) || 'teacher';
+            const counterpartRole = String(message?.mailbox || '').trim().toLowerCase() === 'sent'
+              ? (this.getMessageRoleValue(message?.senderRole || '') || 'teacher')
+              : (this.getMessageCounterpartRole(message) || 'teacher');
             const preview = String(message?.bodyPreview || message?.body || '').trim() || 'No preview available';
-            const statusChipMarkup = isNew
-              ? '<span class="message-list-item-flag is-new">New</span>'
-              : (isUnread ? '<span class="message-list-item-flag">Unread</span>' : '');
+            const statusChipMarkup = isUnread ? '<span class="message-list-item-flag">Unread</span>' : '';
             return `
               <button type="button" class="message-list-item${isActive ? ' is-active' : ''}${isUnread ? ' is-unread' : ''}${isNew ? ' is-new' : ''}" data-message-id="${app.utils.esc(messageId)}">
                 <div class="message-list-item-main">
@@ -2156,7 +2159,7 @@ const ui = {
 
       const audienceOptions = this.buildMessageAudienceOptions(normalizedMode);
       if (normalizedMode === 'compose' && !audienceOptions.length) {
-        this.showToast('No message audiences are available for your account');
+        this.showToast('No message To options are available for your account');
         return;
       }
 

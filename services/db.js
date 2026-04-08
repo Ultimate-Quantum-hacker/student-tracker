@@ -2820,10 +2820,11 @@ const readRecipientRootMessageMetadata = async (userId) => {
 const buildCurrentMessageSenderProfile = async (userId) => {
   const normalizedUserId = normalizeUserId(userId);
   const userRootData = normalizedUserId ? await readUserRootData(normalizedUserId) : {};
+  const authenticatedEmail = normalizeEmailAddress(auth?.currentUser?.email || '');
   return {
     uid: normalizedUserId,
     name: normalizeDisplayName(userRootData?.name || getAuthenticatedUserDisplayName(), 'Teacher'),
-    email: normalizeEmailAddress(userRootData?.email || auth?.currentUser?.email || ''),
+    email: authenticatedEmail || normalizeEmailAddress(userRootData?.email || ''),
     role: normalizeRole(userRootData?.role || getCurrentUserRoleContext() || ROLE_TEACHER)
   };
 };
@@ -2881,7 +2882,7 @@ const resolveOutboundMessageRecipients = async (payload = {}, actorUserId = '') 
   });
 
   if (!normalizedRecipients.length) {
-    throw new Error('No eligible recipients found for the selected audience');
+    throw new Error('No eligible recipients found for the selected To option');
   }
 
   return {
@@ -2947,7 +2948,7 @@ const deliverMessageCopies = async ({
   const createdAt = new Date().toISOString();
   const senderId = normalizeUserId(senderProfile?.uid || normalizedActorUserId);
   const senderName = normalizeDisplayName(senderProfile?.name || getAuthenticatedUserDisplayName(), 'Teacher');
-  const senderEmail = normalizeEmailAddress(senderProfile?.email || auth?.currentUser?.email || '');
+  const senderEmail = normalizeEmailAddress(auth?.currentUser?.email || senderProfile?.email || '');
   const senderRole = normalizeRole(senderProfile?.role || getCurrentUserRoleContext() || ROLE_TEACHER);
   const senderMessagesRef = getMessagesCollectionRef(normalizedActorUserId);
   const sentRef = doc(senderMessagesRef);

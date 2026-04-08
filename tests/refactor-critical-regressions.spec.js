@@ -181,6 +181,19 @@ export const getDocs = async (target) => buildQuerySnapshot(resolveEntries(targe
 export const setDoc = async (ref, data = {}, options = {}) => {
   const key = pathKey(ref?.path || []);
   const existing = store.get(key) || {};
+  const setDocHook = globalThis.__firestoreSetDocHook;
+  if (typeof setDocHook === 'function') {
+    const hookResult = await setDocHook({
+      key,
+      path: Array.isArray(ref?.path) ? [...ref.path] : [],
+      data: cloneValue(data || {}),
+      options: cloneValue(options || {}),
+      existing: cloneValue(existing)
+    });
+    if (hookResult && typeof hookResult === 'object' && Object.prototype.hasOwnProperty.call(hookResult, 'throw')) {
+      throw hookResult.throw;
+    }
+  }
   const next = options?.merge ? { ...existing, ...cloneValue(data || {}) } : cloneValue(data || {});
   store.set(key, next);
 };
@@ -767,6 +780,178 @@ test.describe('Class refactor critical regressions', () => {
     expect(result.teacherMessageCount).toBe(2);
     expect(result.adminMessageCount).toBe(1);
     expect(result.teacherRootLastMessageAt).toBeTruthy();
+  });
+
+  test('reply writes senderEmail from authenticated email even if the stored profile email is stale', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__FIREBASE_CONFIG__ = {
+        apiKey: 'test-api-key',
+        authDomain: 'test-project.firebaseapp.com',
+        projectId: 'test-project',
+        storageBucket: 'test-project.appspot.com',
+        messagingSenderId: '1234567890',
+        appId: '1:1234567890:web:test'
+      };
+    });
+    await page.goto(APP_URL);
+
+    const result = await page.evaluate(async () => {
+      const [firebaseModule, dbModule] = await Promise.all([
+        import('/js/firebase.js'),
+        import('/services/db.js')
+      ]);
+
+      globalThis.__firestoreStore?.clear?.();
+      globalThis.__firestoreGetDocHook = null;
+      globalThis.__firestoreSetDocHook = null;
+      localStorage.clear();
+      sessionStorage.clear();
+
+      firebaseModule.auth.currentUser = {
+        uid: 'teacher_reply_uid',
+        email: 'teacher-auth@example.com',
+        displayName: 'Teacher Reply',
+        emailVerified: true
+      };
+
+      dbModule.setCurrentUserRoleContext('teacher');
+      dbModule.setCurrentClassId('class_reply');
+      dbModule.setCurrentClassOwnerContext('teacher_reply_uid', 'Teacher Reply');
+
+      const updatedAt = new Date().toISOString();
+      await firebaseModule.setDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'teacher_reply_uid'),
+        {
+          uid: 'teacher_reply_uid',
+          userId: 'teacher_reply_uid',
+          role: 'teacher',
+          permissions: ['read_own_class_data', 'write_own_class_data', 'receive_messages', 'reply_messages'],
+          name: 'Teacher Reply',
+          email: 'teacher-stale@example.com',
+          emailVerified: true,
+          activeClassId: 'class_reply',
+          messageUnreadCount: 1,
+          lastMessageAt: updatedAt,
+          updatedAt
+        },
+        { merge: true }
+      );
+      await firebaseModule.setDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'admin_sender_uid'),
+        {
+          uid: 'admin_sender_uid',
+          userId: 'admin_sender_uid',
+          role: 'admin',
+          permissions: ['read_all_data', 'send_messages', 'receive_messages', 'reply_messages'],
+          name: 'Admin Sender',
+          email: 'admin@example.com',
+          emailVerified: true,
+          messageUnreadCount: 0,
+          lastMessageAt: updatedAt,
+          updatedAt
+        },
+        { merge: true }
+      );
+      await firebaseModule.setDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'teacher_reply_uid', 'messages', 'legacy_inbox_msg'),
+        {
+          id: 'legacy_inbox_msg',
+          mailbox: 'inbox',
+          threadId: 'legacy_thread_2',
+          parentMessageId: '',
+          replyToMessageId: '',
+          isReply: false,
+          senderUserId: 'admin_sender_uid',
+          senderName: 'Admin Sender',
+          senderEmail: 'admin@example.com',
+          senderRole: 'admin',
+          recipientUserId: 'teacher_reply_uid',
+          recipientName: 'Teacher Reply',
+          recipientEmail: 'teacher-auth@example.com',
+          recipientRole: 'teacher',
+          recipientUserIds: ['teacher_reply_uid'],
+          recipientCount: 1,
+          subject: 'Email alignment check',
+          body: 'Please confirm your update.',
+          audienceType: 'individual',
+          audienceLabel: 'Teacher Reply',
+          isRead: false,
+          readAt: null,
+          sentAt: updatedAt,
+          createdAt: updatedAt,
+          updatedAt
+        },
+        { merge: false }
+      );
+
+      globalThis.__firestoreSetDocHook = ({ path = [], data = {} }) => {
+        const normalizedPath = Array.isArray(path) ? path : [];
+        const isUserMessageDoc = normalizedPath.length === 4
+          && normalizedPath[0] === 'users'
+          && normalizedPath[2] === 'messages';
+        if (!isUserMessageDoc) {
+          return null;
+        }
+        if (String(data?.senderId || '').trim() !== 'teacher_reply_uid') {
+          return null;
+        }
+        const authenticatedEmail = String(firebaseModule.auth.currentUser?.email || '').trim();
+        if (String(data?.senderEmail || '').trim() !== authenticatedEmail) {
+          return {
+            throw: Object.assign(new Error('senderEmail must match authenticated email'), { code: 'permission-denied' })
+          };
+        }
+        return null;
+      };
+
+      let replyError = null;
+      let replyResult = null;
+      try {
+        replyResult = await dbModule.replyToMessage('legacy_inbox_msg', {
+          body: 'The update is ready.'
+        });
+      } catch (error) {
+        replyError = {
+          code: String(error?.code || ''),
+          message: String(error?.message || '')
+        };
+      } finally {
+        globalThis.__firestoreSetDocHook = null;
+      }
+
+      const teacherMessages = await firebaseModule.getDocs(
+        firebaseModule.collection(firebaseModule.db, 'users', 'teacher_reply_uid', 'messages')
+      );
+      const adminMessages = await firebaseModule.getDocs(
+        firebaseModule.collection(firebaseModule.db, 'users', 'admin_sender_uid', 'messages')
+      );
+      const teacherMessageRecords = teacherMessages.docs.map((entry) => entry.data());
+      const adminMessageRecords = adminMessages.docs.map((entry) => entry.data());
+      const teacherSentReply = teacherMessageRecords.find((entry) => entry.mailbox === 'sent' && entry.parentMessageId === 'legacy_inbox_msg') || null;
+      const adminInboxReply = adminMessageRecords.find((entry) => entry.mailbox === 'inbox' && entry.parentMessageId === 'legacy_inbox_msg') || null;
+
+      return {
+        replyError,
+        replyResult: replyResult ? {
+          recipientCount: Number(replyResult.recipientCount || 0),
+          sentSubject: replyResult.sentMessage?.subject || ''
+        } : null,
+        authenticatedEmail: String(firebaseModule.auth.currentUser?.email || ''),
+        storedProfileEmail: 'teacher-stale@example.com',
+        teacherSentReplyEmail: String(teacherSentReply?.senderEmail || ''),
+        adminInboxReplyEmail: String(adminInboxReply?.senderEmail || '')
+      };
+    });
+
+    expect(result.replyError).toBeNull();
+    expect(result.replyResult).toMatchObject({
+      recipientCount: 1,
+      sentSubject: 'Re: Email alignment check'
+    });
+    expect(result.storedProfileEmail).toBe('teacher-stale@example.com');
+    expect(result.authenticatedEmail).toBe('teacher-auth@example.com');
+    expect(result.teacherSentReplyEmail).toBe('teacher-auth@example.com');
+    expect(result.adminInboxReplyEmail).toBe('teacher-auth@example.com');
   });
 
   test('teacher write flows retain writable class-scoped context', async ({ page }) => {
