@@ -569,12 +569,12 @@ const buildMessageDirectoryUserRecord = (payload = {}, fallbackUserId = '') => {
 
 const normalizeMessageRecord = (messageId, payload = {}) => {
   const mailbox = normalizeMessageMailbox(payload?.mailbox);
-  const senderId = normalizeUserId(payload?.senderId || '');
+  const senderId = normalizeUserId(payload?.senderId || payload?.senderUserId || payload?.fromUserId || payload?.fromUid || '');
   const senderName = normalizeDisplayName(payload?.senderName || payload?.senderDisplayName || payload?.senderEmail || senderId || 'Teacher', 'Teacher');
   const senderEmail = normalizeEmailAddress(payload?.senderEmail || '');
   const senderRole = normalizeRole(payload?.senderRole || ROLE_TEACHER);
-  const recipientUserIds = asArray(payload?.recipientUserIds).map(value => normalizeUserId(value)).filter(Boolean);
-  const recipientUserId = normalizeUserId(payload?.recipientUserId || recipientUserIds[0] || '');
+  const recipientUserIds = asArray(payload?.recipientUserIds || payload?.recipientIds || payload?.toUserIds).map(value => normalizeUserId(value)).filter(Boolean);
+  const recipientUserId = normalizeUserId(payload?.recipientUserId || payload?.recipientId || payload?.recipientUid || payload?.toUserId || payload?.toUid || recipientUserIds[0] || '');
   const recipientName = normalizeDisplayName(payload?.recipientName || payload?.recipientDisplayName || payload?.recipientEmail || recipientUserId || 'Recipient', 'Recipient');
   const recipientEmail = normalizeEmailAddress(payload?.recipientEmail || '');
   const recipientRole = normalizeRole(payload?.recipientRole || ROLE_TEACHER);
@@ -2803,6 +2803,20 @@ const readUserRootData = async (userId) => {
   return snapshot.exists() ? (snapshot.data() || {}) : {};
 };
 
+const readRecipientRootMessageMetadata = async (userId) => {
+  const normalizedUserId = normalizeUserId(userId);
+  if (!normalizedUserId) {
+    return null;
+  }
+
+  try {
+    return await readUserRootData(normalizedUserId);
+  } catch (error) {
+    console.warn(`Failed to read recipient message metadata for ${normalizedUserId}:`, error);
+    return null;
+  }
+};
+
 const buildCurrentMessageSenderProfile = async (userId) => {
   const normalizedUserId = normalizeUserId(userId);
   const userRootData = normalizedUserId ? await readUserRootData(normalizedUserId) : {};
@@ -2950,7 +2964,7 @@ const deliverMessageCopies = async ({
   const singleRecipient = normalizedRecipients.length === 1 ? normalizedRecipients[0] : null;
   const recipientUserIds = normalizedRecipients.map(recipient => recipient.uid);
   const recipientRootRecords = await Promise.all(normalizedRecipients.map(async (recipient) => {
-    const rootData = await readUserRootData(recipient.uid);
+    const rootData = await readRecipientRootMessageMetadata(recipient.uid);
     return [recipient.uid, rootData];
   }));
   const recipientRootMap = new Map(recipientRootRecords);

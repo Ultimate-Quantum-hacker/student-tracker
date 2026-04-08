@@ -150,7 +150,12 @@ export const collectionGroup = (...args) => ({
   type: 'collectionGroup',
   collectionId: String(args[args.length - 1] || '').trim()
 });
-export const doc = (...args) => buildDocRef(args);
+export const doc = (...args) => {
+  if (args.length === 1 && args[0]?.type === 'collection') {
+    return buildDocRef([args[0], 'mock-doc-' + Math.random().toString(36).slice(2, 10)]);
+  }
+  return buildDocRef(args);
+};
 export const addDoc = async (collectionRef, data = {}) => {
   const id = 'mock-doc-' + Math.random().toString(36).slice(2, 10);
   const ref = doc(collectionRef, id);
@@ -159,6 +164,17 @@ export const addDoc = async (collectionRef, data = {}) => {
 };
 export const getDoc = async (ref) => {
   const key = pathKey(ref?.path || []);
+  const getDocHook = globalThis.__firestoreGetDocHook;
+  if (typeof getDocHook === 'function') {
+    const hookResult = await getDocHook({
+      key,
+      path: Array.isArray(ref?.path) ? [...ref.path] : [],
+      data: cloneValue(store.get(key))
+    });
+    if (hookResult && typeof hookResult === 'object' && Object.prototype.hasOwnProperty.call(hookResult, 'throw')) {
+      throw hookResult.throw;
+    }
+  }
   return buildDocSnapshot(buildDocRef(ref?.path || []), store.get(key));
 };
 export const getDocs = async (target) => buildQuerySnapshot(resolveEntries(target));
@@ -574,6 +590,183 @@ test.describe('Class refactor critical regressions', () => {
 
     expect(accessSource).toContain('export const resolvePermissionsForRole = (role, _permissions = []) => {');
     expect(accessSource).toContain('return getDefaultPermissionsForRole(role);');
+  });
+
+  test('teacher replies tolerate legacy sender ids and recipient metadata read failures', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__FIREBASE_CONFIG__ = {
+        apiKey: 'test-api-key',
+        authDomain: 'test-project.firebaseapp.com',
+        projectId: 'test-project',
+        storageBucket: 'test-project.appspot.com',
+        messagingSenderId: '1234567890',
+        appId: '1:1234567890:web:test'
+      };
+    });
+    await page.goto(APP_URL);
+
+    const result = await page.evaluate(async () => {
+      const [firebaseModule, dbModule] = await Promise.all([
+        import('/js/firebase.js'),
+        import('/services/db.js')
+      ]);
+
+      globalThis.__firestoreStore?.clear?.();
+      globalThis.__firestoreGetDocHook = null;
+      localStorage.clear();
+      sessionStorage.clear();
+
+      firebaseModule.auth.currentUser = {
+        uid: 'teacher_reply_uid',
+        email: 'teacher@example.com',
+        displayName: 'Teacher Reply',
+        emailVerified: true
+      };
+
+      dbModule.setCurrentUserRoleContext('teacher');
+      dbModule.setCurrentClassId('class_reply');
+      dbModule.setCurrentClassOwnerContext('teacher_reply_uid', 'Teacher Reply');
+
+      const updatedAt = new Date().toISOString();
+      await firebaseModule.setDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'teacher_reply_uid'),
+        {
+          uid: 'teacher_reply_uid',
+          userId: 'teacher_reply_uid',
+          role: 'teacher',
+          permissions: ['read_own_class_data', 'write_own_class_data', 'receive_messages', 'reply_messages'],
+          name: 'Teacher Reply',
+          email: 'teacher@example.com',
+          emailVerified: true,
+          activeClassId: 'class_reply',
+          messageUnreadCount: 1,
+          lastMessageAt: updatedAt,
+          updatedAt
+        },
+        { merge: true }
+      );
+      await firebaseModule.setDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'teacher_reply_uid', 'messages', 'legacy_inbox_msg'),
+        {
+          id: 'legacy_inbox_msg',
+          mailbox: 'inbox',
+          threadId: 'legacy_thread_1',
+          parentMessageId: '',
+          replyToMessageId: '',
+          isReply: false,
+          senderUserId: 'admin_sender_uid',
+          senderName: 'Admin Sender',
+          senderEmail: 'admin@example.com',
+          senderRole: 'admin',
+          recipientUserId: 'teacher_reply_uid',
+          recipientName: 'Teacher Reply',
+          recipientEmail: 'teacher@example.com',
+          recipientRole: 'teacher',
+          recipientUserIds: ['teacher_reply_uid'],
+          recipientCount: 1,
+          subject: 'Need update',
+          body: 'Please send an update.',
+          audienceType: 'individual',
+          audienceLabel: 'Teacher Reply',
+          isRead: false,
+          readAt: null,
+          sentAt: updatedAt,
+          createdAt: updatedAt,
+          updatedAt
+        },
+        { merge: false }
+      );
+
+      globalThis.__firestoreGetDocHook = ({ path = [] }) => {
+        const normalizedPath = Array.isArray(path) ? path : [];
+        if (normalizedPath.length === 2 && normalizedPath[0] === 'users' && normalizedPath[1] === 'admin_sender_uid') {
+          return {
+            throw: Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' })
+          };
+        }
+        return null;
+      };
+
+      let replyResult = null;
+      let replyError = null;
+      try {
+        replyResult = await dbModule.replyToMessage('legacy_inbox_msg', {
+          body: 'Here is the requested update.'
+        });
+      } catch (error) {
+        replyError = {
+          code: String(error?.code || ''),
+          message: String(error?.message || '')
+        };
+      } finally {
+        globalThis.__firestoreGetDocHook = null;
+      }
+
+      const teacherMessages = await firebaseModule.getDocs(
+        firebaseModule.collection(firebaseModule.db, 'users', 'teacher_reply_uid', 'messages')
+      );
+      const adminMessages = await firebaseModule.getDocs(
+        firebaseModule.collection(firebaseModule.db, 'users', 'admin_sender_uid', 'messages')
+      );
+      const teacherRootSnapshot = await firebaseModule.getDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'teacher_reply_uid')
+      );
+
+      const teacherMessageRecords = teacherMessages.docs.map((entry) => entry.data());
+      const adminMessageRecords = adminMessages.docs.map((entry) => entry.data());
+      const teacherSentReply = teacherMessageRecords.find((entry) => entry.mailbox === 'sent' && entry.parentMessageId === 'legacy_inbox_msg') || null;
+      const adminInboxReply = adminMessageRecords.find((entry) => entry.mailbox === 'inbox' && entry.parentMessageId === 'legacy_inbox_msg') || null;
+
+      return {
+        replyError,
+        replyResult: replyResult ? {
+          threadId: replyResult.threadId || '',
+          recipientCount: Number(replyResult.recipientCount || 0),
+          sentSubject: replyResult.sentMessage?.subject || '',
+          inboxCount: Array.isArray(replyResult.inboxMessages) ? replyResult.inboxMessages.length : 0
+        } : null,
+        teacherMessageCount: teacherMessageRecords.length,
+        adminMessageCount: adminMessageRecords.length,
+        teacherSentReply: teacherSentReply ? {
+          recipientUserId: teacherSentReply.recipientUserId || '',
+          subject: teacherSentReply.subject || '',
+          isReply: Boolean(teacherSentReply.isReply),
+          parentMessageId: teacherSentReply.parentMessageId || ''
+        } : null,
+        adminInboxReply: adminInboxReply ? {
+          senderId: adminInboxReply.senderId || '',
+          recipientUserId: adminInboxReply.recipientUserId || '',
+          subject: adminInboxReply.subject || '',
+          isReply: Boolean(adminInboxReply.isReply),
+          parentMessageId: adminInboxReply.parentMessageId || ''
+        } : null,
+        teacherRootLastMessageAt: teacherRootSnapshot.data()?.lastMessageAt || null
+      };
+    });
+
+    expect(result.replyError).toBeNull();
+    expect(result.replyResult).toMatchObject({
+      threadId: 'legacy_thread_1',
+      recipientCount: 1,
+      sentSubject: 'Re: Need update',
+      inboxCount: 1
+    });
+    expect(result.teacherSentReply).toEqual({
+      recipientUserId: 'admin_sender_uid',
+      subject: 'Re: Need update',
+      isReply: true,
+      parentMessageId: 'legacy_inbox_msg'
+    });
+    expect(result.adminInboxReply).toEqual({
+      senderId: 'teacher_reply_uid',
+      recipientUserId: 'admin_sender_uid',
+      subject: 'Re: Need update',
+      isReply: true,
+      parentMessageId: 'legacy_inbox_msg'
+    });
+    expect(result.teacherMessageCount).toBe(2);
+    expect(result.adminMessageCount).toBe(1);
+    expect(result.teacherRootLastMessageAt).toBeTruthy();
   });
 
   test('teacher write flows retain writable class-scoped context', async ({ page }) => {
