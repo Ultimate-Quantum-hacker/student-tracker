@@ -6,25 +6,20 @@
 import app from './state.js';
 import { auth } from './firebase.js';
 import {
-  fetchCurrentUserMessages,
-  fetchMessageAudienceDirectory,
+  fetchConversationDirectory,
+  fetchCurrentUserConversations,
   finalizeCurrentUserAccountDeletion,
-  markMessageAsRead,
-  markMessageAsUnread,
-  replyToMessage,
+  markConversationAsRead,
   requestCurrentUserAccountDeletion,
-  sendMessage,
+  sendConversationMessage,
+  subscribeConversationMessages,
+  subscribeCurrentUserConversations,
   syncCurrentUserClassOwnerName
 } from '../services/db.js';
 import {
-  MESSAGE_AUDIENCE_ALL,
-  MESSAGE_AUDIENCE_CLASS,
-  MESSAGE_AUDIENCE_INDIVIDUAL,
-  MESSAGE_AUDIENCE_ROLE,
-  canMessageAudienceType,
   canReceiveMessages,
   canReplyToMessages,
-  canSendMessages
+  canStartConversations
 } from './access-control.js';
 import {
   ACCOUNT_DELETION_STATUS_APPROVED,
@@ -218,25 +213,21 @@ const domIds = {
   messagesDetail: 'messages-detail',
   messagesDetailMailbox: 'messages-detail-mailbox',
   messageMarkToggleBtn: 'message-mark-toggle-btn',
-  messageReplyBtn: 'message-reply-btn',
   messagesDetailSubject: 'messages-detail-subject',
   messagesDetailMeta: 'messages-detail-meta',
-  messagesDetailAudience: 'messages-detail-audience',
-  messagesDetailRecipient: 'messages-detail-recipient',
   messagesDetailBody: 'messages-detail-body',
+  messageThreadForm: 'message-thread-form',
+  messageThreadFeedback: 'message-thread-feedback',
+  messageThreadInput: 'message-thread-input',
+  messageThreadMeta: 'message-thread-meta',
+  messageThreadSubmitBtn: 'message-thread-submit-btn',
   messageComposeModal: 'message-compose-modal',
   messageComposeForm: 'message-compose-form',
   messageComposeTitle: 'message-compose-title',
   messageComposeSubtitle: 'message-compose-subtitle',
   messageComposeFeedback: 'message-compose-feedback',
-  messageComposeAudienceType: 'message-compose-audience-type',
   messageComposeRecipientGroup: 'message-compose-recipient-group',
   messageComposeRecipientSelect: 'message-compose-recipient-select',
-  messageComposeRoleGroup: 'message-compose-role-group',
-  messageComposeRoleSelect: 'message-compose-role-select',
-  messageComposeClassGroup: 'message-compose-class-group',
-  messageComposeClassSelect: 'message-compose-class-select',
-  messageComposeSubject: 'message-compose-subject',
   messageComposeBody: 'message-compose-body',
   messageComposeMeta: 'message-compose-meta',
   messageComposeCancelBtn: 'message-compose-cancel-btn',
@@ -277,9 +268,17 @@ const ui = {
   messageDirectoryLoaded: false,
   isLoadingMessages: false,
   isLoadingMessageDirectory: false,
+  isLoadingMessageThread: false,
   isSubmittingMessage: false,
+  isSubmittingThreadMessage: false,
   messagesRequest: null,
   messageDirectoryRequest: null,
+  messageThreadRequest: null,
+  messageThreadRequestConversationId: '',
+  messageThreadLoadedConversationId: '',
+  messageThreadSubscriptionConversationId: '',
+  messageListSubscription: null,
+  messageThreadSubscription: null,
   messageNewIds: new Set(),
   messageDetailAnimationFrame: null,
   lastMessagesListMarkup: '',
@@ -1072,6 +1071,24 @@ const ui = {
       return Array.isArray(app.state.messages) ? app.state.messages : [];
     },
 
+    getMessageThread: function () {
+      return Array.isArray(app.state.messageThread) ? app.state.messageThread : [];
+    },
+
+    getSelectedConversationId: function () {
+      return String(app.state.selectedMessageId || '').trim();
+    },
+
+    getSelectedConversationRecord: function () {
+      const selectedConversationId = this.getSelectedConversationId();
+      if (!selectedConversationId) {
+        return null;
+      }
+      return this.getMessages().find((conversation) => {
+        return String(conversation?.id || '').trim() === selectedConversationId;
+      }) || null;
+    },
+
     getMessageDirectory: function () {
       const directory = app.state.messageDirectory || {};
       return {
@@ -1088,25 +1105,63 @@ const ui = {
       const role = this.getMessageRoleContext();
       const permissions = this.getMessagePermissionsContext();
       const directoryCapabilities = this.getMessageDirectory().capabilities;
+      const canStartConversation = directoryCapabilities.canStart ?? directoryCapabilities.canSend ?? canStartConversations(role, permissions);
       return {
         canReceive: canReceiveMessages(role, permissions),
-        canSend: directoryCapabilities.canSend ?? canSendMessages(role, permissions),
+        canSend: canStartConversation,
         canReply: directoryCapabilities.canReply ?? canReplyToMessages(role, permissions),
-        canMessageIndividuals: directoryCapabilities.canMessageIndividuals ?? canMessageAudienceType(MESSAGE_AUDIENCE_INDIVIDUAL, role, permissions),
-        canMessageRoles: directoryCapabilities.canMessageRoles ?? canMessageAudienceType(MESSAGE_AUDIENCE_ROLE, role, permissions),
-        canMessageClasses: directoryCapabilities.canMessageClasses ?? canMessageAudienceType(MESSAGE_AUDIENCE_CLASS, role, permissions),
-        canMessageAll: directoryCapabilities.canMessageAll ?? canMessageAudienceType(MESSAGE_AUDIENCE_ALL, role, permissions)
+        canMessageIndividuals: canStartConversation,
+        canMessageRoles: false,
+        canMessageClasses: false,
+        canMessageAll: false
       };
     },
 
+    stopMessageListSubscription: function () {
+      if (typeof this.messageListSubscription === 'function') {
+        this.messageListSubscription();
+      }
+      this.messageListSubscription = null;
+    },
+
+    stopMessageThreadSubscription: function () {
+      if (typeof this.messageThreadSubscription === 'function') {
+        this.messageThreadSubscription();
+      }
+      this.messageThreadSubscription = null;
+      this.messageThreadSubscriptionConversationId = '';
+    },
+
+    clearSelectedMessageThread: function () {
+      app.state.messageThread = [];
+      this.messageThreadLoadedConversationId = '';
+      this.messageThreadRequestConversationId = '';
+      this.messageThreadRequest = null;
+      if (app.dom.messageThreadInput) {
+        app.dom.messageThreadInput.value = '';
+      }
+      if (app.dom.messageThreadFeedback) {
+        app.dom.messageThreadFeedback.hidden = true;
+        app.dom.messageThreadFeedback.textContent = '';
+        delete app.dom.messageThreadFeedback.dataset.tone;
+      }
+    },
+
     resetMessagingState: function () {
+      this.stopMessageListSubscription();
+      this.stopMessageThreadSubscription();
       this.messageDataLoaded = false;
       this.messageDirectoryLoaded = false;
       this.isLoadingMessages = false;
       this.isLoadingMessageDirectory = false;
+      this.isLoadingMessageThread = false;
       this.isSubmittingMessage = false;
+      this.isSubmittingThreadMessage = false;
       this.messagesRequest = null;
       this.messageDirectoryRequest = null;
+      this.messageThreadRequest = null;
+      this.messageThreadRequestConversationId = '';
+      this.messageThreadLoadedConversationId = '';
       this.messageNewIds = new Set();
       this.lastMessagesListMarkup = '';
       this.messageListScrollTop = 0;
@@ -1119,12 +1174,18 @@ const ui = {
         replyToMessageId: '',
         recipientUserId: ''
       };
+      app.state.messages = [];
+      app.state.messageThread = [];
+      app.state.selectedMessageId = '';
       app.state.messageSearchTerm = '';
       app.state.messageRoleFilter = 'all';
       app.state.messageDateFilter = 'all';
       app.state.messageTypeFilter = 'all';
       if (app.dom.messageComposeModal) {
         app.dom.messageComposeModal.classList.remove('active');
+      }
+      if (app.dom.messageThreadForm) {
+        app.dom.messageThreadForm.reset();
       }
     },
 
@@ -1205,7 +1266,7 @@ const ui = {
     },
 
     isMessageUnread: function (message = null) {
-      return String(message?.mailbox || '').trim().toLowerCase() === 'inbox' && !Boolean(message?.isRead);
+      return Math.max(0, Math.floor(Number(message?.unreadCount || 0))) > 0;
     },
 
     isNewMessage: function (message = null) {
@@ -1215,18 +1276,16 @@ const ui = {
 
     getMessageStatusLabel: function (message = null) {
       if (!message) {
-        return 'Inbox';
-      }
-      if (String(message?.mailbox || '').trim().toLowerCase() === 'sent') {
-        return 'Sent';
+        return 'Conversation';
       }
       if (this.isNewMessage(message)) {
         return 'New';
       }
       if (this.isMessageUnread(message)) {
-        return 'Unread';
+        const unreadCount = Math.max(0, Math.floor(Number(message?.unreadCount || 0)));
+        return unreadCount > 1 ? `${unreadCount} unread` : 'Unread';
       }
-      return 'Read';
+      return message?.isLegacy ? 'Legacy' : 'Read';
     },
 
     getMessageRoleValue: function (role = '') {
@@ -1235,21 +1294,14 @@ const ui = {
     },
 
     getMessageCounterpartRole: function (message = null) {
-      const mailbox = String(message?.mailbox || '').trim().toLowerCase();
-      return mailbox === 'sent'
-        ? this.getMessageRoleValue(message?.recipientRole || '')
-        : this.getMessageRoleValue(message?.senderRole || '');
+      return this.getMessageRoleValue(message?.counterpartRole || message?.lastMessageSenderRole || '');
     },
 
     getMessageCounterpartLabel: function (message = null) {
       if (!message) {
-        return 'Message';
+        return 'Conversation';
       }
-      const senderName = String(message?.senderName || '').trim();
-      if (String(message?.mailbox || '').trim().toLowerCase() === 'sent') {
-        return senderName || 'You';
-      }
-      return senderName || 'Unknown sender';
+      return String(message?.title || message?.counterpartName || message?.lastMessageSenderName || 'Conversation').trim() || 'Conversation';
     },
 
     syncLocalMessageMetadata: function ({ unreadCount = 0, lastMessageAt = null } = {}) {
@@ -1270,7 +1322,9 @@ const ui = {
 
     applyMessagesPayload: function (payload = {}, { preserveSelection = true } = {}) {
       const previousMessages = this.getMessages();
-      const nextMessages = Array.isArray(payload?.messages) ? payload.messages : [];
+      const nextMessages = Array.isArray(payload?.conversations)
+        ? payload.conversations
+        : (Array.isArray(payload?.messages) ? payload.messages : []);
       const previousMessageIds = new Set(previousMessages.map((message) => {
         return String(message?.id || '').trim();
       }).filter(Boolean));
@@ -1293,13 +1347,115 @@ const ui = {
       app.state.messages = nextMessages;
       this.syncLocalMessageMetadata({
         unreadCount: payload?.unreadCount ?? app.state.unreadMessageCount,
-        lastMessageAt: payload?.lastMessageAt ?? nextMessages[0]?.sentAt ?? nextMessages[0]?.updatedAt ?? null
+        lastMessageAt: payload?.lastMessageAt ?? nextMessages[0]?.lastMessageAt ?? nextMessages[0]?.updatedAt ?? nextMessages[0]?.createdAt ?? null
       });
       const currentSelection = String(app.state.selectedMessageId || '').trim();
       const hasSelection = preserveSelection && nextMessages.some((message) => {
         return String(message?.id || '').trim() === currentSelection;
       });
       app.state.selectedMessageId = hasSelection ? currentSelection : String(nextMessages[0]?.id || '').trim();
+    },
+
+    ensureMessageListSubscription: async function () {
+      const authUid = String(app.state.authUser?.uid || '').trim();
+      const capabilities = this.getMessagingCapabilities();
+      const hasAccess = capabilities.canReceive || capabilities.canSend || capabilities.canReply;
+      if (!authUid || !hasAccess) {
+        this.stopMessageListSubscription();
+        return null;
+      }
+      if (this.messageListSubscription) {
+        return this.messageListSubscription;
+      }
+      try {
+        const unsubscribe = await subscribeCurrentUserConversations({
+          onChange: (payload) => {
+            this.messageDataLoaded = true;
+            this.applyMessagesPayload(payload, { preserveSelection: true });
+            this.renderMessagesSection();
+            void this.syncSelectedConversationThread();
+          },
+          onError: (error) => {
+            console.error('Conversation subscription failed:', error);
+          }
+        });
+        this.messageListSubscription = typeof unsubscribe === 'function' ? unsubscribe : null;
+      } catch (error) {
+        console.error('Failed to start conversation subscription:', error);
+      }
+      return this.messageListSubscription;
+    },
+
+    ensureSelectedConversationThreadSubscription: async function (conversationId = '') {
+      const normalizedConversationId = String(conversationId || this.getSelectedConversationId() || '').trim();
+      if (!normalizedConversationId || normalizedConversationId !== this.getSelectedConversationId()) {
+        return null;
+      }
+      if (this.messageThreadSubscriptionConversationId === normalizedConversationId && this.messageThreadSubscription) {
+        return this.messageThreadSubscription;
+      }
+      this.stopMessageThreadSubscription();
+      this.isLoadingMessageThread = true;
+      this.messageThreadRequestConversationId = normalizedConversationId;
+      this.renderSelectedMessageDetail(this.getSelectedConversationRecord());
+      try {
+        this.messageThreadSubscriptionConversationId = normalizedConversationId;
+        const unsubscribe = await subscribeConversationMessages(normalizedConversationId, {
+          onChange: (payload) => {
+            if (String(this.getSelectedConversationId() || '').trim() !== normalizedConversationId) {
+              return;
+            }
+            const conversationRecord = payload?.conversation || this.getSelectedConversationRecord() || null;
+            if (conversationRecord?.id) {
+              const currentConversationId = String(conversationRecord.id || '').trim();
+              const otherConversations = this.getMessages().filter((entry) => {
+                return String(entry?.id || '').trim() !== currentConversationId;
+              });
+              app.state.messages = [conversationRecord, ...otherConversations].sort((left, right) => {
+                const leftTime = new Date(left?.sortAt || left?.lastMessageAt || left?.updatedAt || 0).getTime() || 0;
+                const rightTime = new Date(right?.sortAt || right?.lastMessageAt || right?.updatedAt || 0).getTime() || 0;
+                return rightTime - leftTime;
+              });
+            }
+            app.state.messageThread = Array.isArray(payload?.messages) ? payload.messages : [];
+            this.messageThreadLoadedConversationId = normalizedConversationId;
+            this.messageThreadRequestConversationId = '';
+            this.isLoadingMessageThread = false;
+            this.renderMessagesSection();
+          },
+          onError: (error) => {
+            if (String(this.getSelectedConversationId() || '').trim() !== normalizedConversationId) {
+              return;
+            }
+            console.error('Failed to load conversation thread:', error);
+            this.isLoadingMessageThread = false;
+            this.messageThreadRequestConversationId = '';
+            this.renderMessagesSection();
+          }
+        });
+        this.messageThreadSubscription = typeof unsubscribe === 'function' ? unsubscribe : null;
+      } catch (error) {
+        console.error('Failed to subscribe to conversation thread:', error);
+        this.isLoadingMessageThread = false;
+        this.messageThreadRequestConversationId = '';
+      }
+      return this.messageThreadSubscription;
+    },
+
+    syncSelectedConversationThread: async function () {
+      const selectedConversationId = this.getSelectedConversationId();
+      if (!selectedConversationId) {
+        this.stopMessageThreadSubscription();
+        this.clearSelectedMessageThread();
+        return;
+      }
+      if (this.messageThreadSubscriptionConversationId === selectedConversationId
+        && (this.isLoadingMessageThread || this.messageThreadLoadedConversationId === selectedConversationId)) {
+        return;
+      }
+      this.clearSelectedMessageThread();
+      this.renderMessagesSection();
+      await this.ensureSelectedConversationThreadSubscription(selectedConversationId);
     },
 
     ensureMessagesLoaded: async function (force = false) {
@@ -1317,15 +1473,17 @@ const ui = {
       }
       this.isLoadingMessages = true;
       this.renderMessagesSection();
-      this.messagesRequest = fetchCurrentUserMessages()
+      this.messagesRequest = fetchCurrentUserConversations()
         .then((payload) => {
           this.messageDataLoaded = true;
           this.applyMessagesPayload(payload, { preserveSelection: !force });
+          void this.syncSelectedConversationThread();
+          void this.ensureMessageListSubscription();
           return payload;
         })
         .catch((error) => {
-          console.error('Failed to load messages:', error);
-          this.showToast('Failed to load messages');
+          console.error('Failed to load conversations:', error);
+          this.showToast('Failed to load conversations');
           throw error;
         })
         .finally(() => {
@@ -1350,7 +1508,7 @@ const ui = {
       }
       this.isLoadingMessageDirectory = true;
       this.renderMessageComposeControls();
-      this.messageDirectoryRequest = fetchMessageAudienceDirectory()
+      this.messageDirectoryRequest = fetchConversationDirectory()
         .then((directory) => {
           app.state.messageDirectory = {
             users: Array.isArray(directory?.users) ? directory.users : [],
@@ -1364,8 +1522,8 @@ const ui = {
           return app.state.messageDirectory;
         })
         .catch((error) => {
-          console.error('Failed to load message recipients:', error);
-          this.showToast('Failed to load message recipients');
+          console.error('Failed to load chat recipients:', error);
+          this.showToast('Failed to load chat recipients');
           throw error;
         })
         .finally(() => {
@@ -1383,37 +1541,10 @@ const ui = {
         if (this.getMessagingCapabilities().canSend && (force || this.messageDirectoryLoaded)) {
           await this.ensureMessageDirectoryLoaded(force);
         }
+        await this.syncSelectedConversationThread();
       } catch (error) {
         console.error('Failed to refresh messages:', error);
       }
-    },
-
-    formatMessageMailboxLabel: function (mailbox = '') {
-      return String(mailbox || '').trim().toLowerCase() === 'sent' ? 'Sent' : 'Inbox';
-    },
-
-    getMessageToLabel: function (message = null) {
-      if (!message) {
-        return 'You';
-      }
-      const mailbox = String(message?.mailbox || '').trim().toLowerCase();
-      const audienceType = String(message?.audienceType || '').trim().toLowerCase();
-      const audienceLabel = String(message?.audienceLabel || '').trim();
-      const recipientLabel = String(message?.recipientLabel || message?.recipientName || message?.recipientEmail || '').trim();
-      if (mailbox === 'sent') {
-        if (Number(message?.recipientCount || 0) > 1) {
-          return `${Number(message?.recipientCount || 0)} recipients`;
-        }
-        return recipientLabel || audienceLabel || 'Recipient';
-      }
-      if (audienceType === MESSAGE_AUDIENCE_INDIVIDUAL) {
-        return 'You';
-      }
-      return audienceLabel || recipientLabel || 'You';
-    },
-
-    getMessageFromLabel: function (message = null) {
-      return String(message?.senderName || message?.senderEmail || 'Unknown sender').trim() || 'Unknown sender';
     },
 
     getMessageInitials: function (value = '') {
@@ -1437,11 +1568,10 @@ const ui = {
       if (!message || normalizedFilter === 'all') {
         return true;
       }
-      if (normalizedFilter === 'reply') {
-        return Boolean(message?.isReply);
+      if (normalizedFilter === 'legacy') {
+        return Boolean(message?.isLegacy);
       }
-      const normalizedAudienceType = normalizedFilter === 'all_users' ? MESSAGE_AUDIENCE_ALL : normalizedFilter;
-      return String(message?.audienceType || '').trim().toLowerCase() === normalizedAudienceType;
+      return String(message?.type || '').trim().toLowerCase() === normalizedFilter;
     },
 
     doesMessageMatchRoleFilter: function (message = null, filter = 'all') {
@@ -1457,7 +1587,7 @@ const ui = {
       if (!message || normalizedFilter === 'all') {
         return true;
       }
-      const timestamp = Date.parse(String(message?.sentAt || message?.updatedAt || '').trim());
+      const timestamp = Date.parse(String(message?.lastMessageAt || message?.updatedAt || message?.createdAt || '').trim());
       if (!Number.isFinite(timestamp)) {
         return false;
       }
@@ -1483,12 +1613,11 @@ const ui = {
       }
       const searchableFields = [
         this.getMessageCounterpartLabel(message),
-        this.getMessageToLabel(message),
-        this.getMessageFromLabel(message),
-        message?.subject,
-        message?.bodyPreview,
-        message?.body,
-        message?.audienceLabel
+        message?.counterpartEmail,
+        message?.lastMessageSenderName,
+        message?.lastMessagePreview,
+        message?.lastMessageText,
+        message?.title
       ].map(value => String(value || '').trim().toLowerCase()).filter(Boolean);
       return searchableFields.some(value => value.includes(normalizedTerm));
     },
@@ -1556,8 +1685,10 @@ const ui = {
       const dateFilter = String(app.state.messageDateFilter || 'all').trim().toLowerCase();
       const searchTerm = String(app.state.messageSearchTerm || '');
       return messages.filter((message) => {
-        const mailbox = String(message?.mailbox || '').trim().toLowerCase();
-        if ((mailboxFilter === 'inbox' || mailboxFilter === 'sent') && mailbox !== mailboxFilter) {
+        if (mailboxFilter === 'unread' && !this.isMessageUnread(message)) {
+          return false;
+        }
+        if (mailboxFilter === 'legacy' && !Boolean(message?.isLegacy)) {
           return false;
         }
         if (!this.doesMessageMatchTypeFilter(message, typeFilter)) {
@@ -1597,40 +1728,6 @@ const ui = {
       return app.utils.esc(normalizedValue).replace(/\n/g, '<br>');
     },
 
-    getReplyTargetForMessage: function (message = null) {
-      if (!message) {
-        return null;
-      }
-      const actorUserId = String(app.state.authUser?.uid || '').trim();
-      if (String(message?.mailbox || '').trim().toLowerCase() === 'inbox') {
-        const senderId = String(message?.senderId || '').trim();
-        if (!senderId || senderId === actorUserId) {
-          return null;
-        }
-        return {
-          uid: senderId,
-          name: String(message?.senderName || '').trim(),
-          email: String(message?.senderEmail || '').trim(),
-          role: String(message?.senderRole || '').trim(),
-          label: String(message?.senderName || message?.senderEmail || senderId).trim()
-        };
-      }
-      if (Number(message?.recipientCount || 0) !== 1) {
-        return null;
-      }
-      const recipientUserId = String(message?.recipientUserId || '').trim();
-      if (!recipientUserId || recipientUserId === actorUserId) {
-        return null;
-      }
-      return {
-        uid: recipientUserId,
-        name: String(message?.recipientName || '').trim(),
-        email: String(message?.recipientEmail || '').trim(),
-        role: String(message?.recipientRole || '').trim(),
-        label: String(message?.recipientLabel || message?.recipientName || message?.recipientEmail || recipientUserId).trim()
-      };
-    },
-
     animateMessageDetail: function () {
       if (!app.dom.messagesDetail) {
         return;
@@ -1645,13 +1742,91 @@ const ui = {
       });
     },
 
+    renderConversationThreadMarkup: function (messages = []) {
+      const threadMessages = Array.isArray(messages) ? messages : [];
+      if (!threadMessages.length) {
+        return '<div class="messages-thread-empty"><strong>No messages yet</strong><p>Send a message to start this chat.</p></div>';
+      }
+      const currentUserId = String(app.state.authUser?.uid || '').trim();
+      const threadMarkup = threadMessages.map((message) => {
+        const isOwnMessage = Boolean(message?.isOwnMessage);
+        const senderLabel = isOwnMessage
+          ? 'You'
+          : (String(message?.senderName || message?.senderEmail || 'Participant').trim() || 'Participant');
+        const messageStatus = !isOwnMessage && Boolean(message?.isLegacy) && Boolean(message?.isUnreadLegacy)
+          ? '<span class="messages-thread-message-status">Unread</span>'
+          : '';
+        const readState = isOwnMessage && currentUserId && Array.isArray(message?.readByUserIds)
+          ? message.readByUserIds.some((participantId) => String(participantId || '').trim() && String(participantId || '').trim() !== currentUserId)
+          : false;
+        const readLabel = isOwnMessage
+          ? (readState ? '<span class="messages-thread-message-status is-read">Seen</span>' : '')
+          : '';
+        return `
+          <article class="messages-thread-message${isOwnMessage ? ' is-own' : ''}" data-message-id="${app.utils.esc(String(message?.id || '').trim())}">
+            <div class="messages-thread-message-meta">
+              <span class="messages-thread-message-author">${app.utils.esc(senderLabel)}</span>
+              <span class="messages-thread-message-time">${app.utils.esc(this.formatAccountTimestamp(message?.sentAt || message?.createdAt || message?.updatedAt, 'Recently'))}</span>
+            </div>
+            <div class="messages-thread-message-bubble">${this.formatMessageBodyHtml(message?.body || message?.text || '')}</div>
+            <div class="messages-thread-message-flags">${messageStatus}${readLabel}</div>
+          </article>`;
+      }).join('');
+      return `<div class="messages-thread-list">${threadMarkup}</div>`;
+    },
+
+    updateMessageThreadComposerState: function (conversation = null, { canSend = null } = {}) {
+      const resolvedConversation = conversation || this.getSelectedConversationRecord();
+      const conversationId = String(resolvedConversation?.id || '').trim();
+      const bodyLength = String(app.dom.messageThreadInput?.value || '').length;
+      const capabilities = this.getMessagingCapabilities();
+      const canSendInline = typeof canSend === 'boolean'
+        ? canSend
+        : Boolean(resolvedConversation?.counterpartUserId
+          && (String(resolvedConversation?.source || '').trim().toLowerCase() === 'conversation'
+            ? (capabilities.canReply || capabilities.canSend)
+            : capabilities.canSend));
+      if (app.dom.messageThreadForm) {
+        app.dom.messageThreadForm.hidden = !conversationId;
+      }
+      if (app.dom.messageThreadInput) {
+        app.dom.messageThreadInput.disabled = !conversationId || !canSendInline || this.isSubmittingThreadMessage;
+        app.dom.messageThreadInput.placeholder = !conversationId
+          ? 'Select a conversation'
+          : (canSendInline ? 'Write a message' : 'Replies are unavailable for this conversation');
+      }
+      if (app.dom.messageThreadSubmitBtn) {
+        app.dom.messageThreadSubmitBtn.disabled = !conversationId || !canSendInline || !bodyLength || this.isSubmittingThreadMessage;
+        app.dom.messageThreadSubmitBtn.textContent = this.isSubmittingThreadMessage ? 'Sending...' : 'Send';
+      }
+      if (app.dom.messageThreadMeta) {
+        const segments = [];
+        if (!conversationId) {
+          segments.push('Select a conversation');
+        } else if (this.isLoadingMessageThread) {
+          segments.push('Loading thread');
+        } else if (!canSendInline) {
+          segments.push('Replies unavailable');
+        } else {
+          segments.push('Reply in chat');
+        }
+        segments.push(`${bodyLength} / 5000 characters`);
+        app.dom.messageThreadMeta.textContent = segments.join(' · ');
+      }
+    },
+
     renderSelectedMessageDetail: function (message = null) {
       if (!app.dom.messagesDetail || !app.dom.messagesDetailEmpty) {
         return;
       }
       const capabilities = this.getMessagingCapabilities();
-      const replyTarget = this.getReplyTargetForMessage(message);
-      const isInboxMessage = String(message?.mailbox || '').trim().toLowerCase() === 'inbox';
+      const selectedConversationId = this.getSelectedConversationId();
+      const conversationId = String(message?.id || '').trim();
+      const unreadCount = Math.max(0, Math.floor(Number(message?.unreadCount || 0)));
+      const canSendInline = Boolean(message?.counterpartUserId
+        && (String(message?.source || '').trim().toLowerCase() === 'conversation'
+          ? (capabilities.canReply || capabilities.canSend)
+          : capabilities.canSend));
       if (!message) {
         app.dom.messagesDetail.hidden = true;
         app.dom.messagesDetailEmpty.hidden = false;
@@ -1668,11 +1843,11 @@ const ui = {
           app.dom.messageMarkToggleBtn.disabled = true;
           app.dom.messageMarkToggleBtn.dataset.messageId = '';
         }
-        if (app.dom.messageReplyBtn) {
-          app.dom.messageReplyBtn.hidden = true;
-          app.dom.messageReplyBtn.disabled = true;
-          app.dom.messageReplyBtn.dataset.messageId = '';
-        }
+        this.updateMessageThreadComposerState(null, { canSend: false });
+        return;
+      }
+
+      if (!conversationId || conversationId !== selectedConversationId) {
         return;
       }
 
@@ -1680,39 +1855,50 @@ const ui = {
       app.dom.messagesDetailEmpty.hidden = true;
 
       if (app.dom.messagesDetailMailbox) {
-        const isUnread = this.isMessageUnread(message);
-        app.dom.messagesDetailMailbox.hidden = !isUnread;
-        app.dom.messagesDetailMailbox.textContent = 'Unread';
-        app.dom.messagesDetailMailbox.dataset.mailbox = isUnread ? 'unread' : '';
+        const hasMailboxPill = unreadCount > 0 || Boolean(message?.isLegacy);
+        app.dom.messagesDetailMailbox.hidden = !hasMailboxPill;
+        app.dom.messagesDetailMailbox.textContent = unreadCount > 0
+          ? (unreadCount > 1 ? `${unreadCount} unread` : 'Unread')
+          : 'Legacy';
+        app.dom.messagesDetailMailbox.dataset.mailbox = unreadCount > 0 ? 'unread' : 'legacy';
         if (app.dom.messagesDetailMailbox.parentElement) {
-          app.dom.messagesDetailMailbox.parentElement.hidden = !isUnread;
+          app.dom.messagesDetailMailbox.parentElement.hidden = !hasMailboxPill;
         }
       }
       if (app.dom.messagesDetailSubject) {
-        app.dom.messagesDetailSubject.textContent = String(message?.subject || '(No subject)').trim() || '(No subject)';
+        app.dom.messagesDetailSubject.textContent = this.getMessageCounterpartLabel(message);
       }
       if (app.dom.messagesDetailMeta) {
-        const timeLabel = this.formatAccountTimestamp(message?.sentAt || message?.updatedAt, 'Recently');
-        const directionLabel = String(message?.mailbox || '').trim().toLowerCase() === 'sent'
-          ? `To ${this.getMessageToLabel(message)}`
-          : `From ${this.getMessageFromLabel(message)}`;
-        app.dom.messagesDetailMeta.textContent = `${directionLabel} · ${timeLabel}`;
+        const counterpartRole = this.getMessageCounterpartRole(message);
+        const detailSegments = [message?.isLegacy ? 'Legacy thread' : 'Direct chat'];
+        if (counterpartRole) {
+          detailSegments.push(this.formatRoleLabel(counterpartRole));
+        }
+        if (message?.lastMessageAt) {
+          detailSegments.push(`Updated ${this.formatAccountTimestamp(message.lastMessageAt, 'Recently')}`);
+        }
+        app.dom.messagesDetailMeta.textContent = detailSegments.join(' · ');
       }
       if (app.dom.messagesDetailBody) {
-        app.dom.messagesDetailBody.innerHTML = this.formatMessageBodyHtml(message?.body || '');
+        const threadMessages = this.getMessageThread();
+        if (this.isLoadingMessageThread && !threadMessages.length) {
+          app.dom.messagesDetailBody.innerHTML = '<div class="messages-thread-empty"><strong>Loading conversation…</strong><p>Fetching the latest messages.</p></div>';
+        } else {
+          app.dom.messagesDetailBody.innerHTML = this.renderConversationThreadMarkup(threadMessages);
+          window.requestAnimationFrame(() => {
+            if (app.dom.messagesDetailBody) {
+              app.dom.messagesDetailBody.scrollTop = app.dom.messagesDetailBody.scrollHeight;
+            }
+          });
+        }
       }
       if (app.dom.messageMarkToggleBtn) {
-        app.dom.messageMarkToggleBtn.hidden = !isInboxMessage;
-        app.dom.messageMarkToggleBtn.disabled = !isInboxMessage;
-        app.dom.messageMarkToggleBtn.dataset.messageId = isInboxMessage ? String(message?.id || '').trim() : '';
-        app.dom.messageMarkToggleBtn.textContent = this.isMessageUnread(message) ? 'Mark as read' : 'Mark as unread';
+        app.dom.messageMarkToggleBtn.hidden = unreadCount <= 0;
+        app.dom.messageMarkToggleBtn.disabled = unreadCount <= 0;
+        app.dom.messageMarkToggleBtn.dataset.messageId = conversationId;
+        app.dom.messageMarkToggleBtn.textContent = 'Mark as read';
       }
-      if (app.dom.messageReplyBtn) {
-        const canReply = Boolean(capabilities.canReply && replyTarget?.uid);
-        app.dom.messageReplyBtn.hidden = !canReply;
-        app.dom.messageReplyBtn.disabled = !canReply;
-        app.dom.messageReplyBtn.dataset.messageId = canReply ? String(message?.id || '').trim() : '';
-      }
+      this.updateMessageThreadComposerState(message, { canSend: canSendInline });
       this.animateMessageDetail();
     },
 
@@ -1747,8 +1933,8 @@ const ui = {
       if (app.dom.messagesComposeBtn) {
         app.dom.messagesComposeBtn.disabled = !capabilities.canSend || this.isSubmittingMessage;
         app.dom.messagesComposeBtn.title = capabilities.canSend
-          ? 'Compose message'
-          : 'You do not have permission to start new messages';
+          ? 'Start a new chat'
+          : 'You do not have permission to start new chats';
       }
       if (app.dom.messagesRefreshBtn) {
         app.dom.messagesRefreshBtn.disabled = !hasAccess || this.isLoadingMessages;
@@ -1756,29 +1942,29 @@ const ui = {
       }
       if (app.dom.messagesSectionStatus) {
         if (!hasSession) {
-          app.dom.messagesSectionStatus.textContent = 'Sign in to access messages.';
+          app.dom.messagesSectionStatus.textContent = 'Sign in to access conversations.';
         } else if (!hasAccess) {
-          app.dom.messagesSectionStatus.textContent = 'Messaging is unavailable for this account.';
+          app.dom.messagesSectionStatus.textContent = 'Chat is unavailable for this account.';
         } else if (this.isLoadingMessages) {
-          app.dom.messagesSectionStatus.textContent = 'Loading your inbox...';
+          app.dom.messagesSectionStatus.textContent = 'Loading your conversations...';
         } else if (app.state.messageLastMessageAt) {
           app.dom.messagesSectionStatus.textContent = `Last updated ${this.formatAccountTimestamp(app.state.messageLastMessageAt, 'Recently')}`;
         } else {
-          app.dom.messagesSectionStatus.textContent = 'Check your inbox, replies, and sent messages.';
+          app.dom.messagesSectionStatus.textContent = 'Catch up on direct conversations and live replies.';
         }
       }
       if (app.dom.messagesListStatus) {
         if (!hasSession) {
-          app.dom.messagesListStatus.textContent = 'Sign in to load your inbox.';
+          app.dom.messagesListStatus.textContent = 'Sign in to load your conversations.';
         } else if (!hasAccess) {
-          app.dom.messagesListStatus.textContent = 'Messaging is unavailable.';
+          app.dom.messagesListStatus.textContent = 'Chat is unavailable.';
         } else if (this.isLoadingMessages) {
-          app.dom.messagesListStatus.textContent = 'Loading messages...';
+          app.dom.messagesListStatus.textContent = 'Loading conversations...';
         } else if (!filteredMessages.length) {
-          app.dom.messagesListStatus.textContent = allMessages.length ? 'No messages match the current search or filters.' : 'No messages yet.';
+          app.dom.messagesListStatus.textContent = allMessages.length ? 'No conversations match the current search or filters.' : 'No conversations yet.';
         } else {
           const count = filteredMessages.length;
-          const filterLabel = mailboxFilter === 'all' ? 'message' : `${mailboxFilter} message`;
+          const filterLabel = mailboxFilter === 'all' ? 'conversation' : `${mailboxFilter} conversation`;
           if (hasActiveFilters) {
             app.dom.messagesListStatus.textContent = `Showing ${count} of ${allMessages.length} ${filterLabel}${allMessages.length === 1 ? '' : 's'}${unreadCount ? ` · ${unreadCount} unread` : ''}`;
           } else {
@@ -1790,12 +1976,12 @@ const ui = {
       if (app.dom.messagesList) {
         let nextMessagesListMarkup = '';
         if (!hasSession || !hasAccess) {
-          nextMessagesListMarkup = '<div class="messages-empty-state"><strong>Messaging unavailable</strong><p>Sign in with a role that can receive messages to use this feature.</p></div>';
+          nextMessagesListMarkup = '<div class="messages-empty-state"><strong>Chat unavailable</strong><p>Sign in with a role that can access conversations to use this feature.</p></div>';
         } else if (!filteredMessages.length) {
-          const emptyTitle = allMessages.length ? 'No messages in this view' : 'No messages yet';
+          const emptyTitle = allMessages.length ? 'No conversations in this view' : 'No conversations yet';
           const emptyCopy = allMessages.length
-            ? 'Try another search term, filter, or refresh your inbox.'
-            : (capabilities.canSend ? 'Use compose to start a conversation.' : 'Messages sent to you will appear here.');
+            ? 'Try another search term, filter, or refresh your conversations.'
+            : (capabilities.canSend ? 'Use New Chat to start a conversation.' : 'Chats sent to you will appear here.');
           nextMessagesListMarkup = `<div class="messages-empty-state"><strong>${app.utils.esc(emptyTitle)}</strong><p>${app.utils.esc(emptyCopy)}</p></div>`;
         } else {
           nextMessagesListMarkup = filteredMessages.map((message) => {
@@ -1804,12 +1990,16 @@ const ui = {
             const isUnread = this.isMessageUnread(message);
             const isNew = this.isNewMessage(message);
             const counterpartLabel = this.getMessageCounterpartLabel(message);
-            const counterpartRole = String(message?.mailbox || '').trim().toLowerCase() === 'sent'
-              ? (this.getMessageRoleValue(message?.senderRole || '') || 'teacher')
-              : (this.getMessageCounterpartRole(message) || 'teacher');
-            const subject = String(message?.subject || '(No subject)').replace(/\s+/g, ' ').trim() || '(No subject)';
-            const subjectPreview = subject.length > 72 ? `${subject.slice(0, 71).trimEnd()}…` : subject;
-            const statusChipMarkup = isUnread ? '<span class="message-list-item-flag">Unread</span>' : '';
+            const counterpartRole = this.getMessageCounterpartRole(message) || 'teacher';
+            const preview = String(message?.lastMessagePreview || message?.lastMessageText || 'No messages yet').replace(/\s+/g, ' ').trim() || 'No messages yet';
+            const previewText = preview.length > 72 ? `${preview.slice(0, 71).trimEnd()}…` : preview;
+            const statusChips = [];
+            if (isUnread) {
+              statusChips.push(`<span class="message-list-item-flag">${app.utils.esc(this.getMessageStatusLabel(message))}</span>`);
+            }
+            if (message?.isLegacy) {
+              statusChips.push('<span class="message-list-item-flag is-legacy">Legacy</span>');
+            }
             return `
               <button type="button" class="message-list-item${isActive ? ' is-active' : ''}${isUnread ? ' is-unread' : ''}${isNew ? ' is-new' : ''}" data-message-id="${app.utils.esc(messageId)}">
                 <div class="message-list-item-main">
@@ -1817,11 +2007,11 @@ const ui = {
                   <div class="message-list-item-content">
                     <div class="message-list-item-topline">
                       <span class="message-list-item-counterpart">${app.utils.esc(counterpartLabel)}</span>
-                      <span class="message-list-item-time">${app.utils.esc(this.formatAccountTimestamp(message?.sentAt || message?.updatedAt, 'Recently'))}</span>
+                      <span class="message-list-item-time">${app.utils.esc(this.formatAccountTimestamp(message?.lastMessageAt || message?.updatedAt || message?.createdAt, 'Recently'))}</span>
                     </div>
                     <div class="message-list-item-subject-row">
-                      <span class="message-list-item-subject">${app.utils.esc(subjectPreview)}</span>
-                      ${statusChipMarkup}
+                      <span class="message-list-item-subject">${app.utils.esc(previewText)}</span>
+                      ${statusChips.join('')}
                     </div>
                   </div>
                 </div>
@@ -1843,7 +2033,7 @@ const ui = {
       this.renderSelectedMessageDetail(selectedMessage);
     },
 
-    selectMessage: function (messageId = '') {
+    selectMessage: async function (messageId = '') {
       const normalizedMessageId = String(messageId || '').trim();
       if (!normalizedMessageId) {
         return;
@@ -1856,8 +2046,10 @@ const ui = {
       }
       this.messageNewIds.delete(normalizedMessageId);
       app.state.selectedMessageId = normalizedMessageId;
+      this.setMessageThreadFeedback('');
       this.renderMessagesSection();
-      if (String(message?.mailbox || '').trim().toLowerCase() === 'inbox' && !Boolean(message?.isRead)) {
+      await this.syncSelectedConversationThread();
+      if (this.isMessageUnread(message)) {
         void this.markMessageAsReadIfNeeded(normalizedMessageId);
       }
     },
@@ -1868,16 +2060,18 @@ const ui = {
         return String(entry?.id || '').trim() === normalizedMessageId;
       });
       const nextReadState = Boolean(isRead);
-      if (!message || String(message?.mailbox || '').trim().toLowerCase() !== 'inbox' || Boolean(message?.isRead) === nextReadState) {
+      const clearedUnreadCount = Number.isFinite(Number(message?.unreadCount))
+        ? Math.max(0, Math.floor(Number(message.unreadCount)))
+        : 0;
+      if (!message || !nextReadState || clearedUnreadCount <= 0) {
         return false;
       }
       try {
-        const didUpdate = nextReadState
-          ? await markMessageAsRead(normalizedMessageId)
-          : await markMessageAsUnread(normalizedMessageId);
+        const didUpdate = await markConversationAsRead(normalizedMessageId);
         if (!didUpdate) {
           return false;
         }
+        const actorUserId = String(app.state.authUser?.uid || '').trim();
         const unreadCount = Number.isFinite(Number(app.state.unreadMessageCount))
           ? Math.max(0, Math.floor(Number(app.state.unreadMessageCount)))
           : 0;
@@ -1888,18 +2082,37 @@ const ui = {
           }
           return {
             ...(entry || {}),
-            isRead: nextReadState,
-            readAt: nextReadState ? new Date().toISOString() : null
+            unreadCount: 0,
+            unreadCountByUser: actorUserId
+              ? {
+                  ...((entry?.unreadCountByUser && typeof entry.unreadCountByUser === 'object') ? entry.unreadCountByUser : {}),
+                  [actorUserId]: 0
+                }
+              : entry?.unreadCountByUser
           };
         });
+        if (String(this.getSelectedConversationId() || '').trim() === normalizedMessageId) {
+          app.state.messageThread = this.getMessageThread().map((threadMessage) => {
+            if (!actorUserId || Boolean(threadMessage?.isOwnMessage)) {
+              return threadMessage;
+            }
+            const readByUserIds = Array.isArray(threadMessage?.readByUserIds) ? threadMessage.readByUserIds : [];
+            return {
+              ...(threadMessage || {}),
+              readByUserIds: readByUserIds.includes(actorUserId) ? readByUserIds : readByUserIds.concat(actorUserId),
+              isReadByCurrentUser: true,
+              isUnreadLegacy: false
+            };
+          });
+        }
         this.syncLocalMessageMetadata({
-          unreadCount: nextReadState ? Math.max(0, unreadCount - 1) : unreadCount + 1,
+          unreadCount: Math.max(0, unreadCount - clearedUnreadCount),
           lastMessageAt: app.state.messageLastMessageAt
         });
         this.renderMessagesSection();
         return true;
       } catch (error) {
-        console.error(`Failed to mark message as ${nextReadState ? 'read' : 'unread'}:`, error);
+        console.error('Failed to mark conversation as read:', error);
         return false;
       }
     },
@@ -1913,17 +2126,11 @@ const ui = {
       if (!normalizedMessageId) {
         return false;
       }
-      const message = this.getMessages().find((entry) => {
-        return String(entry?.id || '').trim() === normalizedMessageId;
-      });
-      if (!message || String(message?.mailbox || '').trim().toLowerCase() !== 'inbox') {
-        return false;
-      }
-      return this.setMessageReadState(normalizedMessageId, !Boolean(message?.isRead));
+      return this.setMessageReadState(normalizedMessageId, true);
     },
 
     setMessageMailboxFilter: function (filter = 'all') {
-      const normalizedFilter = ['all', 'inbox', 'sent'].includes(String(filter || '').trim().toLowerCase())
+      const normalizedFilter = ['all', 'unread', 'legacy'].includes(String(filter || '').trim().toLowerCase())
         ? String(filter || '').trim().toLowerCase()
         : 'all';
       app.state.messageMailboxFilter = normalizedFilter;
@@ -1936,7 +2143,7 @@ const ui = {
     },
 
     setMessageTypeFilter: function (filter = 'all') {
-      const normalizedFilter = ['all', 'reply', 'individual', 'role', 'class', 'all_users'].includes(String(filter || '').trim().toLowerCase())
+      const normalizedFilter = ['all', 'direct', 'legacy'].includes(String(filter || '').trim().toLowerCase())
         ? String(filter || '').trim().toLowerCase()
         : 'all';
       app.state.messageTypeFilter = normalizedFilter;
@@ -1956,25 +2163,18 @@ const ui = {
       this.renderMessagesSection({ preserveListScroll: false });
     },
 
-    buildMessageAudienceOptions: function (mode = 'compose') {
-      if (mode === 'reply') {
-        return [{ value: MESSAGE_AUDIENCE_INDIVIDUAL, label: 'Direct reply' }];
+    setMessageThreadFeedback: function (message = '', tone = '') {
+      if (!app.dom.messageThreadFeedback) {
+        return;
       }
-      const capabilities = this.getMessagingCapabilities();
-      const options = [];
-      if (capabilities.canMessageIndividuals) {
-        options.push({ value: MESSAGE_AUDIENCE_INDIVIDUAL, label: 'Individual' });
+      const normalizedMessage = String(message || '').trim();
+      app.dom.messageThreadFeedback.textContent = normalizedMessage;
+      app.dom.messageThreadFeedback.hidden = !normalizedMessage;
+      if (tone) {
+        app.dom.messageThreadFeedback.dataset.tone = tone;
+      } else {
+        delete app.dom.messageThreadFeedback.dataset.tone;
       }
-      if (capabilities.canMessageRoles) {
-        options.push({ value: MESSAGE_AUDIENCE_ROLE, label: 'Role' });
-      }
-      if (capabilities.canMessageClasses) {
-        options.push({ value: MESSAGE_AUDIENCE_CLASS, label: 'Class' });
-      }
-      if (capabilities.canMessageAll) {
-        options.push({ value: MESSAGE_AUDIENCE_ALL, label: 'All eligible users' });
-      }
-      return options;
     },
 
     populateMessageSelect: function (selectElement, options = [], { selectedValue = '', placeholder = 'Select an option', includePlaceholder = true } = {}) {
@@ -2024,43 +2224,17 @@ const ui = {
       if (!app.dom.messageComposeMeta) {
         return;
       }
-      const composerState = this.messageComposeState || {};
-      const mode = composerState.mode === 'reply' ? 'reply' : 'compose';
       const directory = this.getMessageDirectory();
-      const replyMessage = mode === 'reply'
-        ? this.getMessages().find((message) => String(message?.id || '').trim() === String(composerState.replyToMessageId || '').trim()) || null
-        : null;
-      const replyTarget = mode === 'reply' ? this.getReplyTargetForMessage(replyMessage) : null;
-      const audienceType = mode === 'reply'
-        ? MESSAGE_AUDIENCE_INDIVIDUAL
-        : String(app.dom.messageComposeAudienceType?.value || MESSAGE_AUDIENCE_INDIVIDUAL).trim();
+      const composerState = this.messageComposeState || {};
+      const selectedRecipientUserId = String(app.dom.messageComposeRecipientSelect?.value || composerState.recipientUserId || '').trim();
       const bodyLength = String(app.dom.messageComposeBody?.value || '').length;
-      let audienceSummary = 'Select who to message';
-
-      if (mode === 'reply') {
-        audienceSummary = replyTarget?.label ? `Replying to ${replyTarget.label}` : 'Reply target unavailable';
-      } else if (audienceType === MESSAGE_AUDIENCE_ALL) {
-        audienceSummary = 'To all eligible users';
-      } else if (audienceType === MESSAGE_AUDIENCE_ROLE) {
-        const selectedRole = directory.roles.find((option) => {
-          return String(option?.value ?? option?.role ?? '').trim() === String(app.dom.messageComposeRoleSelect?.value || '').trim();
-        });
-        audienceSummary = selectedRole?.label ? `To ${selectedRole.label}` : 'Select a role';
-      } else if (audienceType === MESSAGE_AUDIENCE_CLASS) {
-        const selectedClass = directory.classes.find((option) => {
-          return String(option?.id ?? option?.value ?? '').trim() === String(app.dom.messageComposeClassSelect?.value || '').trim();
-        });
-        audienceSummary = selectedClass?.label ? `To ${selectedClass.label}` : 'Select a class';
-      } else {
-        const selectedUser = directory.users.find((option) => {
-          return String(option?.uid ?? option?.value ?? '').trim() === String(app.dom.messageComposeRecipientSelect?.value || '').trim();
-        });
-        audienceSummary = selectedUser
-          ? `To ${selectedUser.label || selectedUser.displayLabel || selectedUser.name || selectedUser.email || 'recipient'}`
-          : 'Select a recipient';
-      }
-
-      app.dom.messageComposeMeta.textContent = `${audienceSummary} · ${bodyLength} / 5000 characters`;
+      const selectedUser = directory.users.find((option) => {
+        return String(option?.uid ?? option?.value ?? '').trim() === selectedRecipientUserId;
+      });
+      const recipientSummary = selectedUser
+        ? `Chat with ${selectedUser.label || selectedUser.displayLabel || selectedUser.name || selectedUser.email || 'recipient'}`
+        : (this.isLoadingMessageDirectory ? 'Loading recipients...' : 'Select a recipient');
+      app.dom.messageComposeMeta.textContent = `${recipientSummary} · ${bodyLength} / 5000 characters`;
     },
 
     renderMessageComposeControls: function () {
@@ -2068,164 +2242,76 @@ const ui = {
         return;
       }
       const composerState = this.messageComposeState || {};
-      const mode = composerState.mode === 'reply' ? 'reply' : 'compose';
       const directory = this.getMessageDirectory();
-      const replyMessage = mode === 'reply'
-        ? this.getMessages().find((message) => String(message?.id || '').trim() === String(composerState.replyToMessageId || '').trim()) || null
-        : null;
-      const replyTarget = mode === 'reply' ? this.getReplyTargetForMessage(replyMessage) : null;
-      const audienceOptions = this.buildMessageAudienceOptions(mode);
-      const currentAudienceType = mode === 'reply'
-        ? MESSAGE_AUDIENCE_INDIVIDUAL
-        : String(app.dom.messageComposeAudienceType?.value || audienceOptions[0]?.value || MESSAGE_AUDIENCE_INDIVIDUAL).trim();
-
-      this.populateMessageSelect(app.dom.messageComposeAudienceType, audienceOptions, {
-        selectedValue: currentAudienceType,
-        placeholder: 'Select who to message',
-        includePlaceholder: false
-      });
-
-      const resolvedAudienceType = mode === 'reply'
-        ? MESSAGE_AUDIENCE_INDIVIDUAL
-        : String(app.dom.messageComposeAudienceType?.value || currentAudienceType || MESSAGE_AUDIENCE_INDIVIDUAL).trim();
-      const recipientOptions = mode === 'reply'
-        ? (replyTarget?.uid
-            ? [{ uid: replyTarget.uid, label: replyTarget.label || replyTarget.name || replyTarget.email || replyTarget.uid }]
-            : [])
-        : directory.users;
-
+      const recipientOptions = Array.isArray(directory.users) ? directory.users : [];
+      const selectedRecipientUserId = String(app.dom.messageComposeRecipientSelect?.value || composerState.recipientUserId || '').trim();
       this.populateMessageSelect(app.dom.messageComposeRecipientSelect, recipientOptions, {
-        selectedValue: mode === 'reply'
-          ? String(replyTarget?.uid || '').trim()
-          : String(app.dom.messageComposeRecipientSelect?.value || composerState.recipientUserId || '').trim(),
+        selectedValue: selectedRecipientUserId,
         placeholder: 'Select recipient',
-        includePlaceholder: mode !== 'reply'
-      });
-      this.populateMessageSelect(app.dom.messageComposeRoleSelect, directory.roles, {
-        selectedValue: String(app.dom.messageComposeRoleSelect?.value || '').trim(),
-        placeholder: 'Select role',
-        includePlaceholder: true
-      });
-      this.populateMessageSelect(app.dom.messageComposeClassSelect, directory.classes, {
-        selectedValue: String(app.dom.messageComposeClassSelect?.value || '').trim(),
-        placeholder: 'Select class',
         includePlaceholder: true
       });
 
       if (app.dom.messageComposeTitle) {
-        app.dom.messageComposeTitle.textContent = mode === 'reply' ? 'Reply to Message' : 'Compose Message';
+        app.dom.messageComposeTitle.textContent = 'Start New Chat';
       }
       if (app.dom.messageComposeSubtitle) {
-        if (mode === 'reply') {
-          app.dom.messageComposeSubtitle.textContent = replyTarget?.label
-            ? `Reply directly to ${replyTarget.label}.`
-            : 'Reply target unavailable.';
-        } else if (this.isLoadingMessageDirectory) {
+        if (this.isLoadingMessageDirectory) {
           app.dom.messageComposeSubtitle.textContent = 'Loading recipient options...';
+        } else if (!recipientOptions.length) {
+          app.dom.messageComposeSubtitle.textContent = 'No eligible recipients are available for your account.';
         } else {
-          app.dom.messageComposeSubtitle.textContent = 'Choose who to message and write your message.';
+          app.dom.messageComposeSubtitle.textContent = 'Choose who to chat with and send your first message.';
         }
-      }
-      if (app.dom.messageComposeAudienceType) {
-        app.dom.messageComposeAudienceType.disabled = mode === 'reply' || !audienceOptions.length || this.isSubmittingMessage;
       }
       if (app.dom.messageComposeRecipientGroup) {
-        app.dom.messageComposeRecipientGroup.hidden = resolvedAudienceType !== MESSAGE_AUDIENCE_INDIVIDUAL;
-      }
-      if (app.dom.messageComposeRoleGroup) {
-        app.dom.messageComposeRoleGroup.hidden = resolvedAudienceType !== MESSAGE_AUDIENCE_ROLE;
-      }
-      if (app.dom.messageComposeClassGroup) {
-        app.dom.messageComposeClassGroup.hidden = resolvedAudienceType !== MESSAGE_AUDIENCE_CLASS;
+        app.dom.messageComposeRecipientGroup.hidden = false;
       }
       if (app.dom.messageComposeRecipientSelect) {
-        app.dom.messageComposeRecipientSelect.disabled = this.isSubmittingMessage || !recipientOptions.length || mode === 'reply';
-      }
-      if (app.dom.messageComposeRoleSelect) {
-        app.dom.messageComposeRoleSelect.disabled = this.isSubmittingMessage || !directory.roles.length;
-      }
-      if (app.dom.messageComposeClassSelect) {
-        app.dom.messageComposeClassSelect.disabled = this.isSubmittingMessage || !directory.classes.length;
+        app.dom.messageComposeRecipientSelect.disabled = this.isSubmittingMessage || this.isLoadingMessageDirectory || !recipientOptions.length;
       }
       if (app.dom.messageComposeSubmitBtn) {
-        let hasValidAudienceSelection = Boolean(audienceOptions.length);
-        if (mode === 'reply') {
-          hasValidAudienceSelection = Boolean(replyTarget?.uid);
-        } else if (resolvedAudienceType === MESSAGE_AUDIENCE_ROLE) {
-          hasValidAudienceSelection = Boolean(app.dom.messageComposeRoleSelect?.value);
-        } else if (resolvedAudienceType === MESSAGE_AUDIENCE_CLASS) {
-          hasValidAudienceSelection = Boolean(app.dom.messageComposeClassSelect?.value);
-        } else if (resolvedAudienceType === MESSAGE_AUDIENCE_ALL) {
-          hasValidAudienceSelection = true;
-        } else {
-          hasValidAudienceSelection = Boolean(app.dom.messageComposeRecipientSelect?.value);
-        }
-        app.dom.messageComposeSubmitBtn.disabled = this.isSubmittingMessage || !hasValidAudienceSelection || (!audienceOptions.length && mode !== 'reply');
+        const bodyLength = String(app.dom.messageComposeBody?.value || '').trim().length;
+        const hasRecipient = Boolean(app.dom.messageComposeRecipientSelect?.value || selectedRecipientUserId);
+        app.dom.messageComposeSubmitBtn.disabled = this.isSubmittingMessage || this.isLoadingMessageDirectory || !hasRecipient || !bodyLength;
         app.dom.messageComposeSubmitBtn.textContent = this.isSubmittingMessage
-          ? (mode === 'reply' ? 'Sending Reply...' : 'Sending...')
-          : (mode === 'reply' ? 'Send Reply' : 'Send Message');
+          ? 'Starting...'
+          : 'Start Chat';
       }
 
       this.updateMessageComposeMeta();
     },
 
-    buildMessageReplySubject: function (subject = '') {
-      const normalizedSubject = String(subject || '').trim() || 'Message';
-      return normalizedSubject.toLowerCase().startsWith('re:') ? normalizedSubject : `Re: ${normalizedSubject}`;
-    },
-
-    openMessageComposeModal: async function ({ mode = 'compose', messageId = '' } = {}) {
-      const normalizedMode = mode === 'reply' ? 'reply' : 'compose';
+    openMessageComposeModal: async function ({ recipientUserId = '' } = {}) {
       const capabilities = this.getMessagingCapabilities();
-      if (normalizedMode === 'compose' && !capabilities.canSend) {
-        this.showToast('You do not have permission to send new messages');
+      if (!capabilities.canSend) {
+        this.showToast('You do not have permission to start new chats');
         return;
       }
-      if (normalizedMode === 'reply' && !capabilities.canReply) {
-        this.showToast('You do not have permission to reply to messages');
+      try {
+        await this.ensureMessageDirectoryLoaded();
+      } catch (error) {
         return;
       }
 
-      const replyMessage = normalizedMode === 'reply'
-        ? this.getMessages().find((message) => String(message?.id || '').trim() === String(messageId || '').trim()) || null
-        : null;
-      const replyTarget = normalizedMode === 'reply' ? this.getReplyTargetForMessage(replyMessage) : null;
-
-      if (normalizedMode === 'reply' && !replyMessage) {
-        this.showToast('Select a message to reply to');
-        return;
-      }
-      if (normalizedMode === 'reply' && !replyTarget?.uid) {
-        this.showToast('Replies are only available for direct conversations');
-        return;
-      }
-      if (normalizedMode === 'compose') {
-        try {
-          await this.ensureMessageDirectoryLoaded();
-        } catch (error) {
-          return;
-        }
-      }
-
-      const audienceOptions = this.buildMessageAudienceOptions(normalizedMode);
-      if (normalizedMode === 'compose' && !audienceOptions.length) {
-        this.showToast('No message To options are available for your account');
+      const directory = this.getMessageDirectory();
+      const selectedConversation = this.getSelectedConversationRecord();
+      const preferredRecipientUserId = String(recipientUserId || selectedConversation?.counterpartUserId || '').trim();
+      const hasPreferredRecipient = directory.users.some((option) => {
+        return String(option?.uid ?? option?.value ?? '').trim() === preferredRecipientUserId;
+      });
+      if (!directory.users.length) {
+        this.showToast('No chat recipients are available for your account');
         return;
       }
 
       this.messageComposeState = {
-        mode: normalizedMode,
-        replyToMessageId: String(replyMessage?.id || '').trim(),
-        recipientUserId: String(replyTarget?.uid || '').trim()
+        mode: 'compose',
+        replyToMessageId: '',
+        recipientUserId: hasPreferredRecipient ? preferredRecipientUserId : ''
       };
 
       if (app.dom.messageComposeForm) {
         app.dom.messageComposeForm.reset();
-      }
-      if (app.dom.messageComposeSubject) {
-        app.dom.messageComposeSubject.value = normalizedMode === 'reply'
-          ? this.buildMessageReplySubject(replyMessage?.subject || 'Message')
-          : '';
       }
       if (app.dom.messageComposeBody) {
         app.dom.messageComposeBody.value = '';
@@ -2236,7 +2322,7 @@ const ui = {
       if (app.dom.messageComposeModal) {
         app.dom.messageComposeModal.classList.add('active');
       }
-      const focusTarget = normalizedMode === 'reply' ? app.dom.messageComposeBody : app.dom.messageComposeSubject;
+      const focusTarget = hasPreferredRecipient ? app.dom.messageComposeBody : app.dom.messageComposeRecipientSelect;
       if (focusTarget) {
         focusTarget.focus();
       }
@@ -2259,25 +2345,45 @@ const ui = {
     },
 
     applySentMessageResult: function (result = {}, toastMessage = 'Message sent') {
-      const sentMessage = result?.sentMessage || null;
-      if (sentMessage?.id) {
+      const conversation = result?.conversation || result?.sentMessage || null;
+      const sentMessage = result?.message || null;
+      const conversationId = String(conversation?.id || sentMessage?.conversationId || '').trim();
+      if (conversation?.id) {
         const currentMessages = this.getMessages().filter((message) => {
-          return String(message?.id || '').trim() !== String(sentMessage?.id || '').trim();
+          return String(message?.id || '').trim() !== String(conversation?.id || '').trim();
         });
-        app.state.messages = [sentMessage, ...currentMessages].sort((left, right) => {
-          const leftTime = new Date(left?.sortAt || left?.sentAt || left?.updatedAt || 0).getTime() || 0;
-          const rightTime = new Date(right?.sortAt || right?.sentAt || right?.updatedAt || 0).getTime() || 0;
+        app.state.messages = [conversation, ...currentMessages].sort((left, right) => {
+          const leftTime = new Date(left?.sortAt || left?.lastMessageAt || left?.updatedAt || 0).getTime() || 0;
+          const rightTime = new Date(right?.sortAt || right?.lastMessageAt || right?.updatedAt || 0).getTime() || 0;
           return rightTime - leftTime;
         });
-        app.state.selectedMessageId = String(sentMessage.id || '').trim();
+      }
+      if (conversationId) {
+        app.state.selectedMessageId = conversationId;
+      }
+      if (sentMessage?.id && conversationId) {
+        const existingThread = String(this.messageThreadLoadedConversationId || '').trim() === conversationId
+          ? this.getMessageThread().filter((message) => String(message?.id || '').trim() !== String(sentMessage.id || '').trim())
+          : [];
+        app.state.messageThread = existingThread.concat(sentMessage).sort((left, right) => {
+          const leftTime = new Date(left?.sortAt || left?.sentAt || left?.createdAt || left?.updatedAt || 0).getTime() || 0;
+          const rightTime = new Date(right?.sortAt || right?.sentAt || right?.createdAt || right?.updatedAt || 0).getTime() || 0;
+          return leftTime - rightTime;
+        });
+        this.messageThreadLoadedConversationId = conversationId;
+        this.messageThreadRequestConversationId = '';
       }
       app.state.messageMailboxFilter = 'all';
       this.syncLocalMessageMetadata({
         unreadCount: app.state.unreadMessageCount,
-        lastMessageAt: sentMessage?.sentAt || app.state.messageLastMessageAt || new Date().toISOString()
+        lastMessageAt: conversation?.lastMessageAt || sentMessage?.sentAt || sentMessage?.createdAt || app.state.messageLastMessageAt || new Date().toISOString()
       });
       this.showContentSection('messages');
       this.renderMessagesSection();
+      void this.ensureMessageListSubscription();
+      if (conversationId) {
+        void this.ensureSelectedConversationThreadSubscription(conversationId);
+      }
       this.showToast(toastMessage);
     },
 
@@ -2286,12 +2392,11 @@ const ui = {
         return;
       }
       const composerState = this.messageComposeState || {};
-      const mode = composerState.mode === 'reply' ? 'reply' : 'compose';
-      const subject = String(app.dom.messageComposeSubject?.value || '').trim();
+      const recipientUserId = String(app.dom.messageComposeRecipientSelect?.value || composerState.recipientUserId || '').trim();
       const body = String(app.dom.messageComposeBody?.value || '').trim();
 
-      if (!subject) {
-        this.setMessageComposeFeedback('Enter a subject to continue.', 'error');
+      if (!recipientUserId) {
+        this.setMessageComposeFeedback('Select a recipient to continue.', 'error');
         return;
       }
       if (!body) {
@@ -2304,52 +2409,60 @@ const ui = {
       this.renderMessageComposeControls();
 
       try {
-        if (mode === 'reply') {
-          const replyToMessageId = String(composerState.replyToMessageId || '').trim();
-          if (!replyToMessageId) {
-            throw new Error('Select a message to reply to');
-          }
-          const result = await replyToMessage(replyToMessageId, {
-            subject: this.buildMessageReplySubject(subject),
-            body
-          });
-          this.applySentMessageResult(result, 'Reply sent');
-        } else {
-          const audienceType = String(app.dom.messageComposeAudienceType?.value || MESSAGE_AUDIENCE_INDIVIDUAL).trim();
-          const payload = {
-            audienceType,
-            subject,
-            body
-          };
-          if (audienceType === MESSAGE_AUDIENCE_ROLE) {
-            const audienceRole = String(app.dom.messageComposeRoleSelect?.value || '').trim();
-            if (!audienceRole) {
-              throw new Error('Select a role to continue');
-            }
-            payload.audienceRole = audienceRole;
-          } else if (audienceType === MESSAGE_AUDIENCE_CLASS) {
-            const audienceClassId = String(app.dom.messageComposeClassSelect?.value || '').trim();
-            if (!audienceClassId) {
-              throw new Error('Select a class to continue');
-            }
-            payload.audienceClassId = audienceClassId;
-          } else if (audienceType === MESSAGE_AUDIENCE_INDIVIDUAL) {
-            const recipientUserId = String(app.dom.messageComposeRecipientSelect?.value || '').trim();
-            if (!recipientUserId) {
-              throw new Error('Select a recipient to continue');
-            }
-            payload.recipientUserId = recipientUserId;
-          }
-          const result = await sendMessage(payload);
-          this.applySentMessageResult(result, 'Message sent');
-        }
+        const result = await sendConversationMessage({ recipientUserId, body });
+        this.applySentMessageResult(result, 'Chat started');
         this.closeMessageComposeModal();
       } catch (error) {
-        console.error('Failed to send message:', error);
-        this.setMessageComposeFeedback(error?.message || 'Failed to send message', 'error');
+        console.error('Failed to start chat:', error);
+        this.setMessageComposeFeedback(error?.message || 'Failed to start chat', 'error');
       } finally {
         this.isSubmittingMessage = false;
         this.renderMessageComposeControls();
+      }
+    },
+
+    handleMessageThreadSubmit: async function () {
+      if (this.isSubmittingThreadMessage) {
+        return;
+      }
+      const selectedConversation = this.getSelectedConversationRecord();
+      const conversationId = String(selectedConversation?.id || '').trim();
+      const body = String(app.dom.messageThreadInput?.value || '').trim();
+      const capabilities = this.getMessagingCapabilities();
+      const canSendInline = Boolean(selectedConversation?.counterpartUserId
+        && (String(selectedConversation?.source || '').trim().toLowerCase() === 'conversation'
+          ? (capabilities.canReply || capabilities.canSend)
+          : capabilities.canSend));
+
+      if (!conversationId) {
+        this.setMessageThreadFeedback('Select a conversation to reply.', 'error');
+        return;
+      }
+      if (!canSendInline) {
+        this.setMessageThreadFeedback('Replies are unavailable for this conversation.', 'error');
+        return;
+      }
+      if (!body) {
+        this.setMessageThreadFeedback('Enter a message to continue.', 'error');
+        return;
+      }
+
+      this.isSubmittingThreadMessage = true;
+      this.setMessageThreadFeedback('');
+      this.updateMessageThreadComposerState(selectedConversation, { canSend: canSendInline });
+
+      try {
+        const result = await sendConversationMessage({ conversationId, body });
+        if (app.dom.messageThreadInput) {
+          app.dom.messageThreadInput.value = '';
+        }
+        this.applySentMessageResult(result, 'Message sent');
+      } catch (error) {
+        console.error('Failed to send conversation message:', error);
+        this.setMessageThreadFeedback(error?.message || 'Failed to send message', 'error');
+      } finally {
+        this.isSubmittingThreadMessage = false;
+        this.updateMessageThreadComposerState(this.getSelectedConversationRecord());
       }
     },
 
@@ -2361,6 +2474,7 @@ const ui = {
       this.renderMessagesSection();
       try {
         await this.ensureMessagesLoaded(force);
+        await this.syncSelectedConversationThread();
       } catch (error) {
         console.error('Failed to open messages section:', error);
       }
@@ -4472,16 +4586,24 @@ const ui = {
             this.setMessageMailboxFilter(button.dataset.messageFilter);
           });
         });
-        if (app.dom.messageReplyBtn) {
-          app.dom.messageReplyBtn.onclick = async () => {
-            const replyMessageId = String(app.dom.messageReplyBtn.dataset.messageId || app.state.selectedMessageId || '').trim();
-            await this.openMessageComposeModal({ mode: 'reply', messageId: replyMessageId });
-          };
-        }
         if (app.dom.messageMarkToggleBtn) {
           app.dom.messageMarkToggleBtn.onclick = async () => {
             const messageId = String(app.dom.messageMarkToggleBtn.dataset.messageId || app.state.selectedMessageId || '').trim();
             await this.toggleSelectedMessageReadState(messageId);
+          };
+        }
+        if (app.dom.messageThreadForm) {
+          app.dom.messageThreadForm.onsubmit = async (event) => {
+            event.preventDefault();
+            await this.handleMessageThreadSubmit();
+          };
+        }
+        if (app.dom.messageThreadInput) {
+          app.dom.messageThreadInput.oninput = () => {
+            if (app.dom.messageThreadFeedback?.textContent) {
+              this.setMessageThreadFeedback('');
+            }
+            this.updateMessageThreadComposerState(this.getSelectedConversationRecord());
           };
         }
         if (app.dom.messageComposeForm) {
@@ -4502,14 +4624,6 @@ const ui = {
             }
           });
         }
-        if (app.dom.messageComposeAudienceType) {
-          app.dom.messageComposeAudienceType.onchange = () => {
-            if (app.dom.messageComposeFeedback?.textContent) {
-              this.setMessageComposeFeedback('');
-            }
-            this.renderMessageComposeControls();
-          };
-        }
         if (app.dom.messageComposeRecipientSelect) {
           app.dom.messageComposeRecipientSelect.onchange = (event) => {
             this.messageComposeState = {
@@ -4522,35 +4636,12 @@ const ui = {
             this.renderMessageComposeControls();
           };
         }
-        if (app.dom.messageComposeRoleSelect) {
-          app.dom.messageComposeRoleSelect.onchange = () => {
-            if (app.dom.messageComposeFeedback?.textContent) {
-              this.setMessageComposeFeedback('');
-            }
-            this.renderMessageComposeControls();
-          };
-        }
-        if (app.dom.messageComposeClassSelect) {
-          app.dom.messageComposeClassSelect.onchange = () => {
-            if (app.dom.messageComposeFeedback?.textContent) {
-              this.setMessageComposeFeedback('');
-            }
-            this.renderMessageComposeControls();
-          };
-        }
-        if (app.dom.messageComposeSubject) {
-          app.dom.messageComposeSubject.oninput = () => {
-            if (app.dom.messageComposeFeedback?.textContent) {
-              this.setMessageComposeFeedback('');
-            }
-          };
-        }
         if (app.dom.messageComposeBody) {
           app.dom.messageComposeBody.oninput = () => {
             if (app.dom.messageComposeFeedback?.textContent) {
               this.setMessageComposeFeedback('');
             }
-            this.updateMessageComposeMeta();
+            this.renderMessageComposeControls();
           };
         }
 

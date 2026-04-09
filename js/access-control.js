@@ -62,6 +62,7 @@ const ROLE_PERMISSION_MAP = {
   [ROLE_TEACHER]: [
     PERMISSION_READ_OWN_CLASS_DATA,
     PERMISSION_WRITE_OWN_CLASS_DATA,
+    PERMISSION_MESSAGE_INDIVIDUALS,
     PERMISSION_RECEIVE_MESSAGES,
     PERMISSION_REPLY_MESSAGES
   ],
@@ -98,6 +99,13 @@ const ROLE_HIERARCHY = {
   [ROLE_HEAD_TEACHER]: 2,
   [ROLE_ADMIN]: 3,
   [ROLE_DEVELOPER]: 4
+};
+
+const CONVERSATION_TARGET_ROLE_MATRIX = {
+  [ROLE_TEACHER]: [ROLE_ADMIN],
+  [ROLE_HEAD_TEACHER]: [ROLE_TEACHER, ROLE_ADMIN],
+  [ROLE_ADMIN]: [ROLE_TEACHER, ROLE_HEAD_TEACHER, ROLE_ADMIN],
+  [ROLE_DEVELOPER]: [ROLE_TEACHER, ROLE_HEAD_TEACHER, ROLE_ADMIN, ROLE_DEVELOPER]
 };
 
 const unique = (values = []) => Array.from(new Set((Array.isArray(values) ? values : []).filter(Boolean)));
@@ -230,6 +238,41 @@ export const canReceiveMessages = (roleOrRecord = '', explicitPermissions = []) 
 
 export const canReplyToMessages = (roleOrRecord = '', explicitPermissions = []) => {
   return hasPermission(PERMISSION_REPLY_MESSAGES, roleOrRecord, explicitPermissions);
+};
+
+export const canStartConversations = (roleOrRecord = '', explicitPermissions = []) => {
+  const normalizedRole = typeof roleOrRecord === 'object' && roleOrRecord !== null
+    ? normalizeUserRole(roleOrRecord.role)
+    : normalizeUserRole(roleOrRecord);
+  if (normalizedRole === ROLE_DEVELOPER || normalizedRole === ROLE_ADMIN || normalizedRole === ROLE_HEAD_TEACHER) {
+    return true;
+  }
+  return normalizedRole === ROLE_TEACHER && canReceiveMessages(roleOrRecord, explicitPermissions);
+};
+
+export const getAllowedConversationTargetRoles = (roleOrRecord = '', explicitPermissions = []) => {
+  const normalizedRole = typeof roleOrRecord === 'object' && roleOrRecord !== null
+    ? normalizeUserRole(roleOrRecord.role)
+    : normalizeUserRole(roleOrRecord);
+  if (!canStartConversations(roleOrRecord, explicitPermissions)) {
+    return [];
+  }
+  return (CONVERSATION_TARGET_ROLE_MATRIX[normalizedRole] || []).slice();
+};
+
+export const canStartConversationWithRole = (targetRole = '', roleOrRecord = '', explicitPermissions = []) => {
+  const normalizedTargetRole = normalizeUserRole(targetRole);
+  return getAllowedConversationTargetRoles(roleOrRecord, explicitPermissions).includes(normalizedTargetRole);
+};
+
+export const canViewAllConversations = (roleOrRecord = '', explicitPermissions = []) => {
+  const normalizedRole = typeof roleOrRecord === 'object' && roleOrRecord !== null
+    ? normalizeUserRole(roleOrRecord.role)
+    : normalizeUserRole(roleOrRecord);
+  if (normalizedRole === ROLE_DEVELOPER) {
+    return true;
+  }
+  return canManageSystemConfig(roleOrRecord, explicitPermissions) && normalizedRole === ROLE_DEVELOPER;
 };
 
 export const canMessageAudienceType = (audienceType, roleOrRecord = '', explicitPermissions = []) => {

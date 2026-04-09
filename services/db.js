@@ -23,7 +23,8 @@ import {
   isFirebaseConfigured,
   auth,
   authReadyPromise,
-  onAuthStateChanged
+  onAuthStateChanged,
+  onSnapshot
 } from '../js/firebase.js';
 import {
   normalizeStudentName,
@@ -58,6 +59,9 @@ import {
   canSendMessages,
   canReceiveMessages,
   canReplyToMessages,
+  canStartConversations,
+  canStartConversationWithRole,
+  canViewAllConversations,
   canMessageAudienceType,
   formatUserRoleLabel,
   MESSAGE_AUDIENCE_ALL,
@@ -73,9 +77,12 @@ const STUDENTS_SUBCOLLECTION = 'students';
 const SUBJECTS_SUBCOLLECTION = 'subjects';
 const EXAMS_SUBCOLLECTION = 'exams';
 const MESSAGES_SUBCOLLECTION = 'messages';
+const CONVERSATIONS_COLLECTION = 'conversations';
+const CONVERSATION_MESSAGES_SUBCOLLECTION = 'messages';
 const ACTIVITY_LOGS_COLLECTION = 'activityLogs';
 const MESSAGE_MAILBOX_INBOX = 'inbox';
 const MESSAGE_MAILBOX_SENT = 'sent';
+const CONVERSATION_TYPE_DIRECT = 'direct';
 const MESSAGE_SUBJECT_MAX_LENGTH = 140;
 const MESSAGE_BODY_MAX_LENGTH = 5000;
 const MESSAGE_PREVIEW_MAX_LENGTH = 180;
@@ -640,6 +647,292 @@ const normalizeMessageRecord = (messageId, payload = {}) => {
     updatedAt,
     sortAt: sentAt || updatedAt || createdAt || ''
   };
+};
+
+const normalizeConversationUserIdList = (values = []) => {
+  const seen = new Set();
+  return asArray(values).reduce((result, value) => {
+    const normalizedValue = normalizeUserId(value);
+    if (!normalizedValue || seen.has(normalizedValue)) {
+      return result;
+    }
+    seen.add(normalizedValue);
+    result.push(normalizedValue);
+    return result;
+  }, []);
+};
+
+const normalizeConversationStringMap = (value = {}, formatter = (entry) => String(entry || '').trim()) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+  return Object.entries(value).reduce((result, [key, entryValue]) => {
+    const normalizedKey = normalizeUserId(key);
+    if (!normalizedKey) {
+      return result;
+    }
+    const formattedValue = formatter(entryValue);
+    if (formattedValue === null || formattedValue === undefined || formattedValue === '') {
+      return result;
+    }
+    result[normalizedKey] = formattedValue;
+    return result;
+  }, {});
+};
+
+const normalizeConversationNumberMap = (value = {}) => {
+  return normalizeConversationStringMap(value, (entry) => {
+    const normalizedValue = Number.isFinite(Number(entry))
+      ? Math.max(0, Math.floor(Number(entry)))
+      : 0;
+    return normalizedValue;
+  });
+};
+
+const buildDirectConversationKey = (participantIds = []) => {
+  return normalizeConversationUserIdList(participantIds).sort().join('__');
+};
+
+const sortConversationRecordsByNewest = (left = {}, right = {}) => {
+  const leftTime = new Date(left?.sortAt || left?.lastMessageAt || left?.updatedAt || left?.createdAt || 0).getTime() || 0;
+  const rightTime = new Date(right?.sortAt || right?.lastMessageAt || right?.updatedAt || right?.createdAt || 0).getTime() || 0;
+  return rightTime - leftTime;
+};
+
+const sortConversationMessagesByOldest = (left = {}, right = {}) => {
+  const leftTime = new Date(left?.sortAt || left?.createdAt || left?.updatedAt || left?.sentAt || 0).getTime() || 0;
+  const rightTime = new Date(right?.sortAt || right?.createdAt || right?.updatedAt || right?.sentAt || 0).getTime() || 0;
+  if (leftTime === rightTime) {
+    return String(left?.id || '').localeCompare(String(right?.id || ''));
+  }
+  return leftTime - rightTime;
+};
+
+const buildConversationParticipantMaps = (participants = []) => {
+  return asArray(participants).reduce((result, participant) => {
+    const normalizedParticipant = normalizeMessageRecipientEntry(participant);
+    if (!normalizedParticipant?.uid) {
+      return result;
+    }
+    result.participants.push(normalizedParticipant.uid);
+    result.participantNames[normalizedParticipant.uid] = normalizedParticipant.name;
+    result.participantEmails[normalizedParticipant.uid] = normalizedParticipant.email;
+    result.participantRoles[normalizedParticipant.uid] = normalizeRole(normalizedParticipant.role || ROLE_TEACHER);
+    return result;
+  }, {
+    participants: [],
+    participantNames: {},
+    participantEmails: {},
+    participantRoles: {}
+  });
+};
+
+const normalizeConversationRecord = (conversationId, payload = {}, currentUserId = '') => {
+  const normalizedCurrentUserId = normalizeUserId(currentUserId);
+  const participants = normalizeConversationUserIdList(payload?.participants || []);
+  const participantNames = normalizeConversationStringMap(payload?.participantNames, (entry) => {
+    return normalizeDisplayName(entry || '', 'Participant');
+  });
+  const participantEmails = normalizeConversationStringMap(payload?.participantEmails, (entry) => {
+    return normalizeEmailAddress(entry || '');
+  });
+  const participantRoles = normalizeConversationStringMap(payload?.participantRoles, (entry) => {
+    return normalizeRole(entry || ROLE_TEACHER);
+  });
+  const unreadCountByUser = normalizeConversationNumberMap(payload?.unreadCountByUser);
+  const createdAt = toIsoDateString(payload?.createdAt) || toIsoDateString(payload?.updatedAt) || null;
+  const updatedAt = toIsoDateString(payload?.updatedAt) || createdAt;
+  const lastMessageAt = toIsoDateString(payload?.lastMessageAt) || updatedAt || createdAt;
+  const counterpartUserId = participants.find((participantId) => participantId !== normalizedCurrentUserId) || '';
+  const counterpartName = normalizeDisplayName(participantNames[counterpartUserId] || counterpartUserId || 'Conversation', 'Conversation');
+  const counterpartEmail = normalizeEmailAddress(participantEmails[counterpartUserId] || '');
+  const counterpartRole = normalizeRole(participantRoles[counterpartUserId] || ROLE_TEACHER);
+  const title = participants.length > 1
+    ? buildMessageParticipantLabel(counterpartName, counterpartEmail, counterpartUserId, 'Conversation')
+    : buildMessageParticipantLabel(payload?.lastMessageSenderName || counterpartName, payload?.lastMessageSenderEmail || counterpartEmail, payload?.lastMessageSenderId || counterpartUserId, 'Conversation');
+  return {
+    id: String(conversationId || payload?.id || '').trim(),
+    type: String(payload?.type || CONVERSATION_TYPE_DIRECT).trim().toLowerCase() || CONVERSATION_TYPE_DIRECT,
+    source: 'conversation',
+    isLegacy: false,
+    directKey: String(payload?.directKey || buildDirectConversationKey(participants)).trim(),
+    participants,
+    participantNames,
+    participantEmails,
+    participantRoles,
+    counterpartUserId,
+    counterpartName,
+    counterpartEmail,
+    counterpartRole,
+    title,
+    unreadCountByUser,
+    unreadCount: normalizedCurrentUserId ? Math.max(0, Number(unreadCountByUser[normalizedCurrentUserId] || 0)) : 0,
+    lastMessageText: normalizeMessageBody(payload?.lastMessageText || ''),
+    lastMessagePreview: buildMessagePreview(payload?.lastMessagePreview || payload?.lastMessageText || ''),
+    lastMessageAt,
+    lastMessageSenderId: normalizeUserId(payload?.lastMessageSenderId || ''),
+    lastMessageSenderName: normalizeDisplayName(payload?.lastMessageSenderName || '', ''),
+    lastMessageSenderRole: normalizeRole(payload?.lastMessageSenderRole || ROLE_TEACHER),
+    createdAt,
+    updatedAt,
+    sortAt: lastMessageAt || updatedAt || createdAt || ''
+  };
+};
+
+const normalizeConversationMessageRecord = (messageId, payload = {}, conversationId = '', currentUserId = '') => {
+  const normalizedCurrentUserId = normalizeUserId(currentUserId);
+  const senderId = normalizeUserId(payload?.senderId || payload?.senderUserId || payload?.fromUserId || payload?.fromUid || '');
+  const senderName = normalizeDisplayName(payload?.senderName || payload?.senderDisplayName || payload?.senderEmail || senderId || 'Participant', 'Participant');
+  const senderEmail = normalizeEmailAddress(payload?.senderEmail || '');
+  const senderRole = normalizeRole(payload?.senderRole || ROLE_TEACHER);
+  const text = normalizeMessageBody(payload?.text || payload?.body || '');
+  const createdAt = toIsoDateString(payload?.createdAt) || toIsoDateString(payload?.sentAt) || toIsoDateString(payload?.updatedAt);
+  const updatedAt = toIsoDateString(payload?.updatedAt) || createdAt;
+  const readByUserIds = normalizeConversationUserIdList(payload?.readByUserIds || payload?.readBy || []);
+  return {
+    id: String(messageId || payload?.id || '').trim(),
+    conversationId: String(conversationId || payload?.conversationId || '').trim(),
+    source: String(payload?.source || 'conversation').trim().toLowerCase() || 'conversation',
+    type: String(payload?.type || 'text').trim().toLowerCase() || 'text',
+    senderId,
+    senderName,
+    senderEmail,
+    senderRole,
+    text,
+    body: text,
+    subject: normalizeMessageSubject(payload?.subject || ''),
+    readByUserIds,
+    isReadByCurrentUser: normalizedCurrentUserId ? readByUserIds.includes(normalizedCurrentUserId) : false,
+    isOwnMessage: normalizedCurrentUserId ? senderId === normalizedCurrentUserId : false,
+    createdAt,
+    updatedAt,
+    sentAt: createdAt,
+    sortAt: createdAt || updatedAt || ''
+  };
+};
+
+const getLegacyDirectCounterpartForMessage = (message = {}, actorUserId = '') => {
+  const normalizedActorUserId = normalizeUserId(actorUserId);
+  const mailbox = normalizeMessageMailbox(message?.mailbox);
+  if (mailbox === MESSAGE_MAILBOX_INBOX) {
+    return normalizeMessageRecipientEntry({
+      uid: message?.senderId,
+      name: message?.senderName,
+      email: message?.senderEmail,
+      role: message?.senderRole,
+      receivesMessages: true
+    });
+  }
+  if (Number(message?.recipientCount || 0) === 1 && normalizeUserId(message?.recipientUserId || '') !== normalizedActorUserId) {
+    return normalizeMessageRecipientEntry({
+      uid: message?.recipientUserId,
+      name: message?.recipientName,
+      email: message?.recipientEmail,
+      role: message?.recipientRole,
+      receivesMessages: true
+    });
+  }
+  return null;
+};
+
+const buildLegacyConversationRecord = (entry = {}, currentUserId = '') => {
+  const normalizedCurrentUserId = normalizeUserId(currentUserId);
+  const messages = asArray(entry?.messages).slice().sort(sortConversationMessagesByOldest);
+  const directCounterpart = normalizeMessageRecipientEntry(entry?.directCounterpart);
+  const lastMessage = messages[messages.length - 1] || null;
+  const directKey = directCounterpart?.uid ? buildDirectConversationKey([normalizedCurrentUserId, directCounterpart.uid]) : '';
+  const unreadCount = messages.filter((message) => {
+    return normalizeMessageMailbox(message?.mailbox) === MESSAGE_MAILBOX_INBOX && !Boolean(message?.isRead);
+  }).length;
+  const title = directCounterpart?.displayLabel
+    || String(lastMessage?.audienceLabel || lastMessage?.recipientLabel || lastMessage?.subject || 'Conversation').trim()
+    || 'Conversation';
+  return {
+    id: String(entry?.id || '').trim(),
+    type: directCounterpart?.uid ? CONVERSATION_TYPE_DIRECT : 'legacy',
+    source: 'legacy',
+    isLegacy: true,
+    directKey,
+    participants: directCounterpart?.uid ? normalizeConversationUserIdList([normalizedCurrentUserId, directCounterpart.uid]) : [],
+    participantNames: directCounterpart?.uid ? { [directCounterpart.uid]: directCounterpart.name } : {},
+    participantEmails: directCounterpart?.uid ? { [directCounterpart.uid]: directCounterpart.email } : {},
+    participantRoles: directCounterpart?.uid ? { [directCounterpart.uid]: normalizeRole(directCounterpart.role || ROLE_TEACHER) } : {},
+    counterpartUserId: directCounterpart?.uid || '',
+    counterpartName: directCounterpart?.name || title,
+    counterpartEmail: normalizeEmailAddress(directCounterpart?.email || ''),
+    counterpartRole: normalizeRole(directCounterpart?.role || ''),
+    title,
+    unreadCount,
+    lastMessageText: String(lastMessage?.body || '').trim(),
+    lastMessagePreview: buildMessagePreview(lastMessage?.body || lastMessage?.subject || ''),
+    lastMessageAt: lastMessage?.sentAt || lastMessage?.updatedAt || null,
+    lastMessageSenderId: normalizeUserId(lastMessage?.senderId || ''),
+    lastMessageSenderName: normalizeDisplayName(lastMessage?.senderName || '', ''),
+    lastMessageSenderRole: normalizeRole(lastMessage?.senderRole || ROLE_TEACHER),
+    legacyMessages: messages,
+    sortAt: lastMessage?.sortAt || lastMessage?.sentAt || lastMessage?.updatedAt || '',
+    canReply: Boolean(directCounterpart?.uid)
+  };
+};
+
+const buildLegacyConversationRecords = (messages = [], currentUserId = '') => {
+  const normalizedCurrentUserId = normalizeUserId(currentUserId);
+  const groups = new Map();
+  asArray(messages).forEach((message) => {
+    const directCounterpart = getLegacyDirectCounterpartForMessage(message, normalizedCurrentUserId);
+    const directKey = directCounterpart?.uid ? buildDirectConversationKey([normalizedCurrentUserId, directCounterpart.uid]) : '';
+    const groupId = directKey
+      ? `legacy:direct:${directKey}`
+      : (String(message?.threadId || '').trim()
+        ? `legacy:thread:${String(message.threadId).trim()}`
+        : `legacy:message:${String(message?.id || '').trim()}`);
+    const existingEntry = groups.get(groupId) || {
+      id: groupId,
+      directCounterpart: directCounterpart || null,
+      messages: []
+    };
+    if (!existingEntry.directCounterpart && directCounterpart) {
+      existingEntry.directCounterpart = directCounterpart;
+    }
+    existingEntry.messages.push(message);
+    groups.set(groupId, existingEntry);
+  });
+  return Array.from(groups.values()).map((entry) => {
+    return buildLegacyConversationRecord(entry, normalizedCurrentUserId);
+  }).sort(sortConversationRecordsByNewest);
+};
+
+const buildLegacyConversationMessages = (legacyMessages = [], currentUserId = '', conversationId = '') => {
+  const normalizedCurrentUserId = normalizeUserId(currentUserId);
+  return asArray(legacyMessages).map((message) => {
+    const normalizedMessage = normalizeMessageRecord(message?.id || '', message);
+    const readByUserIds = [];
+    if (normalizedCurrentUserId && (normalizedMessage.mailbox === MESSAGE_MAILBOX_SENT || normalizedMessage.isRead)) {
+      readByUserIds.push(normalizedCurrentUserId);
+    }
+    const messageRecord = normalizeConversationMessageRecord(`legacy:${normalizedMessage.id}`, {
+      conversationId,
+      source: 'legacy',
+      type: 'legacy',
+      senderId: normalizedMessage.senderId,
+      senderName: normalizedMessage.senderName,
+      senderEmail: normalizedMessage.senderEmail,
+      senderRole: normalizedMessage.senderRole,
+      text: normalizedMessage.body || normalizedMessage.subject || '',
+      subject: normalizedMessage.subject,
+      createdAt: normalizedMessage.sentAt || normalizedMessage.updatedAt,
+      updatedAt: normalizedMessage.updatedAt || normalizedMessage.sentAt,
+      readByUserIds
+    }, conversationId, normalizedCurrentUserId);
+    return {
+      ...messageRecord,
+      mailbox: normalizedMessage.mailbox,
+      audienceLabel: normalizedMessage.audienceLabel,
+      legacyMessageId: normalizedMessage.id,
+      isLegacy: true,
+      isUnreadLegacy: normalizedMessage.mailbox === MESSAGE_MAILBOX_INBOX && !normalizedMessage.isRead
+    };
+  }).sort(sortConversationMessagesByOldest);
 };
 
 const buildMessageRoleAudienceOptions = (users = []) => {
@@ -2555,6 +2848,10 @@ const getCacheKeyForUser = (userId, classId = '') => `${CACHE_KEY_PREFIX}:${user
 const getUserRootRef = (userId) => doc(db, USERS_COLLECTION, userId);
 const getMessagesCollectionRef = (userId) => collection(db, USERS_COLLECTION, userId, MESSAGES_SUBCOLLECTION);
 const getMessageDocRef = (userId, messageId) => doc(db, USERS_COLLECTION, userId, MESSAGES_SUBCOLLECTION, messageId);
+const getConversationsCollectionRef = () => collection(db, CONVERSATIONS_COLLECTION);
+const getConversationDocRef = (conversationId) => doc(db, CONVERSATIONS_COLLECTION, conversationId);
+const getConversationMessagesCollectionRef = (conversationId) => collection(db, CONVERSATIONS_COLLECTION, conversationId, CONVERSATION_MESSAGES_SUBCOLLECTION);
+const getConversationMessageDocRef = (conversationId, messageId) => doc(db, CONVERSATIONS_COLLECTION, conversationId, CONVERSATION_MESSAGES_SUBCOLLECTION, messageId);
 const getStudentsCollectionRef = (userId, classId = getCurrentClassContext()) => getClassStudentsCollectionRef(userId, normalizeClassId(classId));
 const getSubjectsCollectionRef = (userId, classId = getCurrentClassContext()) => getClassSubjectsCollectionRef(userId, normalizeClassId(classId));
 const getExamsCollectionRef = (userId, classId = getCurrentClassContext()) => getClassExamsCollectionRef(userId, normalizeClassId(classId));
@@ -3150,6 +3447,712 @@ export const fetchMessageAudienceDirectory = async () => {
     classes,
     capabilities
   };
+};
+
+const buildMergedConversationList = (conversationRecords = [], legacyMessages = [], actorUserId = '') => {
+  const normalizedActorUserId = normalizeUserId(actorUserId);
+  const normalizedConversationRecords = asArray(conversationRecords).filter(record => String(record?.id || '').trim());
+  const activeDirectKeys = new Set(normalizedConversationRecords
+    .map(record => String(record?.directKey || '').trim())
+    .filter(Boolean));
+  const legacyConversations = buildLegacyConversationRecords(legacyMessages, normalizedActorUserId).filter((record) => {
+    const directKey = String(record?.directKey || '').trim();
+    return !directKey || !activeDirectKeys.has(directKey);
+  });
+  return normalizedConversationRecords.concat(legacyConversations).sort(sortConversationRecordsByNewest);
+};
+
+const syncCurrentUserConversationMetadata = async (userId, conversations = []) => {
+  const normalizedUserId = normalizeUserId(userId);
+  const unreadCount = asArray(conversations).reduce((total, conversation) => {
+    return total + Math.max(0, Math.floor(Number(conversation?.unreadCount || 0)));
+  }, 0);
+  const lastMessageAt = asArray(conversations)
+    .map(conversation => String(conversation?.lastMessageAt || conversation?.updatedAt || conversation?.createdAt || '').trim())
+    .find(Boolean) || null;
+
+  if (normalizedUserId && normalizedUserId === getAuthenticatedUserId()) {
+    try {
+      await mergeUserRootMetadata(normalizedUserId, {
+        userId: normalizedUserId,
+        messageUnreadCount: unreadCount,
+        lastMessageAt,
+        updatedAt: new Date().toISOString()
+      });
+    } catch (error) {
+      console.warn('Failed to sync current user conversation metadata:', error);
+    }
+  }
+
+  return {
+    unreadCount,
+    lastMessageAt
+  };
+};
+
+const readConversationListRecords = async (actorUserId = '', actorRole = '', actorPermissions = []) => {
+  if (!isFirebaseConfigured || !db) {
+    return [];
+  }
+
+  const normalizedActorUserId = normalizeUserId(actorUserId);
+  const source = canViewAllConversations(actorRole, actorPermissions)
+    ? getConversationsCollectionRef()
+    : query(getConversationsCollectionRef(), where('participants', 'array-contains', normalizedActorUserId));
+  const snapshot = await getDocs(source);
+  const conversations = [];
+  snapshot.forEach((entry) => {
+    const record = normalizeConversationRecord(entry.id, entry.data() || {}, normalizedActorUserId);
+    if (!record.id) {
+      return;
+    }
+    conversations.push(record);
+  });
+  return conversations.sort(sortConversationRecordsByNewest);
+};
+
+const buildConversationUnreadCountByUser = (existingMap = {}, participantIds = [], senderId = '') => {
+  const normalizedSenderId = normalizeUserId(senderId);
+  const previousMap = normalizeConversationNumberMap(existingMap);
+  return normalizeConversationUserIdList(participantIds).reduce((result, participantId) => {
+    const existingCount = Number.isFinite(Number(previousMap?.[participantId]))
+      ? Math.max(0, Math.floor(Number(previousMap[participantId])))
+      : 0;
+    result[participantId] = participantId === normalizedSenderId ? 0 : existingCount + 1;
+    return result;
+  }, {});
+};
+
+const mergeConversationMessageLists = (...messageLists) => {
+  const merged = [];
+  const seen = new Set();
+  messageLists.reduce((result, list) => result.concat(asArray(list)), []).forEach((message) => {
+    const messageId = String(message?.id || '').trim();
+    if (!messageId) {
+      return;
+    }
+    const cacheKey = `${String(message?.source || 'conversation').trim()}:${messageId}`;
+    if (seen.has(cacheKey)) {
+      return;
+    }
+    seen.add(cacheKey);
+    merged.push(message);
+  });
+  return merged.sort(sortConversationMessagesByOldest);
+};
+
+const getLegacyDirectKeyFromConversationId = (conversationId = '') => {
+  const normalizedConversationId = String(conversationId || '').trim();
+  return normalizedConversationId.startsWith('legacy:direct:')
+    ? normalizedConversationId.slice('legacy:direct:'.length)
+    : '';
+};
+
+const getLegacyConversationRecipientUserId = (conversationId = '', actorUserId = '') => {
+  const directKey = getLegacyDirectKeyFromConversationId(conversationId);
+  const normalizedActorUserId = normalizeUserId(actorUserId);
+  if (!directKey) {
+    return '';
+  }
+  return directKey.split('__').map(normalizeUserId).find((participantId) => {
+    return participantId && participantId !== normalizedActorUserId;
+  }) || '';
+};
+
+const buildLegacyDirectConversationMessages = (legacyMessages = [], directKey = '', currentUserId = '', conversationId = '') => {
+  const normalizedCurrentUserId = normalizeUserId(currentUserId);
+  const normalizedDirectKey = String(directKey || '').trim();
+  if (!normalizedCurrentUserId || !normalizedDirectKey) {
+    return [];
+  }
+  return buildLegacyConversationMessages(asArray(legacyMessages).filter((message) => {
+    const directCounterpart = getLegacyDirectCounterpartForMessage(message, normalizedCurrentUserId);
+    if (!directCounterpart?.uid) {
+      return false;
+    }
+    return buildDirectConversationKey([normalizedCurrentUserId, directCounterpart.uid]) === normalizedDirectKey;
+  }), normalizedCurrentUserId, conversationId);
+};
+
+const resolveConversationRecipientDirectoryEntry = async (recipientUserId = '', actorUserId = '', actorRole = '', actorPermissions = []) => {
+  const normalizedRecipientUserId = normalizeUserId(recipientUserId);
+  const normalizedActorUserId = normalizeUserId(actorUserId);
+  if (!normalizedRecipientUserId || normalizedRecipientUserId === normalizedActorUserId) {
+    throw new Error('Select a valid recipient to continue');
+  }
+
+  const directory = await fetchConversationDirectory();
+  const recipient = asArray(directory.users).find((entry) => {
+    return normalizeUserId(entry?.uid || '') === normalizedRecipientUserId;
+  }) || null;
+  if (!recipient?.uid) {
+    throw new Error('Select a valid recipient to continue');
+  }
+  if (!canStartConversationWithRole(recipient.role, actorRole, actorPermissions)) {
+    throw createContextError(ERROR_CODES.READ_ONLY_MODE, 'You do not have permission to start a conversation with that user');
+  }
+  return recipient;
+};
+
+const resolveConversationWriteTarget = async ({
+  conversationId = '',
+  recipientUserId = '',
+  actorUserId = '',
+  actorRole = '',
+  actorPermissions = []
+} = {}) => {
+  const normalizedConversationId = String(conversationId || '').trim();
+  const normalizedActorUserId = normalizeUserId(actorUserId);
+  if (normalizedConversationId && !normalizedConversationId.startsWith('legacy:')) {
+    const conversationSnapshot = await getDoc(getConversationDocRef(normalizedConversationId));
+    if (!conversationSnapshot.exists()) {
+      throw new Error('The selected conversation could not be found');
+    }
+    const conversationRecord = normalizeConversationRecord(conversationSnapshot.id, conversationSnapshot.data() || {}, normalizedActorUserId);
+    if (!conversationRecord.participants.includes(normalizedActorUserId)) {
+      throw createContextError(ERROR_CODES.READ_ONLY_MODE, 'You can only send messages in conversations you participate in');
+    }
+    return {
+      conversationId: normalizedConversationId,
+      conversationRecord,
+      recipient: null
+    };
+  }
+
+  if (!canStartConversations(actorRole, actorPermissions)) {
+    throw createContextError(ERROR_CODES.READ_ONLY_MODE, 'You do not have permission to start conversations');
+  }
+
+  const fallbackRecipientUserId = normalizeUserId(recipientUserId || getLegacyConversationRecipientUserId(normalizedConversationId, normalizedActorUserId));
+  const recipient = await resolveConversationRecipientDirectoryEntry(fallbackRecipientUserId, normalizedActorUserId, actorRole, actorPermissions);
+  const directConversationId = buildDirectConversationKey([normalizedActorUserId, recipient.uid]);
+  const conversationSnapshot = await getDoc(getConversationDocRef(directConversationId));
+  return {
+    conversationId: directConversationId,
+    conversationRecord: conversationSnapshot.exists()
+      ? normalizeConversationRecord(conversationSnapshot.id, conversationSnapshot.data() || {}, normalizedActorUserId)
+      : null,
+    recipient
+  };
+};
+
+export const fetchConversationDirectory = async () => {
+  const actorUserId = await ensureAuthenticatedUserId('read conversation directory');
+  const actorRole = getCurrentUserRoleContext();
+  const actorPermissions = getCurrentUserPermissionsContext();
+  const capabilities = {
+    canSend: canStartConversations(actorRole, actorPermissions) || canReplyToMessages(actorRole, actorPermissions),
+    canReply: canReplyToMessages(actorRole, actorPermissions),
+    canStart: canStartConversations(actorRole, actorPermissions),
+    canViewAll: canViewAllConversations(actorRole, actorPermissions)
+  };
+
+  let users = [];
+  if (capabilities.canStart) {
+    users = (await readMessageDirectoryUsers()).filter((entry) => {
+      const candidateUserId = normalizeUserId(entry?.uid || '');
+      const candidateRole = normalizeRole(entry?.role || '');
+      return candidateUserId
+        && candidateUserId !== actorUserId
+        && entry.receivesMessages
+        && canStartConversationWithRole(candidateRole, actorRole, actorPermissions);
+    });
+  }
+
+  return {
+    users,
+    roles: buildMessageRoleAudienceOptions(users),
+    classes: [],
+    capabilities
+  };
+};
+
+export const fetchCurrentUserConversations = async () => {
+  const actorUserId = await ensureAuthenticatedUserId('read conversations');
+  if (!isFirebaseConfigured || !db) {
+    return {
+      conversations: [],
+      unreadCount: 0,
+      lastMessageAt: null
+    };
+  }
+
+  const actorRole = getCurrentUserRoleContext();
+  const actorPermissions = getCurrentUserPermissionsContext();
+  const [conversationRecords, legacyPayload] = await Promise.all([
+    readConversationListRecords(actorUserId, actorRole, actorPermissions),
+    fetchCurrentUserMessages()
+  ]);
+  const conversations = buildMergedConversationList(conversationRecords, legacyPayload.messages, actorUserId);
+  const metadata = await syncCurrentUserConversationMetadata(actorUserId, conversations);
+  return {
+    conversations,
+    unreadCount: metadata.unreadCount,
+    lastMessageAt: metadata.lastMessageAt
+  };
+};
+
+export const fetchConversationMessages = async (conversationId = '') => {
+  const actorUserId = await ensureAuthenticatedUserId('read conversation messages');
+  const normalizedConversationId = String(conversationId || '').trim();
+  if (!normalizedConversationId) {
+    return {
+      conversation: null,
+      messages: [],
+      unreadCount: 0
+    };
+  }
+
+  if (normalizedConversationId.startsWith('legacy:')) {
+    const legacyPayload = await fetchCurrentUserMessages();
+    const legacyConversation = buildLegacyConversationRecords(legacyPayload.messages, actorUserId).find((entry) => {
+      return String(entry?.id || '').trim() === normalizedConversationId;
+    }) || null;
+    return {
+      conversation: legacyConversation,
+      messages: buildLegacyConversationMessages(legacyConversation?.legacyMessages || [], actorUserId, normalizedConversationId),
+      unreadCount: Math.max(0, Math.floor(Number(legacyConversation?.unreadCount || 0)))
+    };
+  }
+
+  const conversationSnapshot = await getDoc(getConversationDocRef(normalizedConversationId));
+  if (!conversationSnapshot.exists()) {
+    throw new Error('The selected conversation could not be found');
+  }
+
+  const conversationRecord = normalizeConversationRecord(conversationSnapshot.id, conversationSnapshot.data() || {}, actorUserId);
+  const messagesSnapshot = await getDocs(getConversationMessagesCollectionRef(normalizedConversationId));
+  const conversationMessages = [];
+  messagesSnapshot.forEach((entry) => {
+    const record = normalizeConversationMessageRecord(entry.id, entry.data() || {}, normalizedConversationId, actorUserId);
+    if (!record.id) {
+      return;
+    }
+    conversationMessages.push(record);
+  });
+
+  const legacyPayload = conversationRecord.directKey
+    ? await fetchCurrentUserMessages()
+    : { messages: [] };
+  return {
+    conversation: conversationRecord,
+    messages: mergeConversationMessageLists(
+      conversationMessages,
+      buildLegacyDirectConversationMessages(legacyPayload.messages, conversationRecord.directKey, actorUserId, normalizedConversationId)
+    ),
+    unreadCount: Math.max(0, Math.floor(Number(conversationRecord?.unreadCount || 0)))
+  };
+};
+
+export const subscribeCurrentUserConversations = async ({ onChange, onError } = {}) => {
+  const actorUserId = await ensureAuthenticatedUserId('subscribe to conversations');
+  if (!isFirebaseConfigured || !db) {
+    if (typeof onChange === 'function') {
+      onChange({
+        conversations: [],
+        unreadCount: 0,
+        lastMessageAt: null
+      });
+    }
+    return () => {};
+  }
+
+  const actorRole = getCurrentUserRoleContext();
+  const actorPermissions = getCurrentUserPermissionsContext();
+  const source = canViewAllConversations(actorRole, actorPermissions)
+    ? getConversationsCollectionRef()
+    : query(getConversationsCollectionRef(), where('participants', 'array-contains', normalizeUserId(actorUserId)));
+  let disposed = false;
+
+  const emitPayload = async (snapshot) => {
+    if (disposed) {
+      return;
+    }
+
+    try {
+      const conversationRecords = [];
+      snapshot.forEach((entry) => {
+        const record = normalizeConversationRecord(entry.id, entry.data() || {}, actorUserId);
+        if (!record.id) {
+          return;
+        }
+        conversationRecords.push(record);
+      });
+      const legacyPayload = await fetchCurrentUserMessages();
+      const conversations = buildMergedConversationList(conversationRecords, legacyPayload.messages, actorUserId);
+      const metadata = await syncCurrentUserConversationMetadata(actorUserId, conversations);
+      if (!disposed && typeof onChange === 'function') {
+        onChange({
+          conversations,
+          unreadCount: metadata.unreadCount,
+          lastMessageAt: metadata.lastMessageAt
+        });
+      }
+    } catch (error) {
+      if (typeof onError === 'function') {
+        onError(error);
+      } else {
+        console.warn('Conversation subscription update failed:', error);
+      }
+    }
+  };
+
+  const unsubscribe = onSnapshot(source, (snapshot) => {
+    void emitPayload(snapshot);
+  }, (error) => {
+    if (typeof onError === 'function') {
+      onError(error);
+    } else {
+      console.warn('Conversation subscription failed:', error);
+    }
+  });
+
+  return () => {
+    disposed = true;
+    unsubscribe();
+  };
+};
+
+export const subscribeConversationMessages = async (conversationId = '', { onChange, onError } = {}) => {
+  const actorUserId = await ensureAuthenticatedUserId('subscribe to conversation messages');
+  const normalizedConversationId = String(conversationId || '').trim();
+  if (!normalizedConversationId) {
+    if (typeof onChange === 'function') {
+      onChange({
+        conversation: null,
+        messages: [],
+        unreadCount: 0
+      });
+    }
+    return () => {};
+  }
+
+  if (normalizedConversationId.startsWith('legacy:') || !isFirebaseConfigured || !db) {
+    try {
+      const payload = await fetchConversationMessages(normalizedConversationId);
+      if (typeof onChange === 'function') {
+        onChange(payload);
+      }
+    } catch (error) {
+      if (typeof onError === 'function') {
+        onError(error);
+      } else {
+        console.warn('Legacy conversation load failed:', error);
+      }
+    }
+    return () => {};
+  }
+
+  let disposed = false;
+  let currentConversation = null;
+  let currentMessages = [];
+
+  const emitPayload = async () => {
+    if (disposed) {
+      return;
+    }
+    try {
+      const legacyPayload = currentConversation?.directKey
+        ? await fetchCurrentUserMessages()
+        : { messages: [] };
+      const messages = mergeConversationMessageLists(
+        currentMessages,
+        buildLegacyDirectConversationMessages(legacyPayload.messages, currentConversation?.directKey || '', actorUserId, normalizedConversationId)
+      );
+      if (!disposed && typeof onChange === 'function') {
+        onChange({
+          conversation: currentConversation,
+          messages,
+          unreadCount: Math.max(0, Math.floor(Number(currentConversation?.unreadCount || 0)))
+        });
+      }
+    } catch (error) {
+      if (typeof onError === 'function') {
+        onError(error);
+      } else {
+        console.warn('Conversation thread subscription update failed:', error);
+      }
+    }
+  };
+
+  const unsubscribeConversation = onSnapshot(getConversationDocRef(normalizedConversationId), (snapshot) => {
+    currentConversation = snapshot.exists()
+      ? normalizeConversationRecord(snapshot.id, snapshot.data() || {}, actorUserId)
+      : null;
+    void emitPayload();
+  }, (error) => {
+    if (typeof onError === 'function') {
+      onError(error);
+    } else {
+      console.warn('Conversation document subscription failed:', error);
+    }
+  });
+
+  const unsubscribeMessages = onSnapshot(getConversationMessagesCollectionRef(normalizedConversationId), (snapshot) => {
+    const liveMessages = [];
+    snapshot.forEach((entry) => {
+      const record = normalizeConversationMessageRecord(entry.id, entry.data() || {}, normalizedConversationId, actorUserId);
+      if (!record.id) {
+        return;
+      }
+      liveMessages.push(record);
+    });
+    currentMessages = liveMessages.sort(sortConversationMessagesByOldest);
+    void emitPayload();
+  }, (error) => {
+    if (typeof onError === 'function') {
+      onError(error);
+    } else {
+      console.warn('Conversation messages subscription failed:', error);
+    }
+  });
+
+  return () => {
+    disposed = true;
+    unsubscribeConversation();
+    unsubscribeMessages();
+  };
+};
+
+export const sendConversationMessage = async (payload = {}) => {
+  const actorUserId = await ensureAuthenticatedUserId('send conversation messages');
+  const actorRole = getCurrentUserRoleContext();
+  const actorPermissions = getCurrentUserPermissionsContext();
+  if (!canStartConversations(actorRole, actorPermissions) && !String(payload?.conversationId || '').trim()) {
+    throw createContextError(ERROR_CODES.READ_ONLY_MODE, 'You do not have permission to start conversations');
+  }
+  if (!isFirebaseConfigured || !db) {
+    throw new Error('Firebase unavailable');
+  }
+
+  const normalizedActorUserId = normalizeUserId(actorUserId);
+  const normalizedBody = normalizeMessageBody(payload?.body || payload?.text || payload?.message || '');
+  if (!normalizedBody) {
+    throw new Error('Message body is required');
+  }
+
+  const senderProfile = await buildCurrentMessageSenderProfile(normalizedActorUserId);
+  const target = await resolveConversationWriteTarget({
+    conversationId: payload?.conversationId,
+    recipientUserId: payload?.recipientUserId || payload?.uid,
+    actorUserId: normalizedActorUserId,
+    actorRole,
+    actorPermissions
+  });
+  const senderParticipant = normalizeMessageRecipientEntry({
+    ...senderProfile,
+    receivesMessages: true
+  });
+  const recipientParticipant = target.recipient
+    ? normalizeMessageRecipientEntry(target.recipient)
+    : null;
+  const participantMaps = buildConversationParticipantMaps([senderParticipant, recipientParticipant].filter(Boolean));
+  const existingConversation = target.conversationRecord || null;
+  const participants = normalizeConversationUserIdList(
+    (existingConversation?.participants || []).concat(participantMaps.participants)
+  );
+  if (!participants.length) {
+    throw new Error('At least one participant is required');
+  }
+
+  const participantNames = {
+    ...(existingConversation?.participantNames || {}),
+    ...participantMaps.participantNames
+  };
+  const participantEmails = {
+    ...(existingConversation?.participantEmails || {}),
+    ...participantMaps.participantEmails
+  };
+  const participantRoles = {
+    ...(existingConversation?.participantRoles || {}),
+    ...participantMaps.participantRoles
+  };
+  const conversationIdValue = String(target.conversationId || '').trim();
+  const directKey = buildDirectConversationKey(participants);
+  const createdAt = new Date().toISOString();
+  const nextUnreadCountByUser = buildConversationUnreadCountByUser(existingConversation?.unreadCountByUser || {}, participants, normalizedActorUserId);
+  const messageRef = doc(getConversationMessagesCollectionRef(conversationIdValue));
+  const conversationPayload = {
+    id: conversationIdValue,
+    type: CONVERSATION_TYPE_DIRECT,
+    directKey,
+    participants,
+    participantNames,
+    participantEmails,
+    participantRoles,
+    initiatorId: existingConversation?.participants?.length ? (existingConversation?.participants[0] || normalizedActorUserId) : normalizedActorUserId,
+    initiatorRole: existingConversation?.participants?.length ? normalizeRole(existingConversation?.participantRoles?.[existingConversation.participants[0]] || senderProfile.role) : normalizeRole(senderProfile.role),
+    lastMessageText: normalizedBody,
+    lastMessagePreview: buildMessagePreview(normalizedBody),
+    lastMessageAt: createdAt,
+    lastMessageSenderId: normalizedActorUserId,
+    lastMessageSenderName: normalizeDisplayName(senderProfile?.name || getAuthenticatedUserDisplayName(), 'Teacher'),
+    lastMessageSenderRole: normalizeRole(senderProfile?.role || ROLE_TEACHER),
+    unreadCountByUser: nextUnreadCountByUser,
+    createdAt: existingConversation?.createdAt || createdAt,
+    updatedAt: createdAt
+  };
+  const messagePayload = {
+    id: messageRef.id,
+    conversationId: conversationIdValue,
+    type: 'text',
+    senderId: normalizedActorUserId,
+    senderName: normalizeDisplayName(senderProfile?.name || getAuthenticatedUserDisplayName(), 'Teacher'),
+    senderEmail: normalizeEmailAddress(senderProfile?.email || auth?.currentUser?.email || ''),
+    senderRole: normalizeRole(senderProfile?.role || ROLE_TEACHER),
+    text: normalizedBody,
+    body: normalizedBody,
+    readByUserIds: [normalizedActorUserId],
+    createdAt,
+    updatedAt: createdAt,
+    sentAt: serverTimestamp()
+  };
+
+  const batch = writeBatch(db);
+  batch.set(getConversationDocRef(conversationIdValue), conversationPayload, { merge: true });
+  batch.set(messageRef, messagePayload, { merge: true });
+
+  const otherParticipants = participants.filter(participantId => participantId !== normalizedActorUserId);
+  const rootMetadataRecords = await Promise.all(otherParticipants.map(async (participantId) => {
+    const rootData = await readRecipientRootMessageMetadata(participantId);
+    return [participantId, rootData];
+  }));
+  const rootMetadataMap = new Map(rootMetadataRecords);
+  otherParticipants.forEach((participantId) => {
+    const existingRootData = rootMetadataMap.get(participantId) || {};
+    if (Object.keys(existingRootData).length) {
+      const existingUnreadCount = Number.isFinite(Number(existingRootData?.messageUnreadCount))
+        ? Math.max(0, Math.floor(Number(existingRootData.messageUnreadCount)))
+        : 0;
+      batch.set(getUserRootRef(participantId), {
+        userId: participantId,
+        messageUnreadCount: existingUnreadCount + 1,
+        lastMessageAt: createdAt,
+        updatedAt: createdAt
+      }, { merge: true });
+    }
+  });
+
+  await batch.commit();
+
+  try {
+    await mergeUserRootMetadata(normalizedActorUserId, {
+      userId: normalizedActorUserId,
+      lastMessageAt: createdAt,
+      updatedAt: createdAt
+    });
+  } catch (error) {
+    console.warn('Failed to update sender conversation metadata:', error);
+  }
+
+  return {
+    conversation: normalizeConversationRecord(conversationIdValue, conversationPayload, normalizedActorUserId),
+    message: normalizeConversationMessageRecord(messageRef.id, {
+      ...messagePayload,
+      sentAt: createdAt
+    }, conversationIdValue, normalizedActorUserId)
+  };
+};
+
+export const markConversationAsRead = async (conversationId = '') => {
+  const actorUserId = await ensureAuthenticatedUserId('mark conversation as read');
+  const normalizedConversationId = String(conversationId || '').trim();
+  const normalizedActorUserId = normalizeUserId(actorUserId);
+  if (!normalizedConversationId || !isFirebaseConfigured || !db) {
+    return false;
+  }
+
+  if (normalizedConversationId.startsWith('legacy:')) {
+    const legacyPayload = await fetchCurrentUserMessages();
+    const legacyConversation = buildLegacyConversationRecords(legacyPayload.messages, normalizedActorUserId).find((entry) => {
+      return String(entry?.id || '').trim() === normalizedConversationId;
+    }) || null;
+    const unreadMessages = asArray(legacyConversation?.legacyMessages).filter((message) => {
+      return normalizeMessageMailbox(message?.mailbox) === MESSAGE_MAILBOX_INBOX && !Boolean(message?.isRead);
+    });
+    if (!unreadMessages.length) {
+      return false;
+    }
+    await Promise.all(unreadMessages.map(message => markMessageAsRead(message.id)));
+    return true;
+  }
+
+  const conversationRef = getConversationDocRef(normalizedConversationId);
+  const conversationSnapshot = await getDoc(conversationRef);
+  if (!conversationSnapshot.exists()) {
+    return false;
+  }
+
+  const conversationData = conversationSnapshot.data() || {};
+  const conversationRecord = normalizeConversationRecord(conversationSnapshot.id, conversationData, normalizedActorUserId);
+  if (!conversationRecord.participants.includes(normalizedActorUserId)) {
+    return false;
+  }
+
+  const unreadCountByUser = normalizeConversationNumberMap(conversationData?.unreadCountByUser);
+  const clearedUnreadCount = Number.isFinite(Number(unreadCountByUser?.[normalizedActorUserId]))
+    ? Math.max(0, Math.floor(Number(unreadCountByUser[normalizedActorUserId])))
+    : 0;
+  const messageSnapshot = await getDocs(getConversationMessagesCollectionRef(normalizedConversationId));
+  const batch = writeBatch(db);
+  const updatedAt = new Date().toISOString();
+  let shouldCommit = clearedUnreadCount > 0;
+
+  messageSnapshot.forEach((entry) => {
+    const record = normalizeConversationMessageRecord(entry.id, entry.data() || {}, normalizedConversationId, normalizedActorUserId);
+    if (!record.id || record.isOwnMessage || record.readByUserIds.includes(normalizedActorUserId)) {
+      return;
+    }
+    shouldCommit = true;
+    batch.set(getConversationMessageDocRef(normalizedConversationId, record.id), {
+      readByUserIds: record.readByUserIds.concat(normalizedActorUserId),
+      updatedAt
+    }, { merge: true });
+  });
+
+  if (shouldCommit) {
+    batch.set(conversationRef, {
+      unreadCountByUser: {
+        ...unreadCountByUser,
+        [normalizedActorUserId]: 0
+      },
+      updatedAt
+    }, { merge: true });
+    await batch.commit();
+
+    try {
+      const currentRootData = await readUserRootData(normalizedActorUserId);
+      const existingUnreadCount = Number.isFinite(Number(currentRootData?.messageUnreadCount))
+        ? Math.max(0, Math.floor(Number(currentRootData.messageUnreadCount)))
+        : 0;
+      await mergeUserRootMetadata(normalizedActorUserId, {
+        userId: normalizedActorUserId,
+        messageUnreadCount: Math.max(0, existingUnreadCount - clearedUnreadCount),
+        updatedAt
+      });
+    } catch (error) {
+      console.warn('Failed to update unread metadata after marking a conversation as read:', error);
+    }
+  }
+
+  if (conversationRecord.directKey) {
+    const legacyPayload = await fetchCurrentUserMessages();
+    const matchingLegacyMessages = asArray(legacyPayload.messages).filter((message) => {
+      const directCounterpart = getLegacyDirectCounterpartForMessage(message, normalizedActorUserId);
+      if (!directCounterpart?.uid) {
+        return false;
+      }
+      return buildDirectConversationKey([normalizedActorUserId, directCounterpart.uid]) === conversationRecord.directKey
+        && normalizeMessageMailbox(message?.mailbox) === MESSAGE_MAILBOX_INBOX
+        && !Boolean(message?.isRead);
+    });
+    if (matchingLegacyMessages.length) {
+      await Promise.all(matchingLegacyMessages.map(message => markMessageAsRead(message.id)));
+      return true;
+    }
+  }
+
+  return shouldCommit;
 };
 
 export const sendMessage = async (payload = {}) => {

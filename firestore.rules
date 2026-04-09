@@ -619,6 +619,190 @@ service cloud.firestore {
         && request.resource.data.updatedAt is string;
     }
 
+    function requesterCanStartConversations() {
+      return requesterRole() == 'teacher'
+        || isHeadTeacherRole()
+        || isAdminRole()
+        || isDeveloperRole();
+    }
+
+    function requesterCanStartConversationWithRole(targetRole) {
+      return (requesterRole() == 'teacher' && targetRole == 'admin')
+        || (requesterRole() == 'head teacher' && (targetRole == 'teacher' || targetRole == 'admin'))
+        || (requesterRole() == 'admin' && (targetRole == 'teacher' || targetRole == 'head teacher' || targetRole == 'admin'))
+        || (requesterRole() == 'developer' && (targetRole == 'teacher' || targetRole == 'head teacher' || targetRole == 'admin' || targetRole == 'developer'));
+    }
+
+    function requesterCanReadConversationData(conversationData) {
+      return isSignedIn()
+        && (
+          isDeveloperRole()
+          || (conversationData.participants is list && conversationData.participants.hasAll([request.auth.uid]))
+        );
+    }
+
+    function requesterCanReadConversation(conversationId) {
+      return exists(/databases/$(database)/documents/conversations/$(conversationId))
+        && requesterCanReadConversationData(get(/databases/$(database)/documents/conversations/$(conversationId)).data);
+    }
+
+    function requestConversationCounterpartId() {
+      return request.resource.data.participants[0] == request.auth.uid
+        ? request.resource.data.participants[1]
+        : request.resource.data.participants[0];
+    }
+
+    function resourceConversationCounterpartId() {
+      return resource.data.participants[0] == request.auth.uid
+        ? resource.data.participants[1]
+        : resource.data.participants[0];
+    }
+
+    function conversationBaseFieldsAreValid(conversationId) {
+      return request.resource.data.id == conversationId
+        && request.resource.data.type == 'direct'
+        && request.resource.data.directKey is string
+        && request.resource.data.directKey != ''
+        && request.resource.data.participants is list
+        && request.resource.data.participants.size() == 2
+        && request.resource.data.participants[0] is string
+        && request.resource.data.participants[1] is string
+        && request.resource.data.participants[0] != request.resource.data.participants[1]
+        && request.resource.data.participants.hasAll([request.auth.uid])
+        && request.resource.data.participantNames is map
+        && request.resource.data.participantEmails is map
+        && request.resource.data.participantRoles is map
+        && request.resource.data.initiatorId is string
+        && request.resource.data.initiatorRole is string
+        && request.resource.data.lastMessageText is string
+        && request.resource.data.lastMessagePreview is string
+        && request.resource.data.lastMessageAt is string
+        && request.resource.data.lastMessageSenderId is string
+        && request.resource.data.lastMessageSenderName is string
+        && request.resource.data.lastMessageSenderRole is string
+        && request.resource.data.unreadCountByUser is map
+        && request.resource.data.createdAt is string
+        && request.resource.data.updatedAt is string;
+    }
+
+    function requesterCanCreateConversation(conversationId) {
+      return isSignedIn()
+        && requesterCanStartConversations()
+        && conversationBaseFieldsAreValid(conversationId)
+        && request.resource.data.initiatorId == request.auth.uid
+        && request.resource.data.initiatorRole == requesterRole()
+        && request.resource.data.lastMessageSenderId == request.auth.uid
+        && request.resource.data.lastMessageSenderRole == requesterRole()
+        && request.resource.data.participantRoles[request.auth.uid] == requesterRole()
+        && targetUserCanReceiveMessages(requestConversationCounterpartId())
+        && requesterCanStartConversationWithRole(targetUserDoc(requestConversationCounterpartId()).role)
+        && request.resource.data.participantRoles[requestConversationCounterpartId()] == targetUserDoc(requestConversationCounterpartId()).role
+        && request.resource.data.unreadCountByUser[request.auth.uid] == 0
+        && request.resource.data.unreadCountByUser[requestConversationCounterpartId()] == 1;
+    }
+
+    function requesterCanApplyConversationSendUpdate() {
+      return request.resource.data.lastMessageSenderId == request.auth.uid
+        && request.resource.data.lastMessageSenderRole == requesterRole()
+        && request.resource.data.unreadCountByUser[request.auth.uid] == 0
+        && resource.data.unreadCountByUser[resourceConversationCounterpartId()] is int
+        && request.resource.data.unreadCountByUser[resourceConversationCounterpartId()] is int
+        && request.resource.data.unreadCountByUser[resourceConversationCounterpartId()] == resource.data.unreadCountByUser[resourceConversationCounterpartId()] + 1;
+    }
+
+    function requesterCanApplyConversationReadUpdate() {
+      return request.resource.data.lastMessageText == resource.data.lastMessageText
+        && request.resource.data.lastMessagePreview == resource.data.lastMessagePreview
+        && request.resource.data.lastMessageAt == resource.data.lastMessageAt
+        && request.resource.data.lastMessageSenderId == resource.data.lastMessageSenderId
+        && request.resource.data.lastMessageSenderName == resource.data.lastMessageSenderName
+        && request.resource.data.lastMessageSenderRole == resource.data.lastMessageSenderRole
+        && request.resource.data.unreadCountByUser[request.auth.uid] == 0
+        && request.resource.data.unreadCountByUser[resourceConversationCounterpartId()] == resource.data.unreadCountByUser[resourceConversationCounterpartId()];
+    }
+
+    function requesterCanUpdateConversation(conversationId) {
+      return isSignedIn()
+        && requesterCanReadConversationData(resource.data)
+        && resource.data.participants is list
+        && resource.data.participants.hasAll([request.auth.uid])
+        && request.resource.data.id == conversationId
+        && request.resource.data.type == resource.data.type
+        && request.resource.data.directKey == resource.data.directKey
+        && request.resource.data.participants == resource.data.participants
+        && request.resource.data.participantRoles == resource.data.participantRoles
+        && request.resource.data.initiatorId == resource.data.initiatorId
+        && request.resource.data.initiatorRole == resource.data.initiatorRole
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt is string
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'participantNames',
+          'participantEmails',
+          'lastMessageText',
+          'lastMessagePreview',
+          'lastMessageAt',
+          'lastMessageSenderId',
+          'lastMessageSenderName',
+          'lastMessageSenderRole',
+          'unreadCountByUser',
+          'updatedAt'
+        ])
+        && (
+          requesterCanApplyConversationSendUpdate()
+          || requesterCanApplyConversationReadUpdate()
+        );
+    }
+
+    function conversationMessageBaseFieldsAreValid(conversationId, messageId) {
+      return request.resource.data.id == messageId
+        && request.resource.data.conversationId == conversationId
+        && request.resource.data.type == 'text'
+        && request.resource.data.senderId == request.auth.uid
+        && request.resource.data.senderName is string
+        && request.resource.data.senderEmail == requesterEmail()
+        && request.resource.data.senderRole == requesterRole()
+        && request.resource.data.text is string
+        && request.resource.data.body is string
+        && request.resource.data.readByUserIds is list
+        && request.resource.data.readByUserIds.size() == 1
+        && request.resource.data.readByUserIds[0] == request.auth.uid
+        && request.resource.data.createdAt is string
+        && request.resource.data.updatedAt is string
+        && request.resource.data.sentAt is timestamp;
+    }
+
+    function requesterCanCreateConversationMessage(conversationId, messageId) {
+      return existsAfter(/databases/$(database)/documents/conversations/$(conversationId))
+        && requesterCanReadConversationData(getAfter(/databases/$(database)/documents/conversations/$(conversationId)).data)
+        && conversationMessageBaseFieldsAreValid(conversationId, messageId)
+        && getAfter(/databases/$(database)/documents/conversations/$(conversationId)).data.lastMessageSenderId == request.auth.uid
+        && getAfter(/databases/$(database)/documents/conversations/$(conversationId)).data.lastMessageText == request.resource.data.text;
+    }
+
+    function requesterCanUpdateConversationMessage(conversationId, messageId) {
+      return requesterCanReadConversation(conversationId)
+        && request.resource.data.id == messageId
+        && request.resource.data.conversationId == resource.data.conversationId
+        && request.resource.data.type == resource.data.type
+        && request.resource.data.senderId == resource.data.senderId
+        && request.resource.data.senderName == resource.data.senderName
+        && request.resource.data.senderEmail == resource.data.senderEmail
+        && request.resource.data.senderRole == resource.data.senderRole
+        && request.resource.data.text == resource.data.text
+        && request.resource.data.body == resource.data.body
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.sentAt == resource.data.sentAt
+        && request.resource.data.updatedAt is string
+        && request.resource.data.readByUserIds is list
+        && request.resource.data.readByUserIds.hasAll(resource.data.readByUserIds)
+        && request.resource.data.readByUserIds.hasAll([request.auth.uid])
+        && request.resource.data.readByUserIds.size() <= resource.data.readByUserIds.size() + 1
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'readByUserIds',
+          'updatedAt'
+        ]);
+    }
+
     match /users/{userId} {
       allow read: if canReadOwnerScopedData(userId);
       allow create: if ownerCanCreateOwnUserDoc(userId);
@@ -638,6 +822,20 @@ service cloud.firestore {
         || senderCanCreateInboxMessage(userId, messageId);
       allow update: if ownerCanToggleMessageReadState(userId);
       allow delete: if false;
+    }
+
+    match /conversations/{conversationId} {
+      allow read: if requesterCanReadConversationData(resource.data);
+      allow create: if requesterCanCreateConversation(conversationId);
+      allow update: if requesterCanUpdateConversation(conversationId);
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if requesterCanReadConversation(conversationId);
+        allow create: if requesterCanCreateConversationMessage(conversationId, messageId);
+        allow update: if requesterCanUpdateConversationMessage(conversationId, messageId);
+        allow delete: if false;
+      }
     }
 
     match /users/{userId}/classes/{classId} {

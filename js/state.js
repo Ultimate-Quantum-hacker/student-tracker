@@ -31,6 +31,7 @@ window.TrackerApp = window.TrackerApp || {};
     isRoleResolved: false,
     unreadMessageCount: 0,
     messages: [],
+    messageThread: [],
     selectedMessageId: '',
     messageMailboxFilter: 'all',
     messageSearchTerm: '',
