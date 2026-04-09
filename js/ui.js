@@ -1807,7 +1807,8 @@ const ui = {
             const counterpartRole = String(message?.mailbox || '').trim().toLowerCase() === 'sent'
               ? (this.getMessageRoleValue(message?.senderRole || '') || 'teacher')
               : (this.getMessageCounterpartRole(message) || 'teacher');
-            const preview = String(message?.bodyPreview || message?.body || '').trim() || 'No preview available';
+            const subject = String(message?.subject || '(No subject)').replace(/\s+/g, ' ').trim() || '(No subject)';
+            const subjectPreview = subject.length > 72 ? `${subject.slice(0, 71).trimEnd()}…` : subject;
             const statusChipMarkup = isUnread ? '<span class="message-list-item-flag">Unread</span>' : '';
             return `
               <button type="button" class="message-list-item${isActive ? ' is-active' : ''}${isUnread ? ' is-unread' : ''}${isNew ? ' is-new' : ''}" data-message-id="${app.utils.esc(messageId)}">
@@ -1819,10 +1820,9 @@ const ui = {
                       <span class="message-list-item-time">${app.utils.esc(this.formatAccountTimestamp(message?.sentAt || message?.updatedAt, 'Recently'))}</span>
                     </div>
                     <div class="message-list-item-subject-row">
-                      <span class="message-list-item-subject">${app.utils.esc(String(message?.subject || '(No subject)').trim() || '(No subject)')}</span>
+                      <span class="message-list-item-subject">${app.utils.esc(subjectPreview)}</span>
                       ${statusChipMarkup}
                     </div>
-                    <div class="message-list-item-preview">${app.utils.esc(preview)}</div>
                   </div>
                 </div>
               </button>`;
