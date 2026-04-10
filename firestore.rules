@@ -630,9 +630,9 @@ service cloud.firestore {
 
     function requesterCanStartConversationWithRole(targetRole) {
       return (requesterRole() == 'teacher' && targetRole == 'admin')
-        || (requesterRole() == 'head teacher' && (targetRole == 'teacher' || targetRole == 'admin'))
-        || (requesterRole() == 'admin' && (targetRole == 'teacher' || targetRole == 'head teacher' || targetRole == 'admin'))
-        || (requesterRole() == 'developer' && (targetRole == 'teacher' || targetRole == 'head teacher' || targetRole == 'admin' || targetRole == 'developer'));
+        || (requesterRole() == 'head_teacher' && (targetRole == 'teacher' || targetRole == 'admin'))
+        || (requesterRole() == 'admin' && (targetRole == 'teacher' || targetRole == 'head_teacher' || targetRole == 'admin'))
+        || (requesterRole() == 'developer' && (targetRole == 'teacher' || targetRole == 'head_teacher' || targetRole == 'admin' || targetRole == 'developer'));
     }
 
     function conversationHasParticipant(conversationData, userId) {
@@ -833,11 +833,7 @@ service cloud.firestore {
     match /conversations/{conversationId} {
       allow get: if requesterCanReadConversationData(resource.data);
       allow list: if (request.query.limit == null || request.query.limit <= 200)
-        && isSignedIn()
-        && (
-          isDeveloperRole()
-          || conversationHasParticipant(resource.data, request.auth.uid)
-        );
+        && requesterCanReadConversationData(resource.data);
       allow create: if requesterCanCreateConversation(conversationId);
       allow update: if requesterCanUpdateConversation(conversationId);
       allow delete: if false;

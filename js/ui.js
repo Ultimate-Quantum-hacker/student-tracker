@@ -7,7 +7,6 @@ import app from './state.js';
 import { auth } from './firebase.js';
 import {
   fetchConversationDirectory,
-  fetchCurrentUserConversations,
   finalizeCurrentUserAccountDeletion,
   markConversationAsRead,
   requestCurrentUserAccountDeletion,
@@ -1563,7 +1562,7 @@ const ui = {
       const nextMessages = Array.isArray(payload?.conversations)
         ? payload.conversations
         : (Array.isArray(payload?.messages) ? payload.messages : []);
-      this.messageRealtimeLimited = Boolean(payload?.limitedByPermissions);
+      this.messageRealtimeLimited = false;
       const previousMessageIds = new Set(previousMessages.map((message) => {
         return String(message?.id || '').trim();
       }).filter(Boolean));
@@ -1595,7 +1594,12 @@ const ui = {
       app.state.selectedMessageId = hasSelection ? currentSelection : String(nextMessages[0]?.id || '').trim();
     },
 
-    ensureMessageListSubscription: async function () {
+    ensureMessageListSubscription: async function ({
+      preserveSelection = true,
+      restart = false,
+      resolveInitial = null,
+      rejectInitial = null
+    } = {}) {
       const authUid = String(app.state.authUser?.uid || '').trim();
       const capabilities = this.getMessagingCapabilities();
       const hasAccess = capabilities.canReceive || capabilities.canSend || capabilities.canReply;
@@ -1603,28 +1607,53 @@ const ui = {
         this.stopMessageListSubscription();
         return null;
       }
-      if (this.messageRealtimeLimited) {
+      if (restart) {
         this.stopMessageListSubscription();
-        return null;
+        this.messageDataLoaded = false;
       }
       if (this.messageListSubscription) {
+        if (typeof resolveInitial === 'function' && this.messageDataLoaded) {
+          resolveInitial({
+            conversations: this.getMessages(),
+            unreadCount: app.state.unreadMessageCount,
+            lastMessageAt: app.state.messageLastMessageAt || null
+          });
+        }
         return this.messageListSubscription;
       }
+      let initialSettled = false;
+      const settleInitialSuccess = (payload) => {
+        if (initialSettled || typeof resolveInitial !== 'function') {
+          return;
+        }
+        initialSettled = true;
+        resolveInitial(payload);
+      };
+      const settleInitialError = (error) => {
+        if (initialSettled || typeof rejectInitial !== 'function') {
+          return;
+        }
+        initialSettled = true;
+        rejectInitial(error);
+      };
       try {
         const unsubscribe = await subscribeCurrentUserConversations({
           onChange: (payload) => {
             this.messageDataLoaded = true;
-            this.applyMessagesPayload(payload, { preserveSelection: true });
+            this.applyMessagesPayload(payload, { preserveSelection });
             this.renderMessagesSection();
             void this.syncSelectedConversationThread();
+            settleInitialSuccess(payload);
           },
           onError: (error) => {
             console.error('Conversation subscription failed:', error);
+            settleInitialError(error);
           }
         });
         this.messageListSubscription = typeof unsubscribe === 'function' ? unsubscribe : null;
       } catch (error) {
         console.error('Failed to start conversation subscription:', error);
+        settleInitialError(error);
       }
       return this.messageListSubscription;
     },
@@ -1712,22 +1741,21 @@ const ui = {
         return this.messagesRequest;
       }
       if (!force && this.messageDataLoaded) {
+        void this.ensureMessageListSubscription();
         return this.getMessages();
       }
       this.isLoadingMessages = true;
       this.renderMessagesSection();
-      this.messagesRequest = fetchCurrentUserConversations()
+      this.messagesRequest = new Promise((resolve, reject) => {
+        void this.ensureMessageListSubscription({
+          preserveSelection: !force,
+          restart: force,
+          resolveInitial: resolve,
+          rejectInitial: reject
+        });
+      })
         .then((payload) => {
-          this.messageDataLoaded = true;
-          this.applyMessagesPayload(payload, { preserveSelection: !force });
-          if (payload?.limitedByPermissions && !this.hasShownMessagePermissionFallbackToast) {
-            this.hasShownMessagePermissionFallbackToast = true;
-            this.showToast('Live chat history is limited by Firestore permissions. Showing accessible messages only.', {
-              tone: 'info'
-            });
-          }
           void this.syncSelectedConversationThread();
-          void this.ensureMessageListSubscription();
           return payload;
         })
         .catch((error) => {

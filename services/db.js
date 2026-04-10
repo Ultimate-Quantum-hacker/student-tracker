@@ -3710,24 +3710,12 @@ export const fetchCurrentUserConversations = async () => {
 
   const actorRole = getCurrentUserRoleContext();
   const actorPermissions = getCurrentUserPermissionsContext();
-  let conversationRecords = [];
-  let limitedByPermissions = false;
-  try {
-    conversationRecords = await readConversationListRecords(actorUserId, actorRole, actorPermissions);
-  } catch (error) {
-    if (!isPermissionDeniedError(error)) {
-      throw error;
-    }
-    limitedByPermissions = true;
-  }
-  const legacyPayload = await fetchCurrentUserMessages();
-  const conversations = buildMergedConversationList(conversationRecords, legacyPayload.messages, actorUserId);
+  const conversations = await readConversationListRecords(actorUserId, actorRole, actorPermissions);
   const metadata = await syncCurrentUserConversationMetadata(actorUserId, conversations);
   return {
     conversations,
     unreadCount: metadata.unreadCount,
-    lastMessageAt: metadata.lastMessageAt,
-    limitedByPermissions
+    lastMessageAt: metadata.lastMessageAt
   };
 };
 
@@ -3770,15 +3758,9 @@ export const fetchConversationMessages = async (conversationId = '') => {
     conversationMessages.push(record);
   });
 
-  const legacyPayload = conversationRecord.directKey
-    ? await fetchCurrentUserMessages()
-    : { messages: [] };
   return {
     conversation: conversationRecord,
-    messages: mergeConversationMessageLists(
-      conversationMessages,
-      buildLegacyDirectConversationMessages(legacyPayload.messages, conversationRecord.directKey, actorUserId, normalizedConversationId)
-    ),
+    messages: conversationMessages.sort(sortConversationMessagesByOldest),
     unreadCount: Math.max(0, Math.floor(Number(conversationRecord?.unreadCount || 0)))
   };
 };
@@ -3849,8 +3831,7 @@ export const subscribeCurrentUserConversations = async ({ onChange, onError } = 
         }
         conversationRecords.push(record);
       });
-      const legacyPayload = await fetchCurrentUserMessages();
-      const conversations = buildMergedConversationList(conversationRecords, legacyPayload.messages, actorUserId);
+      const conversations = conversationRecords.sort(sortConversationRecordsByNewest);
       const metadata = await syncCurrentUserConversationMetadata(actorUserId, conversations);
       if (!disposed && typeof onChange === 'function') {
         onChange({
@@ -3923,17 +3904,10 @@ export const subscribeConversationMessages = async (conversationId = '', { onCha
       return;
     }
     try {
-      const legacyPayload = currentConversation?.directKey
-        ? await fetchCurrentUserMessages()
-        : { messages: [] };
-      const messages = mergeConversationMessageLists(
-        currentMessages,
-        buildLegacyDirectConversationMessages(legacyPayload.messages, currentConversation?.directKey || '', actorUserId, normalizedConversationId)
-      );
       if (!disposed && typeof onChange === 'function') {
         onChange({
           conversation: currentConversation,
-          messages,
+          messages: currentMessages,
           unreadCount: Math.max(0, Math.floor(Number(currentConversation?.unreadCount || 0)))
         });
       }
@@ -4130,23 +4104,6 @@ export const sendConversationMessage = async (payload = {}) => {
       throw error;
     }
 
-    if (normalizedConversationId.startsWith('legacy:')) {
-      try {
-        return await sendLegacyConversationReplyFallback(normalizedConversationId, normalizedBody);
-      } catch (fallbackError) {
-        if (
-          !isPermissionDeniedError(fallbackError)
-          && String(fallbackError?.code || '').trim() !== ERROR_CODES.CONVERSATION_SEND_PERMISSION_DENIED
-        ) {
-          throw fallbackError;
-        }
-        throw buildConversationSendPermissionError(
-          'Unable to send this reply because live chat access is blocked and the legacy mailbox fallback is unavailable.',
-          fallbackError
-        );
-      }
-    }
-
     throw buildConversationSendPermissionError(
       normalizedConversationId
         ? 'Unable to send this message because live chat access to this conversation is restricted.'
@@ -4234,23 +4191,6 @@ export const markConversationAsRead = async (conversationId = '') => {
       });
     } catch (error) {
       console.warn('Failed to update unread metadata after marking a conversation as read:', error);
-    }
-  }
-
-  if (conversationRecord.directKey) {
-    const legacyPayload = await fetchCurrentUserMessages();
-    const matchingLegacyMessages = asArray(legacyPayload.messages).filter((message) => {
-      const directCounterpart = getLegacyDirectCounterpartForMessage(message, normalizedActorUserId);
-      if (!directCounterpart?.uid) {
-        return false;
-      }
-      return buildDirectConversationKey([normalizedActorUserId, directCounterpart.uid]) === conversationRecord.directKey
-        && normalizeMessageMailbox(message?.mailbox) === MESSAGE_MAILBOX_INBOX
-        && !Boolean(message?.isRead);
-    });
-    if (matchingLegacyMessages.length) {
-      await Promise.all(matchingLegacyMessages.map(message => markMessageAsRead(message.id)));
-      return true;
     }
   }
 
