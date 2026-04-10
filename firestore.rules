@@ -642,10 +642,7 @@ service cloud.firestore {
 
     function requesterCanReadConversationData(conversationData) {
       return isSignedIn()
-        && (
-          isDeveloperRole()
-          || conversationHasParticipant(conversationData, request.auth.uid)
-        );
+        && conversationHasParticipant(conversationData, request.auth.uid);
     }
 
     function requesterCanReadConversation(conversationId) {

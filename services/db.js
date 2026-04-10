@@ -2876,6 +2876,15 @@ const getConversationsCollectionRef = () => collection(db, CONVERSATIONS_COLLECT
 const getConversationDocRef = (conversationId) => doc(db, CONVERSATIONS_COLLECTION, conversationId);
 const getConversationMessagesCollectionRef = (conversationId) => collection(db, CONVERSATIONS_COLLECTION, conversationId, CONVERSATION_MESSAGES_SUBCOLLECTION);
 const getConversationMessageDocRef = (conversationId, messageId) => doc(db, CONVERSATIONS_COLLECTION, conversationId, CONVERSATION_MESSAGES_SUBCOLLECTION, messageId);
+const getParticipantConversationsQuery = (userId) => query(
+  getConversationsCollectionRef(),
+  where('participants', 'array-contains', normalizeUserId(userId)),
+  limit(MAX_CONVERSATION_LIST_QUERY_LIMIT)
+);
+const getConversationMessagesQuery = (conversationId) => query(
+  getConversationMessagesCollectionRef(conversationId),
+  orderBy('createdAt', 'asc')
+);
 const getStudentsCollectionRef = (userId, classId = getCurrentClassContext()) => getClassStudentsCollectionRef(userId, normalizeClassId(classId));
 const getSubjectsCollectionRef = (userId, classId = getCurrentClassContext()) => getClassSubjectsCollectionRef(userId, normalizeClassId(classId));
 const getExamsCollectionRef = (userId, classId = getCurrentClassContext()) => getClassExamsCollectionRef(userId, normalizeClassId(classId));
@@ -3523,14 +3532,7 @@ const readConversationListRecords = async (actorUserId = '', actorRole = '', act
   }
 
   const normalizedActorUserId = normalizeUserId(actorUserId);
-  const source = canViewAllConversations(actorRole, actorPermissions)
-    ? query(getConversationsCollectionRef(), limit(MAX_CONVERSATION_LIST_QUERY_LIMIT))
-    : query(
-      getConversationsCollectionRef(),
-      where('participants', 'array-contains', normalizedActorUserId),
-      limit(MAX_CONVERSATION_LIST_QUERY_LIMIT)
-    );
-  const snapshot = await getDocs(source);
+  const snapshot = await getDocs(getParticipantConversationsQuery(normalizedActorUserId));
   const conversations = [];
   snapshot.forEach((entry) => {
     const record = normalizeConversationRecord(entry.id, entry.data() || {}, normalizedActorUserId);
@@ -3748,7 +3750,7 @@ export const fetchConversationMessages = async (conversationId = '') => {
   }
 
   const conversationRecord = normalizeConversationRecord(conversationSnapshot.id, conversationSnapshot.data() || {}, actorUserId);
-  const messagesSnapshot = await getDocs(getConversationMessagesCollectionRef(normalizedConversationId));
+  const messagesSnapshot = await getDocs(getConversationMessagesQuery(normalizedConversationId));
   const conversationMessages = [];
   messagesSnapshot.forEach((entry) => {
     const record = normalizeConversationMessageRecord(entry.id, entry.data() || {}, normalizedConversationId, actorUserId);
@@ -3806,15 +3808,7 @@ export const subscribeCurrentUserConversations = async ({ onChange, onError } = 
     return () => {};
   }
 
-  const actorRole = getCurrentUserRoleContext();
-  const actorPermissions = getCurrentUserPermissionsContext();
-  const source = canViewAllConversations(actorRole, actorPermissions)
-    ? query(getConversationsCollectionRef(), limit(MAX_CONVERSATION_LIST_QUERY_LIMIT))
-    : query(
-      getConversationsCollectionRef(),
-      where('participants', 'array-contains', normalizeUserId(actorUserId)),
-      limit(MAX_CONVERSATION_LIST_QUERY_LIMIT)
-    );
+  const source = getParticipantConversationsQuery(actorUserId);
   let disposed = false;
 
   const emitPayload = async (snapshot) => {
@@ -3933,7 +3927,7 @@ export const subscribeConversationMessages = async (conversationId = '', { onCha
     }
   });
 
-  const unsubscribeMessages = onSnapshot(getConversationMessagesCollectionRef(normalizedConversationId), (snapshot) => {
+  const unsubscribeMessages = onSnapshot(getConversationMessagesQuery(normalizedConversationId), (snapshot) => {
     const liveMessages = [];
     snapshot.forEach((entry) => {
       const record = normalizeConversationMessageRecord(entry.id, entry.data() || {}, normalizedConversationId, actorUserId);
