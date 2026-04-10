@@ -615,7 +615,7 @@ test.describe('Class refactor critical regressions', () => {
     expect(rulesSource).toContain('function conversationHasParticipant(conversationData, userId) {');
     expect(rulesSource).toContain('userId in conversationData.participants;');
     expect(rulesSource).toContain('|| conversationHasParticipant(conversationData, request.auth.uid)');
-    expect(rulesSource).toContain('allow list: if request.query.limit != null');
+    expect(rulesSource).toContain('allow list: if (request.query.limit == null || request.query.limit <= 200)');
     expect(rulesSource).toContain('request.query.limit <= 200');
   });
 
