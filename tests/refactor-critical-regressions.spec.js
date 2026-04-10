@@ -609,10 +609,14 @@ test.describe('Class refactor critical regressions', () => {
     const dbSource = readWorkspaceFile('services/db.js');
     const rulesSource = readWorkspaceFile('firestore.rules');
 
-    expect(dbSource).toContain("query(getConversationsCollectionRef(), where('participants', 'array-contains', normalizedActorUserId))");
+    expect(dbSource).toContain('const MAX_CONVERSATION_LIST_QUERY_LIMIT = 200;');
+    expect(dbSource).toContain("where('participants', 'array-contains', normalizedActorUserId)");
+    expect(dbSource).toContain('limit(MAX_CONVERSATION_LIST_QUERY_LIMIT)');
     expect(rulesSource).toContain('function conversationHasParticipant(conversationData, userId) {');
     expect(rulesSource).toContain('userId in conversationData.participants;');
     expect(rulesSource).toContain('|| conversationHasParticipant(conversationData, request.auth.uid)');
+    expect(rulesSource).toContain('allow list: if request.query.limit != null');
+    expect(rulesSource).toContain('request.query.limit <= 200');
   });
 
   test('teacher replies tolerate legacy sender ids and recipient metadata read failures', async ({ page }) => {

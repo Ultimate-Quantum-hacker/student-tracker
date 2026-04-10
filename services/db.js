@@ -80,9 +80,9 @@ const MESSAGES_SUBCOLLECTION = 'messages';
 const CONVERSATIONS_COLLECTION = 'conversations';
 const CONVERSATION_MESSAGES_SUBCOLLECTION = 'messages';
 const ACTIVITY_LOGS_COLLECTION = 'activityLogs';
+const MAX_CONVERSATION_LIST_QUERY_LIMIT = 200;
 const MESSAGE_MAILBOX_INBOX = 'inbox';
 const MESSAGE_MAILBOX_SENT = 'sent';
-const CONVERSATION_TYPE_DIRECT = 'direct';
 const MESSAGE_SUBJECT_MAX_LENGTH = 140;
 const MESSAGE_BODY_MAX_LENGTH = 5000;
 const MESSAGE_PREVIEW_MAX_LENGTH = 180;
@@ -3497,8 +3497,12 @@ const readConversationListRecords = async (actorUserId = '', actorRole = '', act
 
   const normalizedActorUserId = normalizeUserId(actorUserId);
   const source = canViewAllConversations(actorRole, actorPermissions)
-    ? getConversationsCollectionRef()
-    : query(getConversationsCollectionRef(), where('participants', 'array-contains', normalizedActorUserId));
+    ? query(getConversationsCollectionRef(), limit(MAX_CONVERSATION_LIST_QUERY_LIMIT))
+    : query(
+      getConversationsCollectionRef(),
+      where('participants', 'array-contains', normalizedActorUserId),
+      limit(MAX_CONVERSATION_LIST_QUERY_LIMIT)
+    );
   const snapshot = await getDocs(source);
   const conversations = [];
   snapshot.forEach((entry) => {
@@ -3760,8 +3764,12 @@ export const subscribeCurrentUserConversations = async ({ onChange, onError } = 
   const actorRole = getCurrentUserRoleContext();
   const actorPermissions = getCurrentUserPermissionsContext();
   const source = canViewAllConversations(actorRole, actorPermissions)
-    ? getConversationsCollectionRef()
-    : query(getConversationsCollectionRef(), where('participants', 'array-contains', normalizeUserId(actorUserId)));
+    ? query(getConversationsCollectionRef(), limit(MAX_CONVERSATION_LIST_QUERY_LIMIT))
+    : query(
+      getConversationsCollectionRef(),
+      where('participants', 'array-contains', normalizeUserId(actorUserId)),
+      limit(MAX_CONVERSATION_LIST_QUERY_LIMIT)
+    );
   let disposed = false;
 
   const emitPayload = async (snapshot) => {
