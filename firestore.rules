@@ -633,11 +633,16 @@ service cloud.firestore {
         || (requesterRole() == 'developer' && (targetRole == 'teacher' || targetRole == 'head teacher' || targetRole == 'admin' || targetRole == 'developer'));
     }
 
+    function conversationHasParticipant(conversationData, userId) {
+      return conversationData.participants is list
+        && userId in conversationData.participants;
+    }
+
     function requesterCanReadConversationData(conversationData) {
       return isSignedIn()
         && (
           isDeveloperRole()
-          || (conversationData.participants is list && conversationData.participants.hasAll([request.auth.uid]))
+          || conversationHasParticipant(conversationData, request.auth.uid)
         );
     }
 
@@ -668,7 +673,7 @@ service cloud.firestore {
         && request.resource.data.participants[0] is string
         && request.resource.data.participants[1] is string
         && request.resource.data.participants[0] != request.resource.data.participants[1]
-        && request.resource.data.participants.hasAll([request.auth.uid])
+        && conversationHasParticipant(request.resource.data, request.auth.uid)
         && request.resource.data.participantNames is map
         && request.resource.data.participantEmails is map
         && request.resource.data.participantRoles is map
@@ -724,8 +729,7 @@ service cloud.firestore {
     function requesterCanUpdateConversation(conversationId) {
       return isSignedIn()
         && requesterCanReadConversationData(resource.data)
-        && resource.data.participants is list
-        && resource.data.participants.hasAll([request.auth.uid])
+        && conversationHasParticipant(resource.data, request.auth.uid)
         && request.resource.data.id == conversationId
         && request.resource.data.type == resource.data.type
         && request.resource.data.directKey == resource.data.directKey

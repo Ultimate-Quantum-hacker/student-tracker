@@ -605,6 +605,16 @@ test.describe('Class refactor critical regressions', () => {
     expect(accessSource).toContain('return getDefaultPermissionsForRole(role);');
   });
 
+  test('conversation rules keep teacher participant reads aligned with array-contains queries', async () => {
+    const dbSource = readWorkspaceFile('services/db.js');
+    const rulesSource = readWorkspaceFile('firestore.rules');
+
+    expect(dbSource).toContain("query(getConversationsCollectionRef(), where('participants', 'array-contains', normalizedActorUserId))");
+    expect(rulesSource).toContain('function conversationHasParticipant(conversationData, userId) {');
+    expect(rulesSource).toContain('userId in conversationData.participants;');
+    expect(rulesSource).toContain('|| conversationHasParticipant(conversationData, request.auth.uid)');
+  });
+
   test('teacher replies tolerate legacy sender ids and recipient metadata read failures', async ({ page }) => {
     await page.addInitScript(() => {
       window.__FIREBASE_CONFIG__ = {
