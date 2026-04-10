@@ -74,6 +74,7 @@ import {
   canWriteClassData,
   getRoleHierarchyRank
 } from './access-control.js';
+import { formatAuthSubmissionError } from './submission-feedback.js';
 
 export {
   DEFAULT_USER_ROLE,
@@ -548,22 +549,7 @@ export const updateCurrentUserProfile = async ({ name }) => {
 };
 
 export const formatAuthError = (error) => {
-  const code = String(error?.code || '').toLowerCase();
-
-  if (code.includes('invalid-email')) return 'Please enter a valid email address.';
-  if (code.includes('missing-password')) return 'Please enter your password.';
-  if (code.includes('weak-password')) return 'Password must be at least 6 characters.';
-  if (code.includes('email-already-in-use')) return 'This email is already in use.';
-  if (code.includes('user-not-found')) return 'No account found for this email.';
-  if (code.includes('wrong-password') || code.includes('invalid-credential')) return 'Invalid email or password.';
-  if (code.includes('permission-denied')) return 'Access denied. You don\'t have permission.';
-  if (code.includes('network-request-failed')) return 'Network error. Please check your internet connection.';
-  if (code.includes('too-many-requests')) return 'Too many attempts. Please try again later.';
-  if (code.includes('requires-recent-login') || code.includes('credential-too-old-login-again')) {
-    return 'For security, sign in again and retry this action.';
-  }
-
-  return error?.message || 'Authentication failed. Please try again.';
+  return formatAuthSubmissionError(error, 'Authentication failed. Please try again.');
 };
 
 export const waitForInitialAuthState = async ({ timeoutMs = INITIAL_AUTH_STATE_TIMEOUT_MS } = {}) => {

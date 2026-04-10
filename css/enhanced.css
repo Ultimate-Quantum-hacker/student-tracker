@@ -2314,6 +2314,30 @@ body.dark-mode .dashboard-chart-y-axis{
   width:min(100%,560px);
 }
 
+.confirm-modal{
+  width:min(100%,520px);
+}
+
+.confirm-modal-message{
+  margin:.35rem 0 .65rem;
+  color:var(--text-primary);
+  line-height:1.55;
+}
+
+.confirm-modal-details{
+  margin:0 0 1rem 1.15rem;
+  padding:0;
+  display:grid;
+  gap:.45rem;
+  color:var(--text-secondary);
+  font-size:.88rem;
+  line-height:1.45;
+}
+
+.confirm-modal-details li{
+  margin:0;
+}
+
 .bulk-import-file-label{
   display:block;
   margin:.2rem 0 .45rem;

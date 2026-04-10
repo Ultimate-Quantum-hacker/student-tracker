@@ -31,6 +31,10 @@ import {
   assertValidStudentName
 } from '../js/student-name-utils.js';
 import {
+  MESSAGE_SUBJECT_MAX_LENGTH,
+  MESSAGE_BODY_MAX_LENGTH
+} from '../js/message-constraints.js';
+import {
   ACCOUNT_STATUS_ACTIVE,
   ACCOUNT_STATUS_DELETED,
   ACCOUNT_DELETION_STATUS_NONE,
@@ -83,8 +87,6 @@ const ACTIVITY_LOGS_COLLECTION = 'activityLogs';
 const MAX_CONVERSATION_LIST_QUERY_LIMIT = 200;
 const MESSAGE_MAILBOX_INBOX = 'inbox';
 const MESSAGE_MAILBOX_SENT = 'sent';
-const MESSAGE_SUBJECT_MAX_LENGTH = 140;
-const MESSAGE_BODY_MAX_LENGTH = 5000;
 const MESSAGE_PREVIEW_MAX_LENGTH = 180;
 const DEFAULT_CLASS_NAME = 'My Class';
 const TRASH_RETENTION_DAYS = 3;
@@ -5748,6 +5750,122 @@ const persistStudentCreate = async (studentData, nextData) => {
   };
 };
 
+const persistBulkStudentCreate = async (studentEntries = [], nextData) => {
+  const normalizedEntries = asArray(studentEntries).map((entry) => {
+    const normalizedStudentId = String(entry?.id || '').trim();
+    if (!normalizedStudentId) {
+      return null;
+    }
+
+    const nextStudent = {
+      id: normalizedStudentId,
+      name: normalizeStudentName(entry?.name || ''),
+      notes: entry?.notes || '',
+      class: entry?.class || '',
+      scores: normalizeStudentScoresForRawData(nextData, entry?.scores || {})
+    };
+
+    nextStudent.name = assertValidStudentName(nextStudent.name);
+    return nextStudent;
+  }).filter(Boolean);
+
+  if (!normalizedEntries.length) {
+    return {
+      data: nextData,
+      remoteSaved: true,
+      error: null,
+      errorType: null,
+      operation: 'save bulk students',
+      offline: false
+    };
+  }
+
+  let lastError = null;
+  let lastErrorType = null;
+
+  for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      const classScope = await ensureValidClassContext('save bulk students', { requireWritable: true });
+      const userId = classScope.ownerId;
+      const classId = classScope.classId;
+      const updatedAt = new Date().toISOString();
+
+      await ensureUserRootProfileDocument(userId);
+
+      const batch = writeBatch(db);
+      normalizedEntries.forEach((student) => {
+        const studentOrder = Math.max(
+          0,
+          asArray(nextData?.students).findIndex((entry) => String(entry?.id || '').trim() === student.id)
+        );
+
+        batch.set(getStudentDocRef(userId, student.id, classId), {
+          id: student.id,
+          name: student.name,
+          notes: student.notes || '',
+          class: student.class || '',
+          scores: student.scores && typeof student.scores === 'object' ? clone(student.scores) : {},
+          deleted: false,
+          deletedAt: null,
+          order: studentOrder,
+          userId,
+          ownerId: userId,
+          classId,
+          updatedAt
+        }, { merge: false });
+      });
+
+      batch.set(
+        getClassDocRef(userId, classId),
+        buildClassDocMetadataPatch(userId, classId, updatedAt),
+        { merge: true }
+      );
+      batch.set(getUserRootRef(userId), {
+        userId,
+        activeClassId: classId,
+        updatedAt
+      }, { merge: true });
+
+      await batch.commit();
+
+      return {
+        data: nextData,
+        remoteSaved: true,
+        error: null,
+        errorType: null,
+        operation: 'save bulk students',
+        classId,
+        offline: false
+      };
+    } catch (error) {
+      lastError = error;
+      lastErrorType = classifyFirebaseError(error);
+      console.error('Failed to save bulk students via Firebase:', error);
+
+      if (attempt < RETRY_ATTEMPTS && shouldRetry(lastErrorType) && !isNavigatorOffline()) {
+        console.warn(`Retrying save bulk students (${attempt + 1}/${RETRY_ATTEMPTS}) after ${lastErrorType} error`);
+        await wait(RETRY_DELAY_MS * attempt);
+        continue;
+      }
+
+      break;
+    }
+  }
+
+  if (!isOfflineError(lastErrorType)) {
+    logOnlineFailure('save bulk students', lastErrorType);
+  }
+
+  return {
+    data: nextData,
+    remoteSaved: false,
+    error: lastError,
+    errorType: lastErrorType,
+    operation: 'save bulk students',
+    offline: isOfflineError(lastErrorType)
+  };
+};
+
 const normalizeStudentPatch = (studentData, rawData = null) => {
   const source = studentData && typeof studentData === 'object' ? studentData : {};
   const patch = {};
@@ -7025,6 +7143,32 @@ export const saveStudent = async (rawData, studentData) => enqueueWrite(async ()
   }
   next.students.push(nextStudent);
   return persistStudentCreate(nextStudent, next);
+});
+
+export const saveBulkStudents = async (rawData, studentEntries = []) => enqueueWrite(async () => {
+  const next = normalizeRawData(rawData);
+  const normalizedEntries = asArray(studentEntries).map((entry) => {
+    const nextStudent = entry && typeof entry === 'object' ? clone(entry) : {};
+    nextStudent.name = assertValidStudentName(nextStudent.name);
+    if (Object.prototype.hasOwnProperty.call(nextStudent, 'scores')) {
+      nextStudent.scores = normalizeStudentScoresForRawData(next, nextStudent.scores || {});
+    }
+    return nextStudent;
+  });
+
+  if (!normalizedEntries.length) {
+    return {
+      data: next,
+      remoteSaved: true,
+      error: null,
+      errorType: null,
+      operation: 'save bulk students',
+      offline: false
+    };
+  }
+
+  next.students = next.students.concat(normalizedEntries);
+  return persistBulkStudentCreate(normalizedEntries, next);
 });
 
 export const updateStudent = async (rawData, studentId, studentData) => enqueueWrite(async () => {

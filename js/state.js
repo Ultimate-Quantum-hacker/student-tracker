@@ -318,11 +318,24 @@ window.TrackerApp = window.TrackerApp || {};
     return error;
   };
 
+  const logSubmissionGuardBlock = (reason = 'blocked', operationLabel = 'modify data') => {
+    console.warn('[submission-guard]', {
+      reason: String(reason || 'blocked').trim() || 'blocked',
+      operation: String(operationLabel || 'modify data').trim() || 'modify data',
+      role: typeof app.getCurrentUserRole === 'function' ? app.getCurrentUserRole() : '',
+      classId: String(app.state.currentClassId || '').trim(),
+      className: String(app.state.currentClassName || '').trim(),
+      ownerId: String(app.getCurrentClassOwnerId?.() || '').trim(),
+      ownerName: String(app.getCurrentClassOwnerName?.() || '').trim()
+    });
+  };
+
   const ensureWritableDataContext = (operationLabel = 'modify data') => {
     const canWrite = typeof app.canCurrentRoleWrite === 'function'
       ? app.canCurrentRoleWrite()
       : !(typeof app.isReadOnlyRoleContext === 'function' && app.isReadOnlyRoleContext());
     if (!canWrite) {
+      logSubmissionGuardBlock('read-only-role', operationLabel);
       throw createReadOnlyContextError(operationLabel);
     }
   };
@@ -338,9 +351,11 @@ window.TrackerApp = window.TrackerApp || {};
     const ownerName = String(app.getCurrentClassOwnerName() || '').trim() || 'Teacher';
 
     if (!classId) {
+      logSubmissionGuardBlock('missing-class-context', operationLabel);
       throw createMissingClassContextError(operationLabel);
     }
     if (!ownerId) {
+      logSubmissionGuardBlock('missing-owner-context', operationLabel);
       throw createMissingOwnerContextError(operationLabel);
     }
 
@@ -1075,6 +1090,58 @@ window.TrackerApp = window.TrackerApp || {};
         return newStudent;
       } catch (error) {
         console.error('Failed to add student:', error);
+        throw error;
+      }
+    });
+  };
+
+  app.addBulkStudents = async function (studentEntries = [], options = {}) {
+    return enqueueStateWrite(async () => {
+      try {
+        const shouldLogActivity = options?.skipActivityLog !== true;
+        const classContext = ensureResolvedClassContext('bulk import students');
+        const nextStudents = deepClone(app.state.students || []);
+        const nextSubjects = deepClone(app.state.subjects || []);
+        const nextExams = deepClone(app.state.exams || []);
+        const createdStudents = (Array.isArray(studentEntries) ? studentEntries : []).map((studentData) => {
+          const normalizedStudentData = normalizeStudentUpdate(studentData);
+          return {
+            id: app.utils.uuid(),
+            name: normalizeStudentName(normalizedStudentData.name),
+            class: normalizedStudentData.class || '',
+            notes: normalizedStudentData.notes || '',
+            scores: normalizedStudentData.scores && typeof normalizedStudentData.scores === 'object' ? normalizedStudentData.scores : {},
+            classId: classContext.classId,
+            ownerId: classContext.ownerId,
+            userId: classContext.ownerId
+          };
+        });
+
+        if (!createdStudents.length) {
+          return [];
+        }
+
+        nextStudents.push(...createdStudents);
+
+        const saveResult = await dataService.saveBulkStudents(app.getRawData(), createdStudents);
+        syncRuntimeAndCache(nextStudents, nextSubjects, nextExams, saveResult, 'save bulk students');
+        app.state.dashboardStudentCount = nextStudents.length;
+
+        if (shouldLogActivity) {
+          createdStudents.forEach((student) => {
+            void logTrackedActivity('student_added', student.id, 'student', {
+              classId: classContext.classId,
+              ownerId: classContext.ownerId,
+              className: classContext.className,
+              ownerName: classContext.ownerName,
+              targetLabel: student.name || 'Student'
+            });
+          });
+        }
+
+        return createdStudents;
+      } catch (error) {
+        console.error('Failed to save bulk students:', error);
         throw error;
       }
     });

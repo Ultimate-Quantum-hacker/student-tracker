@@ -9,9 +9,16 @@ import {
   isValidStudentName,
   STUDENT_NAME_VALIDATION_MESSAGE
 } from './student-name-utils.js';
+import {
+  buildSubmissionFeedback,
+  formatSubmissionError,
+  isReadOnlySubmissionError,
+  resolveReadOnlyBlockedReason
+} from './submission-feedback.js';
 
 const resolveApp = (runtimeApp) => runtimeApp || app;
 const resolveUi = (runtimeUi, runtimeApp) => runtimeUi || runtimeApp?.ui;
+const BULK_IMPORT_BATCH_SIZE = 25;
 const resolveSubjectScoreKey = (appRef, subjectIdentity) => {
   const normalizedIdentity = String(subjectIdentity || '').trim();
   if (!normalizedIdentity) {
@@ -34,46 +41,44 @@ const resolveSubjectScoreKey = (appRef, subjectIdentity) => {
   return String(subjectMatch?.id || normalizedIdentity).trim();
 };
 const isReadOnlyRoleContext = (appRef) => typeof appRef?.isReadOnlyRoleContext === 'function' && appRef.isReadOnlyRoleContext();
-const getReadOnlyMessage = (appRef) => {
-  const label = typeof appRef?.getCurrentClassOwnerName === 'function'
-    ? String(appRef.getCurrentClassOwnerName() || '').trim()
-    : '';
-  const target = label || 'selected class';
-  return `Viewing class as admin (Read-only mode): ${target}. This action is disabled.`;
-};
 const ensureWritable = (appRef, uiRef) => {
   if (!isReadOnlyRoleContext(appRef)) {
     return true;
   }
 
-  uiRef?.showToast?.(getReadOnlyMessage(appRef));
+  uiRef?.showToast?.(resolveReadOnlyBlockedReason({ app: appRef }));
   return false;
 };
-const isReadOnlyError = (error) => String(error?.code || '').trim().toLowerCase() === 'app/read-only-admin';
-const resolveClassContextErrorMessage = (error, fallback = 'Failed to add student') => {
-  const code = String(error?.code || '').trim().toLowerCase();
-  const message = String(error?.message || '').trim();
-  if (code === 'app/missing-class-context' || code === 'app/missing-class-id') {
-    return 'Select a class before adding a student.';
-  }
-  if (code === 'app/missing-class-owner-context' || code === 'app/missing-owner-id') {
-    return 'Class owner context is missing. Re-select the class and try again.';
-  }
-  if (code === 'app/class-not-found') {
-    return 'Selected class no longer exists. Refresh classes and try again.';
-  }
-  if (code === 'app/invalid-owner') {
-    return 'Selected class owner is invalid. Re-select the class and try again.';
-  }
-  if (message) {
-    return message;
-  }
-  return fallback;
-};
-
 const normalizeBulkImportInput = (value) => String(value || '').replace(/\r\n?/g, '\n');
 const toStudentNameKey = (value) => normalizeStudentName(value).toLocaleLowerCase();
 const pluralize = (count, singular, plural = `${singular}s`) => (count === 1 ? singular : plural);
+const toImportPayload = (studentData = {}) => ({
+  ...studentData,
+  scores: {}
+});
+const normalizeImportedBatchCount = (result, fallbackCount = 0) => {
+  if (Array.isArray(result)) {
+    return result.length;
+  }
+  const parsed = Number(result);
+  if (Number.isFinite(parsed) && parsed >= 0) {
+    return Math.floor(parsed);
+  }
+  return fallbackCount;
+};
+const chunkStudentEntries = (studentsData = [], chunkSize = BULK_IMPORT_BATCH_SIZE) => {
+  const normalizedEntries = Array.isArray(studentsData) ? studentsData : [];
+  const normalizedChunkSize = Number.isFinite(Number(chunkSize)) && Number(chunkSize) > 0
+    ? Math.max(1, Math.floor(Number(chunkSize)))
+    : BULK_IMPORT_BATCH_SIZE;
+  const chunks = [];
+
+  for (let index = 0; index < normalizedEntries.length; index += normalizedChunkSize) {
+    chunks.push(normalizedEntries.slice(index, index + normalizedChunkSize));
+  }
+
+  return chunks;
+};
 const splitBulkImportLine = (line) => {
   const rawLine = String(line || '');
   const delimiter = rawLine.includes('\t') ? '\t' : ',';
@@ -97,13 +102,14 @@ const isBulkImportHeaderRow = (parts = []) => {
 };
 const shouldStopBulkImport = (error) => {
   const code = String(error?.code || '').trim().toLowerCase();
-  return isReadOnlyError(error)
+  return isReadOnlySubmissionError(error)
     || code === 'app/missing-class-context'
     || code === 'app/missing-class-id'
     || code === 'app/missing-class-owner-context'
     || code === 'app/missing-owner-id'
     || code === 'app/class-not-found'
-    || code === 'app/invalid-owner';
+    || code === 'app/invalid-owner'
+    || code === 'invalid_class_context';
 };
 const parseBulkImportCsv = (csv, appRef) => {
   const lines = normalizeBulkImportInput(csv).split('\n');
@@ -194,6 +200,21 @@ const buildBulkImportConfirmationMessage = (summary) => {
 
   return messageLines.join('\n');
 };
+const buildBulkImportConfirmationDetails = (summary) => {
+  const details = [];
+
+  if (summary.duplicateRows.length) {
+    details.push(`${summary.duplicateRows.length} duplicate ${pluralize(summary.duplicateRows.length, 'row')} will be skipped`);
+  }
+  if (summary.invalidRows.length) {
+    details.push(`${summary.invalidRows.length} invalid ${pluralize(summary.invalidRows.length, 'row')} will be skipped`);
+  }
+  if (summary.existingNameMatches.length) {
+    details.push(`${summary.existingNameMatches.length} existing-name ${pluralize(summary.existingNameMatches.length, 'match', 'matches')} will still be added`);
+  }
+
+  return details;
+};
 const buildBulkImportEmptyMessage = (summary) => {
   if (summary.invalidRows.length && !summary.duplicateRows.length) {
     return STUDENT_NAME_VALIDATION_MESSAGE;
@@ -246,6 +267,12 @@ const buildBulkImportResultMessage = (preflightSummary, importResult) => {
 
   return `${parts.join('. ')}.`;
 };
+const buildSubmissionErrorMessage = (error, fallbackMessage, appRef) => {
+  return formatSubmissionError(error, {
+    app: appRef,
+    fallbackMessage
+  });
+};
 
 const students = {
   addStudent: async function (name, runtimeApp, runtimeUi) {
@@ -266,11 +293,17 @@ const students = {
     try {
       await appRef.addStudent({ name: n, class: '', notes: '', scores: {} });
       uiRef?.refreshUI?.();
-      uiRef?.showToast?.('Student added');
+      const feedback = buildSubmissionFeedback({ successMessage: 'Student added' });
+      uiRef?.showToast?.(feedback.message);
       return true;
     } catch (error) {
       console.error('Failed to add student:', error);
-      uiRef?.showToast?.(resolveClassContextErrorMessage(error, 'Failed to add student'));
+      const feedback = buildSubmissionFeedback({
+        error,
+        fallbackMessage: 'Failed to add student',
+        app: appRef
+      });
+      uiRef?.showToast?.(feedback.message);
       return false;
     }
   },
@@ -310,7 +343,12 @@ const students = {
       uiRef?.showUndoDeleteToast?.(deletedEntry?.id || uid, deletedEntry?.name || studentName);
     } catch (error) {
       console.error('Failed to delete student:', error);
-      uiRef?.showToast?.(isReadOnlyError(error) ? getReadOnlyMessage(appRef) : 'Failed to delete student');
+      const feedback = buildSubmissionFeedback({
+        error,
+        fallbackMessage: 'Failed to delete student',
+        app: appRef
+      });
+      uiRef?.showToast?.(feedback.message);
     }
   },
 
@@ -325,11 +363,17 @@ const students = {
     try {
       await appRef.restoreStudent(normalizedId);
       uiRef?.refreshUI?.();
-      uiRef?.showToast?.('Student restored');
+      const feedback = buildSubmissionFeedback({ successMessage: 'Student restored' });
+      uiRef?.showToast?.(feedback.message);
       return true;
     } catch (error) {
       console.error('Failed to restore student:', error);
-      uiRef?.showToast?.(isReadOnlyError(error) ? getReadOnlyMessage(appRef) : 'Failed to restore student');
+      const feedback = buildSubmissionFeedback({
+        error,
+        fallbackMessage: 'Failed to restore student',
+        app: appRef
+      });
+      uiRef?.showToast?.(feedback.message);
       return false;
     }
   },
@@ -345,11 +389,17 @@ const students = {
     try {
       await appRef.permanentlyDeleteStudent(normalizedId);
       uiRef?.refreshUI?.();
-      uiRef?.showToast?.('Student permanently deleted');
+      const feedback = buildSubmissionFeedback({ successMessage: 'Student permanently deleted' });
+      uiRef?.showToast?.(feedback.message);
       return true;
     } catch (error) {
       console.error('Failed to permanently delete student:', error);
-      uiRef?.showToast?.(isReadOnlyError(error) ? getReadOnlyMessage(appRef) : 'Failed to delete student');
+      const feedback = buildSubmissionFeedback({
+        error,
+        fallbackMessage: 'Failed to delete student',
+        app: appRef
+      });
+      uiRef?.showToast?.(feedback.message);
       return false;
     }
   },
@@ -397,10 +447,16 @@ const students = {
       appRef.state.editingId = null;
       appRef.dom.editModal?.classList.remove('active');
       uiRef?.refreshUI?.();
-      uiRef?.showToast?.('Student updated');
+      const feedback = buildSubmissionFeedback({ successMessage: 'Student updated' });
+      uiRef?.showToast?.(feedback.message);
     } catch (error) {
       console.error('Failed to update student:', error);
-      uiRef?.showToast?.(isReadOnlyError(error) ? getReadOnlyMessage(appRef) : 'Failed to update student');
+      const feedback = buildSubmissionFeedback({
+        error,
+        fallbackMessage: 'Failed to update student',
+        app: appRef
+      });
+      uiRef?.showToast?.(feedback.message);
     }
   },
 
@@ -429,7 +485,16 @@ const students = {
       return false;
     }
 
-    if (!window.confirm(buildBulkImportConfirmationMessage(importPlan))) {
+    const didConfirm = typeof ui?.requestConfirmation === 'function'
+      ? await ui.requestConfirmation({
+        title: 'Confirm Bulk Student Import',
+        message: `Import ${importPlan.newStudents.length} ${pluralize(importPlan.newStudents.length, 'student')} into the active class?`,
+        details: buildBulkImportConfirmationDetails(importPlan),
+        confirmLabel: 'Import Students'
+      })
+      : window.confirm(buildBulkImportConfirmationMessage(importPlan));
+
+    if (!didConfirm) {
       return false;
     }
 
@@ -465,22 +530,46 @@ const students = {
           console.error('Failed to create pre-import snapshot:', snapshotError);
         }
       }
-      for (const studentData of studentsData) {
-        try {
-          await app.addStudent({ ...studentData, scores: {} }, { skipActivityLog: true });
-          importResult.importedCount += 1;
-        } catch (error) {
-          console.error('Failed to import student:', error);
-          importResult.failedRows.push({
-            name: String(studentData?.name || '').trim(),
-            message: isReadOnlyError(error)
-              ? getReadOnlyMessage(app)
-              : resolveClassContextErrorMessage(error, String(error?.message || 'Failed to import student'))
-          });
+      const importChunks = chunkStudentEntries(studentsData);
 
-          if (shouldStopBulkImport(error)) {
-            importResult.stoppedEarly = true;
-            break;
+      outerLoop:
+      for (const chunk of importChunks) {
+        const preparedChunk = chunk.map((studentData) => toImportPayload(studentData));
+        const canBatchImport = typeof app?.addBulkStudents === 'function';
+
+        if (canBatchImport) {
+          try {
+            const batchResult = await app.addBulkStudents(preparedChunk, { skipActivityLog: true });
+            importResult.importedCount += normalizeImportedBatchCount(batchResult, preparedChunk.length);
+            continue;
+          } catch (batchError) {
+            console.error('Failed to import student batch:', batchError);
+            if (shouldStopBulkImport(batchError)) {
+              importResult.failedRows.push({
+                name: String(chunk[0]?.name || '').trim(),
+                message: buildSubmissionErrorMessage(batchError, 'Failed to import student', app)
+              });
+              importResult.stoppedEarly = true;
+              break;
+            }
+          }
+        }
+
+        for (const studentData of chunk) {
+          try {
+            await app.addStudent(toImportPayload(studentData), { skipActivityLog: true });
+            importResult.importedCount += 1;
+          } catch (error) {
+            console.error('Failed to import student:', error);
+            importResult.failedRows.push({
+              name: String(studentData?.name || '').trim(),
+              message: buildSubmissionErrorMessage(error, 'Failed to import student', app)
+            });
+
+            if (shouldStopBulkImport(error)) {
+              importResult.stoppedEarly = true;
+              break outerLoop;
+            }
           }
         }
       }
@@ -493,7 +582,12 @@ const students = {
       return importResult;
     } catch (error) {
       console.error('Failed to import students:', error);
-      ui.showToast(isReadOnlyError(error) ? getReadOnlyMessage(app) : resolveClassContextErrorMessage(error, String(error?.message || 'Failed to import students')));
+      const feedback = buildSubmissionFeedback({
+        error,
+        fallbackMessage: 'Failed to import students',
+        app
+      });
+      ui.showToast(feedback.message);
       return false;
     }
   },
@@ -525,10 +619,16 @@ const students = {
 
       await app.updateStudent(student.id, { scores: nextScores });
       ui.refreshUI();
-      ui.showToast('Scores saved');
+      const feedback = buildSubmissionFeedback({ successMessage: 'Scores saved' });
+      ui.showToast(feedback.message);
     } catch (error) {
       console.error('Failed to save scores:', error);
-      ui.showToast(isReadOnlyError(error) ? getReadOnlyMessage(app) : 'Failed to save scores');
+      const feedback = buildSubmissionFeedback({
+        error,
+        fallbackMessage: 'Failed to save scores',
+        app
+      });
+      ui.showToast(feedback.message);
     }
   },
 
@@ -591,10 +691,16 @@ const students = {
 
       await app.saveBulkStudentScores(Array.from(changedStudents.values()));
       ui.refreshUI();
-      ui.showToast("Class scores saved");
+      const feedback = buildSubmissionFeedback({ successMessage: 'Class scores saved' });
+      ui.showToast(feedback.message);
     } catch (error) {
       console.error('Failed to save bulk scores:', error);
-      ui.showToast(isReadOnlyError(error) ? getReadOnlyMessage(app) : 'Failed to save some scores');
+      const feedback = buildSubmissionFeedback({
+        error,
+        fallbackMessage: 'Failed to save some scores',
+        app
+      });
+      ui.showToast(feedback.message);
     }
   }
 };

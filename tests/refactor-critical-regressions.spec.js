@@ -542,6 +542,88 @@ test.describe('Class refactor critical regressions', () => {
     });
   });
 
+  test('write-blocked controls explain missing class and read-only reasons', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const [stateModule, uiModule] = await Promise.all([
+        import('/js/state.js'),
+        import('/js/ui.js')
+      ]);
+
+      const app = stateModule.default || window.TrackerApp;
+      const ui = uiModule.default || app.ui;
+
+      document.body.innerHTML = `
+        <div id="toast"></div>
+        <div class="global-class-switcher"><div class="class-switcher-main">
+          <button id="class-prev-btn" type="button"></button>
+          <div id="class-dropdown" class="class-dropdown">
+            <button id="class-dropdown-toggle" type="button"><span id="class-dropdown-value"></span></button>
+            <div id="class-dropdown-menu" class="class-dropdown-menu"></div>
+          </div>
+          <button id="class-next-btn" type="button"></button>
+          <button id="create-class-btn" type="button">Create Class</button>
+          <button id="delete-class-btn" type="button">Delete Class</button>
+        </div><p id="class-name-display"></p></div>
+        <div id="admin-readonly-banner" hidden><span id="admin-readonly-label"></span></div>
+        <div id="empty-msg"></div>
+        <form id="add-student-form"><input id="student-name-input" /><button id="add-student-submit" type="submit">Add</button></form>
+        <form id="addMockForm"><input id="mockNameInput" /><button id="add-mock-submit" type="submit">Add Exam</button></form>
+        <form id="addSubjectForm"><input id="subjectNameInput" /><button id="add-subject-submit" type="submit">Add Subject</button></form>
+        <button id="bulk-import-btn" type="button">Bulk Import</button>
+        <div id="bulk-import-modal" class="modal-overlay"><div class="modal"><textarea id="bulk-import-textarea"></textarea><p id="bulk-import-summary"></p><button id="bulk-import-confirm-btn" type="button">Import</button><button id="bulk-import-cancel-btn" type="button">Cancel</button></div></div>
+        <button id="save-scores-btn" type="button">Save Scores</button>
+        <button id="bulk-score-btn" type="button">Bulk Score</button>
+        <button id="bulk-score-save-btn" type="button">Save Bulk Scores</button>
+        <div id="dynamicSubjectFields"><input type="number" value="17"></div>
+        <div id="bulkScoreBody"><button class="bulk-row-reset-btn" type="button">Reset</button><input class="bulk-score-input" type="number" value="15"></div>
+      `;
+
+      ui.initDOM();
+
+      app.setCurrentUserRole('teacher', { resolved: true });
+      app.state.classes = [];
+      app.state.currentClassId = '';
+      app.state.currentClassOwnerId = '';
+      app.state.isLoading = false;
+      app.syncDataContext();
+      ui.renderClassControls();
+
+      const missingClassState = {
+        bulkImportDisabled: Boolean(document.getElementById('bulk-import-btn')?.disabled),
+        bulkImportTitle: document.getElementById('bulk-import-btn')?.getAttribute('title') || '',
+        addStudentTitle: document.getElementById('add-student-submit')?.getAttribute('title') || '',
+        bulkScoreTitle: document.getElementById('bulk-score-save-btn')?.getAttribute('title') || ''
+      };
+
+      app.setCurrentUserRole('admin', { resolved: true });
+      app.state.classes = [
+        { id: 'class_admin_view', name: 'Admin View Class', ownerId: 'owner_admin', ownerName: 'Owner Example' }
+      ];
+      app.state.currentClassId = 'class_admin_view';
+      app.state.currentClassOwnerId = 'owner_admin';
+      app.state.currentClassName = 'Admin View Class';
+      app.syncDataContext();
+      ui.renderClassControls();
+      ui.applyReadOnlyRoleState();
+
+      return {
+        missingClassState,
+        readOnlyBulkImportDisabled: Boolean(document.getElementById('bulk-import-btn')?.disabled),
+        readOnlyBulkImportTitle: document.getElementById('bulk-import-btn')?.getAttribute('title') || '',
+        readOnlyBanner: document.getElementById('admin-readonly-label')?.textContent || ''
+      };
+    });
+
+    expect(result.missingClassState.bulkImportDisabled).toBe(true);
+    expect(result.missingClassState.bulkImportTitle).toBe('Select or create a class to enable this action.');
+    expect(result.missingClassState.addStudentTitle).toBe('Select or create a class to enable this action.');
+    expect(result.missingClassState.bulkScoreTitle).toBe('Select or create a class to enable this action.');
+    expect(result.readOnlyBulkImportDisabled).toBe(true);
+    expect(result.readOnlyBulkImportTitle).toContain('Admin cannot modify data in read-only mode');
+    expect(result.readOnlyBulkImportTitle).toContain('Admin View Class');
+    expect(result.readOnlyBanner).toContain('Admin cannot modify data in read-only mode');
+  });
+
   test('hardcoded developer email policy coexists with inferred non-developer privileged roles', async ({ page }) => {
     const result = await page.evaluate(async () => {
       const [authModule, accessModule] = await Promise.all([
@@ -1486,6 +1568,141 @@ test.describe('Class refactor critical regressions', () => {
     expect(result.invalidOnlyDisabled).toBe(true);
   });
 
+  test('bulk import confirmation modal requires explicit confirmation before importing', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const [stateModule, uiModule, studentsModule] = await Promise.all([
+        import('/js/state.js'),
+        import('/js/ui.js'),
+        import('/js/students.js')
+      ]);
+
+      const app = stateModule.default || window.TrackerApp;
+      const ui = uiModule.default || app.ui;
+      const students = studentsModule.default || app.students;
+      const importedBatches = [];
+
+      document.body.innerHTML = `
+        <div id="toast"></div>
+        <div class="global-class-switcher"><div class="class-switcher-main">
+          <button id="class-prev-btn" type="button"></button>
+          <div id="class-dropdown" class="class-dropdown">
+            <button id="class-dropdown-toggle" type="button"><span id="class-dropdown-value"></span></button>
+            <div id="class-dropdown-menu" class="class-dropdown-menu"></div>
+          </div>
+          <button id="class-next-btn" type="button"></button>
+          <button id="create-class-btn" type="button"></button>
+          <button id="delete-class-btn" type="button"></button>
+        </div><p id="class-name-display"></p></div>
+        <div id="admin-readonly-banner" hidden><span id="admin-readonly-label"></span></div>
+        <div id="empty-msg"></div>
+        <form id="add-student-form"><input id="student-name-input" /><button type="submit">Add</button></form>
+        <form id="addMockForm"><input id="mockNameInput" /><button type="submit">Add Exam</button></form>
+        <form id="addSubjectForm"><input id="subjectNameInput" /><button type="submit">Add Subject</button></form>
+        <button id="bulk-import-btn" type="button">Bulk Add</button>
+        <div id="bulk-import-modal" class="modal-overlay"><div class="modal"><input id="bulk-import-file-input" type="file"><textarea id="bulk-import-textarea"></textarea><p id="bulk-import-summary"></p><button id="bulk-import-cancel-btn" type="button">Cancel</button><button id="bulk-import-confirm-btn" type="button">Add All</button></div></div>
+        <div id="confirm-modal" class="modal-overlay" aria-hidden="true"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title" aria-describedby="confirm-modal-message confirm-modal-details"><h3 id="confirm-modal-title">Confirm Action</h3><p id="confirm-modal-message">Are you sure?</p><ul id="confirm-modal-details" hidden></ul><div class="modal-actions"><button id="confirm-cancel-btn" type="button">Cancel</button><button id="confirm-ok-btn" type="button">Confirm</button></div></div></div>
+        <div id="mockList"></div>
+        <div id="subjectList"></div>
+      `;
+
+      app.students = students;
+      ui.init();
+      ui.bindEvents();
+      ui.withLoader = async (callback) => callback();
+
+      app.setCurrentUserRole('teacher', { resolved: true });
+      app.state.isLoading = false;
+      app.state.classes = [
+        { id: 'class_teacher', name: 'Teacher Class', ownerId: 'owner_teacher', ownerName: 'Teacher Owner' }
+      ];
+      app.state.currentClassId = 'class_teacher';
+      app.state.currentClassOwnerId = 'owner_teacher';
+      app.state.students = [];
+      app.syncDataContext();
+      app.snapshots = {
+        saveSnapshot: () => ({ id: 'snapshot_bulk_import_modal' })
+      };
+      app.addBulkStudents = async (entries = []) => {
+        importedBatches.push(entries.map((entry) => ({ ...entry })));
+        app.state.students = app.state.students.concat(entries.map((entry, index) => ({
+          id: `student_${importedBatches.flat().length + index + 1}`,
+          ...entry
+        })));
+        return entries;
+      };
+
+      const openButton = document.getElementById('bulk-import-btn');
+      const textarea = document.getElementById('bulk-import-textarea');
+      const importButton = document.getElementById('bulk-import-confirm-btn');
+      const confirmModal = document.getElementById('confirm-modal');
+      const confirmTitle = document.getElementById('confirm-modal-title');
+      const confirmMessage = document.getElementById('confirm-modal-message');
+      const confirmDetails = document.getElementById('confirm-modal-details');
+      const confirmCancelBtn = document.getElementById('confirm-cancel-btn');
+      const confirmOkBtn = document.getElementById('confirm-ok-btn');
+      const bulkImportModal = document.getElementById('bulk-import-modal');
+
+      openButton.click();
+      textarea.value = 'Ada\nAda\nBad123\nBen';
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+
+      importButton.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const afterOpen = {
+        confirmVisible: confirmModal.classList.contains('active'),
+        title: confirmTitle.textContent || '',
+        message: confirmMessage.textContent || '',
+        details: confirmDetails.textContent || '',
+        importedCount: importedBatches.length
+      };
+
+      confirmCancelBtn.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const afterCancel = {
+        confirmVisible: confirmModal.classList.contains('active'),
+        bulkImportStillOpen: bulkImportModal.classList.contains('active'),
+        importedCount: importedBatches.length
+      };
+
+      importButton.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      confirmOkBtn.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      return {
+        afterOpen,
+        afterCancel,
+        afterConfirm: {
+          confirmVisible: confirmModal.classList.contains('active'),
+          bulkImportStillOpen: bulkImportModal.classList.contains('active'),
+          importedCount: importedBatches.flat().length,
+          importedNames: importedBatches.flat().map((entry) => entry.name),
+          toast: document.getElementById('toast')?.textContent || ''
+        }
+      };
+    });
+
+    expect(result.afterOpen.confirmVisible).toBe(true);
+    expect(result.afterOpen.title).toBe('Confirm Bulk Student Import');
+    expect(result.afterOpen.message).toContain('Import 2 students into the active class?');
+    expect(result.afterOpen.details).toContain('1 duplicate row will be skipped');
+    expect(result.afterOpen.details).toContain('1 invalid row will be skipped');
+    expect(result.afterOpen.importedCount).toBe(0);
+
+    expect(result.afterCancel.confirmVisible).toBe(false);
+    expect(result.afterCancel.bulkImportStillOpen).toBe(true);
+    expect(result.afterCancel.importedCount).toBe(0);
+
+    expect(result.afterConfirm.confirmVisible).toBe(false);
+    expect(result.afterConfirm.bulkImportStillOpen).toBe(false);
+    expect(result.afterConfirm.importedCount).toBe(2);
+    expect(result.afterConfirm.importedNames).toEqual(['Ada', 'Ben']);
+    expect(result.afterConfirm.toast).toContain('2 students imported');
+  });
+
   test('bulk import modal guidance and loader shell markup remain present in the app shell', async () => {
     const indexSource = readWorkspaceFile('index.html');
     const enhancedCss = readWorkspaceFile('css/enhanced.css');
@@ -1493,6 +1710,9 @@ test.describe('Class refactor critical regressions', () => {
     expect(indexSource).toContain('aria-describedby="bulk-import-file-help"');
     expect(indexSource).toContain('Accepted files: .csv, .tsv, or .txt. You can also enter one student per line below.');
     expect(enhancedCss).toContain('.bulk-import-file-help{');
+    expect(indexSource).toContain('id="confirm-modal"');
+    expect(indexSource).toContain('id="confirm-modal-details"');
+    expect(enhancedCss).toContain('.confirm-modal-details{');
     expect(indexSource).toContain('class="app-splash-card"');
     expect(indexSource).toContain('class="loader-logo-shell"');
     expect(indexSource).toContain('class="loader-progress-bar"');
@@ -1637,6 +1857,90 @@ test.describe('Class refactor critical regressions', () => {
     expect(result.summary).toContain('2 students ready to import');
     expect(result.confirmDisabled).toBe(false);
     expect(result.toasts[result.toasts.length - 1]).toBe('Loaded students.tsv');
+  });
+
+  test('bulk score save waits for the confirmation modal before submitting', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const [stateModule, uiModule] = await Promise.all([
+        import('/js/state.js'),
+        import('/js/ui.js')
+      ]);
+
+      const app = stateModule.default || window.TrackerApp;
+      const ui = uiModule.default || app.ui;
+      const saveCalls = [];
+
+      document.body.innerHTML = `
+        <div id="toast"></div>
+        <div id="confirm-modal" class="modal-overlay" aria-hidden="true"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title" aria-describedby="confirm-modal-message confirm-modal-details"><h3 id="confirm-modal-title">Confirm Action</h3><p id="confirm-modal-message">Are you sure?</p><ul id="confirm-modal-details" hidden></ul><div class="modal-actions"><button id="confirm-cancel-btn" type="button">Cancel</button><button id="confirm-ok-btn" type="button">Confirm</button></div></div></div>
+        <button id="bulk-score-btn" type="button">Bulk Score</button>
+        <div id="bulk-score-modal" class="modal-overlay"></div>
+        <button id="bulk-score-cancel-btn" type="button">Cancel</button>
+        <button id="bulk-score-save-btn" type="button">Save Scores</button>
+        <select id="bulkMockSelect"><option value="exam_1" selected>Exam 1</option></select>
+        <table><tbody id="bulkScoreBody"><tr><td><input class="bulk-score-input" type="number" value="84" data-student-id="student_1"></td></tr></tbody></table>
+      `;
+
+      ui.init();
+      ui.bindEvents();
+      ui.withLoader = async (callback) => callback();
+      app.setCurrentUserRole('teacher', { resolved: true });
+      app.students = {
+        saveBulkScores: async (...args) => {
+          saveCalls.push(args);
+        }
+      };
+
+      const saveButton = document.getElementById('bulk-score-save-btn');
+      const confirmModal = document.getElementById('confirm-modal');
+      const confirmMessage = document.getElementById('confirm-modal-message');
+      const confirmOkBtn = document.getElementById('confirm-ok-btn');
+      const confirmCancelBtn = document.getElementById('confirm-cancel-btn');
+
+      saveButton.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const afterOpen = {
+        confirmVisible: confirmModal.classList.contains('active'),
+        confirmMessage: confirmMessage.textContent || '',
+        saveCalls: saveCalls.length
+      };
+
+      confirmCancelBtn.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const afterCancel = {
+        confirmVisible: confirmModal.classList.contains('active'),
+        saveCalls: saveCalls.length
+      };
+
+      saveButton.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      confirmOkBtn.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      return {
+        afterOpen,
+        afterCancel,
+        afterConfirm: {
+          confirmVisible: confirmModal.classList.contains('active'),
+          saveCalls: saveCalls.length,
+          firstCallExamId: saveCalls[0]?.[0] || '',
+          firstCallInputCount: Array.from(saveCalls[0]?.[1] || []).length
+        }
+      };
+    });
+
+    expect(result.afterOpen.confirmVisible).toBe(true);
+    expect(result.afterOpen.confirmMessage).toContain('Save all entered scores for this exam?');
+    expect(result.afterOpen.saveCalls).toBe(0);
+    expect(result.afterCancel.confirmVisible).toBe(false);
+    expect(result.afterCancel.saveCalls).toBe(0);
+    expect(result.afterConfirm.confirmVisible).toBe(false);
+    expect(result.afterConfirm.saveCalls).toBe(1);
+    expect(result.afterConfirm.firstCallExamId).toBe('exam_1');
+    expect(result.afterConfirm.firstCallInputCount).toBe(1);
   });
 
   test('edit student action opens the modal and saves the updated name', async ({ page }) => {
@@ -2498,6 +2802,150 @@ test('bulk delete class modal shows polished selection state and prevents deleti
     expect(result.resetLabel).toBe('Discard Changes');
   });
 
+  test('submission feedback maps shared submission errors consistently', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const feedbackModule = await import('/js/submission-feedback.js');
+      const {
+        buildSubmissionFeedback,
+        formatAuthSubmissionError,
+        formatSubmissionError
+      } = feedbackModule;
+
+      const appContext = {
+        state: {
+          currentClassName: 'Admin Review Class'
+        },
+        getCurrentClassOwnerName: () => 'Owner Example'
+      };
+
+      return {
+        authInvalidCredential: formatAuthSubmissionError({ code: 'auth/wrong-password' }),
+        missingClass: formatSubmissionError({ code: 'app/missing-class-context' }),
+        readOnly: formatSubmissionError({ code: 'app/read-only-admin' }, { app: appContext }),
+        network: formatSubmissionError({ message: 'Failed to fetch' }),
+        permission: formatSubmissionError({ code: 'permission-denied' }),
+        service: formatSubmissionError({ code: 'unavailable' }),
+        authFeedback: buildSubmissionFeedback({
+          error: { code: 'auth/network-request-failed' },
+          auth: true
+        }),
+        classFeedback: buildSubmissionFeedback({
+          error: { code: 'app/class-not-found' },
+          fallbackMessage: 'Fallback class error'
+        })
+      };
+    });
+
+    expect(result.authInvalidCredential).toBe('Invalid email or password.');
+    expect(result.missingClass).toBe('Select a class before continuing.');
+    expect(result.readOnly).toContain('Admin cannot modify data in read-only mode');
+    expect(result.readOnly).toContain('Admin Review Class');
+    expect(result.network).toBe('Network error. Check your connection and try again.');
+    expect(result.permission).toBe('You do not have permission to complete this action.');
+    expect(result.service).toBe('Service is unavailable right now. Try again in a moment.');
+    expect(result.authFeedback).toEqual({
+      tone: 'error',
+      message: 'Network error. Please check your internet connection.'
+    });
+    expect(result.classFeedback).toEqual({
+      tone: 'error',
+      message: 'Selected class no longer exists. Refresh classes and try again.'
+    });
+  });
+
+  test('message composers enforce backend length limits and show shared counters', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const [stateModule, uiModule, constraintsModule] = await Promise.all([
+        import('/js/state.js'),
+        import('/js/ui.js'),
+        import('/js/message-constraints.js')
+      ]);
+
+      const app = stateModule.default || window.TrackerApp;
+      const ui = uiModule.default || app.ui;
+      const { MESSAGE_BODY_MAX_LENGTH } = constraintsModule;
+
+      document.body.innerHTML = `
+        <div id="toast"></div>
+        <div id="message-compose-modal" class="modal-overlay">
+          <div class="modal">
+            <h3 id="message-compose-title">Start New Chat</h3>
+            <p id="message-compose-subtitle"></p>
+            <form id="message-compose-form">
+              <p id="message-compose-feedback" hidden></p>
+              <div id="message-compose-recipient-group">
+                <label for="message-compose-recipient-select">Recipient</label>
+                <select id="message-compose-recipient-select"></select>
+              </div>
+              <textarea id="message-compose-body"></textarea>
+              <p id="message-compose-meta"></p>
+              <button id="message-compose-cancel-btn" type="button">Cancel</button>
+              <button id="message-compose-submit-btn" type="submit">Start Chat</button>
+            </form>
+          </div>
+        </div>
+        <form id="message-thread-form">
+          <textarea id="message-thread-input"></textarea>
+          <p id="message-thread-meta"></p>
+          <button id="message-thread-submit-btn" type="submit">Send</button>
+        </form>
+      `;
+
+      ui.initDOM();
+      ui.getMessagingCapabilities = () => ({
+        canSend: true,
+        canReply: true
+      });
+      app.state.messageDirectory = {
+        users: [
+          { uid: 'admin_1', label: 'Admin Example' }
+        ],
+        roles: [],
+        classes: [],
+        capabilities: {}
+      };
+      ui.messageDirectoryLoaded = true;
+      ui.isLoadingMessageDirectory = false;
+      ui.messageComposeState = {
+        mode: 'compose',
+        replyToMessageId: '',
+        recipientUserId: 'admin_1'
+      };
+
+      const composeBody = document.getElementById('message-compose-body');
+      composeBody.value = 'Hello world';
+      ui.renderMessageComposeControls();
+
+      const threadInput = document.getElementById('message-thread-input');
+      threadInput.value = 'Reply sent';
+      ui.updateMessageThreadComposerState({
+        id: 'conversation_1',
+        counterpartUserId: 'admin_1',
+        source: 'conversation'
+      });
+
+      return {
+        messageLimit: MESSAGE_BODY_MAX_LENGTH,
+        composeMaxLength: Number(document.getElementById('message-compose-body')?.maxLength || 0),
+        composeMeta: document.getElementById('message-compose-meta')?.textContent || '',
+        composeSubmitDisabled: Boolean(document.getElementById('message-compose-submit-btn')?.disabled),
+        threadMaxLength: Number(document.getElementById('message-thread-input')?.maxLength || 0),
+        threadMeta: document.getElementById('message-thread-meta')?.textContent || '',
+        threadSubmitDisabled: Boolean(document.getElementById('message-thread-submit-btn')?.disabled)
+      };
+    });
+
+    expect(result.messageLimit).toBe(5000);
+    expect(result.composeMaxLength).toBe(result.messageLimit);
+    expect(result.composeMeta).toContain('Chat with Admin Example');
+    expect(result.composeMeta).toContain('11 / 5000 characters');
+    expect(result.composeSubmitDisabled).toBe(false);
+    expect(result.threadMaxLength).toBe(result.messageLimit);
+    expect(result.threadMeta).toContain('Reply in chat');
+    expect(result.threadMeta).toContain('10 / 5000 characters');
+    expect(result.threadSubmitDisabled).toBe(false);
+  });
+
   test('deleted-account routing and queued auth notices stay protected in source', async () => {
     const appSource = readWorkspaceFile('js/app.js');
     const authPageSource = readWorkspaceFile('js/auth-page.js');
@@ -2664,10 +3112,13 @@ test('bulk delete class modal shows polished selection state and prevents deleti
     const studentsSource = readWorkspaceFile('js/students.js');
 
     expect(dbSource).toContain('const persistStudentCreate = async (studentData, nextData) => {');
+    expect(dbSource).toContain('const persistBulkStudentCreate = async (studentEntries = [], nextData) => {');
     expect(dbSource).toContain('return persistStudentCreate(nextStudent, next);');
+    expect(dbSource).toContain('return persistBulkStudentCreate(normalizedEntries, next);');
     expect(dbSource).toContain('return persistStudentUpdateById(studentId, { scores: normalizedScores }, next);');
     expect(stateSource).toContain('app.state.dashboardStudentCount = nextStudents.length;');
-    expect(studentsSource).toContain('await app.addStudent({ ...studentData, scores: {} }, { skipActivityLog: true });');
+    expect(stateSource).toContain('app.addBulkStudents = async function (studentEntries = [], options = {}) {');
+    expect(studentsSource).toContain('await app.addBulkStudents(preparedChunk, { skipActivityLog: true });');
   });
 
   test('admin destructive panel actions stay developer-only while admins keep read access', async ({ page }) => {

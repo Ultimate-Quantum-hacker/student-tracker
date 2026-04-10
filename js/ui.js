@@ -29,7 +29,6 @@ import {
   ACCOUNT_STATUS_ACTIVE,
   ACCOUNT_STATUS_DELETED,
   deleteCurrentAuthenticatedUser,
-  formatAuthError,
   logoutUser,
   normalizeAccountDeletionStatus,
   normalizeAccountStatus,
@@ -39,6 +38,17 @@ import {
 } from './auth.js';
 import { storeAuthPageNotice } from './auth-notices.js';
 import dashboardUi from './ui-dashboard.js';
+import {
+  MESSAGE_BODY_MAX_LENGTH,
+  formatCharacterCounter
+} from './message-constraints.js';
+import {
+  buildSubmissionFeedback,
+  formatSubmissionError,
+  resolveClassContextSubmissionError,
+  resolveMissingClassBlockedReason,
+  resolveReadOnlyBlockedReason
+} from './submission-feedback.js';
 
 // DOM Node References
 app.dom = {};
@@ -148,6 +158,12 @@ const domIds = {
   bulkImportSummary: 'bulk-import-summary',
   bulkImportConfirmBtn: 'bulk-import-confirm-btn',
   bulkImportCancelBtn: 'bulk-import-cancel-btn',
+  confirmModal: 'confirm-modal',
+  confirmTitle: 'confirm-modal-title',
+  confirmMessage: 'confirm-modal-message',
+  confirmDetails: 'confirm-modal-details',
+  confirmCancelBtn: 'confirm-cancel-btn',
+  confirmOkBtn: 'confirm-ok-btn',
   notesModal: 'notes-modal',
   notesModalTitle: 'notes-modal-title',
   notesTextarea: 'notes-textarea',
@@ -264,6 +280,7 @@ const ui = {
   hasPromptedForMissingClass: false,
   hasBoundClassDropdownEvents: false,
   hasBoundAccessGuardEvents: false,
+  hasBoundGlobalModalEvents: false,
   messageDataLoaded: false,
   messageDirectoryLoaded: false,
   isLoadingMessages: false,
@@ -291,6 +308,8 @@ const ui = {
   bulkClassDeleteSelection: [],
   isSavingAccountSettings: false,
   accountSettingsBusyAction: '',
+  pendingConfirmationResolver: null,
+  pendingConfirmationFocusElement: null,
   toastTimer: null,
   loaderHideTimer: null,
   loaderRequestCount: 0,
@@ -446,15 +465,27 @@ const ui = {
     },
 
     getReadOnlyModeLabel: function () {
-      const ownerName = typeof app.getCurrentClassOwnerName === 'function'
-        ? String(app.getCurrentClassOwnerName() || '').trim()
-        : '';
-      const className = String(app.state.currentClassName || '').trim();
-      const contextLabel = [className, ownerName].filter(Boolean).join(' - ');
-      if (contextLabel) {
-        return `Admin cannot modify data (Read-only mode): ${contextLabel}.`;
-      }
-      return 'Admin cannot modify data (Read-only mode).';
+      return resolveReadOnlyBlockedReason({ app });
+    },
+
+    getMissingClassContextLabel: function () {
+      return resolveMissingClassBlockedReason();
+    },
+
+    showReadOnlyRoleToast: function () {
+      const feedback = buildSubmissionFeedback({
+        error: { code: 'app/read-only-admin' },
+        app
+      });
+      this.showToast(feedback.message, { duration: 3200 });
+    },
+
+    resolveSubmissionErrorMessage: function (error, fallbackMessage = 'Request failed. Please try again.', { auth = false } = {}) {
+      return formatSubmissionError(error, {
+        app,
+        fallbackMessage,
+        auth
+      });
     },
 
     ensureWritableAction: function (actionLabel = 'modify data') {
@@ -467,24 +498,7 @@ const ui = {
     },
 
     resolveClassContextErrorMessage: function (error, fallbackMessage = 'Please select a class and try again.') {
-      const code = String(error?.code || '').trim().toLowerCase();
-      const message = String(error?.message || '').trim();
-      if (code === 'app/missing-class-context' || code === 'app/missing-class-id') {
-        return 'Select a class before continuing.';
-      }
-      if (code === 'app/missing-class-owner-context' || code === 'app/missing-owner-id') {
-        return 'Class owner context is missing. Re-select the class and try again.';
-      }
-      if (code === 'app/class-not-found') {
-        return 'Selected class no longer exists. Refresh classes and try again.';
-      }
-      if (code === 'app/invalid-owner') {
-        return 'Selected class owner is invalid. Re-select the class and try again.';
-      }
-      if (message) {
-        return message;
-      }
-      return fallbackMessage;
+      return resolveClassContextSubmissionError(error, fallbackMessage);
     },
 
     ensureWritableClassAction: function (actionLabel = 'modify data', operationLabel = 'modify data') {
@@ -547,6 +561,115 @@ const ui = {
           delete element.dataset.readonlyOriginalTitle;
         }
       });
+    },
+
+    setDisabledReasonState: function (elements = [], reason = '') {
+      const normalizedReason = String(reason || '').trim();
+      Array.from(elements || []).filter(Boolean).forEach((element) => {
+        if (!element) return;
+
+        if (normalizedReason) {
+          if (element.dataset.disabledReasonLocked !== 'true') {
+            element.dataset.disabledReasonOriginalTitle = element.getAttribute('title') || '';
+          }
+          element.dataset.disabledReasonLocked = 'true';
+          element.setAttribute('title', normalizedReason);
+          element.setAttribute('aria-disabled', 'true');
+          return;
+        }
+
+        if (element.dataset.disabledReasonLocked === 'true') {
+          const originalTitle = element.dataset.disabledReasonOriginalTitle || '';
+          if (originalTitle) {
+            element.setAttribute('title', originalTitle);
+          } else {
+            element.removeAttribute('title');
+          }
+          if (element.dataset.readonlyLocked !== 'true' && element.dataset.roleRestricted !== 'true') {
+            element.removeAttribute('aria-disabled');
+          }
+          delete element.dataset.disabledReasonLocked;
+          delete element.dataset.disabledReasonOriginalTitle;
+        }
+      });
+    },
+
+    setClassContextControlState: function (elements = [], isBlocked = false, reason = '') {
+      const normalizedReason = String(reason || '').trim();
+      Array.from(elements || []).filter(Boolean).forEach((element) => {
+        if (!element) return;
+
+        if (isBlocked) {
+          if (element.dataset.classContextLocked !== 'true') {
+            element.dataset.classContextPrevDisabled = element.disabled ? 'true' : 'false';
+            element.dataset.classContextOriginalTitle = element.getAttribute('title') || '';
+          }
+          if ('disabled' in element) {
+            element.disabled = true;
+          }
+          element.dataset.classContextLocked = 'true';
+          if (normalizedReason) {
+            element.setAttribute('title', normalizedReason);
+          }
+          element.setAttribute('aria-disabled', 'true');
+          return;
+        }
+
+        if (element.dataset.classContextLocked === 'true') {
+          const previousDisabled = element.dataset.classContextPrevDisabled === 'true';
+          if ('disabled' in element) {
+            element.disabled = previousDisabled;
+          }
+          const originalTitle = element.dataset.classContextOriginalTitle || '';
+          if (originalTitle) {
+            element.setAttribute('title', originalTitle);
+          } else {
+            element.removeAttribute('title');
+          }
+          if (element.dataset.readonlyLocked !== 'true' && element.dataset.roleRestricted !== 'true') {
+            element.removeAttribute('aria-disabled');
+          }
+          delete element.dataset.classContextLocked;
+          delete element.dataset.classContextPrevDisabled;
+          delete element.dataset.classContextOriginalTitle;
+        }
+      });
+    },
+
+    applyClassContextDisabledState: function ({ hasWritableClassContext = false, skipElements = [] } = {}) {
+      const disabledReason = hasWritableClassContext ? '' : this.getMissingClassContextLabel();
+      const skipSet = new Set((Array.isArray(skipElements) ? skipElements : []).filter(Boolean));
+      const directElements = [
+        app.dom.nameInput,
+        app.dom.bulkImportBtn,
+        app.dom.bulkImportConfirmBtn,
+        app.dom.bulkImportTextarea,
+        app.dom.mockNameInput,
+        app.dom.subjectNameInput,
+        app.dom.saveScoresBtn,
+        app.dom.bulkScoreBtn,
+        app.dom.bulkScoreSaveBtn
+      ].filter((element) => element && !skipSet.has(element));
+
+      this.setClassContextControlState(directElements, !hasWritableClassContext, disabledReason);
+
+      const groupedForms = [
+        app.dom.form,
+        app.dom.addMockForm,
+        app.dom.addSubjectForm
+      ].filter(Boolean);
+
+      groupedForms.forEach((form) => {
+        const formControls = form.querySelectorAll('input, button');
+        this.setDisabledReasonState(Array.from(formControls).filter((element) => !skipSet.has(element)), disabledReason);
+      });
+
+      const dynamicControls = document.querySelectorAll([
+        '#dynamicSubjectFields input',
+        '.bulk-score-input',
+        '.bulk-row-reset-btn'
+      ].join(','));
+      this.setDisabledReasonState(Array.from(dynamicControls).filter((element) => !skipSet.has(element)), disabledReason);
     },
 
     applyReadOnlyRoleState: function () {
@@ -759,6 +882,110 @@ const ui = {
       ]);
     },
 
+    isConfirmationModalOpen: function () {
+      return Boolean(app.dom.confirmModal?.classList.contains('active'));
+    },
+
+    toggleConfirmationModal: function (isOpen = false) {
+      if (!app.dom.confirmModal) {
+        return;
+      }
+      app.dom.confirmModal.classList.toggle('active', !!isOpen);
+      app.dom.confirmModal.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+    },
+
+    getConfirmationFocusableElements: function () {
+      if (!app.dom.confirmModal) {
+        return [];
+      }
+      return Array.from(app.dom.confirmModal.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'));
+    },
+
+    trapConfirmationModalFocus: function (event) {
+      if (!this.isConfirmationModalOpen() || event.key !== 'Tab') {
+        return;
+      }
+      const focusable = this.getConfirmationFocusableElements();
+      if (!focusable.length) {
+        event.preventDefault();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const activeElement = document.activeElement;
+
+      if (event.shiftKey && activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    },
+
+    resolvePendingConfirmation: function (didConfirm = false) {
+      const resolver = this.pendingConfirmationResolver;
+      this.pendingConfirmationResolver = null;
+      this.toggleConfirmationModal(false);
+      if (this.pendingConfirmationFocusElement && typeof this.pendingConfirmationFocusElement.focus === 'function') {
+        this.pendingConfirmationFocusElement.focus();
+      }
+      this.pendingConfirmationFocusElement = null;
+      if (typeof resolver === 'function') {
+        resolver(Boolean(didConfirm));
+      }
+    },
+
+    requestConfirmation: function ({
+      title = 'Confirm Action',
+      message = 'Are you sure?',
+      details = [],
+      confirmLabel = 'Confirm',
+      cancelLabel = 'Cancel',
+      dangerous = false
+    } = {}) {
+      if (!app.dom.confirmModal || !app.dom.confirmOkBtn || !app.dom.confirmMessage) {
+        const fallbackDetails = Array.isArray(details) && details.length
+          ? `\n\n${details.map((detail) => `- ${String(detail || '').trim()}`).join('\n')}`
+          : '';
+        return Promise.resolve(window.confirm(`${String(message || '').trim()}${fallbackDetails}`));
+      }
+
+      if (this.pendingConfirmationResolver) {
+        this.resolvePendingConfirmation(false);
+      }
+
+      if (app.dom.confirmTitle) {
+        app.dom.confirmTitle.textContent = String(title || 'Confirm Action').trim() || 'Confirm Action';
+      }
+      app.dom.confirmMessage.textContent = String(message || '').trim() || 'Are you sure?';
+
+      if (app.dom.confirmDetails) {
+        const normalizedDetails = (Array.isArray(details) ? details : [])
+          .map((detail) => String(detail || '').trim())
+          .filter(Boolean);
+        app.dom.confirmDetails.innerHTML = normalizedDetails.map((detail) => `<li>${app.utils.esc(detail)}</li>`).join('');
+        app.dom.confirmDetails.hidden = normalizedDetails.length === 0;
+      }
+
+      if (app.dom.confirmCancelBtn) {
+        app.dom.confirmCancelBtn.textContent = String(cancelLabel || 'Cancel').trim() || 'Cancel';
+      }
+      app.dom.confirmOkBtn.textContent = String(confirmLabel || 'Confirm').trim() || 'Confirm';
+      app.dom.confirmOkBtn.classList.toggle('btn-danger', dangerous);
+      app.dom.confirmOkBtn.classList.toggle('btn-primary', !dangerous);
+
+      this.pendingConfirmationFocusElement = document.activeElement;
+      this.toggleConfirmationModal(true);
+
+      return new Promise((resolve) => {
+        this.pendingConfirmationResolver = resolve;
+        const focusTarget = app.dom.confirmCancelBtn || app.dom.confirmOkBtn;
+        focusTarget?.focus();
+      });
+    },
+
     hideToast: function () {
       if (!app.dom.toast) return;
       if (this.toastTimer) {
@@ -778,6 +1005,12 @@ const ui = {
 
       const toast = app.dom.toast;
       toast.innerHTML = '';
+      toast.className = 'toast';
+
+      const tone = String(options?.tone || options?.type || '').trim().toLowerCase();
+      if (tone) {
+        toast.classList.add(tone);
+      }
 
       const textNode = document.createElement('span');
       textNode.className = 'toast-message';
@@ -1523,7 +1756,14 @@ const ui = {
         })
         .catch((error) => {
           console.error('Failed to load chat recipients:', error);
-          this.showToast('Failed to load chat recipients');
+          const feedback = buildSubmissionFeedback({
+            error,
+            fallbackMessage: 'Failed to load chat recipients',
+            app
+          });
+          this.showToast(feedback.message, {
+            tone: feedback.tone
+          });
           throw error;
         })
         .finally(() => {
@@ -1778,7 +2018,8 @@ const ui = {
     updateMessageThreadComposerState: function (conversation = null, { canSend = null } = {}) {
       const resolvedConversation = conversation || this.getSelectedConversationRecord();
       const conversationId = String(resolvedConversation?.id || '').trim();
-      const bodyLength = String(app.dom.messageThreadInput?.value || '').length;
+      const threadBodyValue = String(app.dom.messageThreadInput?.value || '');
+      const bodyLength = threadBodyValue.length;
       const capabilities = this.getMessagingCapabilities();
       const canSendInline = typeof canSend === 'boolean'
         ? canSend
@@ -1791,6 +2032,7 @@ const ui = {
       }
       if (app.dom.messageThreadInput) {
         app.dom.messageThreadInput.disabled = !conversationId || !canSendInline || this.isSubmittingThreadMessage;
+        app.dom.messageThreadInput.maxLength = MESSAGE_BODY_MAX_LENGTH;
         app.dom.messageThreadInput.placeholder = !conversationId
           ? 'Select a conversation'
           : (canSendInline ? 'Write a message' : 'Replies are unavailable for this conversation');
@@ -1798,6 +2040,13 @@ const ui = {
       if (app.dom.messageThreadSubmitBtn) {
         app.dom.messageThreadSubmitBtn.disabled = !conversationId || !canSendInline || !bodyLength || this.isSubmittingThreadMessage;
         app.dom.messageThreadSubmitBtn.textContent = this.isSubmittingThreadMessage ? 'Sending...' : 'Send';
+        app.dom.messageThreadSubmitBtn.title = !conversationId
+          ? 'Select a conversation to continue.'
+          : !canSendInline
+            ? 'Replies are unavailable for this conversation.'
+            : !bodyLength
+              ? 'Enter a message to continue.'
+              : 'Send message';
       }
       if (app.dom.messageThreadMeta) {
         const segments = [];
@@ -1810,7 +2059,9 @@ const ui = {
         } else {
           segments.push('Reply in chat');
         }
-        segments.push(`${bodyLength} / 5000 characters`);
+        segments.push(formatCharacterCounter(threadBodyValue, MESSAGE_BODY_MAX_LENGTH));
+        app.dom.messageThreadMeta.textContent = segments.join(' - ');
+        return;
         app.dom.messageThreadMeta.textContent = segments.join(' · ');
       }
     },
@@ -2227,13 +2478,17 @@ const ui = {
       const directory = this.getMessageDirectory();
       const composerState = this.messageComposeState || {};
       const selectedRecipientUserId = String(app.dom.messageComposeRecipientSelect?.value || composerState.recipientUserId || '').trim();
-      const bodyLength = String(app.dom.messageComposeBody?.value || '').length;
+      const composeBodyValue = String(app.dom.messageComposeBody?.value || '');
       const selectedUser = directory.users.find((option) => {
         return String(option?.uid ?? option?.value ?? '').trim() === selectedRecipientUserId;
       });
       const recipientSummary = selectedUser
         ? `Chat with ${selectedUser.label || selectedUser.displayLabel || selectedUser.name || selectedUser.email || 'recipient'}`
         : (this.isLoadingMessageDirectory ? 'Loading recipients...' : 'Select a recipient');
+      app.dom.messageComposeMeta.textContent = `${recipientSummary} - ${formatCharacterCounter(composeBodyValue, MESSAGE_BODY_MAX_LENGTH)}`;
+      return;
+      app.dom.messageComposeMeta.textContent = `${recipientSummary} · ${formatCharacterCounter(composeBodyValue, MESSAGE_BODY_MAX_LENGTH)}`;
+      return;
       app.dom.messageComposeMeta.textContent = `${recipientSummary} · ${bodyLength} / 5000 characters`;
     },
 
@@ -2268,6 +2523,14 @@ const ui = {
       }
       if (app.dom.messageComposeRecipientSelect) {
         app.dom.messageComposeRecipientSelect.disabled = this.isSubmittingMessage || this.isLoadingMessageDirectory || !recipientOptions.length;
+        app.dom.messageComposeRecipientSelect.title = this.isLoadingMessageDirectory
+          ? 'Recipient options are still loading.'
+          : !recipientOptions.length
+            ? 'No eligible recipients are available for your account.'
+            : 'Select a recipient';
+      }
+      if (app.dom.messageComposeBody) {
+        app.dom.messageComposeBody.maxLength = MESSAGE_BODY_MAX_LENGTH;
       }
       if (app.dom.messageComposeSubmitBtn) {
         const bodyLength = String(app.dom.messageComposeBody?.value || '').trim().length;
@@ -2276,6 +2539,15 @@ const ui = {
         app.dom.messageComposeSubmitBtn.textContent = this.isSubmittingMessage
           ? 'Starting...'
           : 'Start Chat';
+        app.dom.messageComposeSubmitBtn.title = this.isLoadingMessageDirectory
+          ? 'Recipient options are still loading.'
+          : !recipientOptions.length
+            ? 'No eligible recipients are available for your account.'
+            : !hasRecipient
+              ? 'Select a recipient to continue.'
+              : !bodyLength
+                ? 'Enter a message to continue.'
+                : 'Start chat';
       }
 
       this.updateMessageComposeMeta();
@@ -2384,7 +2656,8 @@ const ui = {
       if (conversationId) {
         void this.ensureSelectedConversationThreadSubscription(conversationId);
       }
-      this.showToast(toastMessage);
+      const feedback = buildSubmissionFeedback({ successMessage: toastMessage });
+      this.showToast(feedback.message, { tone: feedback.tone });
     },
 
     handleMessageComposeSubmit: async function () {
@@ -2414,7 +2687,11 @@ const ui = {
         this.closeMessageComposeModal();
       } catch (error) {
         console.error('Failed to start chat:', error);
-        this.setMessageComposeFeedback(error?.message || 'Failed to start chat', 'error');
+        const feedback = buildSubmissionFeedback({
+          error,
+          fallbackMessage: 'Failed to start chat'
+        });
+        this.setMessageComposeFeedback(feedback.message, feedback.tone);
       } finally {
         this.isSubmittingMessage = false;
         this.renderMessageComposeControls();
@@ -2459,7 +2736,11 @@ const ui = {
         this.applySentMessageResult(result, 'Message sent');
       } catch (error) {
         console.error('Failed to send conversation message:', error);
-        this.setMessageThreadFeedback(error?.message || 'Failed to send message', 'error');
+        const feedback = buildSubmissionFeedback({
+          error,
+          fallbackMessage: 'Failed to send message'
+        });
+        this.setMessageThreadFeedback(feedback.message, feedback.tone);
       } finally {
         this.isSubmittingThreadMessage = false;
         this.updateMessageThreadComposerState(this.getSelectedConversationRecord());
@@ -2573,6 +2854,27 @@ const ui = {
 
       app.dom.accountSettingsFeedback.hidden = false;
       app.dom.accountSettingsFeedback.dataset.tone = tone;
+    },
+
+    applyAccountSettingsSubmissionFeedback: function ({
+      error = null,
+      successMessage = '',
+      fallbackMessage = 'Request failed. Please try again.',
+      toastMessage = '',
+      auth = true
+    } = {}) {
+      const feedback = buildSubmissionFeedback({
+        error,
+        successMessage,
+        fallbackMessage,
+        app,
+        auth
+      });
+      this.setAccountSettingsFeedback(feedback.message, feedback.tone);
+      this.showToast(String(toastMessage || feedback.message).trim() || feedback.message, {
+        tone: feedback.tone
+      });
+      return feedback;
     },
 
     hasPendingAccountSettingsChanges: function () {
@@ -2806,13 +3108,16 @@ const ui = {
           });
           this.renderClassControls();
           this.renderAccountSettings({ preserveFeedback: true });
-          this.setAccountSettingsFeedback('Account settings saved.', 'success');
-          this.showToast('Account settings saved');
+          this.applyAccountSettingsSubmissionFeedback({
+            successMessage: 'Account settings saved.',
+            toastMessage: 'Account settings saved'
+          });
         } catch (error) {
           console.error('Failed to save account settings:', error);
-          const message = formatAuthError(error);
-          this.setAccountSettingsFeedback(message, 'error');
-          this.showToast(message);
+          this.applyAccountSettingsSubmissionFeedback({
+            error,
+            fallbackMessage: 'Failed to save account settings.'
+          });
         } finally {
           this.setAccountSettingsBusy(false);
         }
@@ -2835,13 +3140,16 @@ const ui = {
         this.setAccountSettingsBusy(true, 'password-reset');
         try {
           await requestPasswordReset(email);
-          this.setAccountSettingsFeedback(`Password reset instructions were sent to ${email}.`, 'success');
-          this.showToast('Password reset email sent');
+          this.applyAccountSettingsSubmissionFeedback({
+            successMessage: `Password reset instructions were sent to ${email}.`,
+            toastMessage: 'Password reset email sent'
+          });
         } catch (error) {
           console.error('Failed to send password reset email:', error);
-          const message = formatAuthError(error);
-          this.setAccountSettingsFeedback(message, 'error');
-          this.showToast(message);
+          this.applyAccountSettingsSubmissionFeedback({
+            error,
+            fallbackMessage: 'Failed to send password reset email.'
+          });
         } finally {
           this.setAccountSettingsBusy(false);
         }
@@ -2863,11 +3171,17 @@ const ui = {
         return;
       }
 
-      const shouldContinue = window.confirm(
-        deletionState.canFinalize
+      const shouldContinue = await this.requestConfirmation({
+        title: deletionState.canFinalize ? 'Confirm Account Deletion' : 'Confirm Deletion Request',
+        message: deletionState.canFinalize
           ? 'Delete this account permanently? This removes your account data, signs you out, and cannot be undone.'
-          : 'Submit an account deletion request? An admin must review and approve it before you can permanently delete your account.'
-      );
+          : 'Submit an account deletion request? An admin must review and approve it before you can permanently delete your account.',
+        details: deletionState.canFinalize
+          ? ['This permanently removes your account and owned data.', 'You will be signed out immediately after deletion.']
+          : ['Your account stays active until an admin reviews the request.', 'Return here after approval to permanently delete the account.'],
+        confirmLabel: deletionState.canFinalize ? 'Delete Account' : 'Submit Request',
+        dangerous: deletionState.canFinalize
+      });
       if (!shouldContinue) {
         return;
       }
@@ -2905,13 +3219,18 @@ const ui = {
             uid: updatedProfile?.uid || authUid
           });
           this.renderAccountSettings({ preserveFeedback: true });
-          this.setAccountSettingsFeedback('Your account deletion request was submitted for review.', 'success');
-          this.showToast('Deletion request submitted');
+          this.applyAccountSettingsSubmissionFeedback({
+            successMessage: 'Your account deletion request was submitted for review.',
+            toastMessage: 'Deletion request submitted'
+          });
         } catch (error) {
           console.error('Failed to process account deletion action:', error);
-          const message = formatAuthError(error);
-          this.setAccountSettingsFeedback(message, 'error');
-          this.showToast(message);
+          this.applyAccountSettingsSubmissionFeedback({
+            error,
+            fallbackMessage: deletionState.canFinalize
+              ? 'Failed to delete account.'
+              : 'Failed to submit account deletion request.'
+          });
         } finally {
           this.setAccountSettingsBusy(false);
         }
@@ -3052,6 +3371,7 @@ const ui = {
         ? app.students.getBulkImportPreview(app.dom.bulkImportTextarea?.value || '', app)
         : null;
       const pluralize = (count, singular, plural = `${singular}s`) => (count === 1 ? singular : plural);
+      const classContextLocked = app.dom.bulkImportConfirmBtn?.dataset.classContextLocked === 'true';
 
       if (!preview?.hasContent) {
         app.dom.bulkImportSummary.textContent = 'Enter names to preview the import summary.';
@@ -3079,7 +3399,7 @@ const ui = {
 
       app.dom.bulkImportSummary.textContent = `${parts.join('. ')}.`;
       if (app.dom.bulkImportConfirmBtn) {
-        app.dom.bulkImportConfirmBtn.disabled = preview.importableCount === 0;
+        app.dom.bulkImportConfirmBtn.disabled = classContextLocked || preview.importableCount === 0;
       }
     },
 
@@ -3333,6 +3653,7 @@ const ui = {
       }
 
       const canManageClasses = this.canCurrentRoleWrite();
+      const hasWritableClassContext = classes.length > 0 && Boolean(resolvedClassId) && Boolean(resolvedOwnerId);
       if (app.dom.createClassBtn) {
         app.dom.createClassBtn.disabled = !canManageClasses;
       }
@@ -3353,7 +3674,6 @@ const ui = {
       }
 
       if (app.dom.form) {
-        const hasWritableClassContext = classes.length > 0 && Boolean(resolvedClassId) && Boolean(resolvedOwnerId);
         app.dom.form.querySelectorAll('input, button').forEach((entry) => {
           entry.disabled = !hasWritableClassContext;
         });
@@ -3368,6 +3688,14 @@ const ui = {
           });
         }
       }
+
+      this.applyClassContextDisabledState({
+        hasWritableClassContext: canManageClasses ? hasWritableClassContext : true,
+        skipElements: [
+          app.dom.createClassBtn,
+          app.dom.deleteClassBtn
+        ]
+      });
 
       if (!canManageClasses && app.dom.classDropdownValue && !classes.length) {
         app.dom.classDropdownValue.textContent = 'No classes available';
@@ -4854,6 +5182,23 @@ const ui = {
           this.renderBulkImportSummary();
           app.dom.bulkImportModal.classList.remove('active');
         };
+        if (app.dom.confirmCancelBtn) {
+          app.dom.confirmCancelBtn.onclick = () => {
+            this.resolvePendingConfirmation(false);
+          };
+        }
+        if (app.dom.confirmOkBtn) {
+          app.dom.confirmOkBtn.onclick = () => {
+            this.resolvePendingConfirmation(true);
+          };
+        }
+        if (app.dom.confirmModal) {
+          app.dom.confirmModal.addEventListener('click', (event) => {
+            if (event.target === app.dom.confirmModal) {
+              this.resolvePendingConfirmation(false);
+            }
+          });
+        }
         if (app.dom.editSaveBtn) app.dom.editSaveBtn.onclick = async () => {
           if (!this.ensureWritableAction('Student updates')) return;
           await this.withLoader(() => app.students.saveEdit(app, this), {
@@ -4902,7 +5247,13 @@ const ui = {
         if (app.dom.bulkScoreCancelBtn) app.dom.bulkScoreCancelBtn.onclick = () => app.dom.bulkScoreModal.classList.remove('active');
         if (app.dom.bulkScoreSaveBtn) app.dom.bulkScoreSaveBtn.onclick = async () => {
           if (!this.ensureWritableAction('Bulk score save')) return;
-          if (!confirm('Save all entered scores for this exam?')) return;
+          const shouldSave = await this.requestConfirmation({
+            title: 'Confirm Bulk Score Save',
+            message: 'Save all entered scores for this exam?',
+            details: ['Scores will be saved for every populated student row in this exam.'],
+            confirmLabel: 'Save Scores'
+          });
+          if (!shouldSave) return;
           await this.withLoader(() => app.students.saveBulkScores(app.dom.bulkMockSelect.value, app.dom.bulkScoreBody.querySelectorAll('.bulk-score-input'), app, this), {
             message: 'Saving class scores...'
           });
@@ -5219,7 +5570,24 @@ const ui = {
           });
         }
 
-        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active')); });
+        if (!this.hasBoundGlobalModalEvents) {
+          document.addEventListener('keydown', (e) => {
+            if (this.isConfirmationModalOpen()) {
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                this.resolvePendingConfirmation(false);
+                return;
+              }
+              this.trapConfirmationModalFocus(e);
+              return;
+            }
+
+            if (e.key === 'Escape') {
+              document.querySelectorAll('.modal-overlay.active').forEach((modal) => modal.classList.remove('active'));
+            }
+          });
+          this.hasBoundGlobalModalEvents = true;
+        }
         console.log("Events Bound Successfully.");
       } catch (e) {
         console.error("BindEvents Error:", e);
