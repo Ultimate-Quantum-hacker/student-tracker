@@ -134,6 +134,7 @@ export const formatSubmissionError = (
     code.includes('permission-denied')
     || code === 'permission'
     || message.toLowerCase().includes('permission denied')
+    || message.toLowerCase().includes('insufficient permissions')
   ) {
     return 'You do not have permission to complete this action.';
   }

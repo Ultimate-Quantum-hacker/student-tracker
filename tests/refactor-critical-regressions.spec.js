@@ -177,7 +177,18 @@ export const getDoc = async (ref) => {
   }
   return buildDocSnapshot(buildDocRef(ref?.path || []), store.get(key));
 };
-export const getDocs = async (target) => buildQuerySnapshot(resolveEntries(target));
+export const getDocs = async (target) => {
+  const getDocsHook = globalThis.__firestoreGetDocsHook;
+  if (typeof getDocsHook === 'function') {
+    const hookResult = await getDocsHook({
+      target: cloneValue(target)
+    });
+    if (hookResult && typeof hookResult === 'object' && Object.prototype.hasOwnProperty.call(hookResult, 'throw')) {
+      throw hookResult.throw;
+    }
+  }
+  return buildQuerySnapshot(resolveEntries(target));
+};
 export const setDoc = async (ref, data = {}, options = {}) => {
   const key = pathKey(ref?.path || []);
   const existing = store.get(key) || {};
@@ -2824,6 +2835,7 @@ test('bulk delete class modal shows polished selection state and prevents deleti
         readOnly: formatSubmissionError({ code: 'app/read-only-admin' }, { app: appContext }),
         network: formatSubmissionError({ message: 'Failed to fetch' }),
         permission: formatSubmissionError({ code: 'permission-denied' }),
+        insufficientPermissionMessage: formatSubmissionError({ message: 'Missing or insufficient permissions.' }),
         service: formatSubmissionError({ code: 'unavailable' }),
         authFeedback: buildSubmissionFeedback({
           error: { code: 'auth/network-request-failed' },
@@ -2842,6 +2854,7 @@ test('bulk delete class modal shows polished selection state and prevents deleti
     expect(result.readOnly).toContain('Admin Review Class');
     expect(result.network).toBe('Network error. Check your connection and try again.');
     expect(result.permission).toBe('You do not have permission to complete this action.');
+    expect(result.insufficientPermissionMessage).toBe('You do not have permission to complete this action.');
     expect(result.service).toBe('Service is unavailable right now. Try again in a moment.');
     expect(result.authFeedback).toEqual({
       tone: 'error',
@@ -2944,6 +2957,131 @@ test('bulk delete class modal shows polished selection state and prevents deleti
     expect(result.threadMeta).toContain('Reply in chat');
     expect(result.threadMeta).toContain('10 / 5000 characters');
     expect(result.threadSubmitDisabled).toBe(false);
+  });
+
+  test('fetchCurrentUserConversations falls back to legacy mailbox when conversation reads are permission denied', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__FIREBASE_CONFIG__ = {
+        apiKey: 'test-api-key',
+        authDomain: 'test-project.firebaseapp.com',
+        projectId: 'test-project',
+        storageBucket: 'test-project.appspot.com',
+        messagingSenderId: '1234567890',
+        appId: '1:1234567890:web:test'
+      };
+    });
+    await page.goto(APP_URL);
+
+    const result = await page.evaluate(async () => {
+      const [firebaseModule, dbModule] = await Promise.all([
+        import('/js/firebase.js'),
+        import('/services/db.js')
+      ]);
+
+      globalThis.__firestoreStore?.clear?.();
+      globalThis.__firestoreGetDocHook = null;
+      globalThis.__firestoreSetDocHook = null;
+      globalThis.__firestoreGetDocsHook = null;
+      localStorage.clear();
+      sessionStorage.clear();
+
+      firebaseModule.auth.currentUser = {
+        uid: 'teacher_conversation_uid',
+        email: 'teacher@example.com',
+        displayName: 'Teacher Conversation',
+        emailVerified: true
+      };
+
+      dbModule.setCurrentUserAccessContext('teacher', [
+        'read_own_class_data',
+        'write_own_class_data',
+        'message_individuals',
+        'receive_messages',
+        'reply_messages'
+      ]);
+
+      const updatedAt = new Date().toISOString();
+      await firebaseModule.setDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'teacher_conversation_uid'),
+        {
+          uid: 'teacher_conversation_uid',
+          userId: 'teacher_conversation_uid',
+          role: 'teacher',
+          permissions: ['read_own_class_data', 'write_own_class_data', 'message_individuals', 'receive_messages', 'reply_messages'],
+          name: 'Teacher Conversation',
+          email: 'teacher@example.com',
+          emailVerified: true,
+          messageUnreadCount: 1,
+          lastMessageAt: updatedAt,
+          updatedAt
+        },
+        { merge: true }
+      );
+      await firebaseModule.setDoc(
+        firebaseModule.doc(firebaseModule.db, 'users', 'teacher_conversation_uid', 'messages', 'legacy_conversation_msg'),
+        {
+          id: 'legacy_conversation_msg',
+          mailbox: 'inbox',
+          threadId: 'legacy_thread_chat',
+          parentMessageId: '',
+          replyToMessageId: '',
+          isReply: false,
+          senderUserId: 'admin_sender_uid',
+          senderName: 'Admin Sender',
+          senderEmail: 'admin@example.com',
+          senderRole: 'admin',
+          recipientUserId: 'teacher_conversation_uid',
+          recipientName: 'Teacher Conversation',
+          recipientEmail: 'teacher@example.com',
+          recipientRole: 'teacher',
+          recipientUserIds: ['teacher_conversation_uid'],
+          recipientCount: 1,
+          subject: 'Support',
+          body: 'Legacy inbox message',
+          audienceType: 'individual',
+          audienceLabel: 'Teacher Conversation',
+          isRead: false,
+          readAt: null,
+          sentAt: updatedAt,
+          createdAt: updatedAt,
+          updatedAt
+        },
+        { merge: false }
+      );
+
+      globalThis.__firestoreGetDocsHook = ({ target = null }) => {
+        let currentTarget = target;
+        while (currentTarget && currentTarget.type === 'query') {
+          currentTarget = currentTarget.target;
+        }
+        const normalizedPath = Array.isArray(currentTarget?.path) ? currentTarget.path : [];
+        if (normalizedPath.length === 1 && normalizedPath[0] === 'conversations') {
+          return {
+            throw: Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' })
+          };
+        }
+        return null;
+      };
+
+      try {
+        const payload = await dbModule.fetchCurrentUserConversations();
+        return {
+          limitedByPermissions: Boolean(payload?.limitedByPermissions),
+          conversationCount: Array.isArray(payload?.conversations) ? payload.conversations.length : 0,
+          firstConversationId: payload?.conversations?.[0]?.id || '',
+          firstConversationSource: payload?.conversations?.[0]?.source || '',
+          unreadCount: Number(payload?.unreadCount || 0)
+        };
+      } finally {
+        globalThis.__firestoreGetDocsHook = null;
+      }
+    });
+
+    expect(result.limitedByPermissions).toBe(true);
+    expect(result.conversationCount).toBe(1);
+    expect(result.firstConversationId).toBe('legacy:direct:admin_sender_uid__teacher_conversation_uid');
+    expect(result.firstConversationSource).toBe('legacy');
+    expect(result.unreadCount).toBe(1);
   });
 
   test('deleted-account routing and queued auth notices stay protected in source', async () => {

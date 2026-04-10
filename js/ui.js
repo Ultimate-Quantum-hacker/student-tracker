@@ -288,6 +288,8 @@ const ui = {
   isLoadingMessageThread: false,
   isSubmittingMessage: false,
   isSubmittingThreadMessage: false,
+  messageRealtimeLimited: false,
+  hasShownMessagePermissionFallbackToast: false,
   messagesRequest: null,
   messageDirectoryRequest: null,
   messageThreadRequest: null,
@@ -1390,6 +1392,8 @@ const ui = {
       this.isLoadingMessageThread = false;
       this.isSubmittingMessage = false;
       this.isSubmittingThreadMessage = false;
+      this.messageRealtimeLimited = false;
+      this.hasShownMessagePermissionFallbackToast = false;
       this.messagesRequest = null;
       this.messageDirectoryRequest = null;
       this.messageThreadRequest = null;
@@ -1558,6 +1562,7 @@ const ui = {
       const nextMessages = Array.isArray(payload?.conversations)
         ? payload.conversations
         : (Array.isArray(payload?.messages) ? payload.messages : []);
+      this.messageRealtimeLimited = Boolean(payload?.limitedByPermissions);
       const previousMessageIds = new Set(previousMessages.map((message) => {
         return String(message?.id || '').trim();
       }).filter(Boolean));
@@ -1594,6 +1599,10 @@ const ui = {
       const capabilities = this.getMessagingCapabilities();
       const hasAccess = capabilities.canReceive || capabilities.canSend || capabilities.canReply;
       if (!authUid || !hasAccess) {
+        this.stopMessageListSubscription();
+        return null;
+      }
+      if (this.messageRealtimeLimited) {
         this.stopMessageListSubscription();
         return null;
       }
@@ -1710,13 +1719,26 @@ const ui = {
         .then((payload) => {
           this.messageDataLoaded = true;
           this.applyMessagesPayload(payload, { preserveSelection: !force });
+          if (payload?.limitedByPermissions && !this.hasShownMessagePermissionFallbackToast) {
+            this.hasShownMessagePermissionFallbackToast = true;
+            this.showToast('Live chat history is limited by Firestore permissions. Showing accessible messages only.', {
+              tone: 'info'
+            });
+          }
           void this.syncSelectedConversationThread();
           void this.ensureMessageListSubscription();
           return payload;
         })
         .catch((error) => {
           console.error('Failed to load conversations:', error);
-          this.showToast('Failed to load conversations');
+          const feedback = buildSubmissionFeedback({
+            error,
+            fallbackMessage: 'Failed to load conversations',
+            app
+          });
+          this.showToast(feedback.message, {
+            tone: feedback.tone
+          });
           throw error;
         })
         .finally(() => {
@@ -2198,6 +2220,8 @@ const ui = {
           app.dom.messagesSectionStatus.textContent = 'Chat is unavailable for this account.';
         } else if (this.isLoadingMessages) {
           app.dom.messagesSectionStatus.textContent = 'Loading your conversations...';
+        } else if (this.messageRealtimeLimited) {
+          app.dom.messagesSectionStatus.textContent = 'Showing accessible messages only. Live conversation sync is limited by current permissions.';
         } else if (app.state.messageLastMessageAt) {
           app.dom.messagesSectionStatus.textContent = `Last updated ${this.formatAccountTimestamp(app.state.messageLastMessageAt, 'Recently')}`;
         } else {
@@ -2212,7 +2236,9 @@ const ui = {
         } else if (this.isLoadingMessages) {
           app.dom.messagesListStatus.textContent = 'Loading conversations...';
         } else if (!filteredMessages.length) {
-          app.dom.messagesListStatus.textContent = allMessages.length ? 'No conversations match the current search or filters.' : 'No conversations yet.';
+          app.dom.messagesListStatus.textContent = allMessages.length
+            ? 'No conversations match the current search or filters.'
+            : (this.messageRealtimeLimited ? 'No accessible conversations yet.' : 'No conversations yet.');
         } else {
           const count = filteredMessages.length;
           const filterLabel = mailboxFilter === 'all' ? 'conversation' : `${mailboxFilter} conversation`;

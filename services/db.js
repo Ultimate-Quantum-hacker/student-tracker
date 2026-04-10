@@ -1259,7 +1259,11 @@ const classifyFirebaseError = (error) => {
     return 'unauthenticated';
   }
 
-  if (code.includes('permission-denied') || message.includes('permission denied')) {
+  if (
+    code.includes('permission-denied')
+    || message.includes('permission denied')
+    || message.includes('insufficient permissions')
+  ) {
     return 'permission';
   }
 
@@ -1272,6 +1276,10 @@ const classifyFirebaseError = (error) => {
   }
 
   return 'unknown';
+};
+
+const isPermissionDeniedError = (error) => {
+  return classifyFirebaseError(error) === 'permission';
 };
 
 const shouldRetry = (errorType) => {
@@ -3685,16 +3693,25 @@ export const fetchCurrentUserConversations = async () => {
 
   const actorRole = getCurrentUserRoleContext();
   const actorPermissions = getCurrentUserPermissionsContext();
-  const [conversationRecords, legacyPayload] = await Promise.all([
-    readConversationListRecords(actorUserId, actorRole, actorPermissions),
-    fetchCurrentUserMessages()
-  ]);
+  let conversationRecords = [];
+  let limitedByPermissions = false;
+  try {
+    conversationRecords = await readConversationListRecords(actorUserId, actorRole, actorPermissions);
+  } catch (error) {
+    if (!isPermissionDeniedError(error)) {
+      throw error;
+    }
+    limitedByPermissions = true;
+    console.warn('Conversation list read denied. Falling back to legacy mailbox only:', error);
+  }
+  const legacyPayload = await fetchCurrentUserMessages();
   const conversations = buildMergedConversationList(conversationRecords, legacyPayload.messages, actorUserId);
   const metadata = await syncCurrentUserConversationMetadata(actorUserId, conversations);
   return {
     conversations,
     unreadCount: metadata.unreadCount,
-    lastMessageAt: metadata.lastMessageAt
+    lastMessageAt: metadata.lastMessageAt,
+    limitedByPermissions
   };
 };
 
