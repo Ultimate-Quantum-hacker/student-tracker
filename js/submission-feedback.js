@@ -70,6 +70,18 @@ export const isReadOnlySubmissionError = (error) => {
   return READ_ONLY_ERROR_CODES.has(getErrorCode(error));
 };
 
+export const isPermissionDeniedSubmissionError = (error) => {
+  const code = getErrorCode(error);
+  const message = getErrorMessage(error).toLowerCase();
+  return (
+    code.includes('permission-denied')
+    || code === 'permission'
+    || code === 'conversation_send_permission_denied'
+    || message.includes('permission denied')
+    || message.includes('insufficient permissions')
+  );
+};
+
 export const resolveReadOnlyBlockedReason = ({ app = null, className = '', ownerName = '' } = {}) => {
   const contextLabel = formatReadOnlyContextLabel({ app, className, ownerName });
   if (contextLabel) {
@@ -130,11 +142,11 @@ export const formatSubmissionError = (
   if (isNavigatorOffline()) {
     return 'You appear to be offline. Reconnect and try again.';
   }
+  if (code === 'conversation_send_permission_denied') {
+    return message || fallbackMessage;
+  }
   if (
-    code.includes('permission-denied')
-    || code === 'permission'
-    || message.toLowerCase().includes('permission denied')
-    || message.toLowerCase().includes('insufficient permissions')
+    isPermissionDeniedSubmissionError(error)
   ) {
     return 'You do not have permission to complete this action.';
   }

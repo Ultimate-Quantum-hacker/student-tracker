@@ -45,6 +45,7 @@ import {
 import {
   buildSubmissionFeedback,
   formatSubmissionError,
+  isPermissionDeniedSubmissionError,
   resolveClassContextSubmissionError,
   resolveMissingClassBlockedReason,
   resolveReadOnlyBlockedReason
@@ -2712,7 +2713,9 @@ const ui = {
         this.applySentMessageResult(result, 'Chat started');
         this.closeMessageComposeModal();
       } catch (error) {
-        console.error('Failed to start chat:', error);
+        if (!isPermissionDeniedSubmissionError(error)) {
+          console.error('Failed to start chat:', error);
+        }
         const feedback = buildSubmissionFeedback({
           error,
           fallbackMessage: 'Failed to start chat'
@@ -2761,7 +2764,9 @@ const ui = {
         }
         this.applySentMessageResult(result, 'Message sent');
       } catch (error) {
-        console.error('Failed to send conversation message:', error);
+        if (!isPermissionDeniedSubmissionError(error)) {
+          console.error('Failed to send conversation message:', error);
+        }
         const feedback = buildSubmissionFeedback({
           error,
           fallbackMessage: 'Failed to send message'

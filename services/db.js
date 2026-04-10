@@ -105,7 +105,8 @@ const ERROR_CODES = {
   INVALID_CLASS_CONTEXT: 'INVALID_CLASS_CONTEXT',
   MISSING_CLASS_ID: 'MISSING_CLASS_ID',
   MISSING_OWNER_ID: 'MISSING_OWNER_ID',
-  PRIVILEGED_ROLE_POLICY: 'PRIVILEGED_ROLE_POLICY'
+  PRIVILEGED_ROLE_POLICY: 'PRIVILEGED_ROLE_POLICY',
+  CONVERSATION_SEND_PERMISSION_DENIED: 'CONVERSATION_SEND_PERMISSION_DENIED'
 };
 
 let currentClassId = '';
@@ -1281,6 +1282,18 @@ const classifyFirebaseError = (error) => {
 
 const isPermissionDeniedError = (error) => {
   return classifyFirebaseError(error) === 'permission';
+};
+
+const buildConversationSendPermissionError = (message = '', cause = null) => {
+  const error = createContextError(
+    ERROR_CODES.CONVERSATION_SEND_PERMISSION_DENIED,
+    String(message || 'Unable to send this message right now.').trim() || 'Unable to send this message right now.'
+  );
+  if (cause) {
+    error.cause = cause;
+    error.originalCode = String(cause?.code || '').trim();
+  }
+  return error;
 };
 
 const shouldRetry = (errorType) => {
@@ -3120,6 +3133,9 @@ const readRecipientRootMessageMetadata = async (userId) => {
   try {
     return await readUserRootData(normalizedUserId);
   } catch (error) {
+    if (isPermissionDeniedError(error)) {
+      return null;
+    }
     console.warn(`Failed to read recipient message metadata for ${normalizedUserId}:`, error);
     return null;
   }
@@ -3703,7 +3719,6 @@ export const fetchCurrentUserConversations = async () => {
       throw error;
     }
     limitedByPermissions = true;
-    console.warn('Conversation list read denied. Falling back to legacy mailbox only:', error);
   }
   const legacyPayload = await fetchCurrentUserMessages();
   const conversations = buildMergedConversationList(conversationRecords, legacyPayload.messages, actorUserId);
@@ -3765,6 +3780,34 @@ export const fetchConversationMessages = async (conversationId = '') => {
       buildLegacyDirectConversationMessages(legacyPayload.messages, conversationRecord.directKey, actorUserId, normalizedConversationId)
     ),
     unreadCount: Math.max(0, Math.floor(Number(conversationRecord?.unreadCount || 0)))
+  };
+};
+
+const sendLegacyConversationReplyFallback = async (conversationId = '', body = '') => {
+  const normalizedConversationId = String(conversationId || '').trim();
+  const existingThread = await fetchConversationMessages(normalizedConversationId);
+  const replyTarget = asArray(existingThread?.messages)
+    .filter((entry) => String(entry?.legacyMessageId || '').trim())
+    .slice()
+    .sort(sortConversationMessagesByOldest)
+    .pop() || null;
+
+  if (!replyTarget?.legacyMessageId) {
+    throw buildConversationSendPermissionError(
+      'Unable to send this reply because the legacy mailbox thread could not be resumed.'
+    );
+  }
+
+  const replyResult = await replyToMessage(replyTarget.legacyMessageId, { body });
+  const refreshedThread = await fetchConversationMessages(normalizedConversationId);
+  const sentLegacyMessageId = String(replyResult?.sentMessage?.id || '').trim();
+  const matchedMessage = asArray(refreshedThread?.messages).find((entry) => {
+    return String(entry?.legacyMessageId || '').trim() === sentLegacyMessageId;
+  }) || asArray(refreshedThread?.messages).slice().sort(sortConversationMessagesByOldest).pop() || null;
+
+  return {
+    conversation: refreshedThread?.conversation || existingThread?.conversation || null,
+    message: matchedMessage
   };
 };
 
@@ -3946,6 +3989,7 @@ export const sendConversationMessage = async (payload = {}) => {
   const actorUserId = await ensureAuthenticatedUserId('send conversation messages');
   const actorRole = getCurrentUserRoleContext();
   const actorPermissions = getCurrentUserPermissionsContext();
+  const normalizedConversationId = String(payload?.conversationId || '').trim();
   if (!canStartConversations(actorRole, actorPermissions) && !String(payload?.conversationId || '').trim()) {
     throw createContextError(ERROR_CODES.READ_ONLY_MODE, 'You do not have permission to start conversations');
   }
@@ -3959,127 +4003,157 @@ export const sendConversationMessage = async (payload = {}) => {
     throw new Error('Message body is required');
   }
 
-  const senderProfile = await buildCurrentMessageSenderProfile(normalizedActorUserId);
-  const target = await resolveConversationWriteTarget({
-    conversationId: payload?.conversationId,
-    recipientUserId: payload?.recipientUserId || payload?.uid,
-    actorUserId: normalizedActorUserId,
-    actorRole,
-    actorPermissions
-  });
-  const senderParticipant = normalizeMessageRecipientEntry({
-    ...senderProfile,
-    receivesMessages: true
-  });
-  const recipientParticipant = target.recipient
-    ? normalizeMessageRecipientEntry(target.recipient)
-    : null;
-  const participantMaps = buildConversationParticipantMaps([senderParticipant, recipientParticipant].filter(Boolean));
-  const existingConversation = target.conversationRecord || null;
-  const participants = normalizeConversationUserIdList(
-    (existingConversation?.participants || []).concat(participantMaps.participants)
-  );
-  if (!participants.length) {
-    throw new Error('At least one participant is required');
-  }
+  try {
+    const senderProfile = await buildCurrentMessageSenderProfile(normalizedActorUserId);
+    const target = await resolveConversationWriteTarget({
+      conversationId: payload?.conversationId,
+      recipientUserId: payload?.recipientUserId || payload?.uid,
+      actorUserId: normalizedActorUserId,
+      actorRole,
+      actorPermissions
+    });
+    const senderParticipant = normalizeMessageRecipientEntry({
+      ...senderProfile,
+      receivesMessages: true
+    });
+    const recipientParticipant = target.recipient
+      ? normalizeMessageRecipientEntry(target.recipient)
+      : null;
+    const participantMaps = buildConversationParticipantMaps([senderParticipant, recipientParticipant].filter(Boolean));
+    const existingConversation = target.conversationRecord || null;
+    const participants = normalizeConversationUserIdList(
+      (existingConversation?.participants || []).concat(participantMaps.participants)
+    );
+    if (!participants.length) {
+      throw new Error('At least one participant is required');
+    }
 
-  const participantNames = {
-    ...(existingConversation?.participantNames || {}),
-    ...participantMaps.participantNames
-  };
-  const participantEmails = {
-    ...(existingConversation?.participantEmails || {}),
-    ...participantMaps.participantEmails
-  };
-  const participantRoles = {
-    ...(existingConversation?.participantRoles || {}),
-    ...participantMaps.participantRoles
-  };
-  const conversationIdValue = String(target.conversationId || '').trim();
-  const directKey = buildDirectConversationKey(participants);
-  const createdAt = new Date().toISOString();
-  const nextUnreadCountByUser = buildConversationUnreadCountByUser(existingConversation?.unreadCountByUser || {}, participants, normalizedActorUserId);
-  const messageRef = doc(getConversationMessagesCollectionRef(conversationIdValue));
-  const conversationPayload = {
-    id: conversationIdValue,
-    type: CONVERSATION_TYPE_DIRECT,
-    directKey,
-    participants,
-    participantNames,
-    participantEmails,
-    participantRoles,
-    initiatorId: existingConversation?.participants?.length ? (existingConversation?.participants[0] || normalizedActorUserId) : normalizedActorUserId,
-    initiatorRole: existingConversation?.participants?.length ? normalizeRole(existingConversation?.participantRoles?.[existingConversation.participants[0]] || senderProfile.role) : normalizeRole(senderProfile.role),
-    lastMessageText: normalizedBody,
-    lastMessagePreview: buildMessagePreview(normalizedBody),
-    lastMessageAt: createdAt,
-    lastMessageSenderId: normalizedActorUserId,
-    lastMessageSenderName: normalizeDisplayName(senderProfile?.name || getAuthenticatedUserDisplayName(), 'Teacher'),
-    lastMessageSenderRole: normalizeRole(senderProfile?.role || ROLE_TEACHER),
-    unreadCountByUser: nextUnreadCountByUser,
-    createdAt: existingConversation?.createdAt || createdAt,
-    updatedAt: createdAt
-  };
-  const messagePayload = {
-    id: messageRef.id,
-    conversationId: conversationIdValue,
-    type: 'text',
-    senderId: normalizedActorUserId,
-    senderName: normalizeDisplayName(senderProfile?.name || getAuthenticatedUserDisplayName(), 'Teacher'),
-    senderEmail: normalizeEmailAddress(senderProfile?.email || auth?.currentUser?.email || ''),
-    senderRole: normalizeRole(senderProfile?.role || ROLE_TEACHER),
-    text: normalizedBody,
-    body: normalizedBody,
-    readByUserIds: [normalizedActorUserId],
-    createdAt,
-    updatedAt: createdAt,
-    sentAt: serverTimestamp()
-  };
+    const participantNames = {
+      ...(existingConversation?.participantNames || {}),
+      ...participantMaps.participantNames
+    };
+    const participantEmails = {
+      ...(existingConversation?.participantEmails || {}),
+      ...participantMaps.participantEmails
+    };
+    const participantRoles = {
+      ...(existingConversation?.participantRoles || {}),
+      ...participantMaps.participantRoles
+    };
+    const conversationIdValue = String(target.conversationId || '').trim();
+    const directKey = buildDirectConversationKey(participants);
+    const createdAt = new Date().toISOString();
+    const nextUnreadCountByUser = buildConversationUnreadCountByUser(existingConversation?.unreadCountByUser || {}, participants, normalizedActorUserId);
+    const messageRef = doc(getConversationMessagesCollectionRef(conversationIdValue));
+    const conversationPayload = {
+      id: conversationIdValue,
+      type: CONVERSATION_TYPE_DIRECT,
+      directKey,
+      participants,
+      participantNames,
+      participantEmails,
+      participantRoles,
+      initiatorId: existingConversation?.participants?.length ? (existingConversation?.participants[0] || normalizedActorUserId) : normalizedActorUserId,
+      initiatorRole: existingConversation?.participants?.length ? normalizeRole(existingConversation?.participantRoles?.[existingConversation.participants[0]] || senderProfile.role) : normalizeRole(senderProfile.role),
+      lastMessageText: normalizedBody,
+      lastMessagePreview: buildMessagePreview(normalizedBody),
+      lastMessageAt: createdAt,
+      lastMessageSenderId: normalizedActorUserId,
+      lastMessageSenderName: normalizeDisplayName(senderProfile?.name || getAuthenticatedUserDisplayName(), 'Teacher'),
+      lastMessageSenderRole: normalizeRole(senderProfile?.role || ROLE_TEACHER),
+      unreadCountByUser: nextUnreadCountByUser,
+      createdAt: existingConversation?.createdAt || createdAt,
+      updatedAt: createdAt
+    };
+    const messagePayload = {
+      id: messageRef.id,
+      conversationId: conversationIdValue,
+      type: 'text',
+      senderId: normalizedActorUserId,
+      senderName: normalizeDisplayName(senderProfile?.name || getAuthenticatedUserDisplayName(), 'Teacher'),
+      senderEmail: normalizeEmailAddress(senderProfile?.email || auth?.currentUser?.email || ''),
+      senderRole: normalizeRole(senderProfile?.role || ROLE_TEACHER),
+      text: normalizedBody,
+      body: normalizedBody,
+      readByUserIds: [normalizedActorUserId],
+      createdAt,
+      updatedAt: createdAt,
+      sentAt: serverTimestamp()
+    };
 
-  const batch = writeBatch(db);
-  batch.set(getConversationDocRef(conversationIdValue), conversationPayload, { merge: true });
-  batch.set(messageRef, messagePayload, { merge: true });
+    const batch = writeBatch(db);
+    batch.set(getConversationDocRef(conversationIdValue), conversationPayload, { merge: true });
+    batch.set(messageRef, messagePayload, { merge: true });
 
-  const otherParticipants = participants.filter(participantId => participantId !== normalizedActorUserId);
-  const rootMetadataRecords = await Promise.all(otherParticipants.map(async (participantId) => {
-    const rootData = await readRecipientRootMessageMetadata(participantId);
-    return [participantId, rootData];
-  }));
-  const rootMetadataMap = new Map(rootMetadataRecords);
-  otherParticipants.forEach((participantId) => {
-    const existingRootData = rootMetadataMap.get(participantId) || {};
-    if (Object.keys(existingRootData).length) {
-      const existingUnreadCount = Number.isFinite(Number(existingRootData?.messageUnreadCount))
-        ? Math.max(0, Math.floor(Number(existingRootData.messageUnreadCount)))
-        : 0;
-      batch.set(getUserRootRef(participantId), {
-        userId: participantId,
-        messageUnreadCount: existingUnreadCount + 1,
+    const otherParticipants = participants.filter(participantId => participantId !== normalizedActorUserId);
+    const rootMetadataRecords = await Promise.all(otherParticipants.map(async (participantId) => {
+      const rootData = await readRecipientRootMessageMetadata(participantId);
+      return [participantId, rootData];
+    }));
+    const rootMetadataMap = new Map(rootMetadataRecords);
+    otherParticipants.forEach((participantId) => {
+      const existingRootData = rootMetadataMap.get(participantId) || {};
+      if (Object.keys(existingRootData).length) {
+        const existingUnreadCount = Number.isFinite(Number(existingRootData?.messageUnreadCount))
+          ? Math.max(0, Math.floor(Number(existingRootData.messageUnreadCount)))
+          : 0;
+        batch.set(getUserRootRef(participantId), {
+          userId: participantId,
+          messageUnreadCount: existingUnreadCount + 1,
+          lastMessageAt: createdAt,
+          updatedAt: createdAt
+        }, { merge: true });
+      }
+    });
+
+    await batch.commit();
+
+    try {
+      await mergeUserRootMetadata(normalizedActorUserId, {
+        userId: normalizedActorUserId,
         lastMessageAt: createdAt,
         updatedAt: createdAt
-      }, { merge: true });
+      });
+    } catch (error) {
+      console.warn('Failed to update sender conversation metadata:', error);
     }
-  });
 
-  await batch.commit();
-
-  try {
-    await mergeUserRootMetadata(normalizedActorUserId, {
-      userId: normalizedActorUserId,
-      lastMessageAt: createdAt,
-      updatedAt: createdAt
-    });
+    return {
+      conversation: normalizeConversationRecord(conversationIdValue, conversationPayload, normalizedActorUserId),
+      message: normalizeConversationMessageRecord(messageRef.id, {
+        ...messagePayload,
+        sentAt: createdAt
+      }, conversationIdValue, normalizedActorUserId)
+    };
   } catch (error) {
-    console.warn('Failed to update sender conversation metadata:', error);
-  }
+    if (!isPermissionDeniedError(error)) {
+      throw error;
+    }
 
-  return {
-    conversation: normalizeConversationRecord(conversationIdValue, conversationPayload, normalizedActorUserId),
-    message: normalizeConversationMessageRecord(messageRef.id, {
-      ...messagePayload,
-      sentAt: createdAt
-    }, conversationIdValue, normalizedActorUserId)
-  };
+    if (normalizedConversationId.startsWith('legacy:')) {
+      try {
+        return await sendLegacyConversationReplyFallback(normalizedConversationId, normalizedBody);
+      } catch (fallbackError) {
+        if (
+          !isPermissionDeniedError(fallbackError)
+          && String(fallbackError?.code || '').trim() !== ERROR_CODES.CONVERSATION_SEND_PERMISSION_DENIED
+        ) {
+          throw fallbackError;
+        }
+        throw buildConversationSendPermissionError(
+          'Unable to send this reply because live chat access is blocked and the legacy mailbox fallback is unavailable.',
+          fallbackError
+        );
+      }
+    }
+
+    throw buildConversationSendPermissionError(
+      normalizedConversationId
+        ? 'Unable to send this message because live chat access to this conversation is restricted.'
+        : 'Unable to start this chat because direct conversation access is restricted for your account.',
+      error
+    );
+  }
 };
 
 export const markConversationAsRead = async (conversationId = '') => {
