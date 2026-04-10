@@ -1,0 +1,2 @@
+Welcome to firepit v1.1.0!
+Error: spawn EPERM

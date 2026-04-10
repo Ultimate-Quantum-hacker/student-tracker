@@ -1,0 +1,68 @@
+0 verbose cli C:\Program Files\nodejs\node.exe C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js
+1 info using npm@11.9.0
+2 info using node@v24.14.0
+3 silly config load:file:C:\Program Files\nodejs\node_modules\npm\npmrc
+4 silly config load:file:C:\Users\SAGE\OneDrive\Desktop\codes\Student Tracker\.npmrc
+5 silly config load:file:C:\Users\SAGE\.npmrc
+6 silly config load:file:C:\Users\SAGE\AppData\Roaming\npm\etc\npmrc
+7 verbose title npm exec firebase-tools deploy --only firestore:rules --project student-tracker-app-670c2
+8 verbose argv "exec" "--cache" ".npm-cache" "--" "firebase-tools" "deploy" "--only" "firestore:rules" "--project" "student-tracker-app-670c2"
+9 verbose logfile logs-max:10 dir:C:\Users\SAGE\OneDrive\Desktop\codes\Student Tracker\.npm-cache\_logs\2026-04-10T20_44_32_091Z-
+10 verbose logfile C:\Users\SAGE\OneDrive\Desktop\codes\Student Tracker\.npm-cache\_logs\2026-04-10T20_44_32_091Z-debug-0.log
+11 silly logfile done cleaning log files
+12 silly packumentCache heap:4496293888 maxSize:1124073472 maxEntrySize:562036736
+13 http fetch GET 200 https://registry.npmjs.org/npm 398ms
+14 http fetch GET 200 https://registry.npmjs.org/firebase-tools 968ms (cache miss)
+15 verbose type system
+16 verbose stack FetchError: Invalid response body while trying to fetch https://registry.npmjs.org/firebase-tools: EPERM: operation not permitted, unlink 'C:\Users\SAGE\OneDrive\Desktop\codes\Student Tracker\.npm-cache\_cacache\tmp\c0dac88d'
+16 verbose stack     at C:\Program Files\nodejs\node_modules\npm\node_modules\minipass-fetch\lib\body.js:170:15
+16 verbose stack     at async Response.json (C:\Program Files\nodejs\node_modules\npm\node_modules\minipass-fetch\lib\body.js:75:17)
+16 verbose stack     at async RegistryFetcher.packument (C:\Program Files\nodejs\node_modules\npm\node_modules\pacote\lib\registry.js:98:25)
+16 verbose stack     at async RegistryFetcher.manifest (C:\Program Files\nodejs\node_modules\npm\node_modules\pacote\lib\registry.js:128:23)
+16 verbose stack     at async getManifest (C:\Program Files\nodejs\node_modules\npm\node_modules\libnpmexec\lib\index.js:29:22)
+16 verbose stack     at async missingFromTree (C:\Program Files\nodejs\node_modules\npm\node_modules\libnpmexec\lib\index.js:69:22)
+16 verbose stack     at async C:\Program Files\nodejs\node_modules\npm\node_modules\libnpmexec\lib\index.js:191:32
+16 verbose stack     at async Promise.all (index 0)
+16 verbose stack     at async exec (C:\Program Files\nodejs\node_modules\npm\node_modules\libnpmexec\lib\index.js:189:3)
+16 verbose stack     at async Npm.exec (C:\Program Files\nodejs\node_modules\npm\lib\npm.js:208:9)
+17 error code EPERM
+18 error syscall unlink
+19 error path C:\Users\SAGE\OneDrive\Desktop\codes\Student Tracker\.npm-cache\_cacache\tmp\c0dac88d
+20 error errno EPERM
+21 error FetchError: Invalid response body while trying to fetch https://registry.npmjs.org/firebase-tools: EPERM: operation not permitted, unlink 'C:\Users\SAGE\OneDrive\Desktop\codes\Student Tracker\.npm-cache\_cacache\tmp\c0dac88d'
+21 error     at C:\Program Files\nodejs\node_modules\npm\node_modules\minipass-fetch\lib\body.js:170:15
+21 error     at async Response.json (C:\Program Files\nodejs\node_modules\npm\node_modules\minipass-fetch\lib\body.js:75:17)
+21 error     at async RegistryFetcher.packument (C:\Program Files\nodejs\node_modules\npm\node_modules\pacote\lib\registry.js:98:25)
+21 error     at async RegistryFetcher.manifest (C:\Program Files\nodejs\node_modules\npm\node_modules\pacote\lib\registry.js:128:23)
+21 error     at async getManifest (C:\Program Files\nodejs\node_modules\npm\node_modules\libnpmexec\lib\index.js:29:22)
+21 error     at async missingFromTree (C:\Program Files\nodejs\node_modules\npm\node_modules\libnpmexec\lib\index.js:69:22)
+21 error     at async C:\Program Files\nodejs\node_modules\npm\node_modules\libnpmexec\lib\index.js:191:32
+21 error     at async Promise.all (index 0)
+21 error     at async exec (C:\Program Files\nodejs\node_modules\npm\node_modules\libnpmexec\lib\index.js:189:3)
+21 error     at async Npm.exec (C:\Program Files\nodejs\node_modules\npm\lib\npm.js:208:9) {
+21 error   code: 'EPERM',
+21 error   errno: 'EPERM',
+21 error   syscall: 'unlink',
+21 error   path: 'C:\\Users\\SAGE\\OneDrive\\Desktop\\codes\\Student Tracker\\.npm-cache\\_cacache\\tmp\\c0dac88d',
+21 error   type: 'system'
+21 error }
+22 error
+22 error The operation was rejected by your operating system.
+22 error It's possible that the file was already in use (by a text editor or antivirus),
+22 error or that you lack permissions to access it.
+22 error
+22 error If you believe this might be a permissions issue, please double-check the
+22 error permissions of the file and its containing directories, or try running
+22 error the command again as root/Administrator.
+23 verbose cwd C:\Users\SAGE\OneDrive\Desktop\codes\Student Tracker
+24 verbose os Windows_NT 10.0.26200
+25 verbose node v24.14.0
+26 verbose npm  v11.9.0
+27 notice
+27 notice New minor version of npm available! 11.9.0 -> 11.12.1
+27 notice Changelog: https://github.com/npm/cli/releases/tag/v11.12.1
+27 notice To update run: npm install -g npm@11.12.1
+27 notice  { force: true, Symbol(proc-log.meta): true }
+28 verbose exit 1
+29 verbose code 1
+30 error A complete log of this run can be found in: C:\Users\SAGE\OneDrive\Desktop\codes\Student Tracker\.npm-cache\_logs\2026-04-10T20_44_32_091Z-debug-0.log
