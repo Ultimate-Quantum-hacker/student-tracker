@@ -92,16 +92,18 @@ service cloud.firestore {
 
     function teacherPermissionsAreCanonical(permissions) {
       return permissions is list
-        && permissions.size() == 4
+        && permissions.size() == 5
         && permissions.hasAll([
           'read_own_class_data',
           'write_own_class_data',
+          'message_individuals',
           'receive_messages',
           'reply_messages'
         ])
         && permissions.hasOnly([
           'read_own_class_data',
           'write_own_class_data',
+          'message_individuals',
           'receive_messages',
           'reply_messages'
         ]);

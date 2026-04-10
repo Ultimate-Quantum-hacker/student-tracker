@@ -1043,6 +1043,9 @@ test.describe('Class refactor critical regressions', () => {
     const dbSource = readWorkspaceFile('services/db.js');
     const rulesSource = readWorkspaceFile('firestore.rules');
 
+    expect(rulesSource).toContain('function teacherPermissionsAreCanonical(permissions) {');
+    expect(rulesSource).toContain("&& permissions.size() == 5");
+    expect(rulesSource).toContain("'message_individuals'");
     expect(rulesSource).toContain('function ownerCanCreateOwnUserDoc(userId) {');
     expect(rulesSource).toContain("request.resource.data.role == 'teacher'");
     expect(rulesSource).toContain("'createdAt'");
