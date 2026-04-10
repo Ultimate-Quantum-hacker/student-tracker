@@ -4230,7 +4230,7 @@ const ui = {
       const teacherName = app.utils.esc(this.getTeacherNameForExport());
       return `
         <div class="rc-export-meta">
-          <h2 class="rc-export-meta-title">Student Performance Report</h2>
+          <h2 class="rc-export-meta-title">STUDENT PERFORMANCE REPORT</h2>
           <div class="rc-export-meta-row">
             <span>Date Generated: ${app.utils.esc(dateGenerated)}</span>
             <span>Teacher: ${teacherName}</span>
@@ -4314,7 +4314,7 @@ const ui = {
         return;
       }
 
-      const studentName = reportCard.querySelector('.rc-title')?.textContent || 'Student';
+      const studentName = reportCard.querySelector('.rc-student-name, .rc-title')?.textContent || 'Student';
       const dateStamp = this.getExportDateStamp();
       const fileName = `student-report-${dateStamp}.pdf`;
 
@@ -4539,6 +4539,188 @@ const ui = {
         if (weakest && weakest !== 'N/A') summaryParts.push(`improvement is needed in ${app.utils.esc(weakest)}`);
         autoSummary = summaryParts.length ? `${summaryParts.join(', ')}.` : '';
       }
+
+      const schoolName = String(document.querySelector('.logo-title')?.textContent || 'Student Performance Tracker').trim() || 'Student Performance Tracker';
+      const schoolMotto = String(document.querySelector('.logo-motto')?.textContent || 'Tracking Progress. Unlocking Potential.').trim() || 'Tracking Progress. Unlocking Potential.';
+      const reportDate = new Date().toLocaleDateString();
+      const classDisplay = this.getCurrentClassDisplayLabel();
+      const termDisplay = String(latestExam?.title || latestExam?.name || 'Current Term').trim() || 'Current Term';
+      const positionDisplay = `${formatOrdinal(rankPos)} of ${totalStudents}`;
+      const latestTotalDisplay = app.utils.esc(this.formatFixedOrFallback(currentScore, 1, 'N/A'));
+      const previousTotalDisplay = app.utils.esc(this.formatFixedOrFallback(previousScore, 1, 'N/A'));
+      const improvementDisplay = app.utils.esc(improvement.text || 'N/A');
+      const hasClassTeacherRemark = Boolean(String(s.notes || '').trim());
+      const summaryText = autoSummary || app.utils.esc('Performance summary will appear here once assessment notes are available.');
+      const buildRemarkContent = (value = '', fallbackLabel = 'No remarks recorded.') => {
+        const normalizedValue = String(value || '').trim();
+        if (normalizedValue) {
+          return `<p class="rc-remark-text">${app.utils.esc(normalizedValue)}</p>`;
+        }
+        return `
+          <div class="rc-remark-placeholder" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <p class="rc-remark-empty">${app.utils.esc(fallbackLabel)}</p>
+        `;
+      };
+
+      const formalReportMarkup = `
+        <div class="report-card report-card--formal" data-watermark="${app.utils.esc(schoolName)}">
+          <header class="rc-report-header rc-print-section">
+            <div class="rc-brand-name">${app.utils.esc(schoolName)}</div>
+            <div class="rc-brand-motto">${app.utils.esc(schoolMotto)}</div>
+            <div class="rc-section-divider" aria-hidden="true"></div>
+            <div class="rc-title">STUDENT PERFORMANCE REPORT</div>
+            <div class="rc-student-name">${app.utils.esc(s.name)}</div>
+            <div class="rc-issued-date">Date Issued: ${app.utils.esc(reportDate)}</div>
+          </header>
+
+          <section class="rc-section-block rc-print-section">
+            <div class="rc-info-grid">
+              <div class="rc-info-item">
+                <span class="rc-info-label">Name</span>
+                <strong class="rc-info-value">${app.utils.esc(s.name)}</strong>
+              </div>
+              <div class="rc-info-item">
+                <span class="rc-info-label">Class</span>
+                <strong class="rc-info-value">${app.utils.esc(classDisplay)}</strong>
+              </div>
+              <div class="rc-info-item">
+                <span class="rc-info-label">Term</span>
+                <strong class="rc-info-value">${app.utils.esc(termDisplay)}</strong>
+              </div>
+              <div class="rc-info-item">
+                <span class="rc-info-label">Position</span>
+                <strong class="rc-info-value">${app.utils.esc(positionDisplay)}</strong>
+              </div>
+              <div class="rc-info-item rc-info-item--wide">
+                <span class="rc-info-label">Average</span>
+                <strong class="rc-info-value rc-info-value--headline">${app.utils.esc(overallAverageDisplay)}</strong>
+              </div>
+            </div>
+          </section>
+
+          <section class="rc-section-block rc-print-section">
+            <div class="rc-section-heading">
+              <h4>Assessment Snapshot</h4>
+            </div>
+            <div class="rc-snapshot-grid">
+              <div class="rc-snapshot-item">
+                <span class="rc-snapshot-label">Latest Total</span>
+                <strong class="rc-snapshot-value">${latestTotalDisplay}</strong>
+              </div>
+              <div class="rc-snapshot-item">
+                <span class="rc-snapshot-label">Previous Total</span>
+                <strong class="rc-snapshot-value">${previousTotalDisplay}</strong>
+              </div>
+              <div class="rc-snapshot-item">
+                <span class="rc-snapshot-label">Improvement</span>
+                <strong class="rc-snapshot-value">${improvementDisplay}</strong>
+              </div>
+              <div class="rc-snapshot-item">
+                <span class="rc-snapshot-label">Exams Taken</span>
+                <strong class="rc-snapshot-value">${examCount}</strong>
+              </div>
+            </div>
+          </section>
+
+          <section class="rc-section-block rc-print-section">
+            <div class="rc-section-heading">
+              <h4>Academic Performance</h4>
+            </div>
+            <div class="rc-grade-table-wrap">
+              <table class="rc-table">
+                <thead>
+                  <tr>
+                    <th>Subject</th>
+                    ${examHeaders}
+                    <th>Average</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${subjectRows}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="rc-section-block rc-print-section">
+            <div class="rc-section-heading">
+              <h4>Performance Highlights</h4>
+            </div>
+            <div class="rc-highlights-row">
+              <div class="rc-highlight-item">
+                <span class="rc-highlight-label">Best Subject</span>
+                <strong class="rc-highlight-value">${app.utils.esc(strongest)}</strong>
+              </div>
+              <div class="rc-highlight-item">
+                <span class="rc-highlight-label">Weakest Subject</span>
+                <strong class="rc-highlight-value">${app.utils.esc(weakest)}</strong>
+              </div>
+              <div class="rc-highlight-item">
+                <span class="rc-highlight-label">Performance Level</span>
+                <strong class="rc-highlight-value">${app.utils.esc(statusLabel)}</strong>
+              </div>
+            </div>
+          </section>
+
+          <section class="rc-section-block rc-print-section">
+            <div class="rc-section-heading">
+              <h4>Academic Summary</h4>
+            </div>
+            <div class="rc-summary-box">${summaryText}</div>
+          </section>
+
+          <section class="rc-section-block rc-print-section">
+            <div class="rc-section-heading">
+              <h4>Teacher Remarks</h4>
+            </div>
+            <div class="rc-remarks-grid">
+              <section class="rc-remark-card">
+                <h5 class="rc-remark-title">Class Teacher's Remarks</h5>
+                ${buildRemarkContent(hasClassTeacherRemark ? s.notes : '', 'Awaiting class teacher remarks.')}
+              </section>
+              <section class="rc-remark-card">
+                <h5 class="rc-remark-title">Head Teacher's Remarks</h5>
+                ${buildRemarkContent('', 'Awaiting head teacher remarks.')}
+              </section>
+            </div>
+          </section>
+
+          <section class="rc-section-block rc-print-section">
+            <div class="rc-signature-grid">
+              <div class="rc-signature-block">
+                <div class="rc-signature-line"></div>
+                <div class="rc-signature-label">Class Teacher</div>
+              </div>
+              <div class="rc-signature-block">
+                <div class="rc-signature-line"></div>
+                <div class="rc-signature-label">Head Teacher</div>
+              </div>
+            </div>
+          </section>
+
+          <section class="rc-section-block rc-section-block--footer rc-print-section">
+            <div class="rc-section-heading">
+              <h4>Grading System</h4>
+            </div>
+            <div class="rc-grading-scale" aria-label="Grading scale">
+              <span class="rc-grading-item">A: 70-100</span>
+              <span class="rc-grading-item">B: 60-69</span>
+              <span class="rc-grading-item">C: 50-59</span>
+              <span class="rc-grading-item">D: 45-49</span>
+              <span class="rc-grading-item">E: 40-44</span>
+              <span class="rc-grading-item">F: 0-39</span>
+            </div>
+          </section>
+        </div>
+      `;
+
+      app.dom.reportContainer.innerHTML = formalReportMarkup;
+      app.dom.reportModal.classList.add('active');
+      return;
 
       const reportMarkup = `
         <div class="report-card">

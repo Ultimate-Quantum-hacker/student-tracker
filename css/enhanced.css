@@ -752,6 +752,7 @@ body.dark-mode .hm-category-badge{color:#f8fafc}
 
 /* Report Modal */
 .modal-lg{max-width:850px;max-height:90vh;overflow-y:auto}
+#report-modal .modal{max-width:min(980px,94vw)}
 .report-export-status{font-size:.78rem;color:var(--text-secondary);font-weight:600;align-self:center;min-height:1em}
 
 /* Print Report Card */
@@ -3399,6 +3400,438 @@ body.dark-mode #class-chart-container {
   .rc-metric-card, .rc-insight-card, .rc-summary-section {
     border: 1px solid #e2e8f0 !important;
     background: #fff !important;
+  }
+}
+
+/* Formal printed report card */
+.report-card--formal{
+  position:relative;
+  isolation:isolate;
+  max-width:900px;
+  margin:0 auto;
+  padding:2.5rem 2.75rem;
+  border:1px solid #d6ccb5;
+  border-radius:0;
+  background:#fffdfa;
+  color:#111111;
+  font-family:"Times New Roman", Times, serif;
+  line-height:1.55;
+  box-shadow:0 16px 44px rgba(15,23,42,.08);
+}
+
+.report-card--formal::before{
+  content:attr(data-watermark);
+  position:absolute;
+  inset:16% 0 auto 0;
+  text-align:center;
+  font-size:4.8rem;
+  font-weight:700;
+  letter-spacing:.18em;
+  color:rgba(17,17,17,.05);
+  transform:rotate(-24deg);
+  pointer-events:none;
+  z-index:-1;
+  text-transform:uppercase;
+}
+
+.report-card--formal .rc-report-header{
+  text-align:center;
+  margin-bottom:1.6rem;
+}
+
+.report-card--formal .rc-brand-name{
+  font-size:1.7rem;
+  font-weight:700;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+
+.report-card--formal .rc-brand-motto{
+  margin-top:.35rem;
+  font-size:.92rem;
+  font-style:italic;
+  color:#4a4a4a;
+}
+
+.report-card--formal .rc-section-divider{
+  width:100%;
+  height:1px;
+  margin:1rem 0 .9rem;
+  background:#161616;
+}
+
+.report-card--formal .rc-title{
+  font-size:1.18rem;
+  font-weight:700;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+}
+
+.report-card--formal .rc-student-name{
+  margin-top:.6rem;
+  font-size:1.34rem;
+  font-weight:700;
+}
+
+.report-card--formal .rc-issued-date{
+  margin-top:.3rem;
+  font-size:.92rem;
+}
+
+.report-card--formal .rc-section-block{
+  margin-top:1.35rem;
+  page-break-inside:avoid;
+  break-inside:avoid;
+}
+
+.report-card--formal .rc-section-heading{
+  margin-bottom:.65rem;
+}
+
+.report-card--formal .rc-section-heading h4{
+  margin:0;
+  font-size:.95rem;
+  font-weight:700;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:#111111;
+}
+
+.report-card--formal .rc-info-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:.65rem 1.2rem;
+  border:1px solid #1f1f1f;
+  padding:1rem 1.1rem;
+  background:#ffffff;
+}
+
+.report-card--formal .rc-info-item{
+  display:flex;
+  flex-direction:column;
+  gap:.18rem;
+  min-height:3.15rem;
+}
+
+.report-card--formal .rc-info-item--wide{
+  grid-column:1 / -1;
+}
+
+.report-card--formal .rc-info-label,
+.report-card--formal .rc-snapshot-label,
+.report-card--formal .rc-highlight-label{
+  font-size:.78rem;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.06em;
+  color:#444444;
+}
+
+.report-card--formal .rc-info-value,
+.report-card--formal .rc-snapshot-value,
+.report-card--formal .rc-highlight-value{
+  font-size:1rem;
+  font-weight:700;
+  color:#111111;
+}
+
+.report-card--formal .rc-info-value--headline{
+  font-size:1.24rem;
+}
+
+.report-card--formal .rc-snapshot-grid{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:.65rem;
+}
+
+.report-card--formal .rc-snapshot-item,
+.report-card--formal .rc-highlight-item{
+  border:1px solid #1f1f1f;
+  padding:.8rem .9rem;
+  background:#ffffff;
+}
+
+.report-card--formal .rc-grade-table-wrap{
+  overflow-x:auto;
+  background:#ffffff;
+}
+
+.report-card--formal .rc-table{
+  width:100%;
+  border-collapse:collapse;
+  border:1px solid #161616;
+  background:#ffffff;
+}
+
+.report-card--formal .rc-table th,
+.report-card--formal .rc-table td{
+  border:1px solid #161616;
+  padding:.66rem .55rem;
+  text-align:center;
+  color:#111111;
+  background:#ffffff;
+}
+
+.report-card--formal .rc-table th{
+  font-size:.78rem;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.05em;
+}
+
+.report-card--formal .rc-table tbody tr:nth-child(even),
+.report-card--formal .rc-table tbody tr:hover{
+  background:#ffffff;
+}
+
+.report-card--formal .rc-table .rc-subject{
+  text-align:left;
+  font-weight:700;
+}
+
+.report-card--formal .rc-table .rc-score-cell,
+.report-card--formal .rc-table .rc-avg-cell{
+  font-variant-numeric:tabular-nums;
+}
+
+.report-card--formal .rc-table .rc-best,
+.report-card--formal .rc-table .rc-avg-cell,
+.report-card--formal .rc-tone-good,
+.report-card--formal .rc-tone-avg,
+.report-card--formal .rc-tone-risk,
+.report-card--formal .rc-tone-neutral{
+  color:#111111 !important;
+  font-weight:700;
+  background:#ffffff !important;
+}
+
+.report-card--formal .rc-highlights-row{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:.65rem;
+}
+
+.report-card--formal .rc-summary-box{
+  border:1px solid #161616;
+  padding:1rem 1.1rem;
+  min-height:6rem;
+  background:#ffffff;
+  white-space:pre-wrap;
+}
+
+.report-card--formal .rc-remarks-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:.9rem;
+}
+
+.report-card--formal .rc-remark-card{
+  border:1px solid #161616;
+  padding:.95rem 1rem;
+  min-height:8.5rem;
+  background:#ffffff;
+}
+
+.report-card--formal .rc-remark-title{
+  margin:0 0 .65rem;
+  font-size:.88rem;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.05em;
+}
+
+.report-card--formal .rc-remark-text{
+  margin:0;
+  white-space:pre-wrap;
+}
+
+.report-card--formal .rc-remark-placeholder{
+  display:grid;
+  gap:.85rem;
+  margin:.15rem 0 .75rem;
+}
+
+.report-card--formal .rc-remark-placeholder span{
+  display:block;
+  border-bottom:1px solid #666666;
+  min-height:1rem;
+}
+
+.report-card--formal .rc-remark-empty{
+  margin:0;
+  font-size:.86rem;
+  color:#555555;
+}
+
+.report-card--formal .rc-signature-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:2.5rem;
+  padding-top:1.3rem;
+}
+
+.report-card--formal .rc-signature-block{
+  padding-top:1.9rem;
+}
+
+.report-card--formal .rc-signature-line{
+  border-bottom:1px solid #111111;
+  height:1.4rem;
+}
+
+.report-card--formal .rc-signature-label{
+  margin-top:.55rem;
+  text-align:center;
+  font-size:.88rem;
+  font-weight:700;
+}
+
+.report-card--formal .rc-grading-scale{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:.55rem;
+}
+
+.report-card--formal .rc-grading-item{
+  border:1px solid #161616;
+  padding:.55rem .7rem;
+  background:#ffffff;
+  text-align:center;
+  font-size:.84rem;
+  font-weight:700;
+}
+
+.rc-export-meta{
+  max-width:900px;
+  border:1px solid #161616;
+  border-radius:0;
+  background:#ffffff;
+  font-family:"Times New Roman", Times, serif;
+  box-shadow:none;
+}
+
+.rc-export-meta-title{
+  letter-spacing:.12em;
+}
+
+body.dark-mode .report-card--formal{
+  background:#fffdfa;
+  color:#111111;
+  border-color:#d6ccb5;
+  box-shadow:0 16px 44px rgba(0,0,0,.16);
+}
+
+@media (max-width: 720px){
+  .report-card--formal{
+    padding:1.4rem 1.15rem;
+  }
+
+  .report-card--formal::before{
+    font-size:3.1rem;
+  }
+
+  .report-card--formal .rc-info-grid,
+  .report-card--formal .rc-remarks-grid,
+  .report-card--formal .rc-signature-grid,
+  .report-card--formal .rc-highlights-row{
+    grid-template-columns:1fr;
+  }
+
+  .report-card--formal .rc-info-item--wide{
+    grid-column:auto;
+  }
+
+  .report-card--formal .rc-snapshot-grid,
+  .report-card--formal .rc-grading-scale{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+}
+
+@media print{
+  body.printing-report .report-card--formal,
+  .report-card--formal{
+    max-width:none !important;
+    margin:0 !important;
+    padding:0 !important;
+    border:none !important;
+    box-shadow:none !important;
+    background:#ffffff !important;
+    color:#000000 !important;
+    font-family:"Times New Roman", Times, serif !important;
+  }
+
+  body.printing-report .report-card--formal::before,
+  .report-card--formal::before{
+    color:rgba(0,0,0,.045) !important;
+  }
+
+  body.printing-report .report-card--formal .rc-brand-motto,
+  body.printing-report .report-card--formal .rc-issued-date,
+  body.printing-report .report-card--formal .rc-info-label,
+  body.printing-report .report-card--formal .rc-snapshot-label,
+  body.printing-report .report-card--formal .rc-highlight-label,
+  body.printing-report .report-card--formal .rc-remark-empty,
+  .report-card--formal .rc-brand-motto,
+  .report-card--formal .rc-issued-date,
+  .report-card--formal .rc-info-label,
+  .report-card--formal .rc-snapshot-label,
+  .report-card--formal .rc-highlight-label,
+  .report-card--formal .rc-remark-empty{
+    color:#000000 !important;
+  }
+
+  body.printing-report .report-card--formal .rc-info-grid,
+  body.printing-report .report-card--formal .rc-snapshot-item,
+  body.printing-report .report-card--formal .rc-highlight-item,
+  body.printing-report .report-card--formal .rc-summary-box,
+  body.printing-report .report-card--formal .rc-remark-card,
+  body.printing-report .report-card--formal .rc-grading-item,
+  body.printing-report .report-card--formal .rc-table,
+  body.printing-report .report-card--formal .rc-table th,
+  body.printing-report .report-card--formal .rc-table td,
+  .report-card--formal .rc-info-grid,
+  .report-card--formal .rc-snapshot-item,
+  .report-card--formal .rc-highlight-item,
+  .report-card--formal .rc-summary-box,
+  .report-card--formal .rc-remark-card,
+  .report-card--formal .rc-grading-item,
+  .report-card--formal .rc-table,
+  .report-card--formal .rc-table th,
+  .report-card--formal .rc-table td,
+  .rc-export-meta{
+    background:#ffffff !important;
+    color:#000000 !important;
+    border-color:#000000 !important;
+    box-shadow:none !important;
+  }
+
+  body.printing-report .report-card--formal .rc-section-block,
+  body.printing-report .report-card--formal .rc-report-header,
+  body.printing-report .report-card--formal .rc-info-grid,
+  body.printing-report .report-card--formal .rc-snapshot-grid,
+  body.printing-report .report-card--formal .rc-highlights-row,
+  body.printing-report .report-card--formal .rc-remarks-grid,
+  body.printing-report .report-card--formal .rc-signature-grid,
+  body.printing-report .report-card--formal .rc-grading-scale,
+  body.printing-report .report-card--formal .rc-table,
+  body.printing-report .report-card--formal .rc-table thead,
+  body.printing-report .report-card--formal .rc-table tbody,
+  body.printing-report .report-card--formal .rc-table tr,
+  .report-card--formal .rc-section-block,
+  .report-card--formal .rc-report-header,
+  .report-card--formal .rc-info-grid,
+  .report-card--formal .rc-snapshot-grid,
+  .report-card--formal .rc-highlights-row,
+  .report-card--formal .rc-remarks-grid,
+  .report-card--formal .rc-signature-grid,
+  .report-card--formal .rc-grading-scale,
+  .report-card--formal .rc-table,
+  .report-card--formal .rc-table thead,
+  .report-card--formal .rc-table tbody,
+  .report-card--formal .rc-table tr{
+    page-break-inside:avoid !important;
+    break-inside:avoid !important;
   }
 }
 /* Global Polish & Transitions */
