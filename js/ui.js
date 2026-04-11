@@ -4627,8 +4627,8 @@ const ui = {
       });
 
       const examHeaders = exams.length
-        ? exams.map(exam => `<th>${app.utils.esc(exam.title || exam.name)}</th>`).join('')
-        : '<th>No Exams</th>';
+        ? exams.map(exam => `<th scope="col">${app.utils.esc(exam.title || exam.name)}</th>`).join('')
+        : '<th scope="col">No Exams</th>';
 
       const subjectRows = subjects.length
         ? subjects.map(subject => {
@@ -4657,7 +4657,7 @@ const ui = {
           const subjectAvgClass = subjectTone === 'good' ? 'rc-tone-good' : (subjectTone === 'avg' ? 'rc-tone-avg' : (subjectTone === 'risk' ? 'rc-tone-risk' : 'rc-tone-neutral'));
 
           return `<tr>
-            <td class="rc-subject">${app.utils.esc(subject.name)}</td>
+            <th scope="row" class="rc-subject">${app.utils.esc(subject.name)}</th>
             ${examCellsHtml}
             <td class="rc-avg-cell ${subjectAvgClass}">${app.utils.esc(this.formatFixedOrFallback(subjectAverage, 1, '—'))}</td>
           </tr>`;
@@ -4701,6 +4701,7 @@ const ui = {
       const latestTotalDisplay = app.utils.esc(this.formatFixedOrFallback(currentScore, 1, 'N/A'));
       const previousTotalDisplay = app.utils.esc(this.formatFixedOrFallback(previousScore, 1, 'N/A'));
       const improvementDisplay = app.utils.esc(improvement.text || 'N/A');
+      const improvementMetricClass = String(improvement.className || 'improv-neutral').trim() || 'improv-neutral';
       const hasClassTeacherRemark = Boolean(String(s.notes || '').trim());
       const summaryText = autoSummary || app.utils.esc('Performance summary will appear here once assessment notes are available.');
       const buildRemarkContent = (value = '', fallbackLabel = 'No remarks recorded.') => {
@@ -4721,13 +4722,54 @@ const ui = {
       const formalReportMarkup = `
         <div class="report-card report-card--formal" data-watermark="${app.utils.esc(schoolName)}">
           <header class="rc-report-header rc-print-section">
-            <div class="rc-brand-name">${app.utils.esc(schoolName)}</div>
-            <div class="rc-brand-motto">${app.utils.esc(schoolMotto)}</div>
+            <div class="rc-brand-banner">
+              <div class="rc-brand-banner-copy">
+                <div class="rc-brand-overline">Official Academic Record</div>
+                <div class="rc-brand-name">${app.utils.esc(schoolName)}</div>
+                <div class="rc-brand-motto">${app.utils.esc(schoolMotto)}</div>
+              </div>
+              <div class="rc-brand-badge" aria-label="Report issuance date">
+                <span class="rc-brand-badge-label">Report Date</span>
+                <strong class="rc-brand-badge-value">${app.utils.esc(reportDate)}</strong>
+              </div>
+            </div>
+            <div class="rc-title-wrap">
+              <div class="rc-title">STUDENT PERFORMANCE REPORT</div>
+              <div class="rc-student-name">${app.utils.esc(s.name)}</div>
+              <div class="rc-issued-date">Prepared for academic review and parent communication</div>
+            </div>
             <div class="rc-section-divider" aria-hidden="true"></div>
-            <div class="rc-title">STUDENT PERFORMANCE REPORT</div>
-            <div class="rc-student-name">${app.utils.esc(s.name)}</div>
-            <div class="rc-issued-date">Date Issued: ${app.utils.esc(reportDate)}</div>
+            <div class="rc-header-strip" aria-label="Report overview">
+              <span>Class: ${app.utils.esc(classDisplay)}</span>
+              <span>Term: ${app.utils.esc(termDisplay)}</span>
+              <span>Position: ${app.utils.esc(positionDisplay)}</span>
+            </div>
           </header>
+
+          <section class="rc-section-block rc-print-section">
+            <div class="rc-key-metrics" aria-label="Performance overview">
+              <article class="rc-key-metric rc-key-metric--primary">
+                <span class="rc-key-metric-label">Overall Average</span>
+                <strong class="rc-key-metric-value ${overallClass}">${app.utils.esc(overallAverageDisplay)}</strong>
+                <span class="rc-key-metric-note">Across all recorded subjects</span>
+              </article>
+              <article class="rc-key-metric">
+                <span class="rc-key-metric-label">Class Rank</span>
+                <strong class="rc-key-metric-value">${app.utils.esc(positionDisplay)}</strong>
+                <span class="rc-key-metric-note">${app.utils.esc(rankDisplay)}</span>
+              </article>
+              <article class="rc-key-metric">
+                <span class="rc-key-metric-label">Improvement</span>
+                <strong class="rc-key-metric-value ${improvementMetricClass}">${improvementDisplay}</strong>
+                <span class="rc-key-metric-note">Compared with the previous assessment</span>
+              </article>
+              <article class="rc-key-metric">
+                <span class="rc-key-metric-label">Performance Level</span>
+                <strong class="rc-key-metric-value">${app.utils.esc(statusLabel)}</strong>
+                <span class="rc-key-metric-note">Current standing based on recorded scores</span>
+              </article>
+            </div>
+          </section>
 
           <section class="rc-section-block rc-print-section">
             <div class="rc-info-grid">
@@ -4756,6 +4798,7 @@ const ui = {
 
           <section class="rc-section-block rc-print-section">
             <div class="rc-section-heading">
+              <span class="rc-section-kicker">Progress Overview</span>
               <h4>Assessment Snapshot</h4>
             </div>
             <div class="rc-snapshot-grid">
@@ -4780,15 +4823,17 @@ const ui = {
 
           <section class="rc-section-block rc-print-section">
             <div class="rc-section-heading">
+              <span class="rc-section-kicker">Scholastic Record</span>
               <h4>Academic Performance</h4>
             </div>
             <div class="rc-grade-table-wrap">
               <table class="rc-table">
+                <caption class="rc-table-caption">Mock assessment scores and cumulative subject averages</caption>
                 <thead>
                   <tr>
-                    <th>Subject</th>
+                    <th scope="col">Subject</th>
                     ${examHeaders}
-                    <th>Average</th>
+                    <th scope="col">Average</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -4800,6 +4845,7 @@ const ui = {
 
           <section class="rc-section-block rc-print-section">
             <div class="rc-section-heading">
+              <span class="rc-section-kicker">Comparative Insight</span>
               <h4>Performance Highlights</h4>
             </div>
             <div class="rc-highlights-row">
@@ -4820,6 +4866,7 @@ const ui = {
 
           <section class="rc-section-block rc-print-section">
             <div class="rc-section-heading">
+              <span class="rc-section-kicker">Teacher Summary</span>
               <h4>Academic Summary</h4>
             </div>
             <div class="rc-summary-box">${summaryText}</div>
@@ -4827,6 +4874,7 @@ const ui = {
 
           <section class="rc-section-block rc-print-section">
             <div class="rc-section-heading">
+              <span class="rc-section-kicker">Professional Remarks</span>
               <h4>Teacher Remarks</h4>
             </div>
             <div class="rc-remarks-grid">
@@ -4856,6 +4904,7 @@ const ui = {
 
           <section class="rc-section-block rc-section-block--footer rc-print-section">
             <div class="rc-section-heading">
+              <span class="rc-section-kicker">Reference Guide</span>
               <h4>Grading System</h4>
             </div>
             <div class="rc-grading-scale" aria-label="Grading scale">
