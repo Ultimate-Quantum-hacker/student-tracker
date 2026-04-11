@@ -292,10 +292,13 @@ const ui = {
   hasShownMessagePermissionFallbackToast: false,
   messagesRequest: null,
   messageDirectoryRequest: null,
+  messageListSubscriptionRequest: null,
   messageThreadRequest: null,
   messageThreadRequestConversationId: '',
   messageThreadLoadedConversationId: '',
   messageThreadSubscriptionConversationId: '',
+  messageListSubscriptionVersion: 0,
+  messageThreadSubscriptionVersion: 0,
   messageListSubscription: null,
   messageThreadSubscription: null,
   messageNewIds: new Set(),
@@ -1353,18 +1356,22 @@ const ui = {
     },
 
     stopMessageListSubscription: function () {
+      this.messageListSubscriptionVersion += 1;
       if (typeof this.messageListSubscription === 'function') {
         this.messageListSubscription();
       }
       this.messageListSubscription = null;
+      this.messageListSubscriptionRequest = null;
     },
 
     stopMessageThreadSubscription: function () {
+      this.messageThreadSubscriptionVersion += 1;
       if (typeof this.messageThreadSubscription === 'function') {
         this.messageThreadSubscription();
       }
       this.messageThreadSubscription = null;
       this.messageThreadSubscriptionConversationId = '';
+      this.messageThreadRequest = null;
     },
 
     clearSelectedMessageThread: function () {
@@ -1396,9 +1403,12 @@ const ui = {
       this.hasShownMessagePermissionFallbackToast = false;
       this.messagesRequest = null;
       this.messageDirectoryRequest = null;
+      this.messageListSubscriptionRequest = null;
       this.messageThreadRequest = null;
       this.messageThreadRequestConversationId = '';
       this.messageThreadLoadedConversationId = '';
+      this.messageListSubscriptionVersion = 0;
+      this.messageThreadSubscriptionVersion = 0;
       this.messageNewIds = new Set();
       this.lastMessagesListMarkup = '';
       this.messageListScrollTop = 0;
@@ -1621,6 +1631,12 @@ const ui = {
         }
         return this.messageListSubscription;
       }
+      if (this.messageListSubscriptionRequest) {
+        await this.messageListSubscriptionRequest;
+        return this.messageListSubscription;
+      }
+      const subscriptionVersion = this.messageListSubscriptionVersion + 1;
+      this.messageListSubscriptionVersion = subscriptionVersion;
       let initialSettled = false;
       const settleInitialSuccess = (payload) => {
         if (initialSettled || typeof resolveInitial !== 'function') {
@@ -1637,8 +1653,11 @@ const ui = {
         rejectInitial(error);
       };
       try {
-        const unsubscribe = await subscribeCurrentUserConversations({
+        const listRequest = subscribeCurrentUserConversations({
           onChange: (payload) => {
+            if (this.messageListSubscriptionVersion !== subscriptionVersion) {
+              return;
+            }
             this.messageDataLoaded = true;
             this.applyMessagesPayload(payload, { preserveSelection });
             this.renderMessagesSection();
@@ -1646,12 +1665,28 @@ const ui = {
             settleInitialSuccess(payload);
           },
           onError: (error) => {
+            if (this.messageListSubscriptionVersion !== subscriptionVersion) {
+              return;
+            }
             console.error('Conversation subscription failed:', error);
             settleInitialError(error);
           }
         });
+        this.messageListSubscriptionRequest = listRequest;
+        const unsubscribe = await listRequest;
+        if (this.messageListSubscriptionVersion !== subscriptionVersion) {
+          if (typeof unsubscribe === 'function') {
+            unsubscribe();
+          }
+          return null;
+        }
+        this.messageListSubscriptionRequest = null;
         this.messageListSubscription = typeof unsubscribe === 'function' ? unsubscribe : null;
       } catch (error) {
+        if (this.messageListSubscriptionVersion !== subscriptionVersion) {
+          return null;
+        }
+        this.messageListSubscriptionRequest = null;
         console.error('Failed to start conversation subscription:', error);
         settleInitialError(error);
       }
@@ -1666,15 +1701,22 @@ const ui = {
       if (this.messageThreadSubscriptionConversationId === normalizedConversationId && this.messageThreadSubscription) {
         return this.messageThreadSubscription;
       }
+      if (this.messageThreadRequestConversationId === normalizedConversationId && this.messageThreadRequest) {
+        await this.messageThreadRequest;
+        return this.messageThreadSubscription;
+      }
       this.stopMessageThreadSubscription();
+      const subscriptionVersion = this.messageThreadSubscriptionVersion + 1;
+      this.messageThreadSubscriptionVersion = subscriptionVersion;
       this.isLoadingMessageThread = true;
       this.messageThreadRequestConversationId = normalizedConversationId;
       this.renderSelectedMessageDetail(this.getSelectedConversationRecord());
       try {
         this.messageThreadSubscriptionConversationId = normalizedConversationId;
-        const unsubscribe = await subscribeConversationMessages(normalizedConversationId, {
+        const threadRequest = subscribeConversationMessages(normalizedConversationId, {
           onChange: (payload) => {
-            if (String(this.getSelectedConversationId() || '').trim() !== normalizedConversationId) {
+            if (this.messageThreadSubscriptionVersion !== subscriptionVersion
+              || String(this.getSelectedConversationId() || '').trim() !== normalizedConversationId) {
               return;
             }
             const conversationRecord = payload?.conversation || this.getSelectedConversationRecord() || null;
@@ -1689,14 +1731,15 @@ const ui = {
                 return rightTime - leftTime;
               });
             }
-            app.state.messageThread = Array.isArray(payload?.messages) ? payload.messages : [];
+            app.state.messageThread = this.getUniqueMessageThread(payload?.messages);
             this.messageThreadLoadedConversationId = normalizedConversationId;
             this.messageThreadRequestConversationId = '';
             this.isLoadingMessageThread = false;
             this.renderMessagesSection();
           },
           onError: (error) => {
-            if (String(this.getSelectedConversationId() || '').trim() !== normalizedConversationId) {
+            if (this.messageThreadSubscriptionVersion !== subscriptionVersion
+              || String(this.getSelectedConversationId() || '').trim() !== normalizedConversationId) {
               return;
             }
             console.error('Failed to load conversation thread:', error);
@@ -1705,8 +1748,21 @@ const ui = {
             this.renderMessagesSection();
           }
         });
+        this.messageThreadRequest = threadRequest;
+        const unsubscribe = await threadRequest;
+        if (this.messageThreadSubscriptionVersion !== subscriptionVersion) {
+          if (typeof unsubscribe === 'function') {
+            unsubscribe();
+          }
+          return null;
+        }
+        this.messageThreadRequest = null;
         this.messageThreadSubscription = typeof unsubscribe === 'function' ? unsubscribe : null;
       } catch (error) {
+        if (this.messageThreadSubscriptionVersion !== subscriptionVersion) {
+          return null;
+        }
+        this.messageThreadRequest = null;
         console.error('Failed to subscribe to conversation thread:', error);
         this.isLoadingMessageThread = false;
         this.messageThreadRequestConversationId = '';
@@ -2011,12 +2067,44 @@ const ui = {
       }) || null;
     },
 
-    formatMessageBodyHtml: function (value = '') {
+    getUniqueMessageThread: function (messages = []) {
+      const seen = new Set();
+      return (Array.isArray(messages) ? messages : []).reduce((result, message) => {
+        const messageId = String(message?.id || '').trim();
+        const fallbackKey = [
+          String(message?.senderId || '').trim(),
+          String(message?.createdAt || message?.sentAt || message?.updatedAt || '').trim(),
+          String(message?.body || message?.text || '').trim()
+        ].join('::');
+        const cacheKey = messageId || fallbackKey;
+        if (cacheKey && seen.has(cacheKey)) {
+          return result;
+        }
+        if (cacheKey) {
+          seen.add(cacheKey);
+        }
+        result.push(message);
+        return result;
+      }, []);
+    },
+
+    buildMessageBodyFragment: function (value = '') {
+      const fragment = document.createDocumentFragment();
       const normalizedValue = String(value || '').trim();
       if (!normalizedValue) {
-        return '<span class="messages-detail-empty-copy">No message body provided.</span>';
+        const emptyState = document.createElement('span');
+        emptyState.className = 'messages-detail-empty-copy';
+        emptyState.textContent = 'No message body provided.';
+        fragment.appendChild(emptyState);
+        return fragment;
       }
-      return app.utils.esc(normalizedValue).replace(/\n/g, '<br>');
+      normalizedValue.split(/\r?\n/).forEach((line, index) => {
+        if (index > 0) {
+          fragment.appendChild(document.createElement('br'));
+        }
+        fragment.appendChild(document.createTextNode(line));
+      });
+      return fragment;
     },
 
     animateMessageDetail: function () {
@@ -2033,37 +2121,75 @@ const ui = {
       });
     },
 
-    renderConversationThreadMarkup: function (messages = []) {
-      const threadMessages = Array.isArray(messages) ? messages : [];
+    renderMessageThread: function (messages = [], { loading = false } = {}) {
+      if (!app.dom.messagesDetailBody) {
+        return;
+      }
+      const threadMessages = this.getUniqueMessageThread(messages);
+      const fragment = document.createDocumentFragment();
       if (!threadMessages.length) {
-        return '<div class="messages-thread-empty"><strong>No messages yet</strong><p>Send a message to start this chat.</p></div>';
+        const emptyState = document.createElement('div');
+        const title = document.createElement('strong');
+        const copy = document.createElement('p');
+        emptyState.className = 'messages-thread-empty';
+        title.textContent = loading ? 'Loading conversation...' : 'No messages yet';
+        copy.textContent = loading
+          ? 'Fetching the latest messages.'
+          : 'Send a message to start this chat.';
+        emptyState.append(title, copy);
+        fragment.appendChild(emptyState);
+        app.dom.messagesDetailBody.replaceChildren(fragment);
+        return;
       }
       const currentUserId = String(app.state.authUser?.uid || '').trim();
-      const threadMarkup = threadMessages.map((message) => {
+      const threadList = document.createElement('div');
+      threadList.className = 'messages-thread-list';
+      threadMessages.forEach((message) => {
         const isOwnMessage = Boolean(message?.isOwnMessage);
         const senderLabel = isOwnMessage
           ? 'You'
           : (String(message?.senderName || message?.senderEmail || 'Participant').trim() || 'Participant');
-        const messageStatus = !isOwnMessage && Boolean(message?.isLegacy) && Boolean(message?.isUnreadLegacy)
-          ? '<span class="messages-thread-message-status">Unread</span>'
-          : '';
         const readState = isOwnMessage && currentUserId && Array.isArray(message?.readByUserIds)
           ? message.readByUserIds.some((participantId) => String(participantId || '').trim() && String(participantId || '').trim() !== currentUserId)
           : false;
-        const readLabel = isOwnMessage
-          ? (readState ? '<span class="messages-thread-message-status is-read">Seen</span>' : '')
-          : '';
-        return `
-          <article class="messages-thread-message${isOwnMessage ? ' is-own' : ''}" data-message-id="${app.utils.esc(String(message?.id || '').trim())}">
-            <div class="messages-thread-message-meta">
-              <span class="messages-thread-message-author">${app.utils.esc(senderLabel)}</span>
-              <span class="messages-thread-message-time">${app.utils.esc(this.formatAccountTimestamp(message?.sentAt || message?.createdAt || message?.updatedAt, 'Recently'))}</span>
-            </div>
-            <div class="messages-thread-message-bubble">${this.formatMessageBodyHtml(message?.body || message?.text || '')}</div>
-            <div class="messages-thread-message-flags">${messageStatus}${readLabel}</div>
-          </article>`;
-      }).join('');
-      return `<div class="messages-thread-list">${threadMarkup}</div>`;
+        const article = document.createElement('article');
+        const meta = document.createElement('div');
+        const author = document.createElement('span');
+        const time = document.createElement('span');
+        const bubble = document.createElement('div');
+        const flags = document.createElement('div');
+
+        article.className = `messages-thread-message${isOwnMessage ? ' is-own' : ''}`;
+        article.dataset.messageId = String(message?.id || '').trim();
+        meta.className = 'messages-thread-message-meta';
+        author.className = 'messages-thread-message-author';
+        time.className = 'messages-thread-message-time';
+        bubble.className = 'messages-thread-message-bubble';
+        flags.className = 'messages-thread-message-flags';
+
+        author.textContent = senderLabel;
+        time.textContent = this.formatAccountTimestamp(message?.sentAt || message?.createdAt || message?.updatedAt, 'Recently');
+        bubble.replaceChildren(this.buildMessageBodyFragment(message?.body || message?.text || ''));
+        meta.append(author, time);
+
+        if (!isOwnMessage && Boolean(message?.isLegacy) && Boolean(message?.isUnreadLegacy)) {
+          const unreadStatus = document.createElement('span');
+          unreadStatus.className = 'messages-thread-message-status';
+          unreadStatus.textContent = 'Unread';
+          flags.appendChild(unreadStatus);
+        }
+        if (isOwnMessage && readState) {
+          const readStatus = document.createElement('span');
+          readStatus.className = 'messages-thread-message-status is-read';
+          readStatus.textContent = 'Seen';
+          flags.appendChild(readStatus);
+        }
+
+        article.append(meta, bubble, flags);
+        threadList.appendChild(article);
+      });
+      fragment.appendChild(threadList);
+      app.dom.messagesDetailBody.replaceChildren(fragment);
     },
 
     updateMessageThreadComposerState: function (conversation = null, { canSend = null } = {}) {
@@ -2183,16 +2309,14 @@ const ui = {
       }
       if (app.dom.messagesDetailBody) {
         const threadMessages = this.getMessageThread();
-        if (this.isLoadingMessageThread && !threadMessages.length) {
-          app.dom.messagesDetailBody.innerHTML = '<div class="messages-thread-empty"><strong>Loading conversation…</strong><p>Fetching the latest messages.</p></div>';
-        } else {
-          app.dom.messagesDetailBody.innerHTML = this.renderConversationThreadMarkup(threadMessages);
-          window.requestAnimationFrame(() => {
-            if (app.dom.messagesDetailBody) {
-              app.dom.messagesDetailBody.scrollTop = app.dom.messagesDetailBody.scrollHeight;
-            }
-          });
-        }
+        this.renderMessageThread(threadMessages, {
+          loading: this.isLoadingMessageThread && !threadMessages.length
+        });
+        window.requestAnimationFrame(() => {
+          if (app.dom.messagesDetailBody) {
+            app.dom.messagesDetailBody.scrollTop = app.dom.messagesDetailBody.scrollHeight;
+          }
+        });
       }
       if (app.dom.messageMarkToggleBtn) {
         app.dom.messageMarkToggleBtn.hidden = unreadCount <= 0;

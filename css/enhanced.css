@@ -4264,8 +4264,10 @@ body.dark-mode .card:hover, body.dark-mode .stat-card:hover {
   color: var(--text, #0f172a);
   line-height: 1.58;
   word-break: break-word;
+  min-height: 0;
   max-height: min(52vh, 34rem);
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .messages-detail-empty-copy {
@@ -4277,6 +4279,8 @@ body.dark-mode .card:hover, body.dark-mode .stat-card:hover {
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
+  width: 100%;
+  min-width: 0;
 }
 
 .messages-thread-message {
@@ -4284,6 +4288,9 @@ body.dark-mode .card:hover, body.dark-mode .stat-card:hover {
   flex-direction: column;
   align-items: flex-start;
   gap: 0.35rem;
+  width: 100%;
+  min-width: 0;
+  flex: 0 0 auto;
 }
 
 .messages-thread-message.is-own {
@@ -4304,12 +4311,15 @@ body.dark-mode .card:hover, body.dark-mode .stat-card:hover {
 }
 
 .messages-thread-message-bubble {
+  display: block;
   max-width: min(100%, 36rem);
   padding: 0.82rem 0.95rem;
   border: 1px solid rgba(148, 163, 184, 0.24);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.94);
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .messages-thread-message.is-own .messages-thread-message-bubble {
