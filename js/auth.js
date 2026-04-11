@@ -561,11 +561,14 @@ export const waitForInitialAuthState = async ({ timeoutMs = INITIAL_AUTH_STATE_T
   );
 
   if (!auth) {
+    console.log('AUTH STATE:', null);
     return null;
   }
 
   if (auth.currentUser) {
-    return toAuthUser(auth.currentUser);
+    const currentAuthUser = toAuthUser(auth.currentUser);
+    console.log('AUTH STATE:', currentAuthUser);
+    return currentAuthUser;
   }
 
   const normalizedTimeoutMs = Number.isFinite(Number(timeoutMs)) && Number(timeoutMs) > 0
@@ -610,6 +613,7 @@ export const waitForInitialAuthState = async ({ timeoutMs = INITIAL_AUTH_STATE_T
     unsubscribe = onAuthStateChanged(
       auth,
       (user) => {
+        console.log('AUTH STATE:', toAuthUser(user));
         finish(resolve, toAuthUser(user));
       },
       (error) => {
@@ -625,11 +629,13 @@ export const waitForInitialAuthState = async ({ timeoutMs = INITIAL_AUTH_STATE_T
 
 export const subscribeAuthState = (callback) => {
   if (!auth) {
+    console.log('AUTH STATE:', null);
     callback(null);
     return () => {};
   }
 
   return onAuthStateChanged(auth, (user) => {
+    console.log('AUTH STATE:', toAuthUser(user));
     callback(toAuthUser(user));
   });
 };

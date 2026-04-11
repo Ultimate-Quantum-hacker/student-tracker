@@ -33,6 +33,7 @@ import {
   normalizeAccountStatus,
   normalizeUserRole,
   requestPasswordReset,
+  waitForInitialAuthState,
   updateCurrentUserProfile
 } from './auth.js';
 import { storeAuthPageNotice } from './auth-notices.js';
@@ -292,6 +293,7 @@ const ui = {
   hasShownMessagePermissionFallbackToast: false,
   messagesRequest: null,
   messageDirectoryRequest: null,
+  messagingAuthReadyRequest: null,
   messageListSubscriptionRequest: null,
   messageThreadRequest: null,
   messageThreadRequestConversationId: '',
@@ -1355,6 +1357,24 @@ const ui = {
       };
     },
 
+    ensureMessagingAuthReady: async function () {
+      const stateAuthUid = String(app.state.authUser?.uid || '').trim();
+      const currentAuthUid = String(auth?.currentUser?.uid || '').trim();
+      if (stateAuthUid && currentAuthUid && stateAuthUid === currentAuthUid) {
+        return app.state.authUser;
+      }
+
+      if (!this.messagingAuthReadyRequest) {
+        this.messagingAuthReadyRequest = waitForInitialAuthState()
+          .then(authUser => authUser)
+          .finally(() => {
+            this.messagingAuthReadyRequest = null;
+          });
+      }
+
+      return this.messagingAuthReadyRequest;
+    },
+
     stopMessageListSubscription: function () {
       this.messageListSubscriptionVersion += 1;
       if (typeof this.messageListSubscription === 'function') {
@@ -1403,6 +1423,7 @@ const ui = {
       this.hasShownMessagePermissionFallbackToast = false;
       this.messagesRequest = null;
       this.messageDirectoryRequest = null;
+      this.messagingAuthReadyRequest = null;
       this.messageListSubscriptionRequest = null;
       this.messageThreadRequest = null;
       this.messageThreadRequestConversationId = '';
@@ -1610,7 +1631,8 @@ const ui = {
       resolveInitial = null,
       rejectInitial = null
     } = {}) {
-      const authUid = String(app.state.authUser?.uid || '').trim();
+      const resolvedAuthUser = await this.ensureMessagingAuthReady();
+      const authUid = String(app.state.authUser?.uid || resolvedAuthUser?.uid || '').trim();
       const capabilities = this.getMessagingCapabilities();
       const hasAccess = capabilities.canReceive || capabilities.canSend || capabilities.canReply;
       if (!authUid || !hasAccess) {
@@ -1696,6 +1718,11 @@ const ui = {
     ensureSelectedConversationThreadSubscription: async function (conversationId = '') {
       const normalizedConversationId = String(conversationId || this.getSelectedConversationId() || '').trim();
       if (!normalizedConversationId || normalizedConversationId !== this.getSelectedConversationId()) {
+        return null;
+      }
+      const resolvedAuthUser = await this.ensureMessagingAuthReady();
+      const authUid = String(app.state.authUser?.uid || resolvedAuthUser?.uid || '').trim();
+      if (!authUid) {
         return null;
       }
       if (this.messageThreadSubscriptionConversationId === normalizedConversationId && this.messageThreadSubscription) {
@@ -1787,7 +1814,8 @@ const ui = {
     },
 
     ensureMessagesLoaded: async function (force = false) {
-      const authUid = String(app.state.authUser?.uid || '').trim();
+      const resolvedAuthUser = await this.ensureMessagingAuthReady();
+      const authUid = String(app.state.authUser?.uid || resolvedAuthUser?.uid || '').trim();
       const capabilities = this.getMessagingCapabilities();
       const hasAccess = capabilities.canReceive || capabilities.canSend || capabilities.canReply;
       if (!authUid || !hasAccess) {
@@ -1835,7 +1863,8 @@ const ui = {
     },
 
     ensureMessageDirectoryLoaded: async function (force = false) {
-      const authUid = String(app.state.authUser?.uid || '').trim();
+      const resolvedAuthUser = await this.ensureMessagingAuthReady();
+      const authUid = String(app.state.authUser?.uid || resolvedAuthUser?.uid || '').trim();
       const capabilities = this.getMessagingCapabilities();
       if (!authUid || (!capabilities.canSend && !capabilities.canReply)) {
         return this.getMessageDirectory();
