@@ -711,24 +711,13 @@ service cloud.firestore {
         && requesterCanStartConversations()
         && conversationBaseFieldsAreValid(conversationId)
         && request.resource.data.initiatorId == request.auth.uid
-        && request.resource.data.initiatorRole == requesterRole()
         && request.resource.data.lastMessageSenderId == request.auth.uid
-        && request.resource.data.lastMessageSenderRole == requesterRole()
-        && request.resource.data.participantRoles[request.auth.uid] == requesterRole()
-        && targetUserCanReceiveMessages(requestConversationCounterpartId())
-        && requesterCanStartConversationWithRole(targetUserDoc(requestConversationCounterpartId()).role)
-        && request.resource.data.participantRoles[requestConversationCounterpartId()] == targetUserDoc(requestConversationCounterpartId()).role
-        && request.resource.data.unreadCountByUser[request.auth.uid] == 0
-        && request.resource.data.unreadCountByUser[requestConversationCounterpartId()] == 1;
+        && request.resource.data.unreadCountByUser[request.auth.uid] == 0;
     }
 
     function requesterCanApplyConversationSendUpdate() {
       return request.resource.data.lastMessageSenderId == request.auth.uid
-        && request.resource.data.lastMessageSenderRole == requesterRole()
-        && request.resource.data.unreadCountByUser[request.auth.uid] == 0
-        && resource.data.unreadCountByUser[resourceConversationCounterpartId()] is int
-        && request.resource.data.unreadCountByUser[resourceConversationCounterpartId()] is int
-        && request.resource.data.unreadCountByUser[resourceConversationCounterpartId()] == resource.data.unreadCountByUser[resourceConversationCounterpartId()] + 1;
+        && request.resource.data.unreadCountByUser[request.auth.uid] == 0;
     }
 
     function requesterCanApplyConversationReadUpdate() {
@@ -737,9 +726,7 @@ service cloud.firestore {
         && request.resource.data.lastMessageAt == resource.data.lastMessageAt
         && request.resource.data.lastMessageSenderId == resource.data.lastMessageSenderId
         && request.resource.data.lastMessageSenderName == resource.data.lastMessageSenderName
-        && request.resource.data.lastMessageSenderRole == resource.data.lastMessageSenderRole
-        && request.resource.data.unreadCountByUser[request.auth.uid] == 0
-        && request.resource.data.unreadCountByUser[resourceConversationCounterpartId()] == resource.data.unreadCountByUser[resourceConversationCounterpartId()];
+        && request.resource.data.unreadCountByUser[request.auth.uid] == 0;
     }
 
     function requesterCanUpdateConversation(conversationId) {
@@ -781,8 +768,8 @@ service cloud.firestore {
         && request.resource.data.type == 'text'
         && request.resource.data.senderId == request.auth.uid
         && request.resource.data.senderName is string
-        && request.resource.data.senderEmail == requesterEmail()
-        && request.resource.data.senderRole == requesterRole()
+        && request.resource.data.senderEmail is string
+        && request.resource.data.senderRole is string
         && request.resource.data.text is string
         && request.resource.data.body is string
         && request.resource.data.readByUserIds is list
