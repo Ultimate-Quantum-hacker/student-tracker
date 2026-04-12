@@ -1360,6 +1360,7 @@ const ui = {
     ensureMessagingAuthReady: async function () {
       const stateAuthUid = String(app.state.authUser?.uid || '').trim();
       const currentAuthUid = String(auth?.currentUser?.uid || '').trim();
+      console.log('AUTH STATE:', auth?.currentUser ? { uid: currentAuthUid } : null);
       if (stateAuthUid && currentAuthUid && stateAuthUid === currentAuthUid) {
         return app.state.authUser;
       }
@@ -1691,6 +1692,10 @@ const ui = {
               return;
             }
             console.error('Conversation subscription failed:', error);
+            if (String(error?.code || '').includes('permission-denied') && !this.hasShownMessagePermissionFallbackToast) {
+              this.hasShownMessagePermissionFallbackToast = true;
+              this.messageRealtimeLimited = true;
+            }
             settleInitialError(error);
           }
         });

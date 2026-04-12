@@ -2440,13 +2440,30 @@ const waitForAuthResolution = async () => {
   }
 
   return new Promise((resolve) => {
+    let settled = false;
+    let settleTimeout = null;
     const unsubscribe = onAuthStateChanged(
       auth,
       (user) => {
-        unsubscribe();
-        resolve(user || null);
+        if (settled) return;
+        if (user) {
+          settled = true;
+          if (settleTimeout) globalThis.clearTimeout(settleTimeout);
+          unsubscribe();
+          resolve(user);
+        } else if (!settleTimeout) {
+          settleTimeout = globalThis.setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            unsubscribe();
+            resolve(auth.currentUser || null);
+          }, 2000);
+        }
       },
       () => {
+        if (settled) return;
+        settled = true;
+        if (settleTimeout) globalThis.clearTimeout(settleTimeout);
         unsubscribe();
         resolve(auth.currentUser || null);
       }
@@ -3797,7 +3814,7 @@ const sendLegacyConversationReplyFallback = async (conversationId = '', body = '
 
 export const subscribeCurrentUserConversations = async ({ onChange, onError } = {}) => {
   const actorUserId = await ensureAuthenticatedUserId('subscribe to conversations');
-  if (!isFirebaseConfigured || !db) {
+  if (!isFirebaseConfigured || !db || !auth?.currentUser) {
     if (typeof onChange === 'function') {
       onChange({
         conversations: [],
@@ -3873,7 +3890,7 @@ export const subscribeConversationMessages = async (conversationId = '', { onCha
     return () => {};
   }
 
-  if (normalizedConversationId.startsWith('legacy:') || !isFirebaseConfigured || !db) {
+  if (normalizedConversationId.startsWith('legacy:') || !isFirebaseConfigured || !db || !auth?.currentUser) {
     try {
       const payload = await fetchConversationMessages(normalizedConversationId);
       if (typeof onChange === 'function') {
