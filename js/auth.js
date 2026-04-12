@@ -465,7 +465,7 @@ export const resolveUserAccountProfile = async (authUser) => {
     const profile = await ensureUserProfileDocument(authUser);
     return normalizeProfileRecord(profile, authUser);
   } catch (error) {
-    console.error('Failed to resolve user account profile. Falling back to auth payload:', error);
+    console.warn('Failed to resolve user account profile (using auth payload fallback):', error?.message || error);
     return normalizeProfileRecord({ role: DEFAULT_USER_ROLE }, authUser);
   }
 };

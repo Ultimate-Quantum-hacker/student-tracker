@@ -322,11 +322,6 @@ const ui = {
   loaderRequestCount: 0,
   readOnlyToastTimer: null,
   trashRetentionDays: 3,
-  toastTimer: null,
-  loaderHideTimer: null,
-  loaderRequestCount: 0,
-  readOnlyToastTimer: null,
-  trashRetentionDays: 3,
 
     init: function () {
       console.log('UI init running');
@@ -338,9 +333,14 @@ const ui = {
 
     initDOM: function () {
       console.log("Initializing DOM references...");
+      const optionalDomKeys = new Set([
+        'chartStudentSelect', 'statFailRate', 'canvas', 'chartPlaceholder',
+        'bulkScoreBtn', 'bulkScoreModal', 'bulkScoreCancelBtn',
+        'messagesRoleFilter'
+      ]);
       Object.keys(domIds).forEach(k => {
         const el = document.getElementById(domIds[k]);
-        if (!el) {
+        if (!el && !optionalDomKeys.has(k)) {
           console.warn(`DOM element not found: ${domIds[k]} (key: ${k})`);
         }
         app.dom[k] = el;
