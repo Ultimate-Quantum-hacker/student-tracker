@@ -2690,19 +2690,25 @@ const ui = {
       }
       const directory = this.getMessageDirectory();
       const composerState = this.messageComposeState || {};
-      const selectedRecipientUserId = String(app.dom.messageComposeRecipientSelect?.value || composerState.recipientUserId || '').trim();
+      const selectedValue = String(app.dom.messageComposeRecipientSelect?.value || composerState.recipientUserId || '').trim();
       const composeBodyValue = String(app.dom.messageComposeBody?.value || '');
-      const selectedUser = directory.users.find((option) => {
-        return String(option?.uid ?? option?.value ?? '').trim() === selectedRecipientUserId;
-      });
-      const recipientSummary = selectedUser
-        ? `Chat with ${selectedUser.label || selectedUser.displayLabel || selectedUser.name || selectedUser.email || 'recipient'}`
-        : (this.isLoadingMessageDirectory ? 'Loading recipients...' : 'Select a recipient');
+      const isRoleBroadcast = selectedValue.startsWith('role:');
+      let recipientSummary = this.isLoadingMessageDirectory ? 'Loading recipients...' : 'Select a recipient';
+      if (isRoleBroadcast) {
+        const roleName = selectedValue.replace('role:', '');
+        const roleOption = (directory.roles || []).find((r) => r.role === roleName || r.value === roleName);
+        recipientSummary = roleOption
+          ? `Broadcast to ${roleOption.count} ${roleOption.label || roleName}`
+          : `Broadcast to all ${roleName}s`;
+      } else if (selectedValue) {
+        const selectedUser = directory.users.find((option) => {
+          return String(option?.uid ?? option?.value ?? '').trim() === selectedValue;
+        });
+        if (selectedUser) {
+          recipientSummary = `Chat with ${selectedUser.label || selectedUser.displayLabel || selectedUser.name || selectedUser.email || 'recipient'}`;
+        }
+      }
       app.dom.messageComposeMeta.textContent = `${recipientSummary} - ${formatCharacterCounter(composeBodyValue, MESSAGE_BODY_MAX_LENGTH)}`;
-      return;
-      app.dom.messageComposeMeta.textContent = `${recipientSummary} · ${formatCharacterCounter(composeBodyValue, MESSAGE_BODY_MAX_LENGTH)}`;
-      return;
-      app.dom.messageComposeMeta.textContent = `${recipientSummary} · ${bodyLength} / 5000 characters`;
     },
 
     renderMessageComposeControls: function () {
@@ -2712,12 +2718,41 @@ const ui = {
       const composerState = this.messageComposeState || {};
       const directory = this.getMessageDirectory();
       const recipientOptions = Array.isArray(directory.users) ? directory.users : [];
-      const selectedRecipientUserId = String(app.dom.messageComposeRecipientSelect?.value || composerState.recipientUserId || '').trim();
-      this.populateMessageSelect(app.dom.messageComposeRecipientSelect, recipientOptions, {
-        selectedValue: selectedRecipientUserId,
-        placeholder: 'Select recipient',
-        includePlaceholder: true
-      });
+      const roleOptions = Array.isArray(directory.roles) ? directory.roles : [];
+      const selectedValue = String(app.dom.messageComposeRecipientSelect?.value || composerState.recipientUserId || '').trim();
+
+      // Build dropdown with optgroups for roles + individuals
+      if (app.dom.messageComposeRecipientSelect) {
+        let markup = '<option value="">Select recipient</option>';
+        if (roleOptions.length > 0) {
+          markup += '<optgroup label="📢 Broadcast to Role">';
+          roleOptions.forEach((role) => {
+            const val = `role:${role.role || role.value}`;
+            markup += `<option value="${app.utils.esc(val)}">${app.utils.esc(role.label || role.role)}</option>`;
+          });
+          markup += '</optgroup>';
+        }
+        if (recipientOptions.length > 0) {
+          markup += `<optgroup label="👤 Individual${recipientOptions.length > 1 ? 's' : ''}">`;
+          recipientOptions.forEach((option) => {
+            const val = String(option?.value ?? option?.uid ?? option?.id ?? '').trim();
+            const label = String(option?.label || option?.name || option?.displayLabel || option?.email || val).trim();
+            markup += `<option value="${app.utils.esc(val)}">${app.utils.esc(label)}</option>`;
+          });
+          markup += '</optgroup>';
+        }
+        app.dom.messageComposeRecipientSelect.innerHTML = markup;
+        // Restore selection if still valid
+        const allValues = roleOptions.map((r) => `role:${r.role || r.value}`).concat(
+          recipientOptions.map((o) => String(o?.value ?? o?.uid ?? o?.id ?? '').trim())
+        );
+        if (allValues.includes(selectedValue)) {
+          app.dom.messageComposeRecipientSelect.value = selectedValue;
+        } else {
+          app.dom.messageComposeRecipientSelect.value = '';
+        }
+        app.dom.messageComposeRecipientSelect.disabled = !recipientOptions.length && !roleOptions.length;
+      }
 
       if (app.dom.messageComposeTitle) {
         app.dom.messageComposeTitle.textContent = 'Start New Chat';
@@ -2725,7 +2760,7 @@ const ui = {
       if (app.dom.messageComposeSubtitle) {
         if (this.isLoadingMessageDirectory) {
           app.dom.messageComposeSubtitle.textContent = 'Loading recipient options...';
-        } else if (!recipientOptions.length) {
+        } else if (!recipientOptions.length && !roleOptions.length) {
           app.dom.messageComposeSubtitle.textContent = 'No eligible recipients are available for your account.';
         } else {
           app.dom.messageComposeSubtitle.textContent = 'Choose who to chat with and send your first message.';
@@ -2735,10 +2770,10 @@ const ui = {
         app.dom.messageComposeRecipientGroup.hidden = false;
       }
       if (app.dom.messageComposeRecipientSelect) {
-        app.dom.messageComposeRecipientSelect.disabled = this.isSubmittingMessage || this.isLoadingMessageDirectory || !recipientOptions.length;
+        app.dom.messageComposeRecipientSelect.disabled = this.isSubmittingMessage || this.isLoadingMessageDirectory || (!recipientOptions.length && !roleOptions.length);
         app.dom.messageComposeRecipientSelect.title = this.isLoadingMessageDirectory
           ? 'Recipient options are still loading.'
-          : !recipientOptions.length
+          : (!recipientOptions.length && !roleOptions.length)
             ? 'No eligible recipients are available for your account.'
             : 'Select a recipient';
       }
@@ -2747,20 +2782,21 @@ const ui = {
       }
       if (app.dom.messageComposeSubmitBtn) {
         const bodyLength = String(app.dom.messageComposeBody?.value || '').trim().length;
-        const hasRecipient = Boolean(app.dom.messageComposeRecipientSelect?.value || selectedRecipientUserId);
+        const hasRecipient = Boolean(app.dom.messageComposeRecipientSelect?.value || selectedValue);
+        const isBroadcast = String(app.dom.messageComposeRecipientSelect?.value || selectedValue || '').startsWith('role:');
         app.dom.messageComposeSubmitBtn.disabled = this.isSubmittingMessage || this.isLoadingMessageDirectory || !hasRecipient || !bodyLength;
         app.dom.messageComposeSubmitBtn.textContent = this.isSubmittingMessage
-          ? 'Starting...'
-          : 'Start Chat';
+          ? (isBroadcast ? 'Broadcasting...' : 'Starting...')
+          : (isBroadcast ? 'Broadcast Message' : 'Start Chat');
         app.dom.messageComposeSubmitBtn.title = this.isLoadingMessageDirectory
           ? 'Recipient options are still loading.'
-          : !recipientOptions.length
+          : (!recipientOptions.length && !roleOptions.length)
             ? 'No eligible recipients are available for your account.'
             : !hasRecipient
               ? 'Select a recipient to continue.'
               : !bodyLength
                 ? 'Enter a message to continue.'
-                : 'Start chat';
+                : (isBroadcast ? 'Broadcast message to all users with this role' : 'Start chat');
       }
 
       this.updateMessageComposeMeta();
@@ -2878,10 +2914,10 @@ const ui = {
         return;
       }
       const composerState = this.messageComposeState || {};
-      const recipientUserId = String(app.dom.messageComposeRecipientSelect?.value || composerState.recipientUserId || '').trim();
+      const selectedValue = String(app.dom.messageComposeRecipientSelect?.value || composerState.recipientUserId || '').trim();
       const body = String(app.dom.messageComposeBody?.value || '').trim();
 
-      if (!recipientUserId) {
+      if (!selectedValue) {
         this.setMessageComposeFeedback('Select a recipient to continue.', 'error');
         return;
       }
@@ -2890,14 +2926,50 @@ const ui = {
         return;
       }
 
+      const isRoleBroadcast = selectedValue.startsWith('role:');
+      const recipientRole = isRoleBroadcast ? selectedValue.replace('role:', '') : '';
+      const recipientUserId = isRoleBroadcast ? '' : selectedValue;
+
       this.isSubmittingMessage = true;
       this.setMessageComposeFeedback('');
       this.renderMessageComposeControls();
 
       try {
-        const result = await sendConversationMessage({ recipientUserId, body });
-        this.applySentMessageResult(result, 'Chat started');
-        this.closeMessageComposeModal();
+        if (isRoleBroadcast) {
+          // Broadcast: send to all users with the selected role
+          const directory = this.getMessageDirectory();
+          const targetUsers = (directory.users || []).filter((u) => {
+            return (u.role || '').toLowerCase() === recipientRole.toLowerCase();
+          });
+          if (!targetUsers.length) {
+            this.setMessageComposeFeedback(`No ${recipientRole} users found to message.`, 'error');
+            return;
+          }
+          let lastResult = null;
+          let sentCount = 0;
+          const errors = [];
+          for (const targetUser of targetUsers) {
+            try {
+              const uid = String(targetUser?.uid ?? targetUser?.value ?? '').trim();
+              if (!uid) continue;
+              const result = await sendConversationMessage({ recipientUserId: uid, body });
+              lastResult = result;
+              sentCount++;
+            } catch (err) {
+              errors.push(err);
+            }
+          }
+          if (sentCount > 0 && lastResult) {
+            this.applySentMessageResult(lastResult, `Broadcast sent to ${sentCount} ${recipientRole}${sentCount !== 1 ? 's' : ''}`);
+            this.closeMessageComposeModal();
+          } else {
+            this.setMessageComposeFeedback(`Failed to send broadcast. ${errors.length} error(s).`, 'error');
+          }
+        } else {
+          const result = await sendConversationMessage({ recipientUserId, body });
+          this.applySentMessageResult(result, 'Chat started');
+          this.closeMessageComposeModal();
+        }
       } catch (error) {
         if (!isPermissionDeniedSubmissionError(error)) {
           console.error('Failed to start chat:', error);
