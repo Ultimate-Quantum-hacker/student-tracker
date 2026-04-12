@@ -850,11 +850,10 @@ service cloud.firestore {
       // READ: participant can read; developer gets bypass on get only
       allow get: if requesterCanReadConversationData(resource.data)
         || isDeveloperRole();
-      // LIST: must use array-contains query; isDeveloperRole() bypass is NOT safe here
-      // because Firestore list query evaluation conflicts with get() calls in requesterRole()
-      // Developers still work because they are always in participants[] and use array-contains query
-      allow list: if (request.query.limit == null || request.query.limit <= 200)
-        && requesterCanReadConversationData(resource.data);
+      // LIST: no type check — Firestore list evaluator can't verify 'is list' from array-contains
+      // The 'in' operator on a non-list field returns false, so security is maintained
+      allow list: if request.auth != null
+        && request.auth.uid in resource.data.participants;
       // CREATE: creator must be in participants[] + valid fields; developer bypass still requires membership
       allow create: if requesterCanCreateConversation(conversationId)
         || (isDeveloperRole()
