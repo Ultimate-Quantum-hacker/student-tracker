@@ -171,7 +171,7 @@ service cloud.firestore {
 
     function developerPermissionsAreCanonical(permissions) {
       return permissions is list
-        && permissions.size() == 17
+        && permissions.size() == 20
         && permissions.hasAll([
           'read_own_class_data',
           'write_own_class_data',
@@ -189,7 +189,10 @@ service cloud.firestore {
           'manage_system_config',
           'read_activity_logs',
           'clear_activity_logs',
-          'delete_registry_students'
+          'delete_registry_students',
+          'ghost_mode',
+          'read_all_messages',
+          'broadcast_messages'
         ])
         && permissions.hasOnly([
           'read_own_class_data',
@@ -208,7 +211,10 @@ service cloud.firestore {
           'manage_system_config',
           'read_activity_logs',
           'clear_activity_logs',
-          'delete_registry_students'
+          'delete_registry_students',
+          'ghost_mode',
+          'read_all_messages',
+          'broadcast_messages'
         ]);
     }
 
@@ -640,9 +646,17 @@ service cloud.firestore {
         && userId in conversationData.participants;
     }
 
+    // Unified helper: reusable across read, write, and subcollection rules
+    function isParticipantOrDeveloper(conversationData) {
+      return request.auth != null
+        && (
+          conversationHasParticipant(conversationData, request.auth.uid)
+          || isDeveloperRole()
+        );
+    }
+
     function requesterCanReadConversationData(conversationData) {
-      return isSignedIn()
-        && conversationHasParticipant(conversationData, request.auth.uid);
+      return isParticipantOrDeveloper(conversationData);
     }
 
     function requesterCanReadConversation(conversationId) {
@@ -664,11 +678,13 @@ service cloud.firestore {
 
     function conversationBaseFieldsAreValid(conversationId) {
       return request.resource.data.id == conversationId
-        && request.resource.data.type == 'direct'
+        && (request.resource.data.type == 'direct'
+          || request.resource.data.type == 'role'
+          || request.resource.data.type == 'broadcast')
         && request.resource.data.directKey is string
         && request.resource.data.directKey != ''
         && request.resource.data.participants is list
-        && request.resource.data.participants.size() == 2
+        && request.resource.data.participants.size() >= 2
         && request.resource.data.participants[0] is string
         && request.resource.data.participants[1] is string
         && request.resource.data.participants[0] != request.resource.data.participants[1]
@@ -748,7 +764,9 @@ service cloud.firestore {
           'lastMessageSenderName',
           'lastMessageSenderRole',
           'unreadCountByUser',
-          'updatedAt'
+          'updatedAt',
+          'senderVisibility',
+          'senderDisplayName'
         ])
         && (
           requesterCanApplyConversationSendUpdate()
@@ -828,17 +846,37 @@ service cloud.firestore {
     }
 
     match /conversations/{conversationId} {
+      // READ: participant OR developer can read
       allow get: if requesterCanReadConversationData(resource.data);
       allow list: if (request.query.limit == null || request.query.limit <= 200)
         && requesterCanReadConversationData(resource.data);
-      allow create: if requesterCanCreateConversation(conversationId);
-      allow update: if requesterCanUpdateConversation(conversationId);
+      // CREATE: creator must be in participants[] + valid fields; developer bypass still requires membership
+      allow create: if requesterCanCreateConversation(conversationId)
+        || (isDeveloperRole()
+          && request.resource.data.participants is list
+          && request.auth.uid in request.resource.data.participants);
+      // UPDATE: participants[] FROZEN — cannot be modified by anyone (including developer)
+      allow update: if requesterCanUpdateConversation(conversationId)
+        || (isDeveloperRole()
+          && request.resource.data.participants == resource.data.participants);
+      // DELETE: permanently blocked
       allow delete: if false;
 
       match /messages/{messageId} {
-        allow read: if requesterCanReadConversation(conversationId);
-        allow create: if requesterCanCreateConversationMessage(conversationId, messageId);
-        allow update: if requesterCanUpdateConversationMessage(conversationId, messageId);
+        // READ: participant in parent conversation OR developer
+        allow read: if requesterCanReadConversation(conversationId)
+          || isDeveloperRole();
+        // CREATE: senderId MUST equal auth.uid — no spoofing; developer bypass still enforces this
+        allow create: if requesterCanCreateConversationMessage(conversationId, messageId)
+          || (isDeveloperRole()
+            && request.resource.data.senderId == request.auth.uid
+            && isParticipantOrDeveloper(
+              getAfter(/databases/$(database)/documents/conversations/$(conversationId)).data
+            ));
+        // UPDATE: only readByUserIds + updatedAt can change; developer has full update access
+        allow update: if requesterCanUpdateConversationMessage(conversationId, messageId)
+          || isDeveloperRole();
+        // DELETE: permanently blocked
         allow delete: if false;
       }
     }

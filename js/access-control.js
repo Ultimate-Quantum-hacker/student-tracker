@@ -22,6 +22,9 @@ export const PERMISSION_REVIEW_ACCOUNT_DELETION = 'review_account_deletion';
 export const PERMISSION_READ_ACTIVITY_LOGS = 'read_activity_logs';
 export const PERMISSION_CLEAR_ACTIVITY_LOGS = 'clear_activity_logs';
 export const PERMISSION_DELETE_REGISTRY_STUDENTS = 'delete_registry_students';
+export const PERMISSION_GHOST_MODE = 'ghost_mode';
+export const PERMISSION_READ_ALL_MESSAGES = 'read_all_messages';
+export const PERMISSION_BROADCAST_MESSAGES = 'broadcast_messages';
 
 export const MESSAGE_AUDIENCE_ALL = 'all';
 export const MESSAGE_AUDIENCE_ROLE = 'role';
@@ -55,7 +58,10 @@ const ALL_PERMISSIONS = [
   PERMISSION_REVIEW_ACCOUNT_DELETION,
   PERMISSION_READ_ACTIVITY_LOGS,
   PERMISSION_CLEAR_ACTIVITY_LOGS,
-  PERMISSION_DELETE_REGISTRY_STUDENTS
+  PERMISSION_DELETE_REGISTRY_STUDENTS,
+  PERMISSION_GHOST_MODE,
+  PERMISSION_READ_ALL_MESSAGES,
+  PERMISSION_BROADCAST_MESSAGES
 ];
 
 const ROLE_PERMISSION_MAP = {
@@ -350,3 +356,12 @@ export const buildRolePermissionPayload = (role = DEFAULT_USER_ROLE, permissions
     permissions: profile.permissions
   };
 };
+
+export const canUseGhostMode = (roleOrRecord = '', explicitPermissions = []) =>
+  hasPermission(PERMISSION_GHOST_MODE, roleOrRecord, explicitPermissions);
+
+export const canReadAllMessages = (roleOrRecord = '', explicitPermissions = []) =>
+  hasPermission(PERMISSION_READ_ALL_MESSAGES, roleOrRecord, explicitPermissions);
+
+export const canBroadcastMessages = (roleOrRecord = '', explicitPermissions = []) =>
+  hasPermission(PERMISSION_BROADCAST_MESSAGES, roleOrRecord, explicitPermissions);

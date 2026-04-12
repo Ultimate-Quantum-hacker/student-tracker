@@ -3,6 +3,18 @@
    Centralized Firestore-first data access with cache fallback.
    ═══════════════════════════════════════════════ */
 
+/* ═══════════════════════════════════════════════
+   CRITICAL IDENTITY RULE — DO NOT VIOLATE
+   ═══════════════════════════════════════════════
+   Messaging = auth.currentUser.uid ONLY → getMessagingUserId()
+   Class data = currentClassOwnerId     → getActiveUserId()
+
+   These two identity domains MUST NEVER mix.
+   Messaging functions MUST NEVER call getActiveUserId(),
+   getCurrentUserId(), ensureActiveUserId(), or reference
+   currentClassOwnerId directly.
+   ═══════════════════════════════════════════════ */
+
 import {
   db,
   doc,
@@ -84,6 +96,11 @@ const MESSAGES_SUBCOLLECTION = 'messages';
 const CONVERSATIONS_COLLECTION = 'conversations';
 const CONVERSATION_MESSAGES_SUBCOLLECTION = 'messages';
 const CONVERSATION_TYPE_DIRECT = 'direct';
+const CONVERSATION_TYPE_ROLE = 'role';
+const CONVERSATION_TYPE_BROADCAST = 'broadcast';
+const VISIBILITY_NORMAL = 'normal';
+const VISIBILITY_GHOST = 'ghost';
+const GHOST_SENDER_DISPLAY_NAME = 'System';
 const ACTIVITY_LOGS_COLLECTION = 'activityLogs';
 const MAX_CONVERSATION_LIST_QUERY_LIMIT = 200;
 const MESSAGE_MAILBOX_INBOX = 'inbox';
@@ -729,6 +746,29 @@ const buildConversationParticipantMaps = (participants = []) => {
     participantEmails: {},
     participantRoles: {}
   });
+};
+
+const resolveMessageVisibility = (senderRole) => {
+  return normalizeRole(senderRole) === ROLE_DEVELOPER ? VISIBILITY_GHOST : VISIBILITY_NORMAL;
+};
+
+/**
+ * Returns participants visible to the UI.
+ * Developer (ghost) participants are filtered out for display purposes.
+ * IMPORTANT: This is UI-only filtering.
+ * The developer MUST still be in the actual participants[] array for Firestore rule compliance.
+ */
+const getVisibleParticipants = (participants, participantRoles) => {
+  return asArray(participants).filter(uid => {
+    return normalizeRole(participantRoles?.[uid] || '') !== ROLE_DEVELOPER;
+  });
+};
+
+const resolveDisplaySenderName = (senderName, senderRole, visibility) => {
+  if (visibility === VISIBILITY_GHOST || normalizeRole(senderRole) === ROLE_DEVELOPER) {
+    return GHOST_SENDER_DISPLAY_NAME;
+  }
+  return senderName;
 };
 
 const normalizeConversationRecord = (conversationId, payload = {}, currentUserId = '') => {
@@ -2498,6 +2538,79 @@ const ensureActiveUserId = async (operationLabel = 'access data') => {
   return getActiveUserId() || authUserId;
 };
 
+/**
+ * MESSAGING IDENTITY — SINGLE SOURCE OF TRUTH
+ * This function is the ONLY way messaging code should resolve the current user.
+ * It ALWAYS returns auth.currentUser.uid and NEVER falls back to class owner context.
+ *
+ * BANNED in messaging context:
+ *   ❌ getActiveUserId()
+ *   ❌ getCurrentUserId()
+ *   ❌ ensureActiveUserId()
+ *   ❌ currentClassOwnerId
+ *   ❌ any auth?.currentUser?.uid || fallback pattern
+ */
+const getMessagingUserId = () => {
+  const uid = normalizeUserId(auth?.currentUser?.uid);
+  if (!uid) {
+    console.error('[messaging-identity] CRITICAL: No authenticated user for messaging operation', {
+      authCurrentUser: !!auth?.currentUser,
+      currentClassOwnerId,
+      stack: new Error().stack
+    });
+    return '';
+  }
+
+  // Runtime assertion: messaging UID must ALWAYS equal auth UID
+  const activeUserId = getActiveUserId();
+  if (activeUserId && activeUserId !== uid) {
+    console.warn('[messaging-identity] ⚠️ Identity divergence detected (safe — messaging uses auth.uid)', {
+      messagingUid: uid,
+      activeUserId,
+      currentClassOwnerId,
+      reason: 'Admin/head_teacher viewing another class — messaging correctly ignores class context'
+    });
+  }
+
+  return uid;
+};
+
+const ensureMessagingUserId = async (operationLabel = 'access messaging') => {
+  await waitForAuthResolution();
+
+  const uid = auth?.currentUser?.uid;
+  if (!uid) {
+    console.error('[messaging-identity] ensureMessagingUserId FAILED', {
+      operationLabel,
+      authExists: !!auth,
+      currentUserExists: !!auth?.currentUser,
+      currentClassOwnerId
+    });
+    throw createUnauthenticatedError(operationLabel);
+  }
+
+  return normalizeUserId(uid);
+};
+
+/**
+ * Structured diagnostic logging for messaging permission failures.
+ * Replaces generic console.warn with full identity context.
+ */
+const logMessagingPermissionDenied = (operation, error, context = {}) => {
+  const authUid = normalizeUserId(auth?.currentUser?.uid);
+  console.error('[messaging-permission-denied]', {
+    operation,
+    authUid,
+    queryUserId: context.queryUserId || authUid,
+    currentClassOwnerId,
+    uidMismatch: context.queryUserId ? context.queryUserId !== authUid : false,
+    errorCode: error?.code || 'unknown',
+    errorMessage: error?.message || 'unknown',
+    conversationId: context.conversationId || '',
+    timestamp: new Date().toISOString()
+  });
+};
+
 const normalizeClassId = (value) => String(value || '').trim();
 const normalizeClassName = (value, fallback = DEFAULT_CLASS_NAME) => {
   const normalized = String(value || '').trim();
@@ -3431,7 +3544,7 @@ const deliverMessageCopies = async ({
 };
 
 export const fetchCurrentUserMessages = async () => {
-  const userId = await ensureAuthenticatedUserId('read messages');
+  const userId = await ensureMessagingUserId('read messages');
   if (!isFirebaseConfigured || !db) {
     return {
       messages: [],
@@ -3465,7 +3578,7 @@ export const fetchCurrentUserMessages = async () => {
 };
 
 export const fetchMessageAudienceDirectory = async () => {
-  const actorUserId = await ensureAuthenticatedUserId('read message audience directory');
+  const actorUserId = await ensureMessagingUserId('read message audience directory');
   const actorRole = getCurrentUserRoleContext();
   const actorPermissions = getCurrentUserPermissionsContext();
   const capabilities = {
@@ -3687,7 +3800,7 @@ const resolveConversationWriteTarget = async ({
 };
 
 export const fetchConversationDirectory = async () => {
-  const actorUserId = await ensureAuthenticatedUserId('read conversation directory');
+  const actorUserId = await ensureMessagingUserId('read conversation directory');
   const actorRole = getCurrentUserRoleContext();
   const actorPermissions = getCurrentUserPermissionsContext();
   const capabilities = {
@@ -3718,7 +3831,7 @@ export const fetchConversationDirectory = async () => {
 };
 
 export const fetchCurrentUserConversations = async () => {
-  const actorUserId = await ensureAuthenticatedUserId('read conversations');
+  const actorUserId = await ensureMessagingUserId('read conversations');
   if (!isFirebaseConfigured || !db) {
     return {
       conversations: [],
@@ -3739,7 +3852,7 @@ export const fetchCurrentUserConversations = async () => {
 };
 
 export const fetchConversationMessages = async (conversationId = '') => {
-  const actorUserId = await ensureAuthenticatedUserId('read conversation messages');
+  const actorUserId = await ensureMessagingUserId('read conversation messages');
   const normalizedConversationId = String(conversationId || '').trim();
   if (!normalizedConversationId) {
     return {
@@ -3813,7 +3926,7 @@ const sendLegacyConversationReplyFallback = async (conversationId = '', body = '
 };
 
 export const subscribeCurrentUserConversations = async ({ onChange, onError } = {}) => {
-  const actorUserId = await ensureAuthenticatedUserId('subscribe to conversations');
+  const actorUserId = await ensureMessagingUserId('subscribe to conversations');
   if (!isFirebaseConfigured || !db || !auth?.currentUser) {
     if (typeof onChange === 'function') {
       onChange({
@@ -3870,14 +3983,21 @@ export const subscribeCurrentUserConversations = async ({ onChange, onError } = 
       return;
     }
     try {
+      const queryUserId = normalizeUserId(auth?.currentUser?.uid || '');
+      if (!queryUserId) {
+        console.error('[messaging-identity] Cannot fallback fetch: auth.currentUser.uid is null');
+        if (typeof onChange === 'function') {
+          onChange({ conversations: [], unreadCount: 0, lastMessageAt: null });
+        }
+        return;
+      }
       console.log('CONV FALLBACK: Attempting one-time getDocs fetch...');
-      const currentAuthUid = auth?.currentUser?.uid || '';
-      const queryUserId = normalizeUserId(currentAuthUid || actorUserId);
       const source = getParticipantConversationsQuery(queryUserId);
       const snapshot = await getDocs(source);
       console.log('CONV FALLBACK: getDocs succeeded, docs:', snapshot.size);
       void emitPayload(snapshot);
     } catch (fetchError) {
+      logMessagingPermissionDenied('fallbackToOneTimeFetch', fetchError);
       console.warn('CONV FALLBACK: getDocs also failed:', fetchError?.code, fetchError?.message);
       if (typeof onChange === 'function') {
         onChange({
@@ -3893,11 +4013,27 @@ export const subscribeCurrentUserConversations = async ({ onChange, onError } = 
     if (disposed) {
       return;
     }
-    const currentAuthUid = auth?.currentUser?.uid || '';
-    const queryUserId = normalizeUserId(currentAuthUid || actorUserId);
+    const queryUserId = normalizeUserId(auth?.currentUser?.uid || '');
+    if (!queryUserId) {
+      console.error('[messaging-identity] Cannot start conversation listener: auth.currentUser.uid is null', {
+        actorUserId,
+        currentClassOwnerId,
+        authExists: !!auth,
+        currentUserExists: !!auth?.currentUser
+      });
+      return;
+    }
+    // Runtime mismatch assertion
+    if (queryUserId !== normalizeUserId(auth?.currentUser?.uid)) {
+      console.error('[messaging-identity] 🚨 UID MISMATCH in conversation listener', {
+        queryUserId,
+        authUid: auth?.currentUser?.uid,
+        currentClassOwnerId
+      });
+    }
     const source = getParticipantConversationsQuery(queryUserId);
 
-    console.log('CONV LISTENER:', { queryUserId, authUid: currentAuthUid, limit: MAX_CONVERSATION_LIST_QUERY_LIMIT });
+    console.log('CONV LISTENER:', { queryUserId, authUid: auth?.currentUser?.uid, limit: MAX_CONVERSATION_LIST_QUERY_LIMIT });
 
     activeUnsubscribe = onSnapshot(source, (snapshot) => {
       void emitPayload(snapshot);
@@ -3907,7 +4043,8 @@ export const subscribeCurrentUserConversations = async ({ onChange, onError } = 
 
       if (isPermissionError && !disposed && retryCount < MAX_RETRIES) {
         retryCount += 1;
-        console.warn(`Conversation subscription permission error (retry ${retryCount}/${MAX_RETRIES}):`, error.message);
+        logMessagingPermissionDenied('subscribeCurrentUserConversations', error, { queryUserId });
+        console.warn(`Retrying conversation subscription (${retryCount}/${MAX_RETRIES})...`);
         if (activeUnsubscribe) {
           activeUnsubscribe();
           activeUnsubscribe = null;
@@ -3922,6 +4059,7 @@ export const subscribeCurrentUserConversations = async ({ onChange, onError } = 
       }
 
       if (isPermissionError && !disposed) {
+        logMessagingPermissionDenied('subscribeCurrentUserConversations:exhausted', error, { queryUserId });
         console.warn('Conversation subscription retries exhausted, falling back to one-time fetch');
         void fallbackToOneTimeFetch();
         return;
@@ -3946,7 +4084,7 @@ export const subscribeCurrentUserConversations = async ({ onChange, onError } = 
 };
 
 export const subscribeConversationMessages = async (conversationId = '', { onChange, onError } = {}) => {
-  const actorUserId = await ensureAuthenticatedUserId('subscribe to conversation messages');
+  const actorUserId = await ensureMessagingUserId('subscribe to conversation messages');
   const normalizedConversationId = String(conversationId || '').trim();
   if (!normalizedConversationId) {
     if (typeof onChange === 'function') {
@@ -4040,7 +4178,7 @@ export const subscribeConversationMessages = async (conversationId = '', { onCha
 };
 
 export const sendConversationMessage = async (payload = {}) => {
-  const actorUserId = await ensureAuthenticatedUserId('send conversation messages');
+  const actorUserId = await ensureMessagingUserId('send conversation messages');
   const actorRole = getCurrentUserRoleContext();
   const actorPermissions = getCurrentUserPermissionsContext();
   const normalizedConversationId = String(payload?.conversationId || '').trim();
@@ -4125,6 +4263,12 @@ export const sendConversationMessage = async (payload = {}) => {
       type: 'text',
       senderId: normalizedActorUserId,
       senderName: normalizeDisplayName(senderProfile?.name || getAuthenticatedUserDisplayName(), 'Teacher'),
+      senderVisibility: resolveMessageVisibility(senderProfile?.role),
+      senderDisplayName: resolveDisplaySenderName(
+        normalizeDisplayName(senderProfile?.name || getAuthenticatedUserDisplayName(), 'Teacher'),
+        senderProfile?.role,
+        resolveMessageVisibility(senderProfile?.role)
+      ),
       senderEmail: normalizeEmailAddress(senderProfile?.email || auth?.currentUser?.email || ''),
       senderRole: normalizeRole(senderProfile?.role || ROLE_TEACHER),
       text: normalizedBody,
@@ -4194,7 +4338,7 @@ export const sendConversationMessage = async (payload = {}) => {
 };
 
 export const markConversationAsRead = async (conversationId = '') => {
-  const actorUserId = await ensureAuthenticatedUserId('mark conversation as read');
+  const actorUserId = await ensureMessagingUserId('mark conversation as read');
   const normalizedConversationId = String(conversationId || '').trim();
   const normalizedActorUserId = normalizeUserId(actorUserId);
   if (!normalizedConversationId || !isFirebaseConfigured || !db) {
@@ -4278,7 +4422,7 @@ export const markConversationAsRead = async (conversationId = '') => {
 };
 
 export const sendMessage = async (payload = {}) => {
-  const actorUserId = await ensureAuthenticatedUserId('send messages');
+  const actorUserId = await ensureMessagingUserId('send messages');
   const actorRole = getCurrentUserRoleContext();
   const actorPermissions = getCurrentUserPermissionsContext();
   if (!canSendMessages(actorRole, actorPermissions)) {
@@ -4310,7 +4454,7 @@ export const sendMessage = async (payload = {}) => {
 };
 
 export const replyToMessage = async (messageId = '', payload = {}) => {
-  const actorUserId = await ensureAuthenticatedUserId('reply to message');
+  const actorUserId = await ensureMessagingUserId('reply to message');
   const actorRole = getCurrentUserRoleContext();
   const actorPermissions = getCurrentUserPermissionsContext();
   if (!canReplyToMessages(actorRole, actorPermissions)) {
@@ -4370,7 +4514,7 @@ export const replyToMessage = async (messageId = '', payload = {}) => {
 };
 
 const setMessageReadState = async (messageId = '', isRead = true) => {
-  const actorUserId = await ensureAuthenticatedUserId(isRead ? 'mark message as read' : 'mark message as unread');
+  const actorUserId = await ensureMessagingUserId(isRead ? 'mark message as read' : 'mark message as unread');
   const normalizedMessageId = String(messageId || '').trim();
   const nextReadState = Boolean(isRead);
   if (!normalizedMessageId || !isFirebaseConfigured || !db) {

@@ -258,6 +258,20 @@ export const createStateContextApi = (app, dataService) => {
       persistCurrentClassContext(app.state.currentClassId, app.state.currentClassOwnerId);
     },
 
+    /**
+     * Returns the authenticated user's UID from Firebase Auth.
+     * This is the ONLY identity valid for messaging operations.
+     * For class data operations, use getEffectiveUserId() instead.
+     */
+    getAuthenticatedUserId() {
+      return String(app.state.authUser?.uid || '').trim();
+    },
+
+    /**
+     * Returns the effective user ID for CLASS DATA operations.
+     * ⚠️ DO NOT USE FOR MESSAGING — use getAuthenticatedUserId() instead.
+     * This may return a different user's UID when viewing another teacher's class.
+     */
     getEffectiveUserId() {
       return api.getCurrentClassOwnerId();
     },
