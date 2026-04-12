@@ -1,19 +1,19 @@
-/* ═══════════════════════════════════════════════
-   JHS 3 Mock Exam Tracker — services/db.js
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   JHS 3 Mock Exam Tracker â€” services/db.js
    Centralized Firestore-first data access with cache fallback.
-   ═══════════════════════════════════════════════ */
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
-/* ═══════════════════════════════════════════════
-   CRITICAL IDENTITY RULE — DO NOT VIOLATE
-   ═══════════════════════════════════════════════
-   Messaging = auth.currentUser.uid ONLY → getMessagingUserId()
-   Class data = currentClassOwnerId     → getActiveUserId()
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   CRITICAL IDENTITY RULE â€” DO NOT VIOLATE
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   Messaging = auth.currentUser.uid ONLY â†’ getMessagingUserId()
+   Class data = currentClassOwnerId     â†’ getActiveUserId()
 
    These two identity domains MUST NEVER mix.
    Messaging functions MUST NEVER call getActiveUserId(),
    getCurrentUserId(), ensureActiveUserId(), or reference
    currentClassOwnerId directly.
-   ═══════════════════════════════════════════════ */
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 import {
   db,
@@ -498,7 +498,7 @@ const buildMessagePreview = (value = '') => {
   if (normalized.length <= MESSAGE_PREVIEW_MAX_LENGTH) {
     return normalized;
   }
-  return `${normalized.slice(0, MESSAGE_PREVIEW_MAX_LENGTH - 1).trimEnd()}…`;
+  return `${normalized.slice(0, MESSAGE_PREVIEW_MAX_LENGTH - 1).trimEnd()}â€¦`;
 };
 
 const buildMessageParticipantLabel = (name = '', email = '', userId = '', fallback = 'Teacher') => {
@@ -2539,16 +2539,16 @@ const ensureActiveUserId = async (operationLabel = 'access data') => {
 };
 
 /**
- * MESSAGING IDENTITY — SINGLE SOURCE OF TRUTH
+ * MESSAGING IDENTITY â€” SINGLE SOURCE OF TRUTH
  * This function is the ONLY way messaging code should resolve the current user.
  * It ALWAYS returns auth.currentUser.uid and NEVER falls back to class owner context.
  *
  * BANNED in messaging context:
- *   ❌ getActiveUserId()
- *   ❌ getCurrentUserId()
- *   ❌ ensureActiveUserId()
- *   ❌ currentClassOwnerId
- *   ❌ any auth?.currentUser?.uid || fallback pattern
+ *   âŒ getActiveUserId()
+ *   âŒ getCurrentUserId()
+ *   âŒ ensureActiveUserId()
+ *   âŒ currentClassOwnerId
+ *   âŒ any auth?.currentUser?.uid || fallback pattern
  */
 const getMessagingUserId = () => {
   const uid = normalizeUserId(auth?.currentUser?.uid);
@@ -2564,11 +2564,11 @@ const getMessagingUserId = () => {
   // Runtime assertion: messaging UID must ALWAYS equal auth UID
   const activeUserId = getActiveUserId();
   if (activeUserId && activeUserId !== uid) {
-    console.warn('[messaging-identity] ⚠️ Identity divergence detected (safe — messaging uses auth.uid)', {
+    console.warn('[messaging-identity] âš ï¸ Identity divergence detected (safe â€” messaging uses auth.uid)', {
       messagingUid: uid,
       activeUserId,
       currentClassOwnerId,
-      reason: 'Admin/head_teacher viewing another class — messaging correctly ignores class context'
+      reason: 'Admin/head_teacher viewing another class â€” messaging correctly ignores class context'
     });
   }
 
@@ -3789,12 +3789,24 @@ const resolveConversationWriteTarget = async ({
   const fallbackRecipientUserId = normalizeUserId(recipientUserId || getLegacyConversationRecipientUserId(normalizedConversationId, normalizedActorUserId));
   const recipient = await resolveConversationRecipientDirectoryEntry(fallbackRecipientUserId, normalizedActorUserId, actorRole, actorPermissions);
   const directConversationId = buildDirectConversationKey([normalizedActorUserId, recipient.uid]);
-  const conversationSnapshot = await getDoc(getConversationDocRef(directConversationId));
+  // Firestore denies getDoc on non-existent documents when rules reference resource.data
+  // Treat permission-denied as 'document does not exist yet'
+  let existingConversationRecord = null;
+  try {
+    const conversationSnapshot = await getDoc(getConversationDocRef(directConversationId));
+    if (conversationSnapshot.exists()) {
+      existingConversationRecord = normalizeConversationRecord(conversationSnapshot.id, conversationSnapshot.data() || {}, normalizedActorUserId);
+    }
+  } catch (lookupError) {
+    if (isPermissionDeniedError(lookupError)) {
+      console.info('[messaging] Conversation lookup denied (likely new) - will create fresh');
+    } else {
+      throw lookupError;
+    }
+  }
   return {
     conversationId: directConversationId,
-    conversationRecord: conversationSnapshot.exists()
-      ? normalizeConversationRecord(conversationSnapshot.id, conversationSnapshot.data() || {}, normalizedActorUserId)
-      : null,
+    conversationRecord: existingConversationRecord,
     recipient
   };
 };
@@ -4025,7 +4037,7 @@ export const subscribeCurrentUserConversations = async ({ onChange, onError } = 
     }
     // Runtime mismatch assertion
     if (queryUserId !== normalizeUserId(auth?.currentUser?.uid)) {
-      console.error('[messaging-identity] 🚨 UID MISMATCH in conversation listener', {
+      console.error('[messaging-identity] ðŸš¨ UID MISMATCH in conversation listener', {
         queryUserId,
         authUid: auth?.currentUser?.uid,
         currentClassOwnerId
@@ -4217,9 +4229,9 @@ export const sendConversationMessage = async (payload = {}) => {
       (existingConversation?.participants || []).concat(participantMaps.participants)
     );
 
-    // PART 3+4: Ensure sender is ALWAYS in participants — hard guard
+    // PART 3+4: Ensure sender is ALWAYS in participants â€” hard guard
     if (!participants.includes(normalizedActorUserId)) {
-      console.warn('[messaging-identity] Sender missing from participants — auto-adding', {
+      console.warn('[messaging-identity] Sender missing from participants â€” auto-adding', {
         senderId: normalizedActorUserId,
         participants
       });
@@ -7769,7 +7781,7 @@ export const migrateConversationParticipants = async () => {
         });
       }
 
-      // From message subcollection — check senderIds
+      // From message subcollection â€” check senderIds
       try {
         const messagesRef = collection(db, CONVERSATIONS_COLLECTION, conversationId, CONVERSATION_MESSAGES_SUBCOLLECTION);
         const messagesSnapshot = await getDocs(messagesRef);
