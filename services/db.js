@@ -3825,14 +3825,19 @@ export const subscribeCurrentUserConversations = async ({ onChange, onError } = 
     return () => {};
   }
 
-  const source = getParticipantConversationsQuery(actorUserId);
+  console.log('CONV SUBSCRIBE:', { actorUserId, authUid: auth?.currentUser?.uid });
+
   let disposed = false;
+  let activeUnsubscribe = null;
+  let retryCount = 0;
+  const MAX_RETRIES = 2;
+  const RETRY_DELAY_MS = 3000;
 
   const emitPayload = async (snapshot) => {
     if (disposed) {
       return;
     }
-
+    retryCount = 0;
     try {
       const conversationRecords = [];
       snapshot.forEach((entry) => {
@@ -3860,19 +3865,51 @@ export const subscribeCurrentUserConversations = async ({ onChange, onError } = 
     }
   };
 
-  const unsubscribe = onSnapshot(source, (snapshot) => {
-    void emitPayload(snapshot);
-  }, (error) => {
-    if (typeof onError === 'function') {
-      onError(error);
-    } else {
-      console.warn('Conversation subscription failed:', error);
+  const startListener = () => {
+    if (disposed) {
+      return;
     }
-  });
+    const currentAuthUid = auth?.currentUser?.uid || '';
+    const queryUserId = normalizeUserId(currentAuthUid || actorUserId);
+    const source = getParticipantConversationsQuery(queryUserId);
+
+    activeUnsubscribe = onSnapshot(source, (snapshot) => {
+      void emitPayload(snapshot);
+    }, (error) => {
+      const isPermissionError = String(error?.code || '').includes('permission')
+        || String(error?.message || '').toLowerCase().includes('permission');
+
+      if (isPermissionError && !disposed && retryCount < MAX_RETRIES) {
+        retryCount += 1;
+        console.warn(`Conversation subscription permission error (retry ${retryCount}/${MAX_RETRIES}):`, error.message);
+        if (activeUnsubscribe) {
+          activeUnsubscribe();
+          activeUnsubscribe = null;
+        }
+        setTimeout(() => {
+          if (!disposed) {
+            console.log('CONV RETRY:', { retry: retryCount, authUid: auth?.currentUser?.uid });
+            startListener();
+          }
+        }, RETRY_DELAY_MS);
+        return;
+      }
+
+      if (typeof onError === 'function') {
+        onError(error);
+      } else {
+        console.warn('Conversation subscription failed:', error);
+      }
+    });
+  };
+
+  startListener();
 
   return () => {
     disposed = true;
-    unsubscribe();
+    if (activeUnsubscribe) {
+      activeUnsubscribe();
+    }
   };
 };
 
