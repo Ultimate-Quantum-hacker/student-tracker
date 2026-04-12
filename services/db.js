@@ -4216,8 +4216,18 @@ export const sendConversationMessage = async (payload = {}) => {
     const participants = normalizeConversationUserIdList(
       (existingConversation?.participants || []).concat(participantMaps.participants)
     );
-    if (!participants.length) {
-      throw new Error('At least one participant is required');
+
+    // PART 3+4: Ensure sender is ALWAYS in participants — hard guard
+    if (!participants.includes(normalizedActorUserId)) {
+      console.warn('[messaging-identity] Sender missing from participants — auto-adding', {
+        senderId: normalizedActorUserId,
+        participants
+      });
+      participants.push(normalizedActorUserId);
+    }
+
+    if (!participants.length || participants.length < 2) {
+      throw new Error('A conversation requires at least two participants');
     }
 
     const participantNames = {
@@ -7678,3 +7688,196 @@ export const permanentlyDeleteExam = async (rawData, examId) => enqueueWrite(asy
   const next = normalizeRawData(rawData);
   return persistExamHardDeleteById(examId, next);
 });
+
+/**
+ * MIGRATION: Fix existing conversation documents with incorrect participants arrays.
+ *
+ * Root cause: Conversations created before identity fixes may have participants
+ * arrays that don't include all actual users (e.g. only the developer UID).
+ * Firestore rules require request.auth.uid in resource.data.participants,
+ * so teachers get "Missing or insufficient permissions" on these conversations.
+ *
+ * This function:
+ * 1. Reads ALL conversation documents
+ * 2. For each, gathers all UIDs that should be participants from:
+ *    - existing participants[]
+ *    - initiatorId
+ *    - lastMessageSenderId
+ *    - participantNames/participantEmails/participantRoles map keys
+ *    - message subcollection senderIds
+ * 3. If participants[] is missing any of these UIDs, adds them
+ * 4. Writes the corrected participants[] back via batch
+ *
+ * Run this ONCE from browser console:
+ *   import { migrateConversationParticipants } from './services/db.js';
+ *   await migrateConversationParticipants();
+ *
+ * REQUIRES: Developer account sign-in (Firestore rules allow developer full access)
+ */
+export const migrateConversationParticipants = async () => {
+  const actorUserId = await ensureMessagingUserId('migrate conversation participants');
+  const actorRole = getCurrentUserRoleContext();
+  if (normalizeRole(actorRole) !== ROLE_DEVELOPER) {
+    throw new Error('Only developer accounts can run conversation migrations');
+  }
+
+  if (!isFirebaseConfigured || !db) {
+    throw new Error('Firebase is not configured');
+  }
+
+  console.log('[migration] Starting conversation participants migration...');
+
+  const conversationsRef = collection(db, CONVERSATIONS_COLLECTION);
+  const snapshot = await getDocs(conversationsRef);
+  console.log(`[migration] Found ${snapshot.size} conversations to check`);
+
+  let fixedCount = 0;
+  let skippedCount = 0;
+  let errorCount = 0;
+  const results = [];
+
+  for (const conversationDoc of snapshot.docs) {
+    const conversationId = conversationDoc.id;
+    const data = conversationDoc.data() || {};
+    const existingParticipants = normalizeConversationUserIdList(data.participants || []);
+
+    try {
+      // Gather all UIDs that should be participants from conversation metadata
+      const shouldBeParticipants = new Set(existingParticipants);
+
+      // From conversation-level fields
+      const initiatorId = normalizeUserId(data.initiatorId);
+      const lastSenderId = normalizeUserId(data.lastMessageSenderId);
+      if (initiatorId) shouldBeParticipants.add(initiatorId);
+      if (lastSenderId) shouldBeParticipants.add(lastSenderId);
+
+      // From participant maps (names, emails, roles)
+      [data.participantNames, data.participantEmails, data.participantRoles].forEach(map => {
+        if (map && typeof map === 'object' && !Array.isArray(map)) {
+          Object.keys(map).forEach(key => {
+            const uid = normalizeUserId(key);
+            if (uid) shouldBeParticipants.add(uid);
+          });
+        }
+      });
+
+      // From unreadCountByUser map
+      if (data.unreadCountByUser && typeof data.unreadCountByUser === 'object') {
+        Object.keys(data.unreadCountByUser).forEach(key => {
+          const uid = normalizeUserId(key);
+          if (uid) shouldBeParticipants.add(uid);
+        });
+      }
+
+      // From message subcollection — check senderIds
+      try {
+        const messagesRef = collection(db, CONVERSATIONS_COLLECTION, conversationId, CONVERSATION_MESSAGES_SUBCOLLECTION);
+        const messagesSnapshot = await getDocs(messagesRef);
+        messagesSnapshot.forEach(msgDoc => {
+          const msgData = msgDoc.data() || {};
+          const msgSenderId = normalizeUserId(msgData.senderId);
+          if (msgSenderId) shouldBeParticipants.add(msgSenderId);
+          // Also check readByUserIds
+          asArray(msgData.readByUserIds || []).forEach(uid => {
+            const normalizedUid = normalizeUserId(uid);
+            if (normalizedUid) shouldBeParticipants.add(normalizedUid);
+          });
+        });
+      } catch (msgError) {
+        console.warn(`[migration] Could not read messages for ${conversationId}:`, msgError.message);
+      }
+
+      // Compare: are any UIDs missing from participants?
+      const correctedParticipants = normalizeConversationUserIdList([...shouldBeParticipants]);
+      const missingUids = correctedParticipants.filter(uid => !existingParticipants.includes(uid));
+
+      if (missingUids.length === 0) {
+        skippedCount += 1;
+        continue;
+      }
+
+      console.log(`[migration] Fixing ${conversationId}: adding ${missingUids.length} missing participant(s)`, {
+        existing: existingParticipants,
+        missing: missingUids,
+        corrected: correctedParticipants
+      });
+
+      // Write the corrected participants
+      const conversationRef = doc(db, CONVERSATIONS_COLLECTION, conversationId);
+      await setDoc(conversationRef, {
+        participants: correctedParticipants,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+
+      // Also update participantNames/participantRoles for newly added users
+      const patchMaps = {};
+      const existingNames = data.participantNames || {};
+      const existingRoles = data.participantRoles || {};
+      const existingEmails = data.participantEmails || {};
+      let needsMapPatch = false;
+
+      for (const uid of missingUids) {
+        if (!existingNames[uid] || !existingRoles[uid]) {
+          try {
+            const userRootData = await readUserRootData(uid);
+            if (Object.keys(userRootData).length) {
+              if (!existingNames[uid]) {
+                existingNames[uid] = normalizeDisplayName(userRootData.name || '', 'Participant');
+                needsMapPatch = true;
+              }
+              if (!existingRoles[uid]) {
+                existingRoles[uid] = normalizeRole(userRootData.role || ROLE_TEACHER);
+                needsMapPatch = true;
+              }
+              if (!existingEmails[uid]) {
+                existingEmails[uid] = normalizeEmailAddress(userRootData.email || '');
+                needsMapPatch = true;
+              }
+            }
+          } catch (userError) {
+            console.warn(`[migration] Could not read user data for ${uid}:`, userError.message);
+            if (!existingNames[uid]) existingNames[uid] = 'Participant';
+            if (!existingRoles[uid]) existingRoles[uid] = ROLE_TEACHER;
+            needsMapPatch = true;
+          }
+        }
+      }
+
+      if (needsMapPatch) {
+        await setDoc(conversationRef, {
+          participantNames: existingNames,
+          participantRoles: existingRoles,
+          participantEmails: existingEmails
+        }, { merge: true });
+      }
+
+      fixedCount += 1;
+      results.push({
+        conversationId,
+        action: 'fixed',
+        addedParticipants: missingUids,
+        finalParticipants: correctedParticipants
+      });
+
+    } catch (error) {
+      errorCount += 1;
+      console.error(`[migration] Error fixing ${conversationId}:`, error);
+      results.push({
+        conversationId,
+        action: 'error',
+        error: error.message
+      });
+    }
+  }
+
+  const summary = {
+    total: snapshot.size,
+    fixed: fixedCount,
+    skipped: skippedCount,
+    errors: errorCount,
+    details: results
+  };
+
+  console.log('[migration] Complete!', summary);
+  return summary;
+};
