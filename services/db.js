@@ -3865,6 +3865,30 @@ export const subscribeCurrentUserConversations = async ({ onChange, onError } = 
     }
   };
 
+  const fallbackToOneTimeFetch = async () => {
+    if (disposed) {
+      return;
+    }
+    try {
+      console.log('CONV FALLBACK: Attempting one-time getDocs fetch...');
+      const currentAuthUid = auth?.currentUser?.uid || '';
+      const queryUserId = normalizeUserId(currentAuthUid || actorUserId);
+      const source = getParticipantConversationsQuery(queryUserId);
+      const snapshot = await getDocs(source);
+      console.log('CONV FALLBACK: getDocs succeeded, docs:', snapshot.size);
+      void emitPayload(snapshot);
+    } catch (fetchError) {
+      console.warn('CONV FALLBACK: getDocs also failed:', fetchError?.code, fetchError?.message);
+      if (typeof onChange === 'function') {
+        onChange({
+          conversations: [],
+          unreadCount: 0,
+          lastMessageAt: null
+        });
+      }
+    }
+  };
+
   const startListener = () => {
     if (disposed) {
       return;
@@ -3872,6 +3896,8 @@ export const subscribeCurrentUserConversations = async ({ onChange, onError } = 
     const currentAuthUid = auth?.currentUser?.uid || '';
     const queryUserId = normalizeUserId(currentAuthUid || actorUserId);
     const source = getParticipantConversationsQuery(queryUserId);
+
+    console.log('CONV LISTENER:', { queryUserId, authUid: currentAuthUid, limit: MAX_CONVERSATION_LIST_QUERY_LIMIT });
 
     activeUnsubscribe = onSnapshot(source, (snapshot) => {
       void emitPayload(snapshot);
@@ -3892,6 +3918,12 @@ export const subscribeCurrentUserConversations = async ({ onChange, onError } = 
             startListener();
           }
         }, RETRY_DELAY_MS);
+        return;
+      }
+
+      if (isPermissionError && !disposed) {
+        console.warn('Conversation subscription retries exhausted, falling back to one-time fetch');
+        void fallbackToOneTimeFetch();
         return;
       }
 
