@@ -4359,6 +4359,28 @@ export const sendConversationMessage = async (payload = {}) => {
   }
 };
 
+export const deleteConversationMessage = async (conversationId = '', messageId = '') => {
+  const actorUserId = await ensureMessagingUserId('delete conversation message');
+  const normalizedConversationId = String(conversationId || '').trim();
+  const normalizedMessageId = String(messageId || '').trim();
+  const normalizedActorUserId = normalizeUserId(actorUserId);
+  if (!normalizedConversationId || !normalizedMessageId || !isFirebaseConfigured || !db) {
+    throw new Error('Cannot delete message: missing ID or Firebase unavailable');
+  }
+  const messageRef = getConversationMessageDocRef(normalizedConversationId, normalizedMessageId);
+  const messageSnapshot = await getDoc(messageRef);
+  if (!messageSnapshot.exists()) {
+    throw new Error('Message not found');
+  }
+  const messageData = messageSnapshot.data() || {};
+  const senderId = String(messageData.senderId || '').trim();
+  if (senderId !== normalizedActorUserId) {
+    throw new Error('You can only delete messages you sent');
+  }
+  await deleteDoc(messageRef);
+  console.info('[messaging] Message deleted:', normalizedMessageId, 'in', normalizedConversationId);
+  return { success: true, messageId: normalizedMessageId };
+};
 export const deleteConversation = async (conversationId = '') => {
   const actorUserId = await ensureMessagingUserId('delete conversation');
   const normalizedConversationId = String(conversationId || '').trim();

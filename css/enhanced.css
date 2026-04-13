@@ -5475,3 +5475,52 @@ body.dark-mode #message-delete-btn {
   border-color: rgba(239, 68, 68, 0.25);
   color: #fca5a5;
 }
+
+/* Individual message delete button */
+.messages-thread-message-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.08);
+  color: #ef4444;
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.messages-thread-message:hover .messages-thread-message-delete-btn,
+.messages-thread-message-delete-btn:focus {
+  opacity: 1;
+}
+
+.messages-thread-message-delete-btn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.18);
+  transform: scale(1.15);
+}
+
+.messages-thread-message-delete-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+body.dark-mode .messages-thread-message-delete-btn {
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+}
+
+body.dark-mode .messages-thread-message-delete-btn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.25);
+}
+
+/* On mobile, always show delete button */
+@media (max-width: 640px) {
+  .messages-thread-message-delete-btn { opacity: 1; }
+}

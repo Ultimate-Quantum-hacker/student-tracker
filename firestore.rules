@@ -868,9 +868,9 @@ service cloud.firestore {
         // UPDATE: only readByUserIds + updatedAt can change; developer has full update access
         allow update: if requesterCanUpdateConversationMessage(conversationId, messageId)
           || isDeveloperRole();
-        // DELETE: participant in conversation can delete messages
+        // DELETE: sender can delete their own messages
         allow delete: if isSignedIn()
-          && requesterCanReadConversation(conversationId);
+          && resource.data.senderId == request.auth.uid;
       }
     }
 

@@ -2220,6 +2220,38 @@ const ui = {
           flags.appendChild(readStatus);
         }
 
+        // Add delete button for own messages
+        if (isOwnMessage && String(message?.id || '').trim()) {
+          const deleteBtn = document.createElement('button');
+          deleteBtn.className = 'messages-thread-message-delete-btn';
+          deleteBtn.type = 'button';
+          deleteBtn.title = 'Delete this message';
+          deleteBtn.textContent = '×';
+          deleteBtn.dataset.messageId = String(message.id).trim();
+          deleteBtn.dataset.conversationId = String(message?.conversationId || '').trim();
+          deleteBtn.onclick = async (e) => {
+            e.stopPropagation();
+            const msgId = deleteBtn.dataset.messageId;
+            const convId = deleteBtn.dataset.conversationId || String(app.state.selectedMessageId || '').trim();
+            if (!msgId || !convId) return;
+            if (!confirm('Delete this message?')) return;
+            try {
+              deleteBtn.disabled = true;
+              deleteBtn.textContent = '...';
+              const { deleteConversationMessage } = await import('../services/db.js');
+              await deleteConversationMessage(convId, msgId);
+            } catch (err) {
+              console.error('[messaging] Delete message failed:', err);
+              deleteBtn.disabled = false;
+              deleteBtn.textContent = '×';
+              if (typeof this.showToast === 'function') {
+                this.showToast(err?.message || 'Failed to delete message', 'error');
+              }
+            }
+          };
+          flags.appendChild(deleteBtn);
+        }
+
         article.append(meta, bubble, flags);
         threadList.appendChild(article);
       });
