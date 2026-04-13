@@ -158,6 +158,21 @@
     flex: none !important;
   }
 
+  /* ── CLASS SWITCHER (kill flex-grow gap) ────────────────────── */
+  .class-dropdown {
+    flex: 0 1 auto !important;
+    max-width: none !important;
+    width: 100%;
+  }
+
+  .class-switcher-main {
+    flex: none !important;
+  }
+
+  .global-class-switcher .class-switcher-main {
+    flex: none !important;
+  }
+
   /* ── MAIN CONTENT ──────────────────────────────────────────── */
   .main-content {
     padding: 0.75rem 0.65rem !important;
