@@ -4618,7 +4618,7 @@ body.dark-mode .card:hover, body.dark-mode .stat-card:hover {
 }
 
 .messages-thread-form textarea {
-  min-height: 40px;
+  min-height: 36px;
   resize: vertical;
 }
 
@@ -5331,6 +5331,7 @@ body.dark-mode .message-list-item-subject {
 /* Reply form */
 .messages-thread-form {
   flex: 0 0 auto;
+  max-height: 120px;
   gap: 0;
   border: 1px solid var(--border, #e2e8f0);
   border-radius: 16px;
@@ -5351,8 +5352,9 @@ body.dark-mode .message-list-item-subject {
 .messages-thread-form textarea {
   border: none;
   border-radius: 0;
-  min-height: 40px;
-  max-height: 80px;
+  min-height: 36px;
+  max-height: 48px;
+  height: 36px;
   padding: 0.82rem 1rem;
   resize: none;
   font-size: 0.9rem;
