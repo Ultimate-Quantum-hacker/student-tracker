@@ -1,4 +1,4 @@
-/* ═══════════════════════════════════════════════════════════════
+﻿/* ═══════════════════════════════════════════════════════════════
    PREMIUM REPORT CARD — "Quiet Luxury" Design System
    ═══════════════════════════════════════════════════════════════ */
 
@@ -494,7 +494,7 @@
 /* Subject column */
 .report-card--formal .rc-table .rc-subject {
   font-weight: 600;
-  color: var(--rc-charcoal);
+  color: #ffffff;
   letter-spacing: 0.01em;
 }
 
