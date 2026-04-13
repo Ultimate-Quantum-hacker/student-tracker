@@ -1,0 +1,826 @@
+/* ═══════════════════════════════════════════════════════════════
+   PREMIUM REPORT CARD — "Quiet Luxury" Design System
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── COLOR TOKENS ───────────────────────────────────────────── */
+.report-card--formal {
+  --rc-navy: #0c1b3a;
+  --rc-navy-light: #1a2e52;
+  --rc-charcoal: #1c1c1c;
+  --rc-ink: #232323;
+  --rc-text: #2a2a2a;
+  --rc-text-secondary: #5a5f6d;
+  --rc-text-muted: #7a7f8c;
+  --rc-gold: #b8953e;
+  --rc-gold-soft: rgba(184, 149, 62, 0.12);
+  --rc-parchment: #faf8f4;
+  --rc-parchment-deep: #f3efe7;
+  --rc-warm-gray: #f7f5f1;
+  --rc-warm-gray-deep: #edeae3;
+  --rc-border: #d4d0c8;
+  --rc-border-strong: #0c1b3a;
+  --rc-border-subtle: rgba(12, 27, 58, 0.12);
+  --rc-shadow: 0 24px 64px rgba(12, 27, 58, 0.08), 0 8px 24px rgba(0,0,0,0.04);
+  --rc-font-serif: "Georgia", "Palatino Linotype", "Book Antiqua", Palatino, serif;
+  --rc-font-sans: "Inter", -apple-system, "Segoe UI", sans-serif;
+  --rc-radius: 3px;
+}
+
+/* ── DOCUMENT CONTAINER ─────────────────────────────────────── */
+.report-card--formal {
+  position: relative;
+  isolation: isolate;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: var(--rc-parchment);
+  color: var(--rc-text);
+  font-family: var(--rc-font-serif);
+  font-size: 0.92rem;
+  line-height: 1.65;
+  box-shadow: var(--rc-shadow);
+  overflow: hidden;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* Outer border frame */
+.report-card--formal::before {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border: 1.5px solid var(--rc-border);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Watermark */
+.report-card--formal::after {
+  content: attr(data-watermark);
+  position: absolute;
+  inset: 22% 0 auto 0;
+  text-align: center;
+  font-size: 4.8rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: rgba(12, 27, 58, 0.025);
+  transform: rotate(-22deg);
+  pointer-events: none;
+  z-index: 0;
+  text-transform: uppercase;
+  font-family: var(--rc-font-serif);
+}
+
+/* ── HEADER ─────────────────────────────────────────────────── */
+.report-card--formal .rc-report-header {
+  margin: 0;
+  padding: 0;
+}
+
+/* Brand banner — navy bar */
+.report-card--formal .rc-brand-banner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1.5rem;
+  align-items: center;
+  padding: 1.6rem 2.4rem;
+  background: linear-gradient(135deg, var(--rc-navy) 0%, var(--rc-navy-light) 100%);
+  color: #ffffff;
+  border-bottom: 3px solid var(--rc-gold);
+}
+
+.report-card--formal .rc-brand-banner-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+}
+
+.report-card--formal .rc-brand-overline {
+  font-family: var(--rc-font-sans);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.report-card--formal .rc-brand-name {
+  font-size: 1.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #ffffff;
+  line-height: 1.2;
+}
+
+.report-card--formal .rc-brand-motto {
+  margin-top: 0.2rem;
+  font-size: 0.82rem;
+  font-style: italic;
+  color: rgba(255, 255, 255, 0.65);
+  letter-spacing: 0.02em;
+}
+
+/* Date badge */
+.report-card--formal .rc-brand-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 9rem;
+  padding: 0.75rem 1.1rem;
+  border-left: 1px solid rgba(255, 255, 255, 0.15);
+  text-align: center;
+}
+
+.report-card--formal .rc-brand-badge-label {
+  font-family: var(--rc-font-sans);
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.report-card--formal .rc-brand-badge-value {
+  margin-top: 0.25rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+/* Title area */
+.report-card--formal .rc-title-wrap {
+  padding: 1.4rem 2.4rem 1rem;
+  text-align: center;
+  background: var(--rc-parchment);
+}
+
+.report-card--formal .rc-title {
+  font-family: var(--rc-font-sans);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--rc-navy);
+  margin: 0;
+}
+
+.report-card--formal .rc-student-name {
+  margin-top: 0.55rem;
+  font-size: 1.55rem;
+  font-weight: 700;
+  color: var(--rc-charcoal);
+  letter-spacing: 0.02em;
+  line-height: 1.25;
+}
+
+.report-card--formal .rc-issued-date {
+  margin-top: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--rc-text-muted);
+  font-style: italic;
+}
+
+/* Section divider */
+.report-card--formal .rc-section-divider {
+  width: calc(100% - 4.8rem);
+  height: 1px;
+  margin: 0 auto;
+  background: var(--rc-border);
+}
+
+/* Header strip — class/term/position pills */
+.report-card--formal .rc-header-strip {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.8rem 2.4rem 1.2rem;
+}
+
+.report-card--formal .rc-header-strip span {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0.95rem;
+  border: 1px solid var(--rc-border);
+  border-radius: var(--rc-radius);
+  background: var(--rc-warm-gray);
+  font-family: var(--rc-font-sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--rc-text-secondary);
+}
+
+/* ── SECTION BLOCKS (main content container) ────────────────── */
+.report-card--formal .rc-section-block {
+  margin: 0;
+  padding: 1.2rem 2.4rem;
+  page-break-inside: avoid;
+  break-inside: avoid;
+  position: relative;
+  z-index: 1;
+}
+
+.report-card--formal .rc-section-block:nth-child(even) {
+  background: var(--rc-warm-gray);
+}
+
+/* Section headings */
+.report-card--formal .rc-section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.85rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 2px solid var(--rc-navy);
+}
+
+.report-card--formal .rc-section-kicker {
+  font-family: var(--rc-font-sans);
+  font-size: 0.58rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  color: var(--rc-gold);
+}
+
+.report-card--formal .rc-section-heading h4 {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--rc-navy);
+  font-family: var(--rc-font-sans);
+}
+
+/* ── KEY METRICS (performance cards) ────────────────────────── */
+.report-card--formal .rc-key-metrics {
+  display: grid;
+  grid-template-columns: 1.3fr repeat(3, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.report-card--formal .rc-key-metric {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.3rem;
+  min-height: 5.5rem;
+  padding: 0.85rem 0.9rem;
+  border: 1px solid var(--rc-border);
+  border-radius: var(--rc-radius);
+  background: #ffffff;
+  text-align: center;
+}
+
+.report-card--formal .rc-key-metric--primary {
+  background: var(--rc-navy);
+  border-color: var(--rc-navy);
+  color: #ffffff;
+}
+
+.report-card--formal .rc-key-metric-label {
+  font-family: var(--rc-font-sans);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--rc-text-muted);
+}
+
+.report-card--formal .rc-key-metric--primary .rc-key-metric-label {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.report-card--formal .rc-key-metric-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--rc-charcoal);
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+
+.report-card--formal .rc-key-metric--primary .rc-key-metric-value {
+  font-size: 1.6rem;
+  color: #ffffff;
+}
+
+.report-card--formal .rc-key-metric-note {
+  font-size: 0.68rem;
+  color: var(--rc-text-muted);
+  font-style: italic;
+  line-height: 1.35;
+}
+
+.report-card--formal .rc-key-metric--primary .rc-key-metric-note {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+/* ── STUDENT INFO GRID (profile card) ───────────────────────── */
+.report-card--formal .rc-info-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  border: 1px solid var(--rc-border);
+  border-radius: var(--rc-radius);
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.report-card--formal .rc-info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.75rem 0.9rem;
+  border-bottom: 1px solid var(--rc-border-subtle);
+  border-right: 1px solid var(--rc-border-subtle);
+}
+
+.report-card--formal .rc-info-item:nth-child(3n) {
+  border-right: none;
+}
+
+.report-card--formal .rc-info-item--wide {
+  grid-column: span 3;
+  border-right: none;
+  border-bottom: none;
+  background: var(--rc-warm-gray);
+  text-align: center;
+  padding: 0.9rem;
+}
+
+.report-card--formal .rc-info-label,
+.report-card--formal .rc-snapshot-label,
+.report-card--formal .rc-highlight-label {
+  font-family: var(--rc-font-sans);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--rc-text-muted);
+}
+
+.report-card--formal .rc-info-value,
+.report-card--formal .rc-snapshot-value,
+.report-card--formal .rc-highlight-value {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--rc-charcoal);
+}
+
+.report-card--formal .rc-info-value--headline {
+  font-size: 1.5rem;
+  color: var(--rc-navy);
+  letter-spacing: -0.02em;
+}
+
+/* ── SNAPSHOT GRID ──────────────────────────────────────────── */
+.report-card--formal .rc-snapshot-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  border: 1px solid var(--rc-border);
+  border-radius: var(--rc-radius);
+  overflow: hidden;
+}
+
+.report-card--formal .rc-snapshot-item,
+.report-card--formal .rc-highlight-item {
+  padding: 0.75rem 0.85rem;
+  text-align: center;
+  background: #ffffff;
+  border-right: 1px solid var(--rc-border-subtle);
+}
+
+.report-card--formal .rc-snapshot-item:last-child,
+.report-card--formal .rc-highlight-item:last-child {
+  border-right: none;
+}
+
+/* ── HIGHLIGHTS ROW ─────────────────────────────────────────── */
+.report-card--formal .rc-highlights-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  border: 1px solid var(--rc-border);
+  border-radius: var(--rc-radius);
+  overflow: hidden;
+}
+
+.report-card--formal .rc-highlights-row .rc-highlight-item {
+  border-right: 1px solid var(--rc-border-subtle);
+}
+
+.report-card--formal .rc-highlights-row .rc-highlight-item:last-child {
+  border-right: none;
+}
+
+/* ── RESULTS TABLE (HIGH-END) ───────────────────────────────── */
+.report-card--formal .rc-grade-table-wrap {
+  overflow-x: auto;
+  border-radius: var(--rc-radius);
+}
+
+.report-card--formal .rc-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--rc-border);
+  border-radius: var(--rc-radius);
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+}
+
+.report-card--formal .rc-table-caption {
+  caption-side: bottom;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.7rem;
+  font-style: italic;
+  color: var(--rc-text-muted);
+  text-align: left;
+  letter-spacing: 0.01em;
+}
+
+/* Table header */
+.report-card--formal .rc-table th {
+  padding: 0.7rem 0.75rem;
+  background: var(--rc-navy);
+  color: #ffffff;
+  font-family: var(--rc-font-sans);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: center;
+  border-bottom: 2px solid var(--rc-gold);
+  white-space: nowrap;
+}
+
+.report-card--formal .rc-table th:first-child {
+  text-align: left;
+}
+
+/* Table cells */
+.report-card--formal .rc-table td {
+  padding: 0.62rem 0.75rem;
+  text-align: center;
+  border-bottom: 1px solid rgba(212, 208, 200, 0.5);
+  color: var(--rc-text);
+  font-size: 0.88rem;
+}
+
+.report-card--formal .rc-table td:first-child {
+  text-align: left;
+}
+
+/* Zebra striping — very subtle warm gray */
+.report-card--formal .rc-table tbody tr:nth-child(even) {
+  background: rgba(243, 239, 231, 0.45);
+}
+
+/* Hover — screen only (subtle) */
+.report-card--formal .rc-table tbody tr:hover {
+  background: rgba(12, 27, 58, 0.03);
+}
+
+/* Subject column */
+.report-card--formal .rc-table .rc-subject {
+  font-weight: 600;
+  color: var(--rc-charcoal);
+  letter-spacing: 0.01em;
+}
+
+/* Score emphasis */
+.report-card--formal .rc-score-cell {
+  font-variant-numeric: tabular-nums;
+}
+
+.report-card--formal .rc-best {
+  font-weight: 800;
+  color: var(--rc-navy);
+  background: var(--rc-gold-soft);
+  border-radius: 2px;
+}
+
+.report-card--formal .rc-avg-cell {
+  font-weight: 800;
+  color: var(--rc-charcoal);
+}
+
+/* Performance colors (muted, not loud) */
+.report-card--formal .rc-safe { color: #1a6b4a; font-weight: 700; }
+.report-card--formal .rc-borderline { color: #8a6d1b; font-weight: 700; }
+.report-card--formal .rc-risk { color: #994040; font-weight: 700; }
+
+/* ── SUMMARY BOX ────────────────────────────────────────────── */
+.report-card--formal .rc-summary-box {
+  padding: 1rem 1.15rem;
+  background: #ffffff;
+  border: 1px solid var(--rc-border);
+  border-left: 3px solid var(--rc-navy);
+  border-radius: var(--rc-radius);
+  font-size: 0.88rem;
+  color: var(--rc-text);
+  line-height: 1.7;
+}
+
+/* ── REMARKS ────────────────────────────────────────────────── */
+.report-card--formal .rc-remarks-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.report-card--formal .rc-remark-card {
+  padding: 1rem 1.1rem;
+  background: #ffffff;
+  border: 1px solid var(--rc-border);
+  border-radius: var(--rc-radius);
+  min-height: 100px;
+}
+
+.report-card--formal .rc-remark-title {
+  margin: 0 0 0.65rem 0;
+  font-family: var(--rc-font-sans);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--rc-navy);
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--rc-border-subtle);
+}
+
+.report-card--formal .rc-remark-text {
+  font-size: 0.88rem;
+  color: var(--rc-text);
+  line-height: 1.7;
+  margin: 0;
+}
+
+.report-card--formal .rc-remark-placeholder span {
+  display: block;
+  height: 1px;
+  margin: 1.15rem 0;
+  background: var(--rc-border);
+}
+
+.report-card--formal .rc-remark-empty {
+  font-size: 0.78rem;
+  font-style: italic;
+  color: var(--rc-text-muted);
+  margin: 0;
+}
+
+/* ── SIGNATURE AREA ─────────────────────────────────────────── */
+.report-card--formal .rc-signature-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3rem;
+  padding: 0.6rem 0 0;
+}
+
+.report-card--formal .rc-signature-block {
+  text-align: center;
+  padding-top: 2.4rem;
+}
+
+.report-card--formal .rc-signature-line {
+  width: 80%;
+  margin: 0 auto 0.5rem;
+  border-top: 1.5px solid var(--rc-charcoal);
+}
+
+.report-card--formal .rc-signature-label {
+  font-family: var(--rc-font-sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--rc-text-secondary);
+  letter-spacing: 0.06em;
+}
+
+/* ── GRADING SCALE (footer) ─────────────────────────────────── */
+.report-card--formal .rc-section-block--footer {
+  background: var(--rc-navy) !important;
+  padding: 1rem 2.4rem;
+}
+
+.report-card--formal .rc-section-block--footer .rc-section-heading {
+  border-color: rgba(255, 255, 255, 0.15);
+  margin-bottom: 0.6rem;
+  padding-bottom: 0.45rem;
+}
+
+.report-card--formal .rc-section-block--footer .rc-section-kicker {
+  color: var(--rc-gold);
+}
+
+.report-card--formal .rc-section-block--footer .rc-section-heading h4 {
+  color: #ffffff;
+}
+
+.report-card--formal .rc-grading-scale {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.report-card--formal .rc-grading-item {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+  font-family: var(--rc-font-sans);
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  letter-spacing: 0.04em;
+}
+
+/* ── IMPROVEMENT COLORS (muted) ─────────────────────────────── */
+.report-card--formal .improv-positive,
+.report-card--formal .improv-up { color: #1a6b4a; font-weight: 800; }
+.report-card--formal .improv-negative,
+.report-card--formal .improv-down { color: #994040; font-weight: 800; }
+.report-card--formal .improv-neutral { color: var(--rc-text-secondary); font-weight: 700; }
+
+/* Tone colors (used in metrics) */
+.report-card--formal .rc-tone-good { color: #1a6b4a; }
+.report-card--formal .rc-tone-avg { color: #8a6d1b; }
+.report-card--formal .rc-tone-risk { color: #994040; }
+.report-card--formal .rc-tone-neutral { color: var(--rc-text-secondary); }
+
+/* ── RESPONSIVE ─────────────────────────────────────────────── */
+@media (max-width: 720px) {
+  .report-card--formal {
+    font-size: 0.85rem;
+  }
+
+  .report-card--formal .rc-brand-banner {
+    grid-template-columns: 1fr;
+    text-align: center;
+    padding: 1.2rem 1.4rem;
+  }
+
+  .report-card--formal .rc-brand-banner-copy {
+    align-items: center;
+  }
+
+  .report-card--formal .rc-brand-badge {
+    border-left: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.15);
+    padding: 0.7rem 0 0;
+  }
+
+  .report-card--formal .rc-brand-name {
+    font-size: 1.3rem;
+  }
+
+  .report-card--formal .rc-section-block {
+    padding: 1rem 1.3rem;
+  }
+
+  .report-card--formal .rc-title-wrap {
+    padding: 1rem 1.3rem 0.8rem;
+  }
+
+  .report-card--formal .rc-key-metrics {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .report-card--formal .rc-info-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .report-card--formal .rc-snapshot-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .report-card--formal .rc-highlights-row {
+    grid-template-columns: 1fr;
+  }
+
+  .report-card--formal .rc-remarks-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .report-card--formal .rc-signature-grid {
+    gap: 1.5rem;
+  }
+
+  .report-card--formal .rc-header-strip {
+    padding: 0.6rem 1.3rem 1rem;
+  }
+
+  .report-card--formal .rc-section-block--footer {
+    padding: 0.8rem 1.3rem;
+  }
+}
+
+/* ── PRINT STYLESHEET ───────────────────────────────────────── */
+@media print {
+  .report-card--formal {
+    box-shadow: none;
+    max-width: none;
+    font-size: 0.86rem;
+    border: none;
+    page-break-inside: avoid;
+  }
+
+  .report-card--formal::before {
+    border-color: #cccccc;
+  }
+
+  .report-card--formal::after {
+    color: rgba(0, 0, 0, 0.02);
+  }
+
+  /* Navy header prints as dark */
+  .report-card--formal .rc-brand-banner {
+    background: #0c1b3a !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .report-card--formal .rc-table th {
+    background: #0c1b3a !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .report-card--formal .rc-section-block--footer {
+    background: #0c1b3a !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Gold accent preserved */
+  .report-card--formal .rc-table th {
+    border-bottom-color: #b8953e !important;
+  }
+
+  .report-card--formal .rc-brand-banner {
+    border-bottom-color: #b8953e !important;
+  }
+
+  /* Remove hover effects */
+  .report-card--formal .rc-table tbody tr:hover {
+    background: transparent;
+  }
+
+  /* Zebra striping lighter for print */
+  .report-card--formal .rc-table tbody tr:nth-child(even) {
+    background: rgba(0, 0, 0, 0.025) !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Section alternating bg */
+  .report-card--formal .rc-section-block:nth-child(even) {
+    background: rgba(0, 0, 0, 0.015) !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Key metric primary card */
+  .report-card--formal .rc-key-metric--primary {
+    background: #0c1b3a !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Clean borders */
+  .report-card--formal .rc-key-metric,
+  .report-card--formal .rc-info-grid,
+  .report-card--formal .rc-snapshot-item,
+  .report-card--formal .rc-highlight-item,
+  .report-card--formal .rc-remark-card,
+  .report-card--formal .rc-summary-box {
+    border-color: #d0d0d0;
+  }
+
+  /* Signature lines */
+  .report-card--formal .rc-signature-line {
+    border-top-color: #333333;
+  }
+
+  /* Page breaks */
+  .report-card--formal .rc-section-block {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .report-card--formal .rc-print-section {
+    page-break-inside: avoid;
+  }
+}
