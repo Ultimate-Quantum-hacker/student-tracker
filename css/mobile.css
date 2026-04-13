@@ -158,6 +158,49 @@
     flex: none !important;
   }
 
+  /* ── CLASS SWITCHER COLLAPSIBLE TOGGLE ─────────────────────── */
+  .class-switcher-toggle {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 0.6rem 0.85rem;
+    border: 1px solid var(--border-subtle, rgba(148,163,184,0.18));
+    border-radius: 10px;
+    background: var(--card-bg-strong, rgba(15,23,42,0.72));
+    color: var(--text-primary, #f9fafb);
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s ease;
+  }
+
+  .class-switcher-toggle:hover {
+    background: var(--accent-soft, rgba(59,130,246,0.12));
+  }
+
+  .class-switcher-toggle-chevron {
+    font-size: 0.65rem;
+    transition: transform 0.25s ease;
+  }
+
+  /* When expanded */
+  .global-class-switcher:not(.collapsed-mobile) .class-switcher-toggle-chevron {
+    transform: rotate(180deg);
+  }
+
+  /* Hide content when collapsed */
+  .global-class-switcher.collapsed-mobile .class-switcher-main,
+  .global-class-switcher.collapsed-mobile .class-switcher-name {
+    display: none !important;
+  }
+
+  /* Show content when expanded */
+  .global-class-switcher:not(.collapsed-mobile) .class-switcher-main,
+  .global-class-switcher:not(.collapsed-mobile) .class-switcher-name {
+    display: flex;
+  }
+
   /* ── CLASS SWITCHER (kill flex-grow gap) ────────────────────── */
   .class-dropdown {
     flex: 0 1 auto !important;

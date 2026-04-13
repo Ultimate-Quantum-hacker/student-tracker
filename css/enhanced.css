@@ -322,6 +322,8 @@ body.dark-mode{--intervention-bg:rgba(220,38,38,.18);--intervention-border:rgba(
 .performance-analysis-avg{font-weight:700;font-size:.82rem}
 .performance-analysis-empty{font-size:.85rem;color:var(--text-secondary);padding:.4rem 0}
 
+.class-switcher-toggle { display: none; }
+
 /* School Branding Header */
 .school-brand{text-align:center;padding:.5rem 0;font-size:.75rem;color:var(--text-secondary);border-bottom:1px solid var(--border);margin-bottom:0}
 

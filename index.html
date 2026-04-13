@@ -931,7 +931,11 @@
     </div>
   </header>
 
-  <div class="global-class-switcher" aria-label="Global class switcher">
+  <div class="global-class-switcher collapsed-mobile" aria-label="Global class switcher">
+    <button type="button" class="class-switcher-toggle" id="class-switcher-toggle" aria-expanded="false" aria-label="Toggle class switcher">
+      <span class="class-switcher-toggle-label">Class Switcher</span>
+      <span class="class-switcher-toggle-chevron">&#9660;</span>
+    </button>
     <div class="class-switcher-main">
       <button type="button" class="btn btn-secondary btn-sm class-nav-btn" id="class-prev-btn" aria-label="Switch to previous class" title="Previous class">←</button>
       <label for="class-dropdown-toggle">Class</label>
@@ -1500,6 +1504,33 @@
         setTimeout(showTutorialIfNeeded, 800);
       });
     })();
+  </script>
+  <script>
+    // Class switcher mobile toggle
+    document.addEventListener('DOMContentLoaded', function() {
+      var toggleBtn = document.getElementById('class-switcher-toggle');
+      if (toggleBtn) {
+        toggleBtn.addEventListener('click', function() {
+          var switcher = document.querySelector('.global-class-switcher');
+          if (switcher) {
+            switcher.classList.toggle('collapsed-mobile');
+            var isCollapsed = switcher.classList.contains('collapsed-mobile');
+            toggleBtn.setAttribute('aria-expanded', !isCollapsed);
+            var label = toggleBtn.querySelector('.class-switcher-toggle-label');
+            var classDisplay = document.getElementById('class-name-display');
+            if (label && classDisplay) {
+              label.textContent = isCollapsed ? (classDisplay.textContent || 'Class Switcher') : 'Hide Class Switcher';
+            }
+          }
+        });
+        // Set initial label from current class
+        var classDisplay = document.getElementById('class-name-display');
+        var label = toggleBtn.querySelector('.class-switcher-toggle-label');
+        if (label && classDisplay && classDisplay.textContent) {
+          label.textContent = classDisplay.textContent;
+        }
+      }
+    });
   </script>
 </body>
 </html>
