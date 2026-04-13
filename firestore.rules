@@ -850,8 +850,9 @@ service cloud.firestore {
       allow update: if requesterCanUpdateConversation(conversationId)
         || (isDeveloperRole()
           && request.resource.data.participants == resource.data.participants);
-      // DELETE: permanently blocked
-      allow delete: if false;
+      // DELETE: participant can delete their own conversation
+      allow delete: if isSignedIn()
+        && conversationHasParticipant(resource.data, request.auth.uid);
 
       match /messages/{messageId} {
         // READ: participant in parent conversation OR developer
@@ -867,8 +868,9 @@ service cloud.firestore {
         // UPDATE: only readByUserIds + updatedAt can change; developer has full update access
         allow update: if requesterCanUpdateConversationMessage(conversationId, messageId)
           || isDeveloperRole();
-        // DELETE: permanently blocked
-        allow delete: if false;
+        // DELETE: participant in conversation can delete messages
+        allow delete: if isSignedIn()
+          && requesterCanReadConversation(conversationId);
       }
     }
 

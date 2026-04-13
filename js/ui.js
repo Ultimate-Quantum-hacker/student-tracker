@@ -230,6 +230,7 @@ const domIds = {
   messagesDetail: 'messages-detail',
   messagesDetailMailbox: 'messages-detail-mailbox',
   messageMarkToggleBtn: 'message-mark-toggle-btn',
+  messageDeleteBtn: 'message-delete-btn',
   messagesDetailSubject: 'messages-detail-subject',
   messagesDetailMeta: 'messages-detail-meta',
   messagesDetailBody: 'messages-detail-body',
@@ -5440,7 +5441,32 @@ const ui = {
             await this.toggleSelectedMessageReadState(messageId);
           };
         }
-        if (app.dom.messageThreadForm) {
+        if (app.dom.messageDeleteBtn) {
+          app.dom.messageDeleteBtn.onclick = async () => {
+            const conversationId = String(app.state.selectedMessageId || '').trim();
+            if (!conversationId) return;
+            const confirmed = confirm('Are you sure you want to delete this conversation? This action cannot be undone.');
+            if (!confirmed) return;
+            try {
+              app.dom.messageDeleteBtn.disabled = true;
+              app.dom.messageDeleteBtn.textContent = 'Deleting...';
+              const { deleteConversation } = await import('../services/db.js');
+              await deleteConversation(conversationId);
+              app.state.selectedMessageId = '';
+              if (app.dom.messagesDetail) app.dom.messagesDetail.hidden = true;
+              if (app.dom.messagesDetailEmpty) app.dom.messagesDetailEmpty.hidden = false;
+              this.showToast('Conversation deleted');
+            } catch (error) {
+              console.error('[messaging] Delete failed:', error);
+              this.showToast(error?.message || 'Failed to delete conversation', 'error');
+            } finally {
+              if (app.dom.messageDeleteBtn) {
+                app.dom.messageDeleteBtn.disabled = false;
+                app.dom.messageDeleteBtn.textContent = 'Delete Chat';
+              }
+            }
+          };
+        }        if (app.dom.messageThreadForm) {
           app.dom.messageThreadForm.onsubmit = async (event) => {
             event.preventDefault();
             await this.handleMessageThreadSubmit();

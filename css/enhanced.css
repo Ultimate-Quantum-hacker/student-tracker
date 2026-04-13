@@ -4240,13 +4240,21 @@ body.dark-mode .card:hover, body.dark-mode .stat-card:hover {
     overflow-y: auto;
     overflow-x: hidden;
     overscroll-behavior: contain;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
   }
 
   #messages.content-section.active .messages-detail-panel::-webkit-scrollbar {
-    width: 0;
-    height: 0;
+    width: 6px;
+  }
+
+  #messages.content-section.active .messages-detail-panel::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  #messages.content-section.active .messages-detail-panel::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.3);
+    border-radius: 999px;
   }
 }
 
@@ -5424,3 +5432,46 @@ body.dark-mode .messages-thread-form:focus-within {
 body.dark-mode .messages-thread-form-actions { border-top-color: rgba(51, 65, 85, 0.4); background: rgba(15, 23, 42, 0.4); }
 body.dark-mode .messages-detail-empty { background: linear-gradient(180deg, rgba(15, 23, 42, 0.3), rgba(15, 23, 42, 0.5)); }
 body.dark-mode .messages-detail-divider { background: linear-gradient(90deg, transparent, #334155 20%, #334155 80%, transparent); }
+
+/* Fix footer gap — sidebar must extend to bottom */
+footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: transparent;
+  padding: 0.5rem 1.5rem !important;
+}
+
+#app-main {
+  min-height: calc(100vh - 70px);
+}
+
+.sidebar {
+  min-height: calc(100vh - 70px);
+}
+
+/* Delete conversation button */
+#message-delete-btn {
+  font-size: 0.78rem;
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+}
+
+#message-delete-btn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.14);
+  border-color: rgba(239, 68, 68, 0.35);
+  transform: translateY(-1px);
+}
+
+body.dark-mode #message-delete-btn {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.25);
+  color: #fca5a5;
+}
