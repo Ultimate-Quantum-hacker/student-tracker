@@ -1,0 +1,93 @@
+/* ═══════════════════════════════════════════════════════════════
+   TOOLTIP SYSTEM — Lightweight, attribute-based
+   Usage: <button data-tooltip="Helpful text here">
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── TOOLTIP BUBBLE ─────────────────────────────────────────── */
+.app-tooltip {
+  position: fixed;
+  z-index: 9999;
+  max-width: 240px;
+  padding: 0.45rem 0.7rem;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #f1f5f9;
+  font-family: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: 0.01em;
+  text-align: center;
+  white-space: normal;
+  word-break: break-word;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2), 0 1px 4px rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.app-tooltip.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Arrow */
+.app-tooltip::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: rgba(15, 23, 42, 0.92);
+  transform: rotate(45deg);
+}
+
+/* Arrow positions */
+.app-tooltip[data-placement="top"]::after {
+  bottom: -4px;
+  left: 50%;
+  margin-left: -4px;
+}
+
+.app-tooltip[data-placement="bottom"]::after {
+  top: -4px;
+  left: 50%;
+  margin-left: -4px;
+}
+
+/* ── HELPER TEXT ────────────────────────────────────────────── */
+.helper-text {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-secondary, #64748b);
+  font-style: italic;
+  letter-spacing: 0.01em;
+  line-height: 1.4;
+}
+
+.helper-text::before {
+  content: 'ℹ ';
+  opacity: 0.6;
+}
+
+body.dark-mode .helper-text {
+  color: rgba(148, 163, 184, 0.7);
+}
+
+/* ── FOCUS RING on tooltip elements ─────────────────────────── */
+[data-tooltip]:focus-visible {
+  outline: 2px solid var(--accent, #3b82f6);
+  outline-offset: 2px;
+}
+
+/* ── PRINT: hide all tooltips ───────────────────────────────── */
+@media print {
+  .app-tooltip,
+  .helper-text {
+    display: none !important;
+  }
+}
