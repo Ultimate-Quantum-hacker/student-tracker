@@ -1,4 +1,4 @@
-/* Enhanced UI Styles - Report Card, Results, Heatmap */
+ï»¿/* Enhanced UI Styles - Report Card, Results, Heatmap */
 
 /* Results Table Highlighting */
 .rank-num{color:var(--primary);font-size:1.1rem}
@@ -4235,8 +4235,17 @@ body.dark-mode .card:hover, body.dark-mode .stat-card:hover {
   }
 
   #messages.content-section.active .messages-detail-panel {
-    align-self: start;
-    max-height: 100%;
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 160px);
+    overflow: hidden;
+  }
+
+  #messages.content-section.active .messages-detail-body {
+    flex: 1 1 0;
+    min-height: 0;
+    max-height: none;
     overflow-y: auto;
     overflow-x: hidden;
     overscroll-behavior: contain;
@@ -4244,15 +4253,15 @@ body.dark-mode .card:hover, body.dark-mode .stat-card:hover {
     scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
   }
 
-  #messages.content-section.active .messages-detail-panel::-webkit-scrollbar {
+  #messages.content-section.active .messages-detail-body::-webkit-scrollbar {
     width: 6px;
   }
 
-  #messages.content-section.active .messages-detail-panel::-webkit-scrollbar-track {
+  #messages.content-section.active .messages-detail-body::-webkit-scrollbar-track {
     background: transparent;
   }
 
-  #messages.content-section.active .messages-detail-panel::-webkit-scrollbar-thumb {
+  #messages.content-section.active .messages-detail-body::-webkit-scrollbar-thumb {
     background: rgba(148, 163, 184, 0.3);
     border-radius: 999px;
   }
@@ -4501,7 +4510,7 @@ body.dark-mode .card:hover, body.dark-mode .stat-card:hover {
   line-height: 1.58;
   word-break: break-word;
   min-height: 0;
-  max-height: min(52vh, 34rem);
+  /* max-height controlled by flex parent */
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -5433,7 +5442,7 @@ body.dark-mode .messages-thread-form-actions { border-top-color: rgba(51, 65, 85
 body.dark-mode .messages-detail-empty { background: linear-gradient(180deg, rgba(15, 23, 42, 0.3), rgba(15, 23, 42, 0.5)); }
 body.dark-mode .messages-detail-divider { background: linear-gradient(90deg, transparent, #334155 20%, #334155 80%, transparent); }
 
-/* Fix footer gap — sidebar must extend to bottom */
+/* Fix footer gap ï¿½ sidebar must extend to bottom */
 footer {
   position: fixed;
   bottom: 0;
