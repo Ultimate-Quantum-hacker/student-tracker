@@ -4618,7 +4618,7 @@ body.dark-mode .card:hover, body.dark-mode .stat-card:hover {
 }
 
 .messages-thread-form textarea {
-  min-height: 110px;
+  min-height: 40px;
   resize: vertical;
 }
 
@@ -5350,8 +5350,8 @@ body.dark-mode .message-list-item-subject {
 .messages-thread-form textarea {
   border: none;
   border-radius: 0;
-  min-height: 72px;
-  max-height: 180px;
+  min-height: 40px;
+  max-height: 80px;
   padding: 0.82rem 1rem;
   resize: none;
   font-size: 0.9rem;
