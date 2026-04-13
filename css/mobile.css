@@ -130,16 +130,32 @@
   }
 
   /* ── FIX SIDEBAR/CONTENT STRETCHING ────────────────────────── */
+  body {
+    min-height: auto !important;
+    height: auto !important;
+  }
+
+  #app-main {
+    flex: none !important;
+    min-height: auto !important;
+    height: auto !important;
+  }
+
   .sidebar {
     min-height: auto !important;
+    max-height: calc(100vh - 56px) !important;
   }
 
   .main-content {
     min-height: auto !important;
+    max-height: none !important;
+    height: auto !important;
+    flex: none !important;
   }
 
-  #app-main {
+  .content-section.active {
     min-height: auto !important;
+    flex: none !important;
   }
 
   /* ── MAIN CONTENT ──────────────────────────────────────────── */
