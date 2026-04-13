@@ -31,6 +31,58 @@
       document.documentElement.style.colorScheme = initialTheme;
     })();
   </script>
+  <style>
+    /* Splash screen */
+    #app-splash{position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:#020617;color:#f1f5f9;font-family:'Inter',sans-serif;text-align:center}
+    .app-splash-card{display:flex;flex-direction:column;align-items:center;gap:1.2rem;padding:2rem}
+    .app-splash-brand{display:flex;flex-direction:column;align-items:center;gap:1rem}
+    .app-splash-logo-shell{position:relative;width:100px;height:100px;display:flex;align-items:center;justify-content:center}
+    .app-splash-logo{width:80px;height:80px;border-radius:18px}
+    .app-splash-ring{position:absolute;inset:0;border-radius:50%;border:2px solid transparent}
+    .app-splash-ring-outer{border-top-color:#3b82f6;animation:spin 1.2s linear infinite}
+    .app-splash-ring-inner{inset:8px;border-bottom-color:#60a5fa;animation:spin 0.9s linear infinite reverse}
+    .app-splash-icon{display:none}
+    .app-splash-copy{text-align:center}
+    .app-splash-kicker{font-size:.7rem;text-transform:uppercase;letter-spacing:.18em;color:#64748b;font-weight:600}
+    .app-splash-copy h1{font-size:1.2rem;font-weight:700;margin:.3rem 0}
+    .app-splash-copy p{font-size:.82rem;color:#94a3b8}
+    .app-splash-progress{width:200px;height:3px;background:rgba(148,163,184,.15);border-radius:99px;overflow:hidden}
+    .app-splash-progress-bar{display:block;width:40%;height:100%;background:linear-gradient(90deg,#3b82f6,#60a5fa);border-radius:99px;animation:progressPulse 1.8s ease infinite}
+    .app-splash-meta{text-align:center}
+    .app-splash-caption{font-size:.72rem;color:#475569}
+    .app-splash-dots{display:flex;gap:4px;justify-content:center;margin-top:.5rem}
+    .app-splash-dots span{width:5px;height:5px;border-radius:50%;background:#3b82f6;animation:dotPulse 1.4s ease infinite}
+    .app-splash-dots span:nth-child(2){animation-delay:.2s}
+    .app-splash-dots span:nth-child(3){animation-delay:.4s}
+
+    /* Global loader overlay */
+    .global-loader{position:fixed;inset:0;z-index:9998;display:flex;align-items:center;justify-content:center;background:rgba(2,6,23,.92);color:#f1f5f9;font-family:'Inter',sans-serif;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+    .global-loader.hidden{display:none}
+    .loader-content{display:flex;flex-direction:column;align-items:center;gap:1.2rem;padding:2rem;text-align:center}
+    .loader-brand{display:flex;flex-direction:column;align-items:center;gap:1rem}
+    .loader-logo-shell{position:relative;width:100px;height:100px;display:flex;align-items:center;justify-content:center}
+    .loader-logo{width:80px;height:80px;border-radius:18px}
+    .loader-orbit{position:absolute;inset:0;border-radius:50%;border:2px solid transparent}
+    .loader-orbit-outer{border-top-color:#3b82f6;animation:spin 1.2s linear infinite}
+    .loader-orbit-inner{inset:8px;border-bottom-color:#60a5fa;animation:spin 0.9s linear infinite reverse}
+    .loader-copy{text-align:center}
+    .loader-status{font-size:1rem;font-weight:700;margin-bottom:.25rem}
+    .loader-text{font-size:.82rem;color:#94a3b8}
+    .loader-subtext{font-size:.72rem;color:#64748b;margin-top:.2rem}
+    .loader-progress{width:200px;height:3px;background:rgba(148,163,184,.15);border-radius:99px;overflow:hidden}
+    .loader-progress-bar{display:block;width:40%;height:100%;background:linear-gradient(90deg,#3b82f6,#60a5fa);border-radius:99px;animation:progressPulse 1.8s ease infinite}
+    .loader-footer{text-align:center}
+    .loader-hint{font-size:.72rem;color:#475569}
+    .loader-dots{display:flex;gap:4px;justify-content:center;margin-bottom:.4rem}
+    .loader-dots span{width:5px;height:5px;border-radius:50%;background:#3b82f6;animation:dotPulse 1.4s ease infinite}
+    .loader-dots span:nth-child(2){animation-delay:.2s}
+    .loader-dots span:nth-child(3){animation-delay:.4s}
+    .loader-ambient{display:none}
+
+    @keyframes spin{to{transform:rotate(360deg)}}
+    @keyframes progressPulse{0%{width:20%;opacity:.7}50%{width:70%;opacity:1}100%{width:20%;opacity:.7}}
+    @keyframes dotPulse{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1.1)}}
+  </style>
 </head>
 <body class="role-loading dark dark-mode">
   <script>
