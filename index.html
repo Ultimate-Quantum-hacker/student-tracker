@@ -771,6 +771,31 @@
       font-size: 0.9rem;
     }
 
+    .guide-section {
+      margin-bottom: 1.1rem;
+      padding-bottom: 0.6rem;
+      border-bottom: 1px solid rgba(148,163,184,0.12);
+    }
+    .guide-section:last-of-type { border-bottom: none; }
+    .guide-section-title {
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: #60a5fa;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 0.5rem;
+    }
+    .guide-closing {
+      text-align: center;
+      font-style: italic;
+      color: #94a3b8;
+      font-size: 0.82rem;
+      margin-top: 0.75rem;
+    }
+    .pwa-tutorial-card {
+      max-height: 80vh;
+      overflow-y: auto;
+    }
     /* Install button */
     #install-btn {
       display: none;
@@ -872,22 +897,106 @@
   <div id="pwa-tutorial">
     <div class="pwa-tutorial-card">
       <div class="pwa-tutorial-badge">
-        <span>New</span>
-        <span>Installed app tips</span>
+        <span>Guide</span>
+        <span>Beginner's Handbook</span>
       </div>
-      <h2>Quick tour of Student Performance Tracker</h2>
-      <p>Here’s where to find the most important tools:</p>
-      <ul class="pwa-tutorial-list">
-        <li><strong>Dashboard</strong> – see totals, class average, and who needs support.</li>
-        <li><strong>Students / Exams / Subjects</strong> – manage names of pupils, mocks, and subjects.</li>
-        <li><strong>Enter Scores</strong> – record scores for one student at a time.</li>
-        <li><strong>Class Entry Mode</strong> – enter a whole class for one mock in a single grid.</li>
-        <li><strong>Results & Rankings</strong> – view rank, averages, status, notes, and print reports.</li>
-        <li><strong>Trends & Heatmap</strong> – see class performance over time and by subject.</li>
-      </ul>
-      <p>Use the top-right tools to export data, manage restore points, switch themes, or start a new class based on your role.</p>
+
+      <h2>Welcome to Student Performance Tracker</h2>
+      <p>A complete guide to help you get started and master every feature.</p>
+
+      <div class="guide-section">
+        <h3 class="guide-section-title">1. Getting Started</h3>
+        <ul class="pwa-tutorial-list">
+          <li><strong>Create a Class</strong> &#8212; Use the class switcher at the top to create your first class. Each class is independent with its own students, exams, and subjects.</li>
+          <li><strong>Switch Classes</strong> &#8212; Click the dropdown or use the arrow buttons to navigate between your classes.</li>
+          <li><strong>Dark / Light Mode</strong> &#8212; Toggle the theme using the sun/moon icon in the header.</li>
+          <li><strong>Install the App</strong> &#8212; Click the download icon to install this app for offline use on your device.</li>
+        </ul>
+      </div>
+
+      <div class="guide-section">
+        <h3 class="guide-section-title">2. Managing Your Class</h3>
+        <ul class="pwa-tutorial-list">
+          <li><strong>Add Students</strong> &#8212; Go to <em>Students</em> in the sidebar. Add individually or use <em>Bulk Import</em> to add many at once from a CSV file or by typing names.</li>
+          <li><strong>Add Exams</strong> &#8212; Go to <em>Exams</em> to create assessments (e.g. Mock 1, Mid-term). Each exam can be scored separately.</li>
+          <li><strong>Add Subjects</strong> &#8212; Go to <em>Subjects</em> to define what subjects your class takes (e.g. Maths, English, Science).</li>
+        </ul>
+      </div>
+
+      <div class="guide-section">
+        <h3 class="guide-section-title">3. Entering Scores</h3>
+        <ul class="pwa-tutorial-list">
+          <li><strong>Enter Scores (one student)</strong> &#8212; Select a student, choose an exam, and enter marks for each subject.</li>
+          <li><strong>Marks Entry / Bulk Entry</strong> &#8212; Enter marks for the entire class at once in a spreadsheet-style grid. Select the exam, then type scores for each student and subject.</li>
+          <li><strong>Per-Student Reset</strong> &#8212; Click the reset button next to a student's name to clear only that student's marks.</li>
+        </ul>
+      </div>
+
+      <div class="guide-section">
+        <h3 class="guide-section-title">4. Viewing Results</h3>
+        <ul class="pwa-tutorial-list">
+          <li><strong>Results Table</strong> &#8212; View all students ranked by performance with averages, totals, and pass/fail status.</li>
+          <li><strong>Search and Filter</strong> &#8212; Use the search bar to quickly find any student in the results.</li>
+          <li><strong>Student Reports</strong> &#8212; Generate premium report cards for individual students. Click a student name, then Generate Report.</li>
+          <li><strong>Export to CSV</strong> &#8212; Download results as a spreadsheet for external use.</li>
+          <li><strong>Print Results</strong> &#8212; Print the results table directly from the browser.</li>
+        </ul>
+      </div>
+
+      <div class="guide-section">
+        <h3 class="guide-section-title">5. Analysis and Insights</h3>
+        <ul class="pwa-tutorial-list">
+          <li><strong>Dashboard</strong> &#8212; See total students, class average, performance distribution, and students needing support at a glance.</li>
+          <li><strong>Trends</strong> &#8212; Track how class performance changes over time across different exams.</li>
+          <li><strong>Heatmap</strong> &#8212; Visual grid showing which subjects and students are strong or weak.</li>
+          <li><strong>Interventions</strong> &#8212; Automatically identifies students who need academic support based on their scores.</li>
+        </ul>
+      </div>
+
+      <div class="guide-section">
+        <h3 class="guide-section-title">6. Messages</h3>
+        <ul class="pwa-tutorial-list">
+          <li><strong>Send Messages</strong> &#8212; Admins and Head Teachers can send direct messages or broadcast to all users with a specific role.</li>
+          <li><strong>Reply</strong> &#8212; Open a conversation and type your reply in the message box at the bottom.</li>
+          <li><strong>Delete Messages</strong> &#8212; Hover over your sent message and click the x button to delete it.</li>
+          <li><strong>Real-time</strong> &#8212; Messages appear instantly without refreshing the page.</li>
+        </ul>
+      </div>
+
+      <div class="guide-section">
+        <h3 class="guide-section-title">7. Data and Backup</h3>
+        <ul class="pwa-tutorial-list">
+          <li><strong>Backup</strong> &#8212; Download a JSON backup file of all your data to your device.</li>
+          <li><strong>Restore</strong> &#8212; Upload a previously saved backup file to recover your data.</li>
+          <li><strong>Cloud Snapshots</strong> &#8212; Save snapshots to the cloud so you can restore them from any device.</li>
+          <li><strong>Auto-Save</strong> &#8212; All changes are saved automatically as you work. No save button needed.</li>
+        </ul>
+      </div>
+
+      <div class="guide-section">
+        <h3 class="guide-section-title">8. Roles and Permissions</h3>
+        <ul class="pwa-tutorial-list">
+          <li><strong>Teacher</strong> &#8212; Can manage their own classes, enter scores, view results, and generate reports.</li>
+          <li><strong>Admin</strong> &#8212; Can manage all classes, users, roles, and system settings. Can send messages to anyone.</li>
+          <li><strong>Head Teacher</strong> &#8212; Same as admin. Can oversee all classes and communicate with staff.</li>
+          <li><strong>Account Settings</strong> &#8212; Update your display name, view your role, or request account deletion.</li>
+        </ul>
+      </div>
+
+      <div class="guide-section">
+        <h3 class="guide-section-title">9. Tips and Shortcuts</h3>
+        <ul class="pwa-tutorial-list">
+          <li><strong>Tooltips</strong> &#8212; Hover over any button to see what it does. On mobile, long-press.</li>
+          <li><strong>Keyboard</strong> &#8212; Use Tab to navigate and Enter to activate buttons.</li>
+          <li><strong>Offline</strong> &#8212; The app works offline after installation. Data syncs when you reconnect.</li>
+          <li><strong>Mobile</strong> &#8212; Fully optimized for phones and tablets. Use the hamburger menu to open the sidebar.</li>
+        </ul>
+      </div>
+
+      <p class="guide-closing">Need help? Contact your school administrator or the system developer.</p>
+
       <div class="pwa-tutorial-footer">
-        <button class="btn btn-secondary" id="pwa-tutorial-close">Got it</button>
+        <button class="btn btn-secondary" id="pwa-tutorial-close">Got it, let's go!</button>
       </div>
     </div>
   </div>
@@ -1499,6 +1608,23 @@
         localStorage.removeItem(TUTORIAL_KEY);
         setTimeout(showTutorialIfNeeded, 500);
       });
+
+      // Help button to reopen guide
+      var helpBtn = document.getElementById('help-guide-btn');
+      if (helpBtn) {
+        helpBtn.addEventListener('click', function () {
+          localStorage.removeItem(TUTORIAL_KEY);
+          var overlay = document.getElementById('pwa-tutorial');
+          if (overlay) overlay.classList.add('active');
+        });
+      }
+
+      // Also show tutorial for non-standalone first-timers
+      if (!localStorage.getItem(TUTORIAL_KEY)) {
+        var overlay = document.getElementById('pwa-tutorial');
+        if (overlay) overlay.classList.add('active');
+        localStorage.setItem(TUTORIAL_KEY, '1');
+      }
 
       // Also show on first run in standalone mode
       window.addEventListener('load', function () {
