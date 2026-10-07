@@ -4736,14 +4736,6 @@ const ui = {
         return 'risk';
       };
 
-      const getRankMedal = (value) => {
-        if (value === 1) return '🥇';
-        if (value === 2) return '🥈';
-        if (value === 3) return '🥉';
-        return '🏅';
-      };
-
-      const rankDisplay = `${getRankMedal(rankPos)} ${formatOrdinal(rankPos)} out of ${totalStudents} students`;
       const statusLabel = this.formatStatusLabel(status);
       const overallTone = getPerformanceTone(avgValue);
       const overallClass = overallTone === 'good' ? 'rc-tone-good' : (overallTone === 'avg' ? 'rc-tone-avg' : (overallTone === 'risk' ? 'rc-tone-risk' : 'rc-tone-neutral'));
@@ -4941,7 +4933,6 @@ const ui = {
             <div class="rc-header-strip" aria-label="Report overview">
               <span>Class: ${app.utils.esc(classDisplay)}</span>
               <span>Term: ${app.utils.esc(termDisplay)}</span>
-              <span>Position: ${app.utils.esc(positionDisplay)}</span>
             </div>
           </header>
 
@@ -4955,7 +4946,7 @@ const ui = {
               <article class="rc-key-metric">
                 <span class="rc-key-metric-label">Class Rank</span>
                 <strong class="rc-key-metric-value">${app.utils.esc(positionDisplay)}</strong>
-                <span class="rc-key-metric-note">${app.utils.esc(rankDisplay)}</span>
+                <span class="rc-key-metric-note">Based on overall average</span>
               </article>
               <article class="rc-key-metric">
                 <span class="rc-key-metric-label">Improvement</span>
@@ -4983,10 +4974,6 @@ const ui = {
               <div class="rc-info-item">
                 <span class="rc-info-label">Term</span>
                 <strong class="rc-info-value">${app.utils.esc(termDisplay)}</strong>
-              </div>
-              <div class="rc-info-item">
-                <span class="rc-info-label">Position</span>
-                <strong class="rc-info-value">${app.utils.esc(positionDisplay)}</strong>
               </div>
               <div class="rc-info-item rc-info-item--wide">
                 <span class="rc-info-label">Aggregate</span>
@@ -5133,7 +5120,7 @@ const ui = {
           </div>
           <div class="rc-info">
             <div><span>Student</span><strong>${app.utils.esc(s.name)}</strong></div>
-            <div class="rc-rank"><span>Rank</span><strong class="rc-rank-value">${app.utils.esc(rankDisplay)}</strong></div>
+            <div class="rc-rank"><span>Rank</span><strong class="rc-rank-value">${app.utils.esc(positionDisplay)}</strong></div>
             <div><span>Status</span><strong class="${statusClass} rc-status">${statusLabel}</strong></div>
             <div class="rc-overall"><span>Overall Average</span><strong class="rc-overall-value ${overallClass}">${app.utils.esc(overallAverageDisplay)}</strong></div>
           </div>

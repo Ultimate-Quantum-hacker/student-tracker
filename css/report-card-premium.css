@@ -478,7 +478,7 @@
   white-space: nowrap;
 }
 
-.report-card--formal .rc-table th:first-child {
+.report-card--formal .rc-table thead th:first-child {
   text-align: left;
 }
 
@@ -491,7 +491,8 @@
   font-size: 0.88rem;
 }
 
-.report-card--formal .rc-table td:first-child {
+.report-card--formal .rc-table td:first-child,
+.report-card--formal .rc-table tbody th.rc-subject {
   text-align: left;
 }
 
@@ -500,16 +501,28 @@
   background: rgba(243, 239, 231, 0.45);
 }
 
+.report-card--formal .rc-table tbody tr:nth-child(even) th.rc-subject {
+  background: transparent;
+}
+
 /* Hover — screen only (subtle) */
 .report-card--formal .rc-table tbody tr:hover {
   background: rgba(12, 27, 58, 0.03);
 }
 
-/* Subject column */
+/* Subject column — row headers must not inherit navy thead styles */
+.report-card--formal .rc-table tbody th.rc-subject,
 .report-card--formal .rc-table .rc-subject {
-  font-weight: 600;
-  color: var(--rc-charcoal);
+  background: transparent;
+  color: var(--rc-navy);
+  font-family: var(--rc-font-serif);
+  font-size: 0.88rem;
+  font-weight: 700;
   letter-spacing: 0.01em;
+  text-transform: none;
+  text-align: left;
+  border-bottom: 1px solid rgba(212, 208, 200, 0.5);
+  border-top: none;
 }
 
 /* Score emphasis */
@@ -768,10 +781,16 @@
     print-color-adjust: exact;
   }
 
-  .report-card--formal .rc-table th {
+  .report-card--formal .rc-table thead th {
     background: #0c1b3a !important;
+    color: #ffffff !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+  }
+
+  .report-card--formal .rc-table tbody th.rc-subject {
+    background: transparent !important;
+    color: #0c1b3a !important;
   }
 
   .report-card--formal .rc-section-block--footer {
