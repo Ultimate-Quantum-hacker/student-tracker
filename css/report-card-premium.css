@@ -124,32 +124,37 @@
   letter-spacing: 0.02em;
 }
 
-/* Date badge */
-.report-card--formal .rc-brand-badge {
+/* School crest placeholder */
+.report-card--formal .rc-brand-crest {
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-width: 9rem;
-  padding: 0.75rem 1.1rem;
+  padding: 0.2rem 0.2rem 0.2rem 1.1rem;
   border-left: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.report-card--formal .rc-crest-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 5.6rem;
+  height: 5.6rem;
+  border: 1.5px dashed rgba(184, 149, 62, 0.85);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 0 0 4px rgba(12, 27, 58, 0.25);
   text-align: center;
 }
 
-.report-card--formal .rc-brand-badge-label {
+.report-card--formal .rc-crest-placeholder-label {
   font-family: var(--rc-font-sans);
   font-size: 0.58rem;
   font-weight: 600;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.report-card--formal .rc-brand-badge-value {
-  margin-top: 0.25rem;
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: #ffffff;
+  color: rgba(255, 255, 255, 0.62);
+  line-height: 1.35;
+  max-width: 3.8rem;
 }
 
 /* Title area */
@@ -382,6 +387,15 @@
   letter-spacing: -0.02em;
 }
 
+.report-card--formal .rc-info-note {
+  margin-top: 0.25rem;
+  font-family: var(--rc-font-sans);
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--rc-text-muted);
+}
+
 /* ── SNAPSHOT GRID ──────────────────────────────────────────── */
 .report-card--formal .rc-snapshot-grid {
   display: grid;
@@ -494,7 +508,7 @@
 /* Subject column */
 .report-card--formal .rc-table .rc-subject {
   font-weight: 600;
-  color: #ffffff;
+  color: var(--rc-charcoal);
   letter-spacing: 0.01em;
 }
 
@@ -510,7 +524,8 @@
   border-radius: 2px;
 }
 
-.report-card--formal .rc-avg-cell {
+.report-card--formal .rc-avg-cell,
+.report-card--formal .rc-grade-cell {
   font-weight: 800;
   color: var(--rc-charcoal);
 }
@@ -676,7 +691,8 @@
     align-items: center;
   }
 
-  .report-card--formal .rc-brand-badge {
+  .report-card--formal .rc-brand-badge,
+  .report-card--formal .rc-brand-crest {
     border-left: none;
     border-top: 1px solid rgba(255, 255, 255, 0.15);
     padding: 0.7rem 0 0;

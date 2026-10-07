@@ -4765,14 +4765,52 @@ const ui = {
         }
       });
 
+      const scoreToGrade = (score) => {
+        if (score === '' || score === null || score === undefined) return null;
+        if (typeof score === 'string' && score.trim() === '') return null;
+        const n = Number(score);
+        if (!Number.isFinite(n)) return null;
+        if (n >= 80) return 1;
+        if (n >= 70) return 2;
+        if (n >= 65) return 3;
+        if (n >= 60) return 4;
+        if (n >= 50) return 5;
+        if (n >= 40) return 6;
+        return 7;
+      };
+
+      const classifySubjectKey = (name) => {
+        const normalized = String(name || '').toLowerCase();
+        if (/\benglish\b/.test(normalized)) return 'english';
+        if (/\bmath/.test(normalized)) return 'maths';
+        if (/\bsocial\b/.test(normalized)) return 'social';
+        if (/\bscience\b/.test(normalized)) return 'science';
+        return 'elective';
+      };
+
+      const getGradeToneClass = (grade) => {
+        if (!Number.isFinite(Number(grade))) return 'rc-tone-neutral';
+        if (grade <= 2) return 'rc-tone-good';
+        if (grade <= 5) return 'rc-tone-avg';
+        return 'rc-tone-risk';
+      };
+
+      const reportExam = (latestExam && typeof latestExam === 'object')
+        ? latestExam
+        : (exams.length ? exams[exams.length - 1] : null);
+
+      const getSubjectReportScore = (subject) => {
+        if (reportExam) return app.analytics.getScore(s, subject, reportExam);
+        const fallback = avgs[subject.name];
+        return fallback === null || fallback === undefined ? '' : fallback;
+      };
+
       const examHeaders = exams.length
         ? exams.map(exam => `<th scope="col">${app.utils.esc(exam.title || exam.name)}</th>`).join('')
         : '<th scope="col">No Exams</th>';
 
       const subjectRows = subjects.length
         ? subjects.map(subject => {
-          const subjectAverage = avgs[subject.name];
-
           const numericScores = exams.length
             ? exams.map(exam => {
               const v = app.analytics.getScore(s, subject, exam);
@@ -4792,16 +4830,38 @@ const ui = {
             }).join('')
             : '<td class="rc-score-cell">&#8212;</td>';
 
-          const subjectTone = getPerformanceTone(subjectAverage);
-          const subjectAvgClass = subjectTone === 'good' ? 'rc-tone-good' : (subjectTone === 'avg' ? 'rc-tone-avg' : (subjectTone === 'risk' ? 'rc-tone-risk' : 'rc-tone-neutral'));
+          const subjectGrade = scoreToGrade(getSubjectReportScore(subject));
+          const gradeClass = getGradeToneClass(subjectGrade);
+          const gradeLabel = subjectGrade === null ? '—' : String(subjectGrade);
 
           return `<tr>
             <th scope="row" class="rc-subject">${app.utils.esc(subject.name)}</th>
             ${examCellsHtml}
-            <td class="rc-avg-cell ${subjectAvgClass}">${app.utils.esc(this.formatFixedOrFallback(subjectAverage, 1, '—'))}</td>
+            <td class="rc-grade-cell ${gradeClass}">${app.utils.esc(gradeLabel)}</td>
           </tr>`;
         }).join('')
         : `<tr><td colspan="${Math.max(3, exams.length + 2)}">No subjects added yet.</td></tr>`;
+
+      const coreSlots = { english: null, maths: null, science: null, social: null };
+      const electiveGrades = [];
+      subjects.forEach((subject) => {
+        const grade = scoreToGrade(getSubjectReportScore(subject));
+        if (grade === null) return;
+        const key = classifySubjectKey(subject.name);
+        if (key !== 'elective' && coreSlots[key] === null) {
+          coreSlots[key] = grade;
+          return;
+        }
+        electiveGrades.push(grade);
+      });
+      electiveGrades.sort((a, b) => a - b);
+      const bestElectives = electiveGrades.slice(0, 2);
+      const hasAllCores = ['english', 'maths', 'science', 'social'].every((key) => coreSlots[key] !== null);
+      const aggregateValue = hasAllCores
+        ? ['english', 'maths', 'science', 'social'].reduce((sum, key) => sum + coreSlots[key], 0)
+          + bestElectives.reduce((sum, grade) => sum + grade, 0)
+        : null;
+      const aggregateDisplay = Number.isFinite(aggregateValue) ? String(aggregateValue) : 'N/A';
 
       const notesText = s.notes ? app.utils.esc(s.notes) : 'Teacher feedback will appear here.';
       const overallAverageDisplay = (() => {
@@ -4831,9 +4891,8 @@ const ui = {
         autoSummary = summaryParts.length ? `${summaryParts.join(', ')}.` : '';
       }
 
-      const schoolName = String(document.querySelector('.logo-title')?.textContent || 'Student Performance Tracker').trim() || 'Student Performance Tracker';
-      const schoolMotto = String(document.querySelector('.logo-motto')?.textContent || 'Tracking Progress. Unlocking Potential.').trim() || 'Tracking Progress. Unlocking Potential.';
-      const reportDate = new Date().toLocaleDateString();
+      const schoolName = 'Vickmore Int. School';
+      const schoolMotto = 'Climbing to Victory';
       const classDisplay = this.getCurrentClassDisplayLabel();
       const termDisplay = String(latestExam?.title || latestExam?.name || 'Current Term').trim() || 'Current Term';
       const positionDisplay = `${formatOrdinal(rankPos)} of ${totalStudents}`;
@@ -4867,9 +4926,10 @@ const ui = {
                 <div class="rc-brand-name">${app.utils.esc(schoolName)}</div>
                 <div class="rc-brand-motto">${app.utils.esc(schoolMotto)}</div>
               </div>
-              <div class="rc-brand-badge" aria-label="Report issuance date">
-                <span class="rc-brand-badge-label">Report Date</span>
-                <strong class="rc-brand-badge-value">${app.utils.esc(reportDate)}</strong>
+              <div class="rc-brand-crest" aria-label="School crest placeholder">
+                <div class="rc-crest-mark">
+                  <span class="rc-crest-placeholder-label">School Crest</span>
+                </div>
               </div>
             </div>
             <div class="rc-title-wrap">
@@ -4929,8 +4989,9 @@ const ui = {
                 <strong class="rc-info-value">${app.utils.esc(positionDisplay)}</strong>
               </div>
               <div class="rc-info-item rc-info-item--wide">
-                <span class="rc-info-label">Average</span>
-                <strong class="rc-info-value rc-info-value--headline">${app.utils.esc(overallAverageDisplay)}</strong>
+                <span class="rc-info-label">Aggregate</span>
+                <strong class="rc-info-value rc-info-value--headline">${app.utils.esc(aggregateDisplay)}</strong>
+                <span class="rc-info-note">English, Maths, Science, Social Studies, and the two best electives</span>
               </div>
             </div>
           </section>
@@ -4967,12 +5028,12 @@ const ui = {
             </div>
             <div class="rc-grade-table-wrap">
               <table class="rc-table">
-                <caption class="rc-table-caption">Mock assessment scores and cumulative subject averages</caption>
+                <caption class="rc-table-caption">Subject grades from recorded assessments. Aggregate uses English, Maths, Science, Social Studies, and the two best elective grades.</caption>
                 <thead>
                   <tr>
                     <th scope="col">Subject</th>
                     ${examHeaders}
-                    <th scope="col">Average</th>
+                    <th scope="col">Grade</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -5047,12 +5108,13 @@ const ui = {
               <h4>Grading System</h4>
             </div>
             <div class="rc-grading-scale" aria-label="Grading scale">
-              <span class="rc-grading-item">A: 70-100</span>
-              <span class="rc-grading-item">B: 60-69</span>
-              <span class="rc-grading-item">C: 50-59</span>
-              <span class="rc-grading-item">D: 45-49</span>
-              <span class="rc-grading-item">E: 40-44</span>
-              <span class="rc-grading-item">F: 0-39</span>
+              <span class="rc-grading-item">Grade 1: 80-100</span>
+              <span class="rc-grading-item">Grade 2: 70-79</span>
+              <span class="rc-grading-item">Grade 3: 65-69</span>
+              <span class="rc-grading-item">Grade 4: 60-64</span>
+              <span class="rc-grading-item">Grade 5: 50-59</span>
+              <span class="rc-grading-item">Grade 6: 40-49</span>
+              <span class="rc-grading-item">Grade 7: 30 and below</span>
             </div>
           </section>
         </div>
